@@ -25,8 +25,8 @@
 ////   over half a second (`0x140715c00`); the server takes the turn as done at once, which
 ////   makes its arcs exact outside that half second.
 
-import genesis_prime/game/area
 import genesis_prime/game/start_place.{type Facing, type Place}
+import genesis_prime/shared/area
 
 /// What a creature's rotation is held to.
 pub type Face {

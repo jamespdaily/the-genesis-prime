@@ -1,5 +1,5 @@
 //// The Channeled spells that cost something, in the client's own tables
-//// (`genesis_prime/game/spell_plan`, `cast_cost.pulse_costs`): which spells the per-pulse
+//// (`genesis_prime/shared/spell_plan`, `cast_cost.pulse_costs`): which spells the per-pulse
 //// rule reaches and how their costs plan. The tables are read where the client is present.
 //// Expected values come from these places, each named at its row:
 //// - `UI/ToolTips/ToolTips.lua` 2458-2491: the cost line of a spell wrapped in `$1n/tick`
@@ -13,7 +13,7 @@
 ////   and 10 are the class resource's slots 0 to 3 and 5, 4 a class vital.
 
 import client_tables
-import genesis_prime/game/spell_plan.{type Cost}
+import genesis_prime/shared/spell_plan.{type Cost}
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4.{type Spell4}
 import genesis_prime/table/spell4_base

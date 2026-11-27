@@ -1,5 +1,5 @@
 //// The subject of a creature that checks a gate of a strike
-//// (`genesis_prime/game/prerequisite.of_creature`): what each type reads from the creature's
+//// (`genesis_prime/shared/prerequisite.of_creature`): what each type reads from the creature's
 //// own facts. Expected values come from these places:
 //// - The comparison codes of the numeric types (1, 71, 73, 179): 1 equal, 2 not equal, 3
 ////   greater, 4 at least, 5 less, 6 at most (`0x1404a2090`).
@@ -17,7 +17,7 @@
 //// - `opcode.0x262.absent_stats` and `UnitBreathMax`: a creature sent without stat 20 has
 ////   no shield, and one sent without stat 19 has full breath, GameFormula 55's dataint0, 100.
 
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/prerequisite.{
   type CreatureFacts, type Verdict, CreatureFacts, Factions, Fails, Passes,
   Player, Vital,
 }

@@ -1,5 +1,5 @@
-//// The DisguiseOutfit rows of the plan (`genesis_prime/game/spell_plan` `modifier_of`,
-//// `genesis_prime/game/effect_kind`). What the plan refuses is tested on rows in memory
+//// The DisguiseOutfit rows of the plan (`genesis_prime/shared/spell_plan` `modifier_of`,
+//// `genesis_prime/shared/effect_kind`). What the plan refuses is tested on rows in memory
 //// and on a load of the three item tables alone, since each planted load of the spell
 //// tables puts 4 MiB of terms into the run; the Engineer's own tree is read from the
 //// client's tables. Expected values come from these places:
@@ -15,16 +15,16 @@
 
 import cast_support
 import client_tables
-import genesis_prime/game/effect_kind
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/look.{Disguise}
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/look.{Disguise}
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{
   type PropertyModifier, Always, GatedOnCaster, LookChange, PropertyModifier,
 }
-import genesis_prime/game/spend
-import genesis_prime/game/worn_visual.{WornVisual}
+import genesis_prime/shared/spend
+import genesis_prime/shared/worn_visual.{WornVisual}
 import genesis_prime/table/id.{
   ItemDisplayId, ItemSlotId, PrerequisiteId, Spell4BaseId, Spell4EffectsId,
 }

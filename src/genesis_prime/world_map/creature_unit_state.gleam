@@ -1,6 +1,6 @@
 //// A creature's held unit states: the feature of the creature's rule
 //// (genesis_prime/world_map/creature) that takes the unit states a caster's go holds on it
-//// (genesis_prime/game/unit_state), starts each at its time, keeps it until its end, tells
+//// (genesis_prime/shared/unit_state), starts each at its time, keeps it until its end, tells
 //// the creature's viewers when one takes hold and when it ends, and tells the strike whether
 //// the creature takes a hostile one. The creature's process owns its unit, its viewers and
 //// its timer, so the news of a hold and its end come from one owner, in the order the holds
@@ -38,7 +38,7 @@
 ////   are two holds that each end by their own end.
 
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_state
+import genesis_prime/shared/unit_state
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -163,7 +163,7 @@ pub fn cleared(state state: State) -> #(State, List(Effect)) {
 }
 
 /// Whether a state held at `now_ms` makes the creature take no hostile strike
-/// (genesis_prime/game/unit_state `blocks_hostile`). A hold whose start has not come does
+/// (genesis_prime/shared/unit_state `blocks_hostile`). A hold whose start has not come does
 /// not, nor one whose end has passed, though its timer has not yet fired.
 pub fn blocks_hostile(state state: State, now_ms now_ms: Int) -> Bool {
   unit_state.blocks_hostile(

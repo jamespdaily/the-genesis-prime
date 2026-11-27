@@ -1,5 +1,5 @@
 //// A creature's run along many points, under random polylines
-//// (`genesis_prime/world_map/creature_path`). The client moves a unit along a kind 4 path at
+//// (`genesis_prime/shared/creature_path`). The client moves a unit along a kind 4 path at
 //// one constant speed over the whole polyline, each leg taking its 3D length over the speed,
 //// and holds the last point once it is there (`0x1407813d0`, `movement_command.kind_4` mode
 //// 0). The server's timing is that model: it starts at the command's time, uses the speed
@@ -9,7 +9,7 @@
 
 import creature_path_support as support
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/world_map/creature_path.{Running}
+import genesis_prime/shared/creature_path.{Running}
 import gleam/float
 import gleam/int
 import gleam/list

@@ -13,17 +13,17 @@ import genesis_prime/game/chat
 import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/objective as connection_objective
 import genesis_prime/game/connection/state.{type Session, InWorld, Session} as connection_state
-import genesis_prime/game/hit_radius
 import genesis_prime/game/in_world_move
 import genesis_prime/game/move_stamp
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/top_zone
 import genesis_prime/game/world_entry
 import genesis_prime/game/zone_welcome
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
+import genesis_prime/shared/hit_radius
+import genesis_prime/shared/top_zone
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionId, type Effect, type Now, LogInfo,
   OwnEffect,

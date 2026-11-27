@@ -22,19 +22,19 @@ import character_support
 import character_tables
 import client_tables
 import fixture_tables
-import genesis_prime/game/appearance
 import genesis_prime/game/character_creation.{
   BoneNotFinite, CostsCurrency, CostumeOnlyRow, LabelNotAllowed,
   LabelsNotIncreasing, LookValueNotHeld, NeedsEntitlement, NoLevelForExperience,
   NoStartPlace, NoSuchRow, PathAbove3, RowDisabled, TooManyLabels,
   WrongBoneCount,
 }
-import genesis_prime/game/item_property
 import genesis_prime/game/start_place.{Level50, Novice, OtherStart, Veteran}
 import genesis_prime/message/create_character.{
   type CreateCharacter, CreateCharacter,
 }
 import genesis_prime/message/create_result
+import genesis_prime/shared/appearance
+import genesis_prime/shared/item_property
 import genesis_prime/store.{type NewCharacter, LookEntry, NewCharacter, NewItem}
 import genesis_prime/table/character_creation as creation_table
 import genesis_prime/table/id.{

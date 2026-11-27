@@ -1,4 +1,4 @@
-//// Prerequisite types 38 and 214 (`genesis_prime/game/prerequisite`): what the check's
+//// Prerequisite types 38 and 214 (`genesis_prime/shared/prerequisite`): what the check's
 //// first unit is. Expected values come from these places:
 //// - `Prerequisite.prerequisiteTypeId.38` (0x14049ecc0): the first unit's Creature2 id,
 ////   0 for a unit with no Creature2 record, against the value: comparison 1 equal, 2
@@ -9,7 +9,7 @@
 ////   holds the Spell4Base in the objectId (comparison 1) or does not (2). 8740 and 2823
 ////   are objectIds of the table's conditions.
 
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/prerequisite.{
   type Subject, Fails, NotRead, OtherPlayer, Passes, TheChecker, UnknownUnit,
 }
 import gleam/int

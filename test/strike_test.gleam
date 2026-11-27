@@ -22,20 +22,9 @@ import cast_support as support
 import class_resource_support
 import client_tables
 import crowd_control_support
-import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast/state.{type GoAsked, GoAsked} as cast_state
-import genesis_prime/game/class_resource.{Resource}
-import genesis_prime/game/crowd_control
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
-import genesis_prime/game/forced_move
-import genesis_prime/game/hit.{type Offence, Blow, Offence, Rolls, Worked}
-import genesis_prime/game/lasts
 import genesis_prime/game/player_address
 import genesis_prime/game/shown.{ShownPlayer}
-import genesis_prime/game/spell_area.{DamageEffect}
-import genesis_prime/game/spell_plan.{AimsAtArea}
-import genesis_prime/game/spend
 import genesis_prime/game/strike.{
   type Attacker, type Effect, type Selection, type State, Aimed, Attacker,
   Selection,
@@ -43,11 +32,22 @@ import genesis_prime/game/strike.{
 import genesis_prime/game/strike_tell.{
   Answered, Dead, Deflected, Key, Landed, Refused,
 }
-import genesis_prime/game/target_mechanic
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/area.{Point, Pose}
+import genesis_prime/shared/class_resource.{Resource}
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/hit.{type Offence, Blow, Offence, Rolls, Worked}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_area.{DamageEffect}
+import genesis_prime/shared/spell_plan.{AimsAtArea}
+import genesis_prime/shared/spend
+import genesis_prime/shared/target_mechanic
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
@@ -1831,7 +1831,7 @@ pub fn a_go_with_no_n_strikes_with_every_damage_effect_the_spell_holds_test() ->
     as "Spell4Effects.emmComparison: a cast with no n chooses nothing, so none of the five is left out"
 }
 
-// ---- crowd-control states (`genesis_prime/game/crowd_control`) ----
+// ---- crowd-control states (`genesis_prime/shared/crowd_control`) ----
 //
 // Expected values come from these places: Gate's Stun, Spell4Effects 100836 (state 0,
 // durationTime 3250, delayTime 0, dataBits03 1, aimed at the area) from
@@ -2298,7 +2298,7 @@ pub fn a_crit_chance_modifier_on_the_player_changes_the_chance_its_strikes_carry
 pub fn a_planted_100_percent_crit_modifier_makes_every_blow_crit_test() -> Nil {
   use <- owned_test.run(5000)
   // The hit rule: a blow is critical when the crit roll is below the crit chance
-  // (genesis_prime/game/hit), at a severity of 1.5. A roll of 0.99 never crits at a
+  // (genesis_prime/shared/hit), at a severity of 1.5. A roll of 0.99 never crits at a
   // chance of 0.0 and always at a chance of 1.0.
   let roll = Rolls(crit: 0.99, deflect: 0.5, glance: 0.5)
   let outcome = fn(properties) {

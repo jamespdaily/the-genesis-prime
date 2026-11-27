@@ -76,7 +76,7 @@
 //// caster's connection c0, a property modifier of its spell
 //// ModifierStarts(c0, source, m)
 ////                         dead: dropped
-////                         else ─▶ apply(source, m) to its properties (genesis_prime/game/unit_properties)
+////                         else ─▶ apply(source, m) to its properties (genesis_prime/shared/unit_properties)
 ////                                    Broadcast(PropertiesChanged(changed entries)) ─▶ writes 0x93a if shown
 ////                                    the rules take the new values: run speed, defence, offence,
 ////                                    maximum health, Interrupt Armor's maximum
@@ -134,7 +134,7 @@
 ////   creature's own state (genesis_prime/game/strike_tell `Gate`). They are checked when the
 ////   strike arrives, before the hit rule, against the creature's level, factions, combat state,
 ////   vitals, difficulty and Creature2 row and the caster as the second unit
-////   (genesis_prime/game/prerequisite `of_creature`). A corpse reads none: it answers
+////   (genesis_prime/shared/prerequisite `of_creature`). A corpse reads none: it answers
 ////   `Refused(Dead)`. The effect ids that passed are in the answer's `gates_passed`, which
 ////   `Landed`, `Immune` and `Deflected` carry (a deflect still checks its gates), and the
 ////   blows and states of a gated row not listed there are in neither its descriptions nor its
@@ -187,7 +187,7 @@
 ////   casters, are not handled here.
 //// - **A throw** is told by the caster's connection through its map, as a strike and a
 ////   modifier are (`Thrown`). The connection draws the two
-////   fractions the move needs from its seed (genesis_prime/game/forced_move), so the
+////   fractions the move needs from its seed (genesis_prime/shared/forced_move), so the
 ////   creature keeps no random state, and names the unit the move is measured from. The
 ////   creature owns the path and the flight's timer. The timers
 ////   are numbered in 7 slots by generation: the fight's 0 to 3 above a multiple of 7, a
@@ -259,12 +259,8 @@
 //// | a chase or a walk home at a run speed of 0 or below | the creature stands where it is, with no path and no arrival timer (`chase_with_zero_run_speed_stands_still_test`, `walk_home_with_zero_run_speed_stands_still_test`, `negative_run_speed_stands_still_test`); it goes on from there when the speed is above 0 again (`run_speed_restored_moves_again_test`, `run_speed_restored_walks_home_again_test`), and not while a state holds it until the state ends (`speed_restored_while_held_stays_until_control_ends_test`) |
 //// | a creature at a run speed of 0 or below is out of reach of a target | it leashes when the target is beyond the leash range from home, as a turret does (`creature_that_cannot_run_leashes_by_the_turret_rule_test`); at home it rests at once (`rooted_creature_leashing_at_home_rests_test`); away from home it holds, since it has no walk (`rooted_creature_at_the_circle_does_not_leash_test`) |
 
-import genesis_prime/game/area
 import genesis_prime/game/experience.{Credit}
-import genesis_prime/game/forced_move
 import genesis_prime/game/held_changes
-import genesis_prime/game/hit
-import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   type Answered, type Tell as StrikeTell, Answered, CreatureStriker,
@@ -274,11 +270,16 @@ import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{
   type PeerNews, CreatureAppeared, PeerNews, Removed,
 }
-import genesis_prime/game/unit_properties.{
+import genesis_prime/gap
+import genesis_prime/shared/area
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/hit
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_properties.{
   type Modifier, type Properties, type Source,
 }
-import genesis_prime/game/unit_state
-import genesis_prime/gap
+import genesis_prime/shared/unit_state
 import genesis_prime/step.{
   type ConnectionId, type CreatureStart, type Effect, type RingMember,
   type ServiceEffect, type ServiceInput, type ServiceRule, type ServiceStep,
@@ -308,7 +309,6 @@ import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
-import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -407,7 +407,7 @@ pub type Message {
   /// A caster's connection: the property modifier of `source` ends on the creature.
   ModifierEnds(source: Source)
   /// A caster's connection: a ForcedMove effect of its spell throws the creature
-  /// (genesis_prime/game/forced_move). It is dropped when the creature lies dead; else the
+  /// (genesis_prime/shared/forced_move). It is dropped when the creature lies dead; else the
   /// fight takes it (`creature_fight.Thrown`), which drops it for a creature that walks home
   /// or does not run.
   Thrown(throw: forced_move.Throw)

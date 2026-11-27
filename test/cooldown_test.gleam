@@ -1,5 +1,5 @@
 //// The running cooldowns of a unit and the modifiers that change them
-//// (`genesis_prime/game/cooldown`). Expected values come from these places:
+//// (`genesis_prime/shared/cooldown`). Expected values come from these places:
 //// - `0x14046b920` ModifyRunningCooldowns: a modifier's selector picks the running
 ////   cooldowns whose spell it names (0 by Spell4Base, 1 by Spell4, 2 by spell group, 3 by
 ////   cooldown group, any other value every spell), and its operation changes the time
@@ -15,10 +15,10 @@
 //// - `0x14046a890` ApplyCooldownModifiers: a new cooldown's time goes through the lasting
 ////   modifiers in the order they were added.
 //// - The server's choice: a source kept again is held once, as a unit's property
-////   modifiers are (`genesis_prime/game/unit_properties`).
+////   modifiers are (`genesis_prime/shared/unit_properties`).
 
 import cast_support
-import genesis_prime/game/cooldown.{
+import genesis_prime/shared/cooldown.{
   type Book, type Operation, AddMs, Base, CooldownGroup, EverySpell, Modifier,
   Multiply, NoLonger, SetMs, Spell, SpellGroup, Unchanged,
 }

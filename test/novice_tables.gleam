@@ -1,4 +1,4 @@
-//// The Novice sets the loadout equips (`genesis_prime/game/loadout`): the twelve
+//// The Novice sets the loadout equips (`genesis_prime/shared/loadout`): the twelve
 //// CharacterCreation rows of the PreTutorial start, each with its items, and what
 //// each set wears.
 

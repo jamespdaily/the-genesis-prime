@@ -17,19 +17,19 @@
 import cast_support as support
 import genesis_prime/game/cast/press_target
 import genesis_prime/game/cast/state.{type Caster, type Verdict} as cast_state
-import genesis_prime/game/faction_level.{
-  type Disposition, Friendly, Hostile, Neutral,
-}
 import genesis_prime/game/held_state.{type HeldState, HeldState}
 import genesis_prime/game/player_state.{type PlayerState, PlayerState}
-import genesis_prime/game/spell_plan.{
+import genesis_prime/game/start_place
+import genesis_prime/message/cast_result
+import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/faction_level.{
+  type Disposition, Friendly, Hostile, Neutral,
+}
+import genesis_prime/shared/spell_plan.{
   type Spell, type TargetAim, FacesWithin, Limits, MustBeDead, MustBeInCombat,
   OutOfCombatOnly, PetBits, Spell, TargetAim,
 }
-import genesis_prime/game/start_place
-import genesis_prime/game/target_mechanic.{Targeted, Targeting}
-import genesis_prime/message/cast_result
-import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/target_mechanic.{Targeted, Targeting}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/string

@@ -1,5 +1,5 @@
 //// A press of a Focus-cost spell checked against and paid from the caster's Focus
-//// (`genesis_prime/game/cast` with `genesis_prime/game/class_resource`). Expected
+//// (`genesis_prime/game/cast` with `genesis_prime/shared/class_resource`). Expected
 //// values come from these places, each named at its assertion:
 //// - The client's check: `CheckInnateCost` 0x1403b3320 case 0xe refuses 167
 ////   (`Spell4CastResult` 167, `CasterVitalCostFocus`, text 151788 "Insufficient Focus")
@@ -19,8 +19,8 @@ import cast_support as support
 import channel_support.{type Scene}
 import class_resource_support
 import genesis_prime/game/cast/cost as cast_cost
-import genesis_prime/game/class_resource.{type Payment, Payment}
-import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/shared/class_resource.{type Payment, Payment}
+import genesis_prime/shared/spell_plan.{type Spell}
 import gleam/dict
 import gleam/list
 import gleam/string

@@ -1,4 +1,4 @@
-//// The lasting effects of the plan (`genesis_prime/game/spell_plan` `Lasting`,
+//// The lasting effects of the plan (`genesis_prime/shared/spell_plan` `Lasting`,
 //// `ForceRemove`, a spell's groups and stack). Expected values come from these
 //// places:
 //// - `Spell4Effects.effectType.17`: a Fluff row gives its spell a life on the unit its
@@ -18,13 +18,13 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/crowd_control
-import genesis_prime/game/lasting.{Group, LastingRow, Spell, Stack}
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
-import genesis_prime/game/spend
 import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/lasting.{Group, LastingRow, Spell, Stack}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
 }

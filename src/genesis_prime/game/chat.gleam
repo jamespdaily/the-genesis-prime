@@ -221,7 +221,6 @@ import genesis_prime/game/chat_tell.{
   type Line, type Said, type Speaker, type Tell, Line,
 }
 import genesis_prime/game/dev_command
-import genesis_prime/game/top_zone.{type TopZones}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_channel_joined.{ChatChannelJoined}
 import genesis_prime/message/chat_channel_result.{
@@ -236,6 +235,7 @@ import genesis_prime/message/chat_zone_named.{ChatZoneNamed}
 import genesis_prime/message/send_chat_line.{type SendChatLine}
 import genesis_prime/message/send_whisper.{type SendWhisper}
 import genesis_prime/message/whisper_failed.{WhisperFailed}
+import genesis_prime/shared/top_zone.{type TopZones}
 import genesis_prime/step.{type Address, type ConnectionId, type WatchId}
 import genesis_prime/table/chat_channel.{type ChatChannel} as chat_channel_table
 import genesis_prime/table/id.{ChatChannelId}

@@ -30,11 +30,11 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/objective_link
-import genesis_prime/game/spell_plan
 import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 import genesis_prime/shared/quest_view.{type QuestView}
+import genesis_prime/shared/spell_plan
 
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/interaction_result.{type InteractionResult}

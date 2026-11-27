@@ -1,5 +1,5 @@
 //// The plan's and the area's damage and crowd-control rows behind an apply prerequisite
-//// (`genesis_prime/game/spell_plan` `row_condition_of`, `genesis_prime/game/spell_area`
+//// (`genesis_prime/shared/spell_plan` `row_condition_of`, `genesis_prime/shared/spell_area`
 //// `damage_row_of`). Expected values come from these places.
 //// - The client's rows, kept in the fixture (`table_rows -- Spell4Effects 38307 122821
 ////   99347 115034`, `-- Prerequisite 3476 24214 3286 860`):
@@ -21,9 +21,9 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{
   type Condition, type CrowdControl, Always, GatedOnCaster, GatedOnTarget,
 }
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId, Spell4Id}

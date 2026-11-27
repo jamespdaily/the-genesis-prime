@@ -1,4 +1,4 @@
-//// What an item's own rows say of a bag (`genesis_prime/game/item_property`).
+//// What an item's own rows say of a bag (`genesis_prime/shared/item_property`).
 //// Expected values come from these places.
 //// - `Item2.bags` and `0x1404445d0.proxy`: a bag is an item whose joined flags
 ////   (type, category and family) hold 0x100, and it opens Item2.maxStackCount
@@ -17,8 +17,8 @@
 import client_tables
 import fixture_tables
 import game_connection_support
-import genesis_prime/game/item_property.{type ItemProperties, ItemProperties}
 import genesis_prime/message/float32
+import genesis_prime/shared/item_property.{type ItemProperties, ItemProperties}
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId, UnitProperty2Id}
 import genesis_prime/table/item2
@@ -485,7 +485,7 @@ pub fn the_sum_of_a_set_adds_in_32_bits_test() -> Nil {
 }
 
 /// A budget entry on a ResourceMax property is left to the class resource, which sets that
-/// property's base (`genesis_prime/game/class_resource`, the player unit's resource).
+/// property's base (`genesis_prime/shared/class_resource`, the player unit's resource).
 /// UnitProperty2 12 is ResourceMax_3, with flags 52 and valuePerPoint 0.2, so a client
 /// row would give it; the code does not, and says why.
 pub fn a_resource_maximum_from_a_budget_is_unread_with_its_reason_test() -> Nil {
@@ -730,7 +730,7 @@ pub fn a_pvp_or_proxy_rune_is_still_refused_with_its_gap_test() -> Nil {
 
 /// A PvP item and a proxy item are what the code does not follow and an item of the tables
 /// can take, so they are the entries of `gaps`. A resource maximum is set by the class
-/// resource (`genesis_prime/game/class_resource`), and a support beyond its range and a
+/// resource (`genesis_prime/shared/class_resource`), and a support beyond its range and a
 /// stat kind outside 0, 1, 2 and 4 are data no client row holds, so none has an entry. The
 /// entry's sentence carries the reason an unread item is logged with.
 pub fn the_item_property_branches_the_code_does_not_follow_have_entries_test() -> Nil {

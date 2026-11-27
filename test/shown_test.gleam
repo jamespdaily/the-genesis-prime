@@ -10,8 +10,6 @@
 //// - Dominion 166 and Exile 167 are the two player factions (`start_place`).
 
 import fixture_tables
-import genesis_prime/game/area.{Candidate, Point, Pose}
-import genesis_prime/game/faction_level
 import genesis_prime/game/held_state
 import genesis_prime/game/player_state.{type PlayerState, PlayerState}
 import genesis_prime/game/shown.{
@@ -19,11 +17,13 @@ import genesis_prime/game/shown.{
 }
 import genesis_prime/game/start_place
 import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/area.{Candidate, Point, Pose}
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/faction_level
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_life.{
   type Attackable, Attackable, Hostile,
 }
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict

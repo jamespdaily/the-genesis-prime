@@ -1,5 +1,5 @@
 //// The move a Knockback, Pushback or Pull state throws its creature by
-//// (`genesis_prime/game/spell_plan` `CrowdControl.move`). The state row names a
+//// (`genesis_prime/shared/spell_plan` `CrowdControl.move`). The state row names a
 //// CCStateAdditionalData row in dataBits07, whose dataInt00 is a helper spell; the move is
 //// that spell's own ForcedMove row (`table_rows -- CCStateAdditionalData 21`,
 //// `table_rows -- Spell4Effects 73826`). Expected values come from these client rows.
@@ -17,13 +17,13 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/forced_move
-import genesis_prime/game/spell_plan
 import genesis_prime/message/crowd_control_state.{
   type CrowdControlState, Knockback, PositionSwitch, Pull, Pushback,
 }
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/cc_state_additional_data
 import genesis_prime/table/id.{CCStateAdditionalDataId}
 import genesis_prime/table/loader/store as table_store

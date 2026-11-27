@@ -92,7 +92,6 @@ import genesis_prime/game/experience
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_expiry
-import genesis_prime/game/item_property
 import genesis_prime/game/player_life
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
@@ -103,6 +102,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor_trade.{type Effect, Log, Refuse, Send}
 import genesis_prime/gap
 import genesis_prime/message/quest_turn_in as quest_turn_in_message
+import genesis_prime/shared/item_property
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/quest_view
 import genesis_prime/step.{LogError, LogWarning}

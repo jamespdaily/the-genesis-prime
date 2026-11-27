@@ -10,12 +10,12 @@
 //// the code that raises the error says whether the server understands the value and does
 //// not build it, or whether the table's structure is at fault.
 
-import genesis_prime/game/amp_spec
-import genesis_prime/game/column_reading.{Question}
-import genesis_prime/game/forced_move
-import genesis_prime/game/innate
-import genesis_prime/game/item_property
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/amp_spec
+import genesis_prime/shared/column_reading.{Question}
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/innate
+import genesis_prime/shared/item_property
+import genesis_prime/shared/spell_plan.{
   type Basis, type PlanError, OpenQuestion, Structure, Unbuilt, Unexplained,
 }
 import genesis_prime/table/id.{EldanAugmentationId, Spell4Id}

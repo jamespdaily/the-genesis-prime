@@ -35,20 +35,20 @@
 ////   leaves a positional condition unread.
 
 import cast_support as support
-import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Effect, type Struck} as cast_state
-import genesis_prime/game/damage.{Formula, Parameter}
-import genesis_prime/game/effect_kind
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite.{NonPlayer}
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/area.{type Pose}
+import genesis_prime/shared/damage.{Formula, Parameter}
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite.{NonPlayer}
+import genesis_prime/shared/spell_plan.{
   type Plans, type Spell, AimsAtArea, AimsAtCaster, GatedOnTarget,
 }
-import genesis_prime/game/spend
-import genesis_prime/game/unit_properties
+import genesis_prime/shared/spend
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict

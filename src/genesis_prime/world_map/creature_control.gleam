@@ -91,16 +91,16 @@
 //// | A viewer arrives while a state is held | not told: the 0x262 does not carry it | | |
 //// | The maximum is raised or lowered by a modifier | the creature restarts at full armor of its own maximum | n/a | the refill timer fires after the change: the armor is back at the maximum then in force |
 //// | Armor is worn down or refills | the creature restarts at full armor; the refill timer is cancelled at the death | two strikes in a row: each wears down what is left, the second restarts the refill | the refill timer fires after the death or at full armor: nothing |
-//// | The caster's cast lingers past the state's end | the node's life is the effect's, and the cast rule's timer ends it (genesis_prime/game/lasting) | | |
+//// | The caster's cast lingers past the state's end | the node's life is the effect's, and the cast rule's timer ends it (genesis_prime/shared/lasting) | | |
 
-import genesis_prime/game/crowd_control
-import genesis_prime/game/lasts
 import genesis_prime/game/strike_tell.{
   type ControlLanded, type Tell, ControlLanded,
 }
 import genesis_prime/game/unit_news.{type News}
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/lasts
 import genesis_prime/step.{type Address}
 import genesis_prime/world_map/creature_life.{type InterruptArmor}
 import gleam/int
@@ -179,7 +179,7 @@ pub fn refuses(state state: State, mask mask: Int) -> Bool {
 
 /// Whether the creature holds a state that stops it moving: one of the states in
 /// `stopped_by`, the states whose CCStates flags hold the value 2
-/// (genesis_prime/game/crowd_control `stopping_mask`).
+/// (genesis_prime/shared/crowd_control `stopping_mask`).
 pub fn stops_moving(state state: State, stopped_by stopped_by: Int) -> Bool {
   refuses(state:, mask: stopped_by)
 }

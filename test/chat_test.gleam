@@ -13,7 +13,6 @@ import genesis_prime/game/chat.{type Chat}
 import genesis_prime/game/chat_channel
 import genesis_prime/game/chat_tell.{Line, Said, Speaker}
 import genesis_prime/game/dev_command
-import genesis_prime/game/top_zone
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_channel_joined.{ChatChannelJoined}
 import genesis_prime/message/chat_channel_result.{
@@ -39,6 +38,7 @@ import genesis_prime/message/chat_zone_named.{ChatZoneNamed}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/whisper_failed.{type WhisperFailed, WhisperFailed}
+import genesis_prime/shared/top_zone
 import genesis_prime/step.{type ConnectionId, ConnectionId}
 import genesis_prime/table/chat_channel as chat_channel_table
 import genesis_prime/table/id.{

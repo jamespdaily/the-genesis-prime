@@ -1,4 +1,4 @@
-//// Prerequisite checks on a unit the caster struck (`genesis_prime/game/prerequisite`):
+//// Prerequisite checks on a unit the caster struck (`genesis_prime/shared/prerequisite`):
 //// what type 39 reads from the first unit, and which types a struck unit's subject cannot
 //// read. Expected values come from these places:
 //// - `Prerequisite.prerequisiteTypeId.39`: whether the first unit is a player (unit type
@@ -11,7 +11,7 @@
 ////   the subject holds, and type 37 draws a roll for each test and reads none of the unit's
 ////   state (`Prerequisite.prerequisiteTypeId.15`, `.59`, `.129`, `.37`).
 
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/prerequisite.{
   type Subject, Fails, NonPlayer, NotRead, OtherPlayer, Passes, TheChecker,
   UnknownUnit,
 }

@@ -12,8 +12,8 @@
 ////   starting level and the item formulas), ChatChannel and WorldZone (chat),
 ////   and Item2, Item2Category, Item2Family, Item2Type, ItemSlot, Spell4,
 ////   SpellLevel and CreatureLevel (the Novice loadout,
-////   `genesis_prime/game/loadout`), with ItemDisplay and ItemDisplaySourceEntry
-////   (what a worn item is drawn with, `genesis_prime/game/worn_visual`), and
+////   `genesis_prime/shared/loadout`), with ItemDisplay and ItemDisplaySourceEntry
+////   (what a worn item is drawn with, `genesis_prime/shared/worn_visual`), and
 ////   Quest2 and QuestObjective (the quests a saved log names and their
 ////   objective slots, `genesis_prime/game/quest_log`), and
 ////   RewardPropertyPremiumModifier (the bag and bank slots of a signature
@@ -25,7 +25,7 @@
 ////   LevelDifferentialAttribute (the multipliers of a quest's experience and credits,
 ////   `genesis_prime/game/quest_turn_in`), and CommunicatorMessages (the rows that deliver a
 ////   quest over the communicator), Faction2 and Faction2Relationship (the levels of one faction
-////   toward another, `genesis_prime/game/faction_level`) are the ones a rule reads today.
+////   toward another, `genesis_prime/shared/faction_level`) are the ones a rule reads today.
 //// - The load: one file for each table of the list and no other is read, the
 ////   rows the rules follow are required, and a missing row fails the load. The
 ////   load runs in a fresh node, since it is under the server's own key, which
@@ -33,8 +33,8 @@
 
 import fixture_tables
 import fresh_node
-import genesis_prime/game/appearance
 import genesis_prime/message/item_visual.{ItemVisual}
+import genesis_prime/shared/appearance
 import genesis_prime/store.{LookEntry}
 import genesis_prime/table/customization_parameter
 import genesis_prime/table/customization_parameter_map

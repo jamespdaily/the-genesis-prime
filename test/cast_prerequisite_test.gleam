@@ -34,14 +34,14 @@ import client_tables
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/class_resource
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite.{type Prerequisite}
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite.{type Prerequisite}
+import genesis_prime/shared/spell_plan.{
   type Plans, type Spell, CastGate, NoCasterCast, RequirementWaiver, Spell,
 }
-import genesis_prime/game/spend
+import genesis_prime/shared/spend
 import genesis_prime/step.{type TimerId, LogWarning, TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/int

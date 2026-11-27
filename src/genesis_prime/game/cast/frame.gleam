@@ -16,11 +16,8 @@ import genesis_prime/game/cast/state.{
   UnknownAnswer, UnknownCancel, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/target_info
-import genesis_prime/game/hit
-import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
-import genesis_prime/game/telegraph_entries.{type Opening}
 import genesis_prime/game/unit_casts
 import genesis_prime/message/bit_stream
 import genesis_prime/message/cast_result
@@ -56,6 +53,9 @@ import genesis_prime/message/spell_threshold_opened.{SpellThresholdOpened}
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
 import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/message/unit_tether_anchor.{UnitTetherAnchor}
+import genesis_prime/shared/hit
+import genesis_prime/shared/spell_plan.{type Spell}
+import genesis_prime/shared/telegraph_entries.{type Opening}
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/int
 import gleam/list
@@ -699,7 +699,7 @@ pub fn describe(refusal refusal: Refusal) -> String {
 /// info for each landed blow with its damage description and delay. The instance
 /// count and the effects' instance ids number from 1 (kept by the client, no reader
 /// traced), except a crowd-control state's, which is the id its tell gave
-/// (genesis_prime/game/crowd_control `instance_id`). A unit whose smallest delay is 1 and
+/// (genesis_prime/shared/crowd_control `instance_id`). A unit whose smallest delay is 1 and
 /// that holds an effect lasting until removed is told 2 for each delay of 1
 /// (`target_info.told_delay_ms`).
 fn struck_target(

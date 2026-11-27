@@ -1,5 +1,5 @@
-//// The cooldown modifiers of the plan (`genesis_prime/game/spell_plan`
-//// `CooldownModifier`, `genesis_prime/game/effect_kind`). Expected values come from
+//// The cooldown modifiers of the plan (`genesis_prime/shared/spell_plan`
+//// `CooldownModifier`, `genesis_prime/shared/effect_kind`). Expected values come from
 //// these places:
 //// - `Spell4Effects.effectType.73`: a ModifySpellCooldown row names its selector in
 ////   dataBits00 (0 a Spell4Base, 1 a Spell4, 2 a spell group, 3 a cooldown group, any
@@ -21,18 +21,18 @@
 ////   type 11's coefficients do.
 
 import client_tables
-import genesis_prime/game/cooldown.{
+import genesis_prime/shared/cooldown.{
   AddMs, Base, CooldownGroup, EverySpell, Modifier, NoLonger, SetMs, Spell,
   SpellGroup,
 }
-import genesis_prime/game/effect_kind
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{
   type Spell as PlannedSpell, Always, GatedOnCaster, GatedOnTarget,
 }
-import genesis_prime/game/spend
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
 }

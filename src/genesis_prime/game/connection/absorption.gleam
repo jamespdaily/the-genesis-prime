@@ -18,7 +18,7 @@
 ////   Spell4Effects row, so at most one owner holds it, and the cast rule needs no
 ////   knowledge of which: its death, its node's removal and its timers name sources only.
 //// - **The amount is the cast rule's**, worked out at the go from the caster's stats; the
-////   life keeps the pool, spends it by the hit rule (genesis_prime/game/hit) and drops it
+////   life keeps the pool, spends it by the hit rule (genesis_prime/shared/hit) and drops it
 ////   when it is used up, at its end and at the player's death.
 //// - **A pool that moves nothing** (a dead player, an amount of 0, an end for a source not
 ////   held) writes nothing (genesis_prime/game/player_life).
@@ -29,7 +29,7 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/life_effect
 import genesis_prime/game/connection/state.{type Session}
 import genesis_prime/game/player_life
-import genesis_prime/game/unit_properties
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 
 /// The player's life takes the pool of the cast effect `source` (genesis_prime/game/cast

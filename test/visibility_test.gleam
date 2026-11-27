@@ -10,8 +10,8 @@
 ////   which are 21321 and 21324 at indexes 0 and 2, so a done mask of 0b101 opens it).
 
 import character_tables
-import genesis_prime/game/prerequisite.{type Prerequisite, Subject}
 import genesis_prime/game/visibility
+import genesis_prime/shared/prerequisite.{type Prerequisite, Subject}
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/id.{PrerequisiteId}
 import gleam/option.{Some}

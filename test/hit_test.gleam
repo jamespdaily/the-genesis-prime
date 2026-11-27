@@ -1,4 +1,4 @@
-//// The hit rule (`genesis_prime/game/hit`), run as the pure rule it is. Expected
+//// The hit rule (`genesis_prime/shared/hit`), run as the pure rule it is. Expected
 //// values come from these places.
 //// - The rule's doc comment: a deflect lands when the deflect roll is below the
 ////   target's deflect chance less the attacker's strikethrough; a critical hit when the
@@ -19,14 +19,14 @@
 ////   server's choice (the effect type's gap).
 //// - ShieldMitigationMax is 0.625 for a Novice (`player.level1_gear_properties`).
 
-import genesis_prime/game/damage
-import genesis_prime/game/hit.{
+import genesis_prime/message/combat_result
+import genesis_prime/message/damage_type
+import genesis_prime/shared/damage
+import genesis_prime/shared/hit.{
   type Defence, type Offence, type Rolls, Blow, Defence, Deflected, Landed,
   Offence, Rolls, Worked,
 }
-import genesis_prime/game/unit_properties
-import genesis_prime/message/combat_result
-import genesis_prime/message/damage_type
+import genesis_prime/shared/unit_properties
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/float
 import gleam/int

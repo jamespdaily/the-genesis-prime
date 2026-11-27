@@ -9,7 +9,7 @@
 import content_support
 import database_support
 import genesis_prime/content/server_proxy as content_server_proxy
-import genesis_prime/game/server_proxy.{Row}
+import genesis_prime/shared/server_proxy.{Row}
 import gleam/list
 import gleam/string
 import owned_test

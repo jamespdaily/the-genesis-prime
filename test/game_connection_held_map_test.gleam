@@ -39,16 +39,13 @@ import genesis_prime/client_connection.{
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/departures
-import genesis_prime/game/effect_kind
 import genesis_prime/game/experience.{Credit}
 import genesis_prime/game/heal_split.{Split}
 import genesis_prime/game/held_changes
 import genesis_prime/game/proc
-import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell.{HealsLanded, PlayerAnswered}
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/currency_changed.{CurrencyChanged}
@@ -68,6 +65,9 @@ import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   type ConnectionEvent, type Event, OwnEffect, OwnEvent, StartTimer, TimerFired,
   TimerId, WatchEnded, WatchId,

@@ -20,17 +20,17 @@
 
 import cast_support as support
 import character_tables
-import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{
+import genesis_prime/game/start_place
+import genesis_prime/shared/area.{type Pose}
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{
   type Plans, type Spell, GatedOnCasterAndTarget, Proxy, Spell,
 }
-import genesis_prime/game/spend
-import genesis_prime/game/start_place
+import genesis_prime/shared/spend
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
 import gleam/dict

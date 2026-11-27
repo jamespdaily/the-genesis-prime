@@ -4,7 +4,7 @@
 //// 0x88c of the unit comes from one sender, in the order the strikes landed.
 ////
 //// ```
-//// Alive(health) ── Strike ──▶ the hit rule (genesis_prime/game/hit)
+//// Alive(health) ── Strike ──▶ the hit rule (genesis_prime/shared/hit)
 ////                             Landed, health' > 0:  Alive(health')    Answered(Landed), news Health(health', alive)
 ////                             Landed, health' = 0:  Dead              Answered(Landed), news Health(0, dead) then Died
 ////                                                                     the corpse timer starts: the kind's respawn time
@@ -30,14 +30,14 @@
 ////   retiring until the creature ends, so no viewer is sent a corpse the spawn's next
 ////   creature does not know.
 
-import genesis_prime/game/area.{type Anchor, type Inside, type Row}
-import genesis_prime/game/damage
-import genesis_prime/game/hit.{type Defence, type Offence}
 import genesis_prime/game/strike_tell.{
   type Answered, type Tell, Answered, CreatureStriker, Landed, PlayerStriker,
   Refused,
 }
-import genesis_prime/game/telegraph_entries.{type Draw}
+import genesis_prime/shared/area.{type Anchor, type Inside, type Row}
+import genesis_prime/shared/damage
+import genesis_prime/shared/hit.{type Defence, type Offence}
+import genesis_prime/shared/telegraph_entries.{type Draw}
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/float
 import gleam/int
@@ -92,7 +92,7 @@ pub type Attack {
     caster_cc_mask: Int,
     /// The crowd-control states that stop the creature's run, as a mask: the states whose
     /// CCStates flags hold the value 2, the states under which the client drops a unit's
-    /// own movement (genesis_prime/game/crowd_control `stopping_mask`).
+    /// own movement (genesis_prime/shared/crowd_control `stopping_mask`).
     run_stopped_by: Int,
   )
 }
@@ -105,10 +105,10 @@ pub type Cast {
   /// A special, or an auto-attack with a cast time above 0: a charge, which strikes each
   /// fighter inside the area of each of its strike gos (`Go.strike`). `area` is the row that chooses the fighters, `inside` the union
   /// of the cast's shapes the reach is read from, and `anchor` where the area is centred
-  /// (genesis_prime/game/spell_area `area_of_spell`); a spell with a cast time and no area it
+  /// (genesis_prime/shared/spell_area `area_of_spell`); a spell with a cast time and no area it
   /// can read fails the load. `draws` are the spell's telegraph rows the client makes, from
   /// which the cast's 0x7ff names the positions the picture is drawn at
-  /// (genesis_prime/game/telegraph_entries). `aims_at_target` is the spell's
+  /// (genesis_prime/shared/telegraph_entries). `aims_at_target` is the spell's
   /// `Spell4.propertyFlags` bit 0x2: a creature that cannot move keeps turning its aim
   /// toward its 0x908 target through a cast of such a spell, and holds the aim it had at
   /// the cast's start through any other (`0x14046cdc0.turret_cast_aim`). `gos` is the
@@ -134,7 +134,7 @@ pub type Cast {
   )
 }
 
-/// One go of a cast (0x7f4), by the Spell4's phases (genesis_prime/game/spell_plan
+/// One go of a cast (0x7f4), by the Spell4's phases (genesis_prime/shared/spell_plan
 /// `go_times_ms`): when it goes, counted from the cast's start, and what it strikes. The go's
 /// index in `gos` is the phase its 0x7f4 carries. A go with no `strike` is a go of the
 /// cast bar only.

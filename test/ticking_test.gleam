@@ -1,13 +1,13 @@
-//// When a periodic row's ticks land (`genesis_prime/game/ticking`). The schedule is the
+//// When a periodic row's ticks land (`genesis_prime/shared/ticking`). The schedule is the
 //// server's own guess (`spell.tick_timing`: the client never times a tick), decided on
 //// issue 336: tick k lands delay + k * tickTime after the go, for k from 1 to
 //// durationTime / tickTime rounded down.
 
 import fixture_tables
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_plan
-import genesis_prime/game/ticking.{
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/ticking.{
   type Schedule, NoTick, Schedule, Ticks, UntilRemoved, UntilTheNodeEnds,
 }
 import genesis_prime/table/id.{Spell4EffectsId}

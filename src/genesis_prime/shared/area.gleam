@@ -93,15 +93,15 @@ pub type Shape {
   /// Shape 2: a box centred on the placement.
   Box(width: Float, length: Float)
   /// Shapes 1, 4, 5 and 8: from the inner to the outer radius, over `degrees` in all; a ring
-  /// is 360 degrees and a pie the arc of 360 less its missing slice (genesis_prime/game/spell_area).
+  /// is 360 degrees and a pie the arc of 360 less its missing slice (genesis_prime/shared/spell_area).
   Cone(inner: Float, outer: Float, degrees: Float)
   /// Shape 7: from the placement, `length` ahead of it.
   Rectangle(width: Float, length: Float)
 }
 
 /// Where a spell's hit is centred, which is where its picture is drawn
-/// (genesis_prime/game/telegraph_entries): a spell has one anchor, which the load reads from the
-/// hit rows' `targetTypeFlags` and flags (genesis_prime/game/spell_area `anchor_of`). A player's
+/// (genesis_prime/shared/telegraph_entries): a spell has one anchor, which the load reads from the
+/// hit rows' `targetTypeFlags` and flags (genesis_prime/shared/spell_area `anchor_of`). A player's
 /// spell holds `FollowsCaster`, `FixedAtCaster` or, with no hit row, `FollowsTarget`.
 pub type Anchor {
   /// Rows with neither 0x4000 nor 0x1000: the client draws them on the caster each frame
@@ -219,7 +219,7 @@ pub type Row {
   )
 }
 
-/// How a unit counts as inside the area (genesis_prime/game/spell_area `inside`).
+/// How a unit counts as inside the area (genesis_prime/shared/spell_area `inside`).
 pub type Inside {
   /// By the area row alone: the unit's distance between `min_range` and
   /// `max_range` and its angle off the facing. A spell with no telegraph row.

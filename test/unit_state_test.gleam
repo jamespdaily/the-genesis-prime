@@ -1,4 +1,4 @@
-//// What each held unit state refuses of a cast (`genesis_prime/game/unit_state`). Expected
+//// What each held unit state refuses of a cast (`genesis_prime/shared/unit_state`). Expected
 //// values come from these places:
 //// - `Spell.CodeEnumCastResult.306_308`: 306 refuses a hostile cast ("Target immune to
 ////   hostile spells", text 484558), 308 a beneficial one ("Target immune to beneficial
@@ -11,10 +11,10 @@
 ////   69781), 19 "Immune (Beneficial)" (row 219651, Spell4 83193), 1 Block, and 0, 2, 10 and
 ////   23 with no name that says what they do.
 
-import genesis_prime/game/unit_state.{
+import genesis_prime/message/cast_result
+import genesis_prime/shared/unit_state.{
   ImmuneToBeneficial, Invulnerable, NoReading,
 }
-import genesis_prime/message/cast_result
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}

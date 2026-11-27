@@ -35,29 +35,13 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/class_resource
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
 import genesis_prime/game/held_changes
 import genesis_prime/game/held_tier
-import genesis_prime/game/hit
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
 import genesis_prime/game/movement
 import genesis_prime/game/player_address
 import genesis_prime/game/proc as event_proc
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{
-  type Plans, type ProcRow, type Spell, AliveOrDead, Always, AnySpell, AtHolder,
-  BrokenByDamage, Died, EnteredStealth, InWindow, KeepsStealth, KeptOnDamage,
-  LeftCombat, LeftStealth, ProcRow, RemoveStealthRow, Spell,
-}
-import genesis_prime/game/spell_tier
-import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
-import genesis_prime/game/ticking
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
@@ -66,6 +50,22 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/hit
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{
+  type Plans, type ProcRow, type Spell, AliveOrDead, Always, AnySpell, AtHolder,
+  BrokenByDamage, Died, EnteredStealth, InWindow, KeepsStealth, KeptOnDamage,
+  LeftCombat, LeftStealth, ProcRow, RemoveStealthRow, Spell,
+}
+import genesis_prime/shared/spell_tier
+import genesis_prime/shared/spend
+import genesis_prime/shared/ticking
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type Now, type TimerId, ConnectionId, LogDebug}
 import genesis_prime/table/id.{
   type Spell4BaseId, type Spell4Id, Spell4BaseId, Spell4EffectsId, Spell4Id,

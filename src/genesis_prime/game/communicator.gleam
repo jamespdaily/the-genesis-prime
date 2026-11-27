@@ -31,9 +31,9 @@
 //// - **A quest nobody can turn in** (`completed_by_server`): no receiver, no flag 0x10000 and
 ////   no flag 0x80000. The client offers its player no turn-in, so the server completes it.
 
-import genesis_prime/game/faction_level
 import genesis_prime/game/quest
 import genesis_prime/gap
+import genesis_prime/shared/faction_level
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/communicator_messages.{type CommunicatorMessages}

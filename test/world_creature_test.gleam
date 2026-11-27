@@ -36,12 +36,6 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/frames
-import genesis_prime/game/damage
-import genesis_prime/game/forced_move
-import genesis_prime/game/hit
-import genesis_prime/game/hit_radius
-import genesis_prime/game/spell_plan
-import genesis_prime/game/spend
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed}
 import genesis_prime/game/unit_news.{PeerNews}
@@ -67,6 +61,14 @@ import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/vendor_items
 import genesis_prime/service
 import genesis_prime/service/shell
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/damage
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/hit
+import genesis_prime/shared/hit_radius
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/spend
+import genesis_prime/shared/unit_fields
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{
@@ -75,7 +77,6 @@ import genesis_prime/table/id.{
 import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_faction
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/map
@@ -83,7 +84,6 @@ import genesis_prime/world_map/registry.{type MapProcess}
 import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
-import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/float

@@ -1,4 +1,4 @@
-//// The plan of a Focus cost (`genesis_prime/game/spell_plan` `FocusCost`): every row of
+//// The plan of a Focus cost (`genesis_prime/shared/spell_plan` `FocusCost`): every row of
 //// the ability book whose Spell4 costs type 15 plans it as a `FocusCost` of its amount,
 //// in its column's place among the row's costs, or is one the plans leave out
 //// (`Later abilities, not planned`). Expected values come from the client's rows
@@ -7,8 +7,8 @@
 //// client's own reader of type 15.
 
 import client_tables
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{FocusCost}
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{FocusCost}
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell_level

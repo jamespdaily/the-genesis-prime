@@ -11,10 +11,10 @@
 ////   client reads no row of the type), which `a_delayed_row_blocks_only_from_its_start_test`
 ////   pins.
 //// - What state 6 means (it blocks hostile effects) is the reading table in
-////   `genesis_prime/game/unit_state`, a guess from spell names.
+////   `genesis_prime/shared/unit_state`, a guess from spell names.
 
 import genesis_prime/game/unit_news.{UnitStateEnded, UnitStateHeld}
-import genesis_prime/game/unit_state.{Row}
+import genesis_prime/shared/unit_state.{Row}
 import genesis_prime/world_map/creature_unit_state.{
   CancelTimer, StartTimer, ToViewers,
 }

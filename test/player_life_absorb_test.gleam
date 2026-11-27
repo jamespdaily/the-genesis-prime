@@ -20,14 +20,14 @@
 //// A Magic blow here has no mitigation: the defence is `hit.unprotected` with the shield's
 //// 0.625.
 
-import genesis_prime/game/hit.{type Defence, Defence}
 import genesis_prime/game/player_life.{
   type Effect, type Life, OwnAbsorption, OwnDeathState, OwnHealth, OwnShield,
   StartTimer, ToClient, ToViewers,
 }
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties.{Source}
+import genesis_prime/shared/hit.{type Defence, Defence}
+import genesis_prime/shared/unit_properties.{Source}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/list
 import gleam/option.{None}

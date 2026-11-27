@@ -30,8 +30,8 @@ import client_tables
 import coverage_support
 import genesis_prime/coverage/named_unreached.{Entry, Naming, NoRow}
 import genesis_prime/coverage/starting_ability.{ProcKindNotRead}
-import genesis_prime/game/server_proxy
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/server_proxy
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4

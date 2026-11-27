@@ -11,7 +11,7 @@
 ////   player's sight, and, when the set changes, shows and hides the units in the
 ////   player's sight with the unit ids they keep. A creature of a hidden spawn takes
 ////   no player into its ring.
-//// - Sight (`genesis_prime/world_map/sight`): 1024 units, 3D, inclusive; the ring of
+//// - Sight (`genesis_prime/shared/sight`): 1024 units, 3D, inclusive; the ring of
 ////   a hostile creature is the map's aggro range, 10 units.
 //// - A Dagun is hostile to the Dominion player the map's tests join as
 ////   (`map_ring_test`).

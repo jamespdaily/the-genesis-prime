@@ -1,6 +1,6 @@
 //// A creature's hit radius: the body size the client measures a unit's edge by,
 //// which an area counts when it decides who a spell strikes
-//// (genesis_prime/game/area `Placement`).
+//// (genesis_prime/shared/area `Placement`).
 ////
 //// - **A creature's** is its Creature2DisplayInfo row's hitRadius times the unit's
 ////   scale (`unit.hit_radius`, `0x14047a940`).

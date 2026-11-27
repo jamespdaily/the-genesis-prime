@@ -1,5 +1,5 @@
 //// The plans of the spells a worn item puts on its wearer
-//// (`genesis_prime/game/equip_spell`, `genesis_prime/game/spell_plan` `standing_plans`).
+//// (`genesis_prime/shared/equip_spell`, `genesis_prime/shared/spell_plan` `standing_plans`).
 //// Expected values come from these places.
 //// - `ItemSpecial.spell4IdOnEquip` of an Item2 row's `itemSpecialId00`: 91747 and 85762
 ////   name ItemSpecial 9402, whose equip spell is Spell4 82325 (the shield-depleted proc);
@@ -18,11 +18,11 @@
 import client_tables
 import fixture_tables
 import genesis_prime/coverage/standing_root
-import genesis_prime/game/amp_spec
-import genesis_prime/game/equip_spell
-import genesis_prime/game/item_property
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/amp_spec
+import genesis_prime/shared/equip_spell
+import genesis_prime/shared/item_property
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store
 import gleam/dict

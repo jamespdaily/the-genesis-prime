@@ -19,7 +19,7 @@
 //// An objective in either set is one a cast does, so `objective.script_of` leaves a marked
 //// scripted one of them open until the cast counts for it.
 
-import genesis_prime/game/effect_kind
+import genesis_prime/shared/effect_kind
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_effects

@@ -27,11 +27,8 @@ import game_connection_support
 import genesis_prime/game/activate.{type Target, Usable}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
-import genesis_prime/game/class_resource
-import genesis_prime/game/effect_kind
 import genesis_prime/game/item_use
 import genesis_prime/game/passed_in_value
-import genesis_prime/game/prerequisite
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/target_group
 import genesis_prime/game/unit_news.{CastStarted}
@@ -40,6 +37,9 @@ import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_use.{ItemUse} as use_message
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/prerequisite
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id, UnitRaceId}

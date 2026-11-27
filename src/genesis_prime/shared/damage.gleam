@@ -1,10 +1,10 @@
 //// The value of a damage effect for a player that casts it, by the client's own
 //// formula, the one its tooltip shows (`0x140565600`). The caster's connection
 //// works it out once for each effect of a go and sends it as a blow
-//// (genesis_prime/game/hit).
+//// (genesis_prime/shared/hit).
 ////
 //// ```
-//// Spell4Effects row ─▶ Formula (once, in genesis_prime/game/spell_area)
+//// Spell4Effects row ─▶ Formula (once, in genesis_prime/shared/spell_area)
 //// Formula + Attacker ─▶ value = M x (S + R)
 //// Formula + OnCaster ─▶ the same, F also reading the caster's vitals
 //// Formula + OnCaster ─▶ Partial (the caster's side) ─ finish with the target's vitals ─▶ value
@@ -41,7 +41,7 @@
 //// - **What is not built:** the caster's Weapon and Weapon DPS (types 6 and 9,
 ////   `Spell4Effects.parameterType.6_9`), the passed-in value in a strike's row
 ////   (18), and types 20, 24 and any above 26, which neither part reads; a formula
-////   that names one with a factor is refused at load (genesis_prime/game/spell_area,
+////   that names one with a factor is refused at load (genesis_prime/shared/spell_area,
 ////   `unread`).
 //// - **The multiplier** M is the caster's DamageDealtMultiplier for the damage type,
 ////   1.0 for a player (UnitProperty2 140 to 143: the multiplier's default).
@@ -58,11 +58,11 @@
 ////   player's) are each divided by its fourth value, added and multiplied, every step a
 ////   32-bit float (`0x140565600`, `0x1405659f5`).
 
-import genesis_prime/game/column_reading.{
+import genesis_prime/message/float32
+import genesis_prime/shared/column_reading.{
   type ColumnVerdict, Open, Question, Reads, Unexplained,
 }
-import genesis_prime/game/unit_properties
-import genesis_prime/message/float32
+import genesis_prime/shared/unit_properties
 import genesis_prime/table/spell4_effects
 import gleam/bool
 import gleam/float
@@ -139,7 +139,7 @@ pub type Formula {
 
 /// A damage effect's row as the formula reads it, or an error when its dataBits00,
 /// read as a 32-bit float, is not finite: the one build of the formula, for a
-/// player's spells (genesis_prime/game/spell_area) and a creature's attack
+/// player's spells (genesis_prime/shared/spell_area) and a creature's attack
 /// (genesis_prime/world_map/spawn). The base dataBits01 is read as an unsigned 32-bit
 /// integer for both (`0x140565782`), so a column with its top bit set is 2^32 less its
 /// size.

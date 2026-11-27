@@ -1,4 +1,4 @@
-//// Prerequisite type 11, a nested prerequisite (`genesis_prime/game/prerequisite`).
+//// Prerequisite type 11, a nested prerequisite (`genesis_prime/shared/prerequisite`).
 //// Rows are held in memory; the two rows the cast conditions reach are loaded from
 //// the client's tables where the client is present. Expected values come from these
 //// places:
@@ -22,7 +22,7 @@
 ////   39321 12939 29484 20117`): 39321 nests 12939, 29484 nests 20117.
 
 import client_tables
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/prerequisite.{
   type Subject, Fails, NotRead, Passes, PrerequisiteCycle, Subject,
 }
 import genesis_prime/table/id.{PrerequisiteId}

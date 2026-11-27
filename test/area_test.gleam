@@ -1,4 +1,4 @@
-//// Which units an area strikes (`genesis_prime/game/area`), on the numbers of the
+//// Which units an area strikes (`genesis_prime/shared/area`), on the numbers of the
 //// client's rows. Expected values come from these places.
 //// - Kick: area row 640 (5 units, 0 to 8 m, 180 degrees) and the cone of telegraph
 ////   168 (1 to 7 m over 100 degrees) (`Spell4.58591.area`).
@@ -27,13 +27,13 @@
 //// - Crush's 42297 has no telegraph row, so its area row alone decides (`Spell4.32812.area`).
 
 import client_shape_rows
-import genesis_prime/game/area.{
+import genesis_prime/game/start_place
+import genesis_prime/shared/area.{
   type Candidate, type Inside, type Placement, type Point, type Pose, type Row,
   AnotherUnit, Box, Candidate, Centre, Circle, Cone, FixedAtCaster,
   FixedAtTarget, FollowsCaster, FollowsTarget, InsideRow, InsideShapes,
   Placement, Point, Pose, Rectangle, Row, TheCaster,
 }
-import genesis_prime/game/start_place
 import gleam/float
 import gleam/int
 import gleam/list

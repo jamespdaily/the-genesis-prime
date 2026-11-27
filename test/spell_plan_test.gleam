@@ -1,4 +1,4 @@
-//// The tree of casts each class's level-1 ability starts (`genesis_prime/game/spell_plan`).
+//// The tree of casts each class's level-1 ability starts (`genesis_prime/shared/spell_plan`).
 //// Expected values come from the client's rows, which the fact file records and
 //// `table_rows` prints, each named at the assertion: `Spell4.32893` (Telekinetic
 //// Strike), `Spell4.32812` (Crush), `Spell4.38791` (Stagger), `Spell4.29874` and
@@ -15,8 +15,8 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/loadout
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/loadout
+import genesis_prime/shared/spell_plan.{
   type Spell, Always, AtFirstGo, AtLastGo, Channel, Channeled, ChargeRelease,
   GlobalCooldown, Multiphase, Normal, NotAtAGo, PrimaryWeapon, RapidTap,
 }

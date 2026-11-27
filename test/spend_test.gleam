@@ -1,5 +1,5 @@
 //// How a spell with an innate cost EMM id chooses its effects and which EMM ids the
-//// server reads (`genesis_prime/game/spend`). Expected values come from the fact
+//// server reads (`genesis_prime/shared/spend`). Expected values come from the fact
 //// file's records:
 //// - `Spell4Effects.emmComparison`: with n the points spent above the base cost,
 ////   comparison 0 applies the effect when n equals emmValue and comparison 1 when n
@@ -9,7 +9,7 @@
 ////   2 and 11; 4 and 7 both mark Psi Point spenders with the same effect layout
 ////   (emmValue 0 to 4), and the meaning of any other id is not in the client.
 
-import genesis_prime/game/spend.{AllHeld, Unread}
+import genesis_prime/shared/spend.{AllHeld, Unread}
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test

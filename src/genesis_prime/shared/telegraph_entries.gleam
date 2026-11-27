@@ -32,8 +32,6 @@
 ////   refuses such a row for a creature (`spell_area.TelegraphOnStruckUnits` for bit 4,
 ////   `spell_area.TelegraphNotOnCaster` for the ground and for two units at once).
 
-import genesis_prime/game/area
-import genesis_prime/game/spell_effect
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
 import genesis_prime/message/spell_initial_position.{SpellInitialPosition}
@@ -41,6 +39,8 @@ import genesis_prime/message/spell_position.{type SpellPosition, SpellPosition}
 import genesis_prime/message/spell_telegraph_position.{
   type SpellTelegraphPosition, SpellTelegraphPosition,
 }
+import genesis_prime/shared/area
+import genesis_prime/shared/spell_effect
 import genesis_prime/table/id.{type Spell4Id, TelegraphDamageId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_telegraph

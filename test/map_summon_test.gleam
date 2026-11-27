@@ -16,7 +16,7 @@
 //// - The Virtual Defense Dagun (Creature2 73465) is hostile to the Dominion, whose
 ////   faction is the tests' players' (`Creature2.73465`, `0x1403ad540`), and the
 ////   aggro range is 10 units (migration 0010). Sight is 1024 units
-////   (`genesis_prime/world_map/sight`).
+////   (`genesis_prime/shared/sight`).
 //// - The world's unit ids start at 1 and each player and creature takes the next.
 
 import connection_rule_support as support

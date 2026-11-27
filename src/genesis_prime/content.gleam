@@ -67,7 +67,7 @@
 ////   and a spawn standing in a square with no file is refused, so the start never serves a
 ////   spawn with no ground to ask. A world with no spawn holds an empty ground.
 //// - **The server's Proxies** are planned over the ability trees the tables' load derived
-////   (genesis_prime/game/server_proxy), so a row naming a base, a go or a spell those trees
+////   (genesis_prime/shared/server_proxy), so a row naming a base, a go or a spell those trees
 ////   lack is refused with the plan's reason.
 //// - **The zones' welcomes** are checked against the client's WorldZone and Tutorial rows
 ////   (genesis_prime/game/zone_welcome): a row naming a zone or a Tutorial row the tables
@@ -137,20 +137,21 @@ import genesis_prime/content/terrain as content_terrain
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
-import genesis_prime/game/class_resource
 import genesis_prime/game/click_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/objective_units
 import genesis_prime/game/place_objective
 import genesis_prime/game/projector
-import genesis_prime/game/rating
-import genesis_prime/game/server_proxy
-import genesis_prime/game/spell_plan
 import genesis_prime/game/tutorial
 import genesis_prime/game/vendor
 import genesis_prime/game/zone_welcome
 import genesis_prime/migration.{type Migration}
 import genesis_prime/readiness
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/rating
+import genesis_prime/shared/server_proxy
+import genesis_prime/shared/sight
+import genesis_prime/shared/spell_plan
 import genesis_prime/step
 import genesis_prime/step/runtime
 import genesis_prime/store/worker
@@ -160,7 +161,6 @@ import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/game_number
 import genesis_prime/world_map/objective_spawn
-import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id
 import gleam/dict

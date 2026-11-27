@@ -1,9 +1,9 @@
 //// The level-1 Novice the formula tests read: the one place its numbers are written.
 
-import genesis_prime/game/damage.{
+import genesis_prime/message/float32
+import genesis_prime/shared/damage.{
   type Attacker, type OnCaster, type Vitals, Attacker, OnCaster, Vitals,
 }
-import genesis_prime/message/float32
 import properties_support
 
 /// A level-1 player with no gear: every property at its UnitProperty2 default, as the

@@ -15,7 +15,7 @@
 //// Attacks(Strike(key, C, CreatureStriker(unit, spell4_id), offence))
 ////                             ─▶ dead: Answer(C, Refused(Dead))
 ////                                alive: rolls from P's seed (12 bytes)
-////                                the hit rule on P's health, shield and absorbs (genesis_prime/game/hit)
+////                                the hit rule on P's health, shield and absorbs (genesis_prime/shared/hit)
 ////                                the absorbs' sum changed:                    ─▶ 0x938(P, 22, sum) to P and its viewers
 ////                                the shield changed:                         ─▶ 0x938(P, 20, shield) to P and its viewers
 ////                                                                             ─▶ 0x92f(P, health) to P
@@ -34,7 +34,7 @@
 //// ```
 ////
 //// Health and shield regenerate on two timers this rule asks for as effects, as the
-//// class resource's (genesis_prime/game/class_resource) do. The client predicts
+//// class resource's (genesis_prime/shared/class_resource) do. The client predicts
 //// neither (`regen.client`), so each change is a message:
 ////
 //// ```
@@ -118,9 +118,9 @@
 ////   is 0 from UnitProperty2's defaults (`player.level1_defence`); its physical
 ////   mitigation is GameFormula 1234 from its Armor, its gear's unless a modifier
 ////   changes it (`0x140464240`, `player.level1_gear_properties`), and its shield takes
-////   up to ShieldMitigationMax of each blow (genesis_prime/game/hit). Armor,
+////   up to ShieldMitigationMax of each blow (genesis_prime/shared/hit). Armor,
 ////   ShieldMitigationMax, the maxima and the regeneration numbers are the player's
-////   properties (genesis_prime/game/unit_properties).
+////   properties (genesis_prime/shared/unit_properties).
 //// - **Interrupt Armor** is the maximum, property 44, unless worn below it: a raised
 ////   maximum is a raised armor, as the Soldier's Clear the Lines (Spell4 36861, row 78035:
 ////   a type 11 row of +2 on property 44, no type 52 row) says in its tooltip, text 298981,
@@ -230,17 +230,17 @@
 //// | a heal another player told is held when P's connection ends | dropped with the rest of what is held: no row is applied and no answer is told | `a_connection_that_ends_while_holding_map_messages_takes_none_test` |
 
 import genesis_prime/client_connection
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
-import genesis_prime/game/hit.{type Defence, type Rolls}
-import genesis_prime/game/item_property
-import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{type Tell, Answered}
 import genesis_prime/game/unit_news.{type News}
-import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/choose_resurrection
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/hit.{type Defence, type Rolls}
+import genesis_prime/shared/item_property
+import genesis_prime/shared/rating.{type Formulas}
+import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{type UnitProperty2Id, UnitProperty2Id}
 import genesis_prime/world_map/creature_life
@@ -273,7 +273,7 @@ pub opaque type Life {
     /// The armor the player's client was last told (stat 21).
     armor_shown: Int,
     /// The absorb pools the player holds, in start order: the order they soak in
-    /// (genesis_prime/game/hit `soak`). The player's client and viewers are told their
+    /// (genesis_prime/shared/hit `soak`). The player's client and viewers are told their
     /// sum (stat 22).
     absorbs: List(hit.Absorb),
   )
@@ -413,7 +413,7 @@ pub type Effect {
 }
 
 /// The timer of the health tick; the class resource's timers are 4 to 7
-/// (genesis_prime/game/class_resource) and the connection's other timers are
+/// (genesis_prime/shared/class_resource) and the connection's other timers are
 /// below them.
 const health_timer = TimerId(8)
 

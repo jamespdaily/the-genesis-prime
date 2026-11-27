@@ -3,7 +3,7 @@
 //// builds them.
 
 import genesis_prime/game/equip_requirement.{type Wearer, Wearer}
-import genesis_prime/game/prerequisite.{Checker, Player}
+import genesis_prime/shared/prerequisite.{Checker, Player}
 
 /// The Engineer of the tests: race Human (1), class Engineer (2), faction 166,
 /// level 1, gender 0 (male), in world 870, with the item proficiencies 66 (bits

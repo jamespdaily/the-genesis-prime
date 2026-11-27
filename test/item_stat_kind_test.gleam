@@ -1,5 +1,5 @@
 //// The decode of an ItemStat entry's or an ItemRandomStat row's kind number and data into
-//// one kind (genesis_prime/game/item_stat_kind). Expected values and their sources:
+//// one kind (genesis_prime/shared/item_stat_kind). Expected values and their sources:
 //// - What each kind is: the client's builder `0x14040ca70` (kind 0 adds nothing, kind 4 is
 ////   a crafting entry, any other kind than 1 and 2 fails with 0x70) and `0x14040e6d0` (kind
 ////   1's data is a UnitProperty2 id, kind 2's an ItemRandomStatGroup id); `0x14040d5d0`
@@ -10,7 +10,7 @@
 ////   and every ItemRandomStat row (52) is kind 1 (`ItemRandomStat.itemRandomStatGroupId`).
 
 import client_tables
-import genesis_prime/game/item_stat_kind.{
+import genesis_prime/shared/item_stat_kind.{
   CraftingSocket, NoStat, Property, RandomGroup, Unread,
 }
 import genesis_prime/table/id.{ItemRandomStatGroupId, UnitProperty2Id}

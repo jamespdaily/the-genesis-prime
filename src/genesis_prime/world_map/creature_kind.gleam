@@ -66,8 +66,8 @@
 ////   other content tables' are (genesis_prime/content).
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowId}
-import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Spell4Id, Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store

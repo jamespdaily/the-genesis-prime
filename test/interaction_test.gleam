@@ -35,7 +35,6 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/interaction
-import genesis_prime/game/random_stat_word
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
 import genesis_prime/game/unit_news.{
@@ -60,6 +59,7 @@ import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
 import genesis_prime/message/vendor_items.{VendorItems}
 import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
+import genesis_prime/shared/random_stat_word
 import genesis_prime/step.{type ConnectionEvent, type Event, LogWarning}
 import genesis_prime/store
 import genesis_prime/table/id

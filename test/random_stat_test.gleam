@@ -15,10 +15,10 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/item_property
-import genesis_prime/game/item_stat_kind
 import genesis_prime/game/random_stat
-import genesis_prime/game/random_stat_word
+import genesis_prime/shared/item_property
+import genesis_prime/shared/item_stat_kind
+import genesis_prime/shared/random_stat_word
 import genesis_prime/table/item2
 import gleam/int
 import gleam/list

@@ -1,5 +1,5 @@
 //// A press checked against and paid from the caster's class resource
-//// (`genesis_prime/game/cast` with `genesis_prime/game/class_resource`). Expected
+//// (`genesis_prime/game/cast` with `genesis_prime/shared/class_resource`). Expected
 //// values come from these places, each named at its assertion:
 //// - The client's checks: CheckInnateCost `0x1403b3320` (types 5 to 11 read slots 0
 ////   to 6 as whole numbers, refused 50 + the slot), CheckClassResourceCost
@@ -20,8 +20,8 @@ import cast_support as support
 import class_resource_support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/class_resource.{type Resources, Payment, Resource}
-import genesis_prime/game/spell_plan.{type Spell, Requirement, Spell}
+import genesis_prime/shared/class_resource.{type Resources, Payment, Resource}
+import genesis_prime/shared/spell_plan.{type Spell, Requirement, Spell}
 import gleam/int
 import gleam/list
 import gleam/option.{None}

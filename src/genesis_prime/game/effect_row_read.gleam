@@ -28,10 +28,10 @@
 ////   right-click of a unit), holds no suspend prerequisite (a Prerequisite the server does
 ////   not read gates when the row works).
 
-import genesis_prime/game/effect_kind
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan
-import genesis_prime/game/unit_state
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_state
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4

@@ -47,18 +47,19 @@
 import attacker_support
 import cast_support as support
 import fixture_tables
-import genesis_prime/game/area
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/class_resource
-import genesis_prime/game/cooldown
-import genesis_prime/game/lasting
 import genesis_prime/game/shown
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike
-import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/message/spell_go
+import genesis_prime/shared/area
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/cooldown
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/lasting
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{type Spell}
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/class
 import genesis_prime/table/id.{
@@ -73,7 +74,6 @@ import genesis_prime/table/spell4_stack_group
 import genesis_prime/tooltip_token
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_life
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/bool
 import gleam/dict

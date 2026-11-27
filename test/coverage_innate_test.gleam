@@ -21,7 +21,7 @@ import client_tables
 import coverage_support
 import genesis_prime/coverage/level_one_gate
 import genesis_prime/coverage/starting_ability.{InnateSlotClosed}
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/class
 import genesis_prime/table/id
 import genesis_prime/table/prerequisite as prerequisite_table

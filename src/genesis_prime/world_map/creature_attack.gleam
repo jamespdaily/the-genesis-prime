@@ -19,13 +19,13 @@
 ////
 //// - **Type 179** compares the unit's difficulty with the condition's object id,
 ////   unsigned: 1 equal, 2 not equal, 3 above, 4 at least, 5 below, 6 at most
-////   (`0x14049eeb0`, decoded and checked by genesis_prime/game/prerequisite). A
+////   (`0x14049eeb0`, decoded and checked by genesis_prime/shared/prerequisite). A
 ////   creature's difficulty is its Creature2 row's (`0x14045ba40`).
 //// - **One condition is read.** Prerequisite rows hold three; a row that keeps
 ////   a second condition (the client keeps those before the first of type 0,
 ////   `0x1404a5190`) is not evaluated, and the load refuses it as an unevaluated type.
 //// - **No spend.** A spell whose Spell4 row holds an innate cost EMM id spends and
-////   chooses its effects by the points spent (genesis_prime/game/spend), which a
+////   chooses its effects by the points spent (genesis_prime/shared/spend), which a
 ////   creature's attack has none of, so the load refuses it
 ////   (`Spell4.innateCostEMMId0`).
 //// - **The formula** is read for a creature's difficulty (`loadable`): an
@@ -35,12 +35,12 @@
 //// - **The client applies no effect itself**: the server names the effect in
 ////   0x7f4, so the server follows the table's prerequisite (`Spell4Effects.184741`).
 
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
-import genesis_prime/game/prerequisite as game_prerequisite
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/prerequisite as game_prerequisite
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
@@ -92,10 +92,10 @@ pub type Unevaluated {
     type_id: Int,
   )
   /// A damage effect's formula names a parameter the creature formula does not read
-  /// (genesis_prime/game/damage `creature_unread`): the type of the first it does not.
+  /// (genesis_prime/shared/damage `creature_unread`): the type of the first it does not.
   FormulaNotRead(spell4_effects_id: Int, parameter_kind: Int)
   /// A damage effect's multiplier, dataBits00 read as a 32-bit float, is not finite
-  /// (genesis_prime/game/damage `formula_of`).
+  /// (genesis_prime/shared/damage `formula_of`).
   MultiplierNotFinite(spell4_effects_id: Int, bits: Int)
   /// The special's Spell4 has no row in the client's table.
   NoSpellRow(spell4_id: Int)
@@ -114,7 +114,7 @@ pub type Unevaluated {
   /// The special's Spell4 names a target conditions row (`spell4CCConditionsIdTarget`), a
   /// state its target must or must not hold, which no creature special reads.
   TargetConditionNotRead(spell4_id: Int, conditions_id: Int)
-  /// The plan cannot read the special (genesis_prime/game/spell_plan `spell_alone`).
+  /// The plan cannot read the special (genesis_prime/shared/spell_plan `spell_alone`).
   NotPlanned(spell4_id: Int, error: spell_plan.PlanError)
   /// The special has no go time: a spell held until its release.
   NoGo(spell4_id: Int)

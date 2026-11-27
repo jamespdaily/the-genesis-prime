@@ -1,5 +1,5 @@
 //// The class_resource table as the server reads it at start: one query for every
-//// row, the rows handed to the pure check (genesis_prime/game/class_resource
+//// row, the rows handed to the pure check (genesis_prime/shared/class_resource
 //// `select`), and the classes' resources put into one persistent term under the
 //// load's key. It follows the pattern of the other content tables
 //// (genesis_prime/content).
@@ -13,7 +13,7 @@
 ////   before the tree starts; nothing queries the table during play.
 
 import genesis_prime/content/sql
-import genesis_prime/game/class_resource.{type Classes, type Row, Row}
+import genesis_prime/shared/class_resource.{type Classes, type Row, Row}
 import genesis_prime/table/loader/store.{type Key}
 import gleam/list
 import gleam/result

@@ -12,13 +12,13 @@
 ////   item with the proxy flag (`Item2.flags` 0x4000) are never worn, so the spells their
 ////   specials name are no roots (`item_property.is_slotted`, `CheckItemEquipSlot 0x1403b11b0`).
 //// - **A root** is the equip spell of any Item2 row that takes a slot; the plans hold one
-////   for each (`genesis_prime/game/spell_plan` `standing_plans`).
+////   for each (`genesis_prime/shared/spell_plan` `standing_plans`).
 //// - **A row the tables lack is an error**, never "not worn": a special row behind a non-zero
 ////   `itemSpecialId00`, and the Item2Type, ItemCategory or ItemFamily row of an item whose
 ////   special names an equip spell. `roots` returns it and the plans' load fails with it; the
 ////   inventory treats the same error as a broken item.
 
-import genesis_prime/game/item_property
+import genesis_prime/shared/item_property
 import genesis_prime/table/id.{Item2Id, ItemSpecialId}
 import genesis_prime/table/item2
 import genesis_prime/table/item_special

@@ -1,5 +1,5 @@
 //// The Stealth and RemoveStealth effects of the plan and a spell's stealth change
-//// (`genesis_prime/game/spell_plan` `StealthRow`, `RemoveStealthRow`, `StealthChange`).
+//// (`genesis_prime/shared/spell_plan` `StealthRow`, `RemoveStealthRow`, `StealthChange`).
 //// What the plan refuses is tested on rows in memory, since each planted load puts
 //// 4 MiB of terms into the run; a few whole-plan tests read the planted toggle tree
 //// and the client's own. Expected values come from these places:
@@ -20,13 +20,13 @@
 ////   target apply prerequisite is the row's gate, checked on the caster.
 
 import client_tables
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan.{
   Always, BrokenByDamage, EndsStealthAfterLastGo, EndsStealthAtEachGo,
   GatedOnCaster, KeepsStealth, KeptOnDamage, RemoveStealthRow, StealthRow,
 }
-import genesis_prime/game/spend
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/spell4_conditions.{Spell4Conditions}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}

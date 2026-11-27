@@ -410,7 +410,7 @@ pub type Address {
   /// holds ends the watch.
   CharacterNamed(folded_name: String)
   /// The connections whose players are in this run of this map under this top
-  /// zone (genesis_prime/game/top_zone): a group of the connections' registry
+  /// zone (genesis_prime/shared/top_zone): a group of the connections' registry
   /// that each connection joins and leaves by its own effects. A tell to it
   /// goes to every member, and needs no watch.
   ZoneChannel(map: MapId, incarnation: Int, top_zone_id: Int)

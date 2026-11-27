@@ -30,10 +30,10 @@ import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/unit_fields
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, RaceId, UnitProperty2Id}
 import genesis_prime/world_map/player_unit
-import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None, Some}
 import message_support

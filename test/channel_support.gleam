@@ -9,9 +9,9 @@
 
 import cast_support as support
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
-import genesis_prime/game/class_resource.{type Payment}
-import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/message/spell_failed
+import genesis_prime/shared/class_resource.{type Payment}
+import genesis_prime/shared/spell_plan.{type Plans, type Spell}
 import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/dict

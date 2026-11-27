@@ -17,8 +17,8 @@ import character_tables
 import genesis_prime/game/communicator.{
   NoDeliveringRow, ReputationCondition, Unread,
 }
-import genesis_prime/game/prerequisite
 import genesis_prime/game/vendor_trade.{Log}
+import genesis_prime/shared/prerequisite
 import genesis_prime/table/id.{Quest2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2

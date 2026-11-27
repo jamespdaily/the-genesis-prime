@@ -11,11 +11,11 @@ import class_resource_support
 import client_tables
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/class_resource
-import genesis_prime/game/loadout
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_result
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/loadout
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import genesis_prime/table/spell4

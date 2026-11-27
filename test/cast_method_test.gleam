@@ -18,7 +18,6 @@ import class_resource_support
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/spell_plan.{AtFirstGo, Spell}
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news.{CastFinished}
@@ -34,6 +33,7 @@ import genesis_prime/message/spell_targets_removed
 import genesis_prime/message/spell_threshold_closed
 import genesis_prime/message/spell_threshold_index
 import genesis_prime/message/spell_threshold_opened
+import genesis_prime/shared/spell_plan.{AtFirstGo, Spell}
 import genesis_prime/step.{type TimerId, LogDebug}
 import gleam/int
 import gleam/list

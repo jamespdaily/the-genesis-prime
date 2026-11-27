@@ -9,21 +9,21 @@
 //// - The client's rules: a unit is created once and removed once and is told no frame before
 ////   its 0x262 or after its 0x355 (`opcode.0x262`, `opcode.0x355`); a cast the viewer was
 ////   told by its caster is ended by the caster's frames (`opcode.0x7fe`, `cast.target_node_end`).
-//// - Sight is symmetric and 1024 units (`genesis_prime/world_map/sight`).
+//// - Sight is symmetric and 1024 units (`genesis_prime/shared/sight`).
 
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection
-import genesis_prime/game/effect_kind
 import genesis_prime/game/held_changes
 import genesis_prime/game/move_stamp
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts.{EndsAt, HeldEffect}
-import genesis_prime/game/unit_properties.{Source}
 import genesis_prime/message/movement_mode
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_create_player
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/unit_properties.{Source}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store as table_store

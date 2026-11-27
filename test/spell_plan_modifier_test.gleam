@@ -1,5 +1,5 @@
-//// The property modifiers of the plan (`genesis_prime/game/spell_plan`
-//// `PropertyModifier`, `genesis_prime/game/effect_kind`). Expected values come from
+//// The property modifiers of the plan (`genesis_prime/shared/spell_plan`
+//// `PropertyModifier`, `genesis_prime/shared/effect_kind`). Expected values come from
 //// these places:
 //// - `Spell4Effects.effectType.11.change`: a type 11 row names its property in
 ////   dataBits00, its mode in dataBits01, its multiplier in dataBits02, its flat amount
@@ -23,15 +23,15 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/column_reading
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
-import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{Change}
+import genesis_prime/shared/column_reading
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
+import genesis_prime/shared/spend
+import genesis_prime/shared/unit_properties.{Change}
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }

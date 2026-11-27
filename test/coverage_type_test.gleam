@@ -33,9 +33,9 @@ import genesis_prime/coverage/measurement.{
   type Measurement, HandledWithGap, Measured,
 }
 import genesis_prime/coverage/starting_ability.{MissingRow}
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{Spell}
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{Spell}
 import genesis_prime/table/class
 import genesis_prime/table/creature2
 import genesis_prime/table/eldan_augmentation

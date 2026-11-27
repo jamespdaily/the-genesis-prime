@@ -30,13 +30,9 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/held_state
-import genesis_prime/game/prerequisite
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/shown
-import genesis_prime/game/spell_plan.{type Spell, Always}
-import genesis_prime/game/spend
 import genesis_prime/game/start_place
-import genesis_prime/game/unit_state
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/combat_log
@@ -45,12 +41,16 @@ import genesis_prime/message/combat_log_immunity.{CombatLogImmunity}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState, Stun}
 import genesis_prime/message/spell_go
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Spell, Always}
+import genesis_prime/shared/spend
+import genesis_prime/shared/unit_state
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list

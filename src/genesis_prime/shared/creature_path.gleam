@@ -19,7 +19,7 @@
 ////   speed as sent and continuous distance, where the client starts at its first update at
 ////   or after the command and rounds each point's time to a millisecond. A leg of length 0 is
 ////   skipped, and a point passed exactly belongs to the next leg.
-//// - **A timed path** (`Timed`) is the points of a throw (genesis_prime/game/forced_move) with the
+//// - **A timed path** (`Timed`) is the points of a throw (genesis_prime/shared/forced_move) with the
 ////   monotonic time of each, kind 3 type 0 (`movement_command.kind_3`): the client draws straight
 ////   lines between the points, holds the first before the first time and the last after the last
 ////   (`0x140783e10`). A path of one point is a creature set at once at that point at that time,
@@ -29,12 +29,12 @@
 ////   nothing): no point of it lies farther from the
 ////   spawn than the circle's radius, so a creature never runs past the circle it
 ////   leashes at. Distances are in three dimensions, as sight's are
-////   (genesis_prime/world_map/sight).
+////   (genesis_prime/shared/sight).
 //// - **Time** is the monotonic time of the node in milliseconds, the clock both the
 ////   creature and its viewers' connections read their inputs at.
 
 import genesis_prime/game/start_place.{type Facing, type Place}
-import genesis_prime/world_map/sight
+import genesis_prime/shared/sight
 import gleam/bool
 import gleam/float
 import gleam/int

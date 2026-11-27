@@ -14,8 +14,8 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/held_tier
-import genesis_prime/game/spell_plan
-import genesis_prime/game/spell_tier
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/spell_tier
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import gleam/dict
 import gleam/int

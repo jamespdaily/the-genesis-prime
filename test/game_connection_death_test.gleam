@@ -40,6 +40,7 @@ import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
+import genesis_prime/shared/unit_fields
 import genesis_prime/step.{
   type ConnectionStep, ConnectionId, LogError, LogWarning, Map, NoAnswerInTime,
   OwnEffect, Unwatch, Watch, WatchEnded, WatchId,
@@ -48,7 +49,6 @@ import genesis_prime/store.{AccountId, ListCharacters, Select}
 import genesis_prime/world_map/map.{Join, Left, SeenBy}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/relay
-import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}

@@ -1,5 +1,5 @@
-//// The forced moves of the plan (`genesis_prime/game/spell_plan` `ForcedMove`,
-//// `genesis_prime/game/effect_kind`). Expected values come from these places:
+//// The forced moves of the plan (`genesis_prime/shared/spell_plan` `ForcedMove`,
+//// `genesis_prime/shared/effect_kind`). Expected values come from these places:
 //// - `Spell4Effects.effectType.3`: the kit's one row is 67776 (Gate's blink: delay
 ////   200 ms, phaseFlags 1, aimed at the caster), from
 ////   `table_rows -- Spell4Effects 67776`, and its spell 34355 also holds 67777.
@@ -12,14 +12,14 @@
 ////   area.
 
 import client_tables
-import genesis_prime/game/effect_kind
-import genesis_prime/game/forced_move
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
-import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{Change}
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
+import genesis_prime/shared/spend
+import genesis_prime/shared/unit_properties.{Change}
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, UnitProperty2Id,
 }

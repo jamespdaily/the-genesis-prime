@@ -37,11 +37,11 @@
 //// - **The load fails** when two Spell4 rows of a base hold one tierIndex from 1 to 9, a tier from
 ////   2 to 9 that has a row has no Spell4TierRequirements row, two requirement rows name one tier,
 ////   a SpellLevel row or a named alternate names a Spell4 row the table lacks, or a class's innate
-////   cannot be held (genesis_prime/game/innate). The repeated tier is the server's own refusal:
+////   cannot be held (genesis_prime/shared/innate). The repeated tier is the server's own refusal:
 ////   the client's `GetSpellIdForTier` returns one spell and does not check, and the client's rows
 ////   hold no repeat. A base the book cannot hold is not read, so its rows may repeat a tier.
 
-import genesis_prime/game/innate
+import genesis_prime/shared/innate
 import genesis_prime/table/id.{
   type Spell4BaseId, type Spell4Id, Spell4BaseId, Spell4Id,
 }

@@ -1,14 +1,14 @@
 //// How the heals of a spell's ticking effects are split and described.
 ////
 //// - **A go's heals** (`Spell4Effects.effectType.10` and `.118`): each Heal or HealShields
-////   effect of the phase that reaches the caster (genesis_prime/game/spell_plan `Heal`)
+////   effect of the phase that reaches the caster (genesis_prime/shared/spell_plan `Heal`)
 ////   whose gate against the caster passes is listed in the caster's target info with a
 ////   damage description of its amount (type Heal or HealShields, result Hit, the amount as
 ////   the raw, the scaled raw and the health change, and as the overheal what the amount
 ////   leaves over the vital's room), which the client shows as a floater and logs itself
 ////   as a heal with that overheal, and never applies (`spell.heal_result_log`). The amount
 ////   is worked out at the go from the caster's own shield, health and stats as they stood
-////   before the go's own effects (genesis_prime/game/damage `amount_on_caster`: Energize
+////   before the go's own effects (genesis_prime/shared/damage `amount_on_caster`: Energize
 ////   is 0.3 of the missing shield), and lands at the go plus the row's delay as
 ////   `CasterChangeStarts` with a `Heal` change carrying the vital, for the connection to
 ////   raise the player's health or shield by (genesis_prime/game/player_life `healed`): in
@@ -40,19 +40,19 @@ import genesis_prime/game/cast/state.{
   Deflected, Described, Heal, Healed, Healing, Hit, HitCaster, HitCreature,
   HitOtherPlayer, HitPlayer, Immune, Log, ModifierStart, Plain, TickingOn,
 } as cast_state
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription, SpellDamageDescription,
 }
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4EffectsId}
 import gleam/dict

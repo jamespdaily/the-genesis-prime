@@ -5,12 +5,12 @@
 //// design or the client, never this module.
 
 import fixture_tables
-import genesis_prime/game/class_resource.{
-  type Classes, type Resource, type Resources, Row,
-}
-import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/class_resource.{
+  type Classes, type Resource, type Resources, Row,
+}
+import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/table/id.{ClassId}
 import gleam/list
 import gleam/result

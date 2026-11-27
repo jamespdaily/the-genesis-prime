@@ -28,7 +28,7 @@ import fixture_tables
 import genesis_prime/game/equip_requirement.{
   type Wearer, PrerequisiteNotRead, Refused, Wearable, Wearer,
 }
-import genesis_prime/game/item_property
+import genesis_prime/shared/item_property
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/quest2_reward.{type Quest2Reward, Quest2Reward}

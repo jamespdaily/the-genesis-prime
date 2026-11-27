@@ -8,7 +8,7 @@
 ////                                                                ─▶ any other index: a refusal that ends the connection
 //// ```
 ////
-//// - **The held count** is 1 with an innate and 0 without (genesis_prime/game/innate:
+//// - **The held count** is 1 with an innate and 0 without (genesis_prime/shared/innate:
 ////   slot 0 only). The client's SetInnateIndex refuses an index at or above the
 ////   unlocked count, or of a slot with no active spell, and sends nothing for it
 ////   (`0x1405e7490`), so a 0x16F of such an index is one the client never sends.
@@ -23,8 +23,8 @@
 //// - **No state is kept**: the index cannot change while one slot is held.
 
 import genesis_prime/client_connection.{type Undecoded}
-import genesis_prime/game/innate.{type Innate}
 import genesis_prime/message/innate_index_chosen
+import genesis_prime/shared/innate.{type Innate}
 import genesis_prime/step.{type LogLevel, LogDebug}
 import gleam/int
 import gleam/option.{type Option, None, Some}

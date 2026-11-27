@@ -17,7 +17,7 @@
 ////   number of milliseconds above 0, since the spawn starts a timer of that many.
 //// - The shared pattern of the content tables (`genesis_prime/content`): every
 ////   refusal is collected and named by its table, its row and its rule.
-//// - Sight is 1024 units (`genesis_prime/world_map/sight.range`, unit.range).
+//// - Sight is 1024 units (`genesis_prime/shared/sight.range`, unit.range).
 
 import content_support
 import database_support

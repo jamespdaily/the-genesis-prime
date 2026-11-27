@@ -1,4 +1,4 @@
-//// The prerequisite types that read the player (`genesis_prime/game/prerequisite`):
+//// The prerequisite types that read the player (`genesis_prime/shared/prerequisite`):
 //// 1 (the first unit's level), 2 (its race), 3 (its class), 26 (the zone it is
 //// in), 39 (whether it is a player) and 52 (its path), and what a subject with no
 //// player leaves undecided. Expected values come from these places.
@@ -20,7 +20,7 @@
 ////   last test decides.
 
 import client_tables
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/prerequisite.{
   type Subject, Fails, NotRead, Passes, Player, Subject,
 }
 import genesis_prime/table/prerequisite as prerequisite_table

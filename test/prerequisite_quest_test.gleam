@@ -1,4 +1,4 @@
-//// The quest conditions of the prerequisite rule (`genesis_prime/game/prerequisite`):
+//// The quest conditions of the prerequisite rule (`genesis_prime/shared/prerequisite`):
 //// types 6, 68, 43, 94 and 22 (with 23, 33, 34, 35 and 36, which are type 22 on
 //// objective 1 to 5). Expected values come from these places, each named at its
 //// assertion:
@@ -31,18 +31,18 @@ import character_tables
 import fixture_tables
 import genesis_prime/game/cast/state.{type Caster, type Effect} as cast_state
 import genesis_prime/game/connection/casting
-import genesis_prime/game/prerequisite.{
-  type Prerequisite, type Subject, type Verdict, Fails, NotRead, Passes, Subject,
-}
 import genesis_prime/game/quest_log
-import genesis_prime/game/spell_plan.{
-  type Plans, CastGate, GatedOnCasterAndTarget, Proxy, Spell,
-}
-import genesis_prime/game/spend
 import genesis_prime/game/world_entry
 import genesis_prime/message/spell_started
+import genesis_prime/shared/prerequisite.{
+  type Prerequisite, type Subject, type Verdict, Fails, NotRead, Passes, Subject,
+}
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/quest_view.{type QuestView}
+import genesis_prime/shared/spell_plan.{
+  type Plans, CastGate, GatedOnCasterAndTarget, Proxy, Spell,
+}
+import genesis_prime/shared/spend
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
 import gleam/dict

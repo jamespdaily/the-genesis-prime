@@ -1,5 +1,5 @@
 //// The server_proxy table as the server reads it at start: one query for every
-//// row, the rows handed to the pure check (genesis_prime/game/server_proxy `select`),
+//// row, the rows handed to the pure check (genesis_prime/shared/server_proxy `select`),
 //// and the server's Proxies put into one persistent term under the load's key. It
 //// follows the pattern of the other content tables (genesis_prime/content).
 ////
@@ -12,7 +12,7 @@
 ////   before the tree starts; nothing queries the table during play.
 
 import genesis_prime/content/sql
-import genesis_prime/game/server_proxy.{type Row, type ServerProxies, Row}
+import genesis_prime/shared/server_proxy.{type Row, type ServerProxies, Row}
 import genesis_prime/table/loader/store.{type Key}
 import gleam/list
 import gleam/result

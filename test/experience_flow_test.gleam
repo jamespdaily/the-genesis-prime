@@ -28,9 +28,9 @@ import genesis_prime/message/float32
 import genesis_prime/message/player_character_state
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/unit_fields
 import genesis_prime/store
 import genesis_prime/table/id.{Item2Id}
-import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{Some}
 import map_support

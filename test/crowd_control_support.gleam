@@ -2,12 +2,12 @@
 //// (`table_rows -- Spell4Effects 140382 83827 100836`): every row removes 1 Interrupt
 //// Armor (dataBits03), and each takes the instance id a caster gave it.
 
-import genesis_prime/game/crowd_control.{Row}
-import genesis_prime/game/lasts
 import genesis_prime/game/strike_tell.{ControlLanded, ControlTell}
 import genesis_prime/message/crowd_control_state.{
   type CrowdControlState, Knockdown, Stun,
 }
+import genesis_prime/shared/crowd_control.{Row}
+import genesis_prime/shared/lasts
 import gleam/option.{None}
 
 /// Kick's Knockdown, Spell4Effects 140382: delayTime 166, durationTime 3000, state 8.

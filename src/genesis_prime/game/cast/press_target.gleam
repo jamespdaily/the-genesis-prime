@@ -37,20 +37,20 @@
 ////   as clear).
 
 import genesis_prime/game/activate
-import genesis_prime/game/area
 import genesis_prime/game/cast/state.{
   type Caster, type Verdict, NotBuilt, Refuse,
 }
-import genesis_prime/game/crowd_control
-import genesis_prime/game/faction_level.{Friendly, Hostile, Neutral}
 import genesis_prime/game/held_state
 import genesis_prime/game/player_state.{type PlayerState}
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/target_mechanic
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/shared/area
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/faction_level.{Friendly, Hostile, Neutral}
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{type Spell}
+import genesis_prime/shared/target_mechanic
 import gleam/bool
 import gleam/option.{type Option, None, Some}
 

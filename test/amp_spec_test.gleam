@@ -1,4 +1,4 @@
-//// The client's check of the AMPs a player picks (`genesis_prime/game/amp_spec`): the power a
+//// The client's check of the AMPs a player picks (`genesis_prime/shared/amp_spec`): the power a
 //// level gives, which list the check accepts and with which result, and what the tables' load
 //// refuses. Expected values come from these places.
 //// - `GameFormula` 942 (`table_rows GameFormula 942`): dataint0 10, dataint01 7, datafloat0 1.0,
@@ -15,7 +15,7 @@
 //// - `0x1403d02a0`, `0x1403d5640`: the order of the client's checks.
 
 import fixture_tables
-import genesis_prime/game/amp_spec
+import genesis_prime/shared/amp_spec
 import genesis_prime/table/id.{ClassId, EldanAugmentationId}
 import genesis_prime/table/loader/store as table_store
 import gleam/list

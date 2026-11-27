@@ -78,13 +78,13 @@
 ////   `Spell4Effects.effectType.79`, enum `0x140c34140`).
 //// - **SummonPet** (98) creates the creature `dataBits00` names (a Creature2 row) for the
 ////   caster; no rule of the server builds a summoned unit, so it is not read, and
-////   `genesis_prime/game/spell_plan` refuses a spell that holds one beside a Proc the caster
+////   `genesis_prime/shared/spell_plan` refuses a spell that holds one beside a Proc the caster
 ////   holds (`Spell4Effects.effectType.98`).
 //// - **Despawn** (97) removes the creatures it aims at past the caster after its delay; the
 ////   client reads no row of this type and sees the removal only as 0x355
 ////   (`Spell4Effects.effectType.97`). A row is read when its targetFlags name a unit past the
 ////   caster (`is_row_read`); the plan leaves out a row aimed at the caster alone, and one
-////   whose dataBits00 or dataBits01 is not 0, by name (genesis_prime/game/spell_plan
+////   whose dataBits00 or dataBits01 is not 0, by name (genesis_prime/shared/spell_plan
 ////   `despawn_reading`).
 //// - **UnitState** (15) holds a unit state on the unit it aims at for its time; the client
 ////   reads no row of this type (its effect switch has no case 15) and shows a held state
@@ -92,7 +92,7 @@
 ////   when its targetFlags name a unit past the caster (`is_row_read`); the plan leaves out a
 ////   row aimed at the caster alone, one that lasts until removed, one behind a persistence
 ////   prerequisite and one whose dataBits01 to dataBits09 is not 0, by name
-////   (genesis_prime/game/spell_plan `unit_state_reading`). The coverage measure counts a
+////   (genesis_prime/shared/spell_plan `unit_state_reading`). The coverage measure counts a
 ////   row read only when a creature's held state of it refuses something: a row of a state
 ////   with no reading, with no duration or of a spell with no Spell4 row is held where it can
 ////   be and counted not read (dev/genesis_prime/coverage/effect_row).
@@ -100,14 +100,14 @@
 ////   the go its phases name; the client has no case for it (its effect switch skips 35), so
 ////   the meaning is the server's reading and the hold's start a guess. A row is read when its
 ////   targetFlags are the caster alone (1); the plan leaves out a row aimed at another unit,
-////   and one with no duration, by name (genesis_prime/game/spell_plan `delay_reading`). A
+////   and one with no duration, by name (genesis_prime/shared/spell_plan `delay_reading`). A
 ////   player's cast reads none (`Spell4Effects.effectType.35`).
 //// - **QuestAdvance** (42) advances the quest objective `dataBits00` (a Quest2 id) names at the index
 ////   `dataBits01` by `dataBits02` for the player the cast reaches; the client has no case for it
 ////   (its effect switch skips 42), so the server counts the progress and tells the client with
 ////   0x361 alone. A row is read when its targetFlags include the caster or are the primary target
 ////   alone (`is_row_read`; the aim is a guess, `Spell4Effects.targetFlags` has no reader)
-////   (`Spell4Effects.effectType.42`, genesis_prime/game/spell_plan `quest_advance_reading`).
+////   (`Spell4Effects.effectType.42`, genesis_prime/shared/spell_plan `quest_advance_reading`).
 //// - **Unread** is any other type: the client's data holds it and no rule of the
 ////   server reads it.
 ////
@@ -168,7 +168,7 @@ pub type Kind {
   /// A Proc effect (14): casts a spell at its holder when the holder's trigger happens
   /// (`Spell4Effects.effectType.14`). A row is read when its targetFlags include the
   /// caster (`is_row_read`); the plan reads only the kinds the holder's own events make
-  /// (genesis_prime/game/spell_plan `proc_read`).
+  /// (genesis_prime/shared/spell_plan `proc_read`).
   Proc
   /// A ModifyInterruptArmor effect (52): adds Interrupt Armor to the unit it aims at for
   /// its time (`Spell4Effects.effectType.52`). A row is read when its targetFlags include
@@ -324,7 +324,7 @@ pub fn is_read(effect_type effect_type: Int) -> Bool {
 /// primary target alone (2), and a ShieldOverload row only when they are the area alone (4); a
 /// row aimed at other units is left out. A plan of
 /// a spell with a Stealth or RemoveStealth row aimed other than at the caster alone
-/// fails to load (genesis_prime/game/spell_plan `StealthAimNotRead`).
+/// fails to load (genesis_prime/shared/spell_plan `StealthAimNotRead`).
 pub fn is_row_read(
   effect_type effect_type: Int,
   target_flags target_flags: Int,

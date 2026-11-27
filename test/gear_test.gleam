@@ -26,11 +26,11 @@
 
 import fixture_tables
 import genesis_prime/game/gear.{EquipSpell}
-import genesis_prime/game/item_property.{ItemProperties}
-import genesis_prime/game/loadout
-import genesis_prime/game/worn_visual
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{ItemVisual}
+import genesis_prime/shared/item_property.{ItemProperties}
+import genesis_prime/shared/loadout
+import genesis_prime/shared/worn_visual
 import genesis_prime/store.{type HeldItem, HeldItem}
 import genesis_prime/table/id.{ClassId, Item2Id, UnitProperty2Id}
 import gleam/dict

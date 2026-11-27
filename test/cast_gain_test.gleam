@@ -16,10 +16,10 @@ import channel_support
 import class_resource_support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/class_resource.{Gain, Payment}
-import genesis_prime/game/spell_plan.{Spell}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_refused
+import genesis_prime/shared/class_resource.{Gain, Payment}
+import genesis_prime/shared/spell_plan.{Spell}
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import gleam/float

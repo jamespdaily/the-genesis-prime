@@ -37,7 +37,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/spell_plan.{
   type Plans, type Spell, GlobalCooldown, ShowsCastBar, Spell,
 }
 import genesis_prime/step.{LogDebug}

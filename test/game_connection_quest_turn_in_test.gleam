@@ -23,11 +23,11 @@ import game_connection_support
 import genesis_prime/client_connection.{AskStore, FromStore}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
-import genesis_prime/game/random_stat_word
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/quest_state.{QuestState}
+import genesis_prime/shared/random_stat_word
 import genesis_prime/step
 import genesis_prime/store.{
   type QuestRow, AccountId, Character, CharacterId, CompletedRow, ForItems,

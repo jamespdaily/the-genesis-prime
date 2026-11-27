@@ -22,11 +22,11 @@ import genesis_prime/game/held_changes.{
   Absorb, KeptWhenUnseen, PlayerCastWent, PlayerChangeEnds, PlayerChangeStarts,
   Property,
 }
-import genesis_prime/game/lasting
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
-import genesis_prime/game/unit_properties.{type Source, Change, Source}
 import genesis_prime/game/world_entry
+import genesis_prime/shared/lasting
+import genesis_prime/shared/unit_properties.{type Source, Change, Source}
 import genesis_prime/step.{type Effect, ConnectionId, Now, OwnEffect}
 import genesis_prime/table/id.{
   type Spell4Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,

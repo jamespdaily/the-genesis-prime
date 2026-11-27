@@ -1,7 +1,7 @@
 //// The plans a press reads for a player who holds tiers above 1: the ability builder's tier
 //// pips buy a tier of an ability, and the press then casts that tier's Spell4 row, as the
 //// client's own prediction does. A tier is a Spell4 row of the ability's Spell4Base
-//// (genesis_prime/game/spell_tier), and its plan is built at load (`spell_plan.tier_plans`).
+//// (genesis_prime/shared/spell_tier), and its plan is built at load (`spell_plan.tier_plans`).
 ////
 //// ```
 //// plans (tier 1, by Spell4Base) + tier plans (tiers 2 to 9, by Spell4 id) + the held tiers
@@ -35,8 +35,8 @@
 ////   the held ability, since the key up names the bag index and a tier change between the key
 ////   down and the key up gives another Spell4 id (genesis_prime/game/cast/press).
 
-import genesis_prime/game/spell_plan.{type Plans, type TierPlans}
-import genesis_prime/game/spell_tier.{type SpellTiers}
+import genesis_prime/shared/spell_plan.{type Plans, type TierPlans}
+import genesis_prime/shared/spell_tier.{type SpellTiers}
 import genesis_prime/table/id.{type Spell4BaseId}
 import gleam/bool
 import gleam/dict

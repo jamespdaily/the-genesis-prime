@@ -20,7 +20,6 @@ import game_wire_support.{
 }
 import genesis_prime/add_account
 import genesis_prime/dev_database
-import genesis_prime/game/item_property
 import genesis_prime/language_file
 import genesis_prime/message/float32
 import genesis_prime/message/movement_command
@@ -32,6 +31,7 @@ import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/shared/item_property
 import genesis_prime/sitting_bot.{Place}
 import genesis_prime/sitting_bot/ability
 import genesis_prime/store.{AccountId}

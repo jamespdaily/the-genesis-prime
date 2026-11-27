@@ -10,8 +10,8 @@
 ////
 //// ```
 //// load: ActionSlotPrereq rows + their Prerequisite rows ─▶ Unlocks (slot ─▶ the levels it opens at)
-//// load: Spell4 + Spell4TierRequirements ─▶ SpellTiers (genesis_prime/game/spell_tier)
-//// load: the AMP rows, categories and power ─▶ amp_spec.Specs (genesis_prime/game/amp_spec)
+//// load: Spell4 + Spell4TierRequirements ─▶ SpellTiers (genesis_prime/shared/spell_tier)
+//// load: the AMP rows, categories and power ─▶ amp_spec.Specs (genesis_prime/shared/amp_spec)
 //// 0xB1 {12 ids, set, tier changes, AMP ids} ─▶ take(unlocks, tiers, amps, player, saved, class_bar, body)
 ////      a body the client's reader refuses ─▶ Refusal: the connection ends
 ////      every check passes  ─▶ Saved' and 0x019D (the 12 shortcuts, result 1), 0x01A0 (the book's tiers
@@ -46,11 +46,11 @@
 ////   tier whatever its row, and no real base lacks a row below its highest), a change to the
 ////   held tier changes nothing, and the points are judged on the tiers the save leaves. Any refusal refuses the whole save, bar
 ////   included. A tier belongs to the ability in the set, so a save that takes an ability off the
-////   bar keeps its tier. What a tier costs and needs is genesis_prime/game/spell_tier.
+////   bar keeps its tier. What a tier costs and needs is genesis_prime/shared/spell_tier.
 //// - **The AMP checks** come after the tiers': an id twice 13, a held AMP the list leaves out 43
 ////   (removing an AMP is the paid reset, which the stock client cannot send, `opcode.0x151`; both are
 ////   the server's mapping, since the client never refuses a repeat), then the client's own check of
-////   the held AMPs and the picks (genesis_prime/game/amp_spec). A pick is an id of the list the set
+////   the held AMPs and the picks (genesis_prime/shared/amp_spec). A pick is an id of the list the set
 ////   does not hold; a list that adds none passes whatever the level.
 //// - **The tiers and the AMPs are saved** with the place, as the bars are: `rows` carries a row for
 ////   each ability held above tier 1 and each AMP held in each set, whole, so a tier returned to 1 is
@@ -95,11 +95,11 @@ import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/ability_book_frame
 import genesis_prime/game/ability_points
-import genesis_prime/game/amp_spec
-import genesis_prime/game/prerequisite.{type Relation}
-import genesis_prime/game/spell_tier
 import genesis_prime/gap
 import genesis_prime/message/action_set_save
+import genesis_prime/shared/amp_spec
+import genesis_prime/shared/prerequisite.{type Relation}
+import genesis_prime/shared/spell_tier
 import genesis_prime/step.{type LogLevel, LogWarning}
 import genesis_prime/store.{
   type AbilityTierRow, type ActionSets, type ActionSlotRow, type AmpRow,
@@ -213,7 +213,7 @@ fn tier_of(saved saved: Saved, set set: Int, base base: Spell4BaseId) -> Int {
 /// press reads the alternate's own book entry (`0x1405e7e50`, `0x140565090`) and the server
 /// casts the alternate inside the held tier's plan (genesis_prime/game/held_tier), so the two
 /// agree only when the alternate shows its ability's tier. The alternate's own saved tier
-/// never counts. The reverse lookup is one-to-one only by the data (genesis_prime/game/spell_tier).
+/// never counts. The reverse lookup is one-to-one only by the data (genesis_prime/shared/spell_tier).
 pub fn book_tier_of(
   tiers tiers: spell_tier.SpellTiers,
   saved saved: Saved,

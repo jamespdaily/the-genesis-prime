@@ -25,16 +25,16 @@ import attacker_support
 import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect} as cast_state
-import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/held_changes
-import genesis_prime/game/lasting.{type LastingRow, LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_plan.{Absorption, AimsAtCaster, Always}
-import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{type Source, Change}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
+import genesis_prime/shared/damage.{Formula, Parameter}
+import genesis_prime/shared/lasting.{type LastingRow, LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan.{Absorption, AimsAtCaster, Always}
+import genesis_prime/shared/spend
+import genesis_prime/shared/unit_properties.{type Source, Change}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
 import gleam/list
 import gleam/option.{None, Some}

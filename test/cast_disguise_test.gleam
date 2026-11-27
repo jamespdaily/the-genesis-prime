@@ -21,14 +21,14 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/held_changes
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/look.{type Disguise}
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Spell, Always}
-import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{type Source}
 import genesis_prime/message/spell_go
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/look.{type Disguise}
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Spell, Always}
+import genesis_prime/shared/spend
+import genesis_prime/shared/unit_properties.{type Source}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/list
 import gleam/option.{Some}

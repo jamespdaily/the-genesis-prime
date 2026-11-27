@@ -1,4 +1,4 @@
-//// The Proc effects of the plan (`genesis_prime/game/spell_plan` `ProcRow`, `Trigger`,
+//// The Proc effects of the plan (`genesis_prime/shared/spell_plan` `ProcRow`, `Trigger`,
 //// `proc_read`). Rows are read in memory, on a copy of the fixture's tables where a gate or
 //// a spell must be looked up; the plan of the client's own tables is read where the client
 //// is present. Expected values come from these places:
@@ -33,13 +33,13 @@ import cast_support
 import client_tables
 import fixture_tables
 import genesis_prime/game/cast/proc as cast_proc
-import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
 import genesis_prime/game/proc as event_proc
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{
   type ProcReading, type Spell, Always, AtHolder, AtOtherUnit, Died,
   EnteredStealth, ForLife, InGroup, InWindow, Kills, LandsCritical,
   LandsCriticalHeal, LandsHeal, LandsHit, LandsMeleeHit, LeftCombat, LeftStealth,

@@ -6,7 +6,7 @@
 //// The spell is a planted child of base 3 with no rows of its own: a damage row reaches
 //// the go through the round's `ticking` (genesis_prime/game/strike), so the go strikes
 //// with the rows the test gives it. The schedules are planted for the test; how a row's
-//// times give its schedule is genesis_prime/game/ticking's.
+//// times give its schedule is genesis_prime/shared/ticking's.
 
 import cast_support as support
 import genesis_prime/connection/frame.{type Frame}
@@ -14,15 +14,7 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/damage.{Formula, Parameter}
-import genesis_prime/game/effect_kind
 import genesis_prime/game/held_changes
-import genesis_prime/game/hit
-import genesis_prime/game/lasting
-import genesis_prime/game/spell_area.{DamageEffect, TickingDamage}
-import genesis_prime/game/spell_plan.{type Spell, AimsAtArea, AimsAtCaster}
-import genesis_prime/game/spend
-import genesis_prime/game/ticking.{Schedule, Ticks}
 import genesis_prime/game/unit_news.{type News, CastTicked}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
@@ -41,6 +33,14 @@ import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
+import genesis_prime/shared/damage.{Formula, Parameter}
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/hit
+import genesis_prime/shared/lasting
+import genesis_prime/shared/spell_area.{DamageEffect, TickingDamage}
+import genesis_prime/shared/spell_plan.{type Spell, AimsAtArea, AimsAtCaster}
+import genesis_prime/shared/spend
+import genesis_prime/shared/ticking.{Schedule, Ticks}
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/dict

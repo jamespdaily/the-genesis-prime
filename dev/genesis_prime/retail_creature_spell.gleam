@@ -30,8 +30,8 @@
 ////   their number in the description then the Spell4 id, the specials as the page lists them,
 ////   a special's cooldown a fixed 10,000 ms.
 
-import genesis_prime/game/spell_plan
 import genesis_prime/jabbithole_page.{type Ability, type Page}
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store

@@ -29,7 +29,7 @@
 //// - **The 0x1ac values** are the gain, 0 rest experience used, 0 for the third value
 ////   (`opcode.0x1ac.fields`), kind 2 KillCreature (`CombatFloater.CodeEnumExpReason`) and
 ////   the creature's unit id.
-//// - **The level** is `genesis_prime/game/level.for_experience`: the highest XpPerLevel id up
+//// - **The level** is `genesis_prime/shared/level.for_experience`: the highest XpPerLevel id up
 ////   to GameFormula 145 (50) whose minXpForLevel is at most the experience
 ////   (`0x140029820`). At the highest level a credit gives nothing, and a gain that crosses
 ////   into it stops at its minXpForLevel, so a saved experience stays inside the table's
@@ -38,7 +38,7 @@
 //// - **Not here:** kill objectives, group sharing and
 ////   tagging, rest experience, and the stats and points a level gives.
 
-import genesis_prime/game/level
+import genesis_prime/shared/level
 import genesis_prime/table/creature2
 import genesis_prime/table/creature2_difficulty
 import genesis_prime/table/id.{type Creature2Id, type Faction2Id, XpPerLevelId}

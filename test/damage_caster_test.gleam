@@ -1,4 +1,4 @@
-//// The value of an effect on its caster (`genesis_prime/game/damage`
+//// The value of an effect on its caster (`genesis_prime/shared/damage`
 //// `value_on_caster`, `amount_on_caster`, `unread`). Expected values come from
 //// these places.
 //// - `0x140565600` (ComputeEffectValue) and `0x140566ad0` (SumFlatEffectParameters): a
@@ -21,7 +21,7 @@
 ////   damage step rounds.
 
 import attacker_support
-import genesis_prime/game/damage.{
+import genesis_prime/shared/damage.{
   type Formula, Attacker, Formula, OnCaster, Parameter, Vitals,
 }
 import gleam/list

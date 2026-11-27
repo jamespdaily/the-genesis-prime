@@ -17,10 +17,10 @@ import client_tables
 import content_support
 import genesis_prime/game/held_objective
 import genesis_prime/game/objective
-import genesis_prime/game/prerequisite.{Factions}
 import genesis_prime/game/quest.{
   type Verdict, Acceptable, Asker, NotRead, Refused,
 }
+import genesis_prime/shared/prerequisite.{Factions}
 import genesis_prime/shared/quest_row
 import genesis_prime/table/id.{PrerequisiteId}
 import genesis_prime/table/loader/store as table_store

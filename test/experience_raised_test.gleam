@@ -14,7 +14,7 @@ import genesis_prime/game/experience.{
   type NotRaised, type Progress, Already, Credited, GainSent, LevelRose,
   Lowering, Progress, ToExperience, ToLevel,
 }
-import genesis_prime/game/level
+import genesis_prime/shared/level
 import genesis_prime/table/id.{XpPerLevelId}
 import genesis_prime/table/xp_per_level
 import gleam/int

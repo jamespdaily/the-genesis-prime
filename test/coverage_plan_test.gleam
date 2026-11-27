@@ -1,5 +1,5 @@
 //// The effect measure counts an effect row as read exactly when the plan loads it
-//// (`genesis_prime/game/spell_plan.read_row`), on the client's tables. A test here counts
+//// (`genesis_prime/shared/spell_plan.read_row`), on the client's tables. A test here counts
 //// the rows of a type from the client alone, or takes each row of a type through the
 //// plan and checks the reading the row's own columns give it; how many rows the plan
 //// leaves out is the coverage run's number, not a test's.
@@ -14,7 +14,7 @@ import genesis_prime/coverage/gaps
 import genesis_prime/coverage/measurement.{HandledWithGap}
 import genesis_prime/game/activate
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4

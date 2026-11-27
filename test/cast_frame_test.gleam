@@ -15,13 +15,13 @@ import cast_support as support
 import client_tables
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/spell_plan
 import genesis_prime/message/combat_result
 import genesis_prime/message/spell_go.{SpellGo}
 import genesis_prime/message/spell_position.{SpellPosition}
 import genesis_prime/message/spell_target_info.{
   type SpellTargetInfo, SpellTargetInfo,
 }
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_effects

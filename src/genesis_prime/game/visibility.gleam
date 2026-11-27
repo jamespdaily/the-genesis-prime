@@ -26,8 +26,8 @@
 ////   world difficulty.
 
 import genesis_prime/game/cast/gate as cast_gate
-import genesis_prime/game/prerequisite.{type Prerequisite, type Subject}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/shared/prerequisite.{type Prerequisite, type Subject}
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/store.{type Character}
 import genesis_prime/table/id.{type PrerequisiteId}

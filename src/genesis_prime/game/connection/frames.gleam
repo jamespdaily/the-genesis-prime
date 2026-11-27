@@ -5,10 +5,8 @@
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/look
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor.{type Vendor}
 import genesis_prime/game/vendor_sale
 import genesis_prime/game/world_entry
@@ -71,9 +69,12 @@ import genesis_prime/message/unit_stealth.{UnitStealth}
 import genesis_prime/message/vendor_item.{VendorItem}
 import genesis_prime/message/vendor_items.{type VendorItems, VendorItems}
 import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/look
+import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type Now}
 import genesis_prime/table/id.{Item2Id}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_turn.{type Face}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
@@ -82,7 +83,6 @@ import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/static_object.{
   type Created, CreatedDoor, CreatedMailbox, CreatedPortal, CreatedWithChecklist,
 }
-import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/int
 import gleam/list

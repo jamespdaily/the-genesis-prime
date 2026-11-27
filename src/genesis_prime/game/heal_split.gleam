@@ -19,9 +19,9 @@
 //// - The overheal is the amount less what the shield and the health took, never below 0
 ////   (`spell.heal_result_log`).
 
-import genesis_prime/game/effect_kind
-import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/gap
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/unit_properties.{type Properties}
 import gleam/float
 import gleam/int
 

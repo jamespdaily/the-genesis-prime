@@ -7,8 +7,8 @@ import genesis_prime/game/strike_tell.{
   type Answered, type Tell as StrikeTell, Answered, Key,
 }
 import genesis_prime/game/unit_casts.{type CastView, CastView}
-import genesis_prime/game/unit_properties.{type Modifier, type Source}
-import genesis_prime/game/unit_state
+import genesis_prime/shared/unit_properties.{type Modifier, type Source}
+import genesis_prime/shared/unit_state
 import genesis_prime/step.{Connection, ConnectionId}
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature

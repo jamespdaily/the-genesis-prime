@@ -1,5 +1,5 @@
 //// A press of a spell with an innate cost EMM id, paid and chosen by the points
-//// spent (`genesis_prime/game/cast` with `genesis_prime/game/spend`). Expected
+//// spent (`genesis_prime/game/cast` with `genesis_prime/shared/spend`). Expected
 //// values come from these places, each named at its assertion:
 //// - `Spell4.32809`: Mind Burst costs 1 Psi Point (type 6, slot 1) with innateCostEMMId0
 ////   4, so a press that spends p Psi Points (1 to 5) strikes with the damage effect
@@ -24,12 +24,12 @@ import fixture_tables
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type GoAsked} as cast_state
-import genesis_prime/game/class_resource.{type Resources, Payment}
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Spell, Proxy}
-import genesis_prime/game/spend
+import genesis_prime/shared/class_resource.{type Resources, Payment}
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Spell, Proxy}
+import genesis_prime/shared/spend
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/id.{Spell4Id}
 import gleam/int

@@ -1,10 +1,10 @@
-//// The top zone of each WorldZone (genesis_prime/game/top_zone): the walk up
+//// The top zone of each WorldZone (genesis_prime/shared/top_zone): the walk up
 //// `parentZoneId` to the row whose parent is 0, from the client's own rows
 //// (the shared load), and from the whole table where the client is present.
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/top_zone
+import genesis_prime/shared/top_zone
 import genesis_prime/table/id.{WorldZoneId}
 import genesis_prime/table/loader/derivation
 import genesis_prime/table/loader/requirement

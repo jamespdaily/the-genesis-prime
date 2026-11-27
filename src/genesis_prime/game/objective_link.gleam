@@ -26,7 +26,7 @@
 ////   (`0x140479560.anim_state_exit`).
 
 import genesis_prime/game/activate
-import genesis_prime/game/prerequisite
+import genesis_prime/shared/prerequisite
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/creature2

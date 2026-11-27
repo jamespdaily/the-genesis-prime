@@ -70,7 +70,7 @@
 //// | The caster leaves | nothing is written: the viewers' 0x355 of the caster finishes its casts on their clients (`0x1404550d0`) | | |
 //// | A viewer leaves sight | the 0x7fe of each cast it wrote comes before the 0x355 | | |
 
-import genesis_prime/game/lasts.{type Lasts}
+import genesis_prime/shared/lasts.{type Lasts}
 import genesis_prime/table/id.{
   type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
 }

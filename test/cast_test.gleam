@@ -20,10 +20,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/class_resource.{Gain}
 import genesis_prime/game/connection/casting
-import genesis_prime/game/spell_plan
-import genesis_prime/game/spend
 import genesis_prime/game/unit_news.{CastFinished, CastStarted, CastWent}
 import genesis_prime/message/cast_result.{
   CasterCannotBeDead, IllegalSpellCast, Other, SpellAlreadyCasting,
@@ -33,6 +30,9 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started.{type SpellStarted}
+import genesis_prime/shared/class_resource.{Gain}
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/spend
 import genesis_prime/step.{LogDebug}
 import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{Spell4EffectsId}

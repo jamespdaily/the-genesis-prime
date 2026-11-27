@@ -41,11 +41,11 @@ import genesis_prime/message/client_side_interaction_result.{
 import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
+import genesis_prime/shared/creature_path
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_life
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{ObjectsSeen}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/static_object.{type Created, StaticObject}

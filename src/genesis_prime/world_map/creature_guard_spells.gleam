@@ -10,8 +10,8 @@
 ////   (RavelSignal), 4 (CCStateSet), 80 (SpellForceRemove), 17 (Fluff) and 26 (Proxy). Its length is the
 ////   delay of its Proxy effect that puts the guard back (`Spell4Effects.effectType.26`).
 
-import genesis_prime/game/effect_kind
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/shared/effect_kind
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4

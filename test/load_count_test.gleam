@@ -36,10 +36,8 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/cast/frame as cast_frame
-import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell
-import genesis_prime/game/telegraph_entries
 import genesis_prime/game/unit_news.{PeerNews, Removed}
 import genesis_prime/load_deadline.{type Closure, type Deadline, Deadline}
 import genesis_prime/load_judged.{type Judged, Judged, Respawns}
@@ -62,6 +60,8 @@ import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/telegraph_entries
 import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation

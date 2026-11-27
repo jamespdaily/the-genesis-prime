@@ -1,4 +1,4 @@
-//// Prerequisite types 118 and 47 (`genesis_prime/game/prerequisite`): the two that read
+//// Prerequisite types 118 and 47 (`genesis_prime/shared/prerequisite`): the two that read
 //// state the server holds none of, or that the client never meets. Expected values come
 //// from these places:
 //// - `Prerequisite.prerequisiteTypeId.118`: the status of the public event objective in
@@ -10,7 +10,7 @@
 ////   (`xor eax,eax; ret`), so no comparison ever passes. The rows: 5744 (comparison 2) and
 ////   13046 (comparison 2).
 
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/prerequisite.{
   type Subject, Fails, NotRead, Passes, UnknownUnit,
 }
 import gleam/int

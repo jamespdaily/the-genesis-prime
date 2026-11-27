@@ -5,7 +5,7 @@
 //// leaves out, each with why.
 ////
 //// ```
-//// plans (genesis_prime/game/spell_plan) ─▶ every spell of every tree, once each,
+//// plans (genesis_prime/shared/spell_plan) ─▶ every spell of every tree, once each,
 ////   a stage included, a Proxy's child included unless its gate cannot open for a
 ////   level-1 character (genesis_prime/coverage/level_one_gate)
 ////   ─▶ its Spell4Effects rows ─▶ their effect types
@@ -20,7 +20,7 @@
 ////   name is not counted.
 //// - **A gate a level-1 character cannot open** leaves out the Proxy's child and
 ////   every spell below it, whatever that child's own rows hold.
-//// - **The class innates** are in the plans (genesis_prime/game/innate: slot 0 of each
+//// - **The class innates** are in the plans (genesis_prime/shared/innate: slot 0 of each
 ////   Class row, active and passive), so the walk counts them as it counts the
 ////   abilities. A class's slots 1 and 2 are left out when their gate is a condition a
 ////   level-1 character fails (`InnateSlotClosed`, by `level_one_gate.row_closed`, the
@@ -38,9 +38,9 @@
 
 import genesis_prime/coverage/effect_row
 import genesis_prime/coverage/level_one_gate
-import genesis_prime/game/effect_kind
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Spell}
 import genesis_prime/table/class
 import genesis_prime/table/id.{PrerequisiteId, Spell4Id}
 import genesis_prime/table/loader/store
@@ -81,11 +81,11 @@ pub type LeftOut {
     effects: List(#(Int, Int)),
   )
   /// A Proc effect of a reached spell whose kind the plan does not read
-  /// (genesis_prime/game/spell_plan `proc_read`): the row is not handled, and the spell
+  /// (genesis_prime/shared/spell_plan `proc_read`): the row is not handled, and the spell
   /// it casts is not counted.
   ProcKindNotRead(spell4_id: Int, effect_id: Int, kind: Int, casts: Int)
   /// A Proc effect of a reached spell whose kind the plan reads but whose row it leaves
-  /// out (`ProcIsLeftOut`, genesis_prime/game/spell_plan `proc_read`): the row is not
+  /// out (`ProcIsLeftOut`, genesis_prime/shared/spell_plan `proc_read`): the row is not
   /// handled, and the spell it casts is not counted.
   ProcLeftOut(
     spell4_id: Int,
@@ -743,7 +743,7 @@ pub fn spells(
 }
 
 /// The same walk over these plans: the derived ones with the server's Proxies planted
-/// (genesis_prime/game/server_proxy `planted_into`) reach the spells those cast.
+/// (genesis_prime/shared/server_proxy `planted_into`) reach the spells those cast.
 pub fn spells_in(
   tables tables: store.Tables,
   plans plans: spell_plan.Plans,

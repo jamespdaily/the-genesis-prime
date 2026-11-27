@@ -37,11 +37,11 @@
 ////   no use.
 
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/class_resource
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/player_character_state.{PlayerCharacterState}
 import genesis_prime/message/reputation_list.{ReputationList}
+import genesis_prime/shared/class_resource
 import genesis_prime/store.{type Character}
 import genesis_prime/table/class
 import genesis_prime/table/id.{type ClassId, ClassId}

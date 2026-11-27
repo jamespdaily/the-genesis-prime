@@ -19,8 +19,8 @@
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/life_effect
 import genesis_prime/game/connection/state.{type Session}
-import genesis_prime/game/effect_kind
 import genesis_prime/game/player_life
+import genesis_prime/shared/effect_kind
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 
 /// The player's `vital` heals by `amount` (genesis_prime/game/cast `Heal`): the life is

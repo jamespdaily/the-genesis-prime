@@ -81,12 +81,12 @@
 
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/lasting
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/telegraph_entries
 import genesis_prime/game/unit_news.{type News}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
+import genesis_prime/shared/lasting
+import genesis_prime/shared/telegraph_entries
 import genesis_prime/world_map/creature_guard_spells.{type Guard}
 import gleam/list
 import gleam/option.{type Option, None, Some}

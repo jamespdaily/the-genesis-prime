@@ -20,16 +20,16 @@
 
 import attacker_support
 import client_tables
-import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast/state.{GoAsked}
 import genesis_prime/game/shown.{Exile, ShownCreature}
-import genesis_prime/game/spell_area
 import genesis_prime/game/strike.{type Attacker, Attacker}
+import genesis_prime/shared/area.{Point, Pose}
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/spell_area
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/creature2_display_info
 import genesis_prime/table/id.{Creature2DisplayInfoId, Creature2Id, Spell4Id}
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list

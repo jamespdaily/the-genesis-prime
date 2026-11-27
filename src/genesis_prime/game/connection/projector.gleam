@@ -23,12 +23,12 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/activate.{type Link}
 import genesis_prime/game/connection/movement as connection_movement
 import genesis_prime/game/connection/state.{type Session, Session} as connection_state
-import genesis_prime/game/hit_radius
 import genesis_prime/game/in_world_move
 import genesis_prime/game/player_life
 import genesis_prime/game/projector
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
+import genesis_prime/shared/hit_radius
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/table/id.{type Creature2Id}
 import gleam/list

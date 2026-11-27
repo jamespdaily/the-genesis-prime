@@ -6,7 +6,7 @@
 //// and stopped after no player has seen it for the idle stop, and watches it. It
 //// owns who sees whom: a player and another player, or a player
 //// and a creature, see each other when they are within
-//// `genesis_prime/world_map/sight.range`; two creatures never do. It decides
+//// `genesis_prime/shared/sight.range`; two creatures never do. It decides
 //// sight and tells it; it sends the client no unit and carries no move. Each
 //// player's connection sends everything about its own unit to the connections of
 //// the players who see it (genesis_prime/game/connection), and each creature's
@@ -440,7 +440,7 @@
 //// - **The server stopping.** `Stopping` stops the rule at once. The map saves
 ////   nothing: the connection owns its player's place and saves it
 ////   (genesis_prime/game/connection).
-//// - **Sight** is `genesis_prime/world_map/sight`: one threshold, 1024 units. A
+//// - **Sight** is `genesis_prime/shared/sight`: one threshold, 1024 units. A
 ////   pair is in sight or not after each join, move, leave and end; the map keeps
 ////   each player's `sees`, and the relation is symmetric. A pair that comes into
 ////   sight is sent `SeenBy` both ways, a pair that leaves it `UnseenBy` both
@@ -745,15 +745,16 @@
 //// | a released object has a creature or a static object at its x and z | the creature takes 856's path (`Retire`, `Gone`, a restart after the wait); the static object is released with it, on its own timer (`a_released_creature_takes_the_creature_at_its_x_and_z_with_it_test`, `a_creature_keyed_release_also_unsees_a_static_captive_at_its_x_and_z_test`) |
 //// | a creature captive of a released object is not live at the release (dormant, waiting for a restart or failed) | it is not held out: a captive that is waiting or dormant may start during the release time, a failed one stays failed; the player who used the object stands in sight of it, so its captive is normally live (`a_captive_creature_that_is_waiting_failed_or_dormant_when_its_object_is_released_is_left_as_it_is_test`, `a_creature_captive_of_a_released_static_object_is_released_with_it_test`) |
 
-import genesis_prime/game/appearance
 import genesis_prime/game/chat_tell.{type Said as ChatSaid}
-import genesis_prime/game/hit_radius
-import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news.{type PeerNews, Appeared, PeerNews}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
+import genesis_prime/shared/appearance
+import genesis_prime/shared/hit_radius
+import genesis_prime/shared/loadout.{type Loadout}
+import genesis_prime/shared/sight
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type RingMember,
   type ServiceEffect, type ServiceInput, type ServiceRule, type ServiceStep,
@@ -774,7 +775,6 @@ import genesis_prime/world_map/player_unit.{type PlayerUnit}
 import genesis_prime/world_map/relay.{
   type Delivered, type Inbound, type Landing, type Payload,
 }
-import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn.{type Spawn, type WorldSpawns}
 import genesis_prime/world_map/spawn_cell
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
@@ -997,7 +997,7 @@ pub type Message {
 /// or a level no table holds.
 pub type NotJoined {
   /// No Novice set holds the character's class and faction
-  /// (genesis_prime/game/loadout).
+  /// (genesis_prime/shared/loadout).
   NoLoadout(class_id: Int, faction_id: Int)
 }
 
@@ -3854,7 +3854,7 @@ fn left(
 
 /// A connection's join: its player's unit is built with the next unit id and
 /// the body of the character's look and the worn visuals of its Novice set
-/// (genesis_prime/game/loadout), kept, and answered as 0x262's record, and
+/// (genesis_prime/shared/loadout), kept, and answered as 0x262's record, and
 /// the connection is watched. The joiner is then sent a `SeenBy` for each player
 /// in sight, and each of them a `SeenBy` of the joiner. A connection already in
 /// the map is answered with the record built from the unit the map keeps for

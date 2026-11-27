@@ -14,9 +14,9 @@
 
 import attacker_support
 import client_tables
-import genesis_prime/game/damage
-import genesis_prime/game/hit.{type Blow, Blow, Offence, Rolls, Worked}
-import genesis_prime/game/spell_area
+import genesis_prime/shared/damage
+import genesis_prime/shared/hit.{type Blow, Blow, Offence, Rolls, Worked}
+import genesis_prime/shared/spell_area
 import genesis_prime/table/id.{Spell4Id}
 import gleam/float
 import gleam/list

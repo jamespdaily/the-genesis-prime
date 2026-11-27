@@ -2,26 +2,26 @@
 //// tables a rule reads, and stores under the tables' key.
 
 import genesis_prime/game/activate
-import genesis_prime/game/amp_spec
-import genesis_prime/game/appearance
 import genesis_prime/game/communicator
-import genesis_prime/game/faction_level
-import genesis_prime/game/focus
 import genesis_prime/game/level_up
 import genesis_prime/game/limited_action_set
-import genesis_prime/game/loadout
 import genesis_prime/game/objective_action
 import genesis_prime/game/objective_link
 import genesis_prime/game/passed_in_value
 import genesis_prime/game/quest_turn_in
-import genesis_prime/game/rating
 import genesis_prime/game/shortcut_spell
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan
 import genesis_prime/game/spell_surge
-import genesis_prime/game/spell_tier
-import genesis_prime/game/top_zone
-import genesis_prime/game/unit_properties
+import genesis_prime/shared/amp_spec
+import genesis_prime/shared/appearance
+import genesis_prime/shared/faction_level
+import genesis_prime/shared/focus
+import genesis_prime/shared/loadout
+import genesis_prime/shared/rating
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/spell_tier
+import genesis_prime/shared/top_zone
+import genesis_prime/shared/unit_properties
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_attack
 import gleam/bool
@@ -32,20 +32,20 @@ import gleam/set.{type Set}
 /// Each derived value. A feature whose rule reads a value of the tables that
 /// is costly to build adds it here.
 /// - The appearance index: the factions of the labels and the rows the
-///   character list's bodies are taken from (genesis_prime/game/appearance).
+///   character list's bodies are taken from (genesis_prime/shared/appearance).
 /// - The loadouts: each class and faction's Novice weapon, abilities and gear
-///   properties, whose missing rows fail the load (genesis_prime/game/loadout).
+///   properties, whose missing rows fail the load (genesis_prime/shared/loadout).
 /// - The spell plans: the tree of casts each class's level-1 ability starts, whose
 ///   missing rows, unread costs and cycles fail the load, that of each later ability
 ///   of a class that the server can plan, and that of each equip spell a worn item puts on
-///   its wearer (genesis_prime/game/spell_plan).
+///   its wearer (genesis_prime/shared/spell_plan).
 /// - The tier plans: the plan of each tier 2 to 9 spell of the planned abilities, built after the
 ///   plans and the ability tiers, whose missing rows fail the load and whose unbuilt tiers
-///   (a cycle among them) are left out and listed (genesis_prime/game/spell_plan `tier_derivation`).
+///   (a cycle among them) are left out and listed (genesis_prime/shared/spell_plan `tier_derivation`).
 /// - Spell Surge's spell, GameFormula 913's dataint0, whose missing row fails the load
 ///   (genesis_prime/game/spell_surge).
 /// - The spell areas: what each spell of those trees and of the tier plans strikes
-///   (genesis_prime/game/spell_area), built after the trees, which it reads from the built value: the list is in
+///   (genesis_prime/shared/spell_area), built after the trees, which it reads from the built value: the list is in
 ///   build order, and an edit rebuilds the derivations it is given in that order.
 /// - The activations: the spell each creature's right-click casts and the plans of those
 ///   spells, built after the ability trees' sources, whose missing GameFormula 414 row or
@@ -62,26 +62,26 @@ import gleam/set.{type Set}
 /// - The level-up fanfares: the plan of each tier of the Level Up spell, the cast a 0x07A5 is
 ///   answered with, built after the ability trees' sources (genesis_prime/game/level_up).
 /// - The faction levels: each faction's parent and the level of each pair of factions
-///   that has a relationship (genesis_prime/game/faction_level).
+///   that has a relationship (genesis_prime/shared/faction_level).
 /// - The communicator's index: the CommunicatorMessages rows of each quest they
 ///   deliver and the creatures that receive each quest (genesis_prime/game/communicator).
 /// - The action bar's slot unlocks: the level each of the twelve slots opens at, whose
 ///   missing rows fail the load (genesis_prime/game/limited_action_set).
 /// - The ability tiers: each base the book can hold with the cost, Spell4 row and level of
 ///   its tiers, whose repeated tier, missing level row and missing Spell4 row fail the load
-///   (genesis_prime/game/spell_tier).
+///   (genesis_prime/shared/spell_tier).
 /// - The AMP specs: the EldanAugmentation rows with their categories and GameFormula 942's
-///   power, whose missing or unread rows fail the load (genesis_prime/game/amp_spec).
+///   power, whose missing or unread rows fail the load (genesis_prime/shared/amp_spec).
 /// - The quest rewards: each quest's Quest2Reward rows, which a turn-in reads
 ///   (genesis_prime/game/quest_turn_in).
-/// - The rating formulas: the hit rule's GameFormula rows (genesis_prime/game/rating).
+/// - The rating formulas: the hit rule's GameFormula rows (genesis_prime/shared/rating).
 /// - The Focus formulas: GameFormula 88, 1237, 1243 and 1267, which a healer's Focus
-///   reads, whose missing rows fail the load (genesis_prime/game/focus).
+///   reads, whose missing rows fail the load (genesis_prime/shared/focus).
 /// - The top zones: each WorldZone's top zone, which a cycle in the parent chain
-///   fails (genesis_prime/game/top_zone).
+///   fails (genesis_prime/shared/top_zone).
 /// - The unit property defaults: each UnitProperty2 row's defaultValue, the base of
 ///   a player's property no 0x262 lists, whose missing rows the rules read fail the
-///   load (genesis_prime/game/unit_properties).
+///   load (genesis_prime/shared/unit_properties).
 /// - The creature damage effects: each spell's damage effects in the order they take effect,
 ///   which the content load asks for once for every spell of every creature
 ///   (genesis_prime/world_map/creature_attack).

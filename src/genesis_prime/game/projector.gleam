@@ -44,9 +44,9 @@ import genesis_prime/game/activate.{type Link, OpenLink}
 import genesis_prime/game/objective_kind
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/top_zone
 import genesis_prime/game/tutorial
 import genesis_prime/shared/quest_row
+import genesis_prime/shared/top_zone
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
   type Creature2Id, Creature2Id, QuestObjectiveId, WorldLocation2Id,

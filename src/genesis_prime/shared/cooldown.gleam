@@ -37,9 +37,9 @@
 ////   wrap of a result outside it.
 //// - **A source kept again is held once**, at the end of the list: the server's choice.
 
-import genesis_prime/game/unit_properties.{type Source}
 import genesis_prime/gap
 import genesis_prime/message/float32
+import genesis_prime/shared/unit_properties.{type Source}
 import genesis_prime/table/id.{type Spell4BaseId, type Spell4Id}
 import gleam/bool
 import gleam/dict.{type Dict}

@@ -223,8 +223,8 @@ pub fn the_map_rule_and_world_entry_and_what_they_build_are_pure_rules_the_check
     pure_rules_the_check_covers(paths: [
       "src/genesis_prime/world_map/map.gleam",
       "src/genesis_prime/game/world_entry.gleam",
-      "src/genesis_prime/game/loadout.gleam",
-      "src/genesis_prime/game/item_property.gleam",
+      "src/genesis_prime/shared/loadout.gleam",
+      "src/genesis_prime/shared/item_property.gleam",
       "src/genesis_prime/world_map/player_unit.gleam",
       "src/genesis_prime/game/start_place.gleam",
     ])
@@ -251,7 +251,7 @@ pub fn the_game_connection_rule_and_the_features_it_holds_are_pure_rules_the_che
       "src/genesis_prime/game/character_select.gleam",
       "src/genesis_prime/game/character_creation.gleam",
       "src/genesis_prime/game/character_name.gleam",
-      "src/genesis_prime/game/appearance.gleam",
+      "src/genesis_prime/shared/appearance.gleam",
       "src/genesis_prime/game/world_entry.gleam",
     ])
   Nil

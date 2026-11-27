@@ -11,7 +11,6 @@ import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/activate
 import genesis_prime/game/character_select
-import genesis_prime/game/class_resource
 import genesis_prime/game/deadline_timer
 import genesis_prime/game/dev_command
 import genesis_prime/game/held_tier
@@ -23,14 +22,10 @@ import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/player_address
 import genesis_prime/game/player_life
-import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/projector
 import genesis_prime/game/quest_log
 import genesis_prime/game/quest_turn_in
-import genesis_prime/game/server_proxy.{type ServerProxies}
 import genesis_prime/game/shortcut_spell
-import genesis_prime/game/spell_plan
-import genesis_prime/game/spell_tier
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/tutorial.{type Chain}
 import genesis_prime/game/unit_news
@@ -46,7 +41,13 @@ import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, LostUserServer,
 }
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/prerequisite.{type Prerequisite}
 import genesis_prime/shared/quest_view.{type QuestView}
+import genesis_prime/shared/server_proxy.{type ServerProxies}
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/spell_tier
+import genesis_prime/shared/unit_fields
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionId, type Effect, type Now,
   type TimerId, About, CancelTimer, LogWarning, OwnEffect, StartTimer, Stop,
@@ -59,7 +60,6 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/relay.{type Inbound}
 import genesis_prime/world_map/spawn_id.{type LoadedSpawns}
 import genesis_prime/world_map/stay.{type Stay}
-import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -149,7 +149,7 @@ pub type Settings {
 }
 
 /// The ability trees the cast rule reads for the standing spells, every ability at tier 1: the
-/// client's, with the server's Proxies planted into them (genesis_prime/game/server_proxy). A
+/// client's, with the server's Proxies planted into them (genesis_prime/shared/server_proxy). A
 /// press reads `held_plans_of`.
 pub fn plans_of(session session: Session) -> spell_plan.Plans {
   server_proxy.planted_into(

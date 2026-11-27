@@ -9,12 +9,12 @@ import connection_rule_support
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/objective
-import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_added
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/shared/prerequisite.{type Prerequisite}
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type Now, ConnectionId, Now}
 import genesis_prime/store.{
   type Character, type HeldItem, type QuestRow, type UnsetItem, AccountId,

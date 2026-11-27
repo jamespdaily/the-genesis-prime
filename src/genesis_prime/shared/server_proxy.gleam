@@ -1,6 +1,6 @@
 //// The spells the server casts on the caster with a go of an ability where the client's
 //// tables link none: the Proxies the `server_proxy` content table plants into the
-//// ability trees (genesis_prime/game/spell_plan). The first is the Engineer's
+//// ability trees (genesis_prime/shared/spell_plan). The first is the Engineer's
 //// Volatility: Pulse Blast's tooltips say it generates 15 Volatility, and the hidden
 //// spell 42148 that holds the gain is cast by nothing the client holds
 //// (`Spell4.42148`).
@@ -55,10 +55,10 @@
 //// | the plans hold the base's ability but no go starts a child at once | the Proxy is planted into the ability's own go |
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{type Plans, type Proxy, type Spell}
-import genesis_prime/game/spell_tier
 import genesis_prime/gap
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{type Plans, type Proxy, type Spell}
+import genesis_prime/shared/spell_tier
 import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool

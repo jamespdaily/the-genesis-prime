@@ -1,4 +1,4 @@
-//// What a refusal of the plan says (`genesis_prime/game/spell_plan` `refusal_of`): whether the
+//// What a refusal of the plan says (`genesis_prime/shared/spell_plan` `refusal_of`): whether the
 //// ability that holds it is left out or the load fails, and why the server refuses the value.
 //// Expected values come from `plan_error_samples`, whose rows name their sources: the
 //// outcomes are what the plan did before the refusal was one decision, and each basis
@@ -9,8 +9,8 @@ import code_rule/source.{SourceFile}
 import code_rule/syntax
 import coverage_support
 import fact_file
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{
   type Basis, FailsLoad, LeavesOut, OpenQuestion, Unexplained,
 }
 import gleam/int
@@ -22,7 +22,7 @@ import simplifile
 
 /// The names of the variants of `PlanError`, read from the module that declares it.
 fn declared_variants() -> List(String) {
-  let path = "src/genesis_prime/game/spell_plan.gleam"
+  let path = "src/genesis_prime/shared/spell_plan.gleam"
   let assert Ok(text) = simplifile.read(path)
     as "the plan's source is in the repository"
   let declared =

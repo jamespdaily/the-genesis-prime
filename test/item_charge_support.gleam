@@ -15,6 +15,7 @@ import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_use.{ItemUse}
+import genesis_prime/shared/creature_path
 import genesis_prime/step
 import genesis_prime/store.{
   type HeldItem, type UnsetItem, type WorldRequest, HeldItem, UnsetItem,
@@ -22,7 +23,6 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{Creature2Id, Item2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/map.{ObjectsSeen}
 import genesis_prime/world_map/static_object.{StaticObject}
 import gleam/list

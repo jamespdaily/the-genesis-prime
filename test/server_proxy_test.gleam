@@ -1,4 +1,4 @@
-//// The server's Proxies (`genesis_prime/game/server_proxy`): the row of the server_proxy
+//// The server's Proxies (`genesis_prime/shared/server_proxy`): the row of the server_proxy
 //// table turned into a Proxy of the ability's tree, and every way a row is refused.
 //// Expected values come from these places, each named at its assertion:
 //// - The client's rows: `Spell4.42148` (95337: +15 of vital 6 behind prerequisite 903),
@@ -11,8 +11,8 @@
 
 import fixture_tables
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
-import genesis_prime/game/server_proxy.{Row}
-import genesis_prime/game/spell_plan.{type Plans, type Spell}
+import genesis_prime/shared/server_proxy.{Row}
+import genesis_prime/shared/spell_plan.{type Plans, type Spell}
 import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store
 import gleam/dict

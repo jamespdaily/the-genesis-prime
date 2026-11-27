@@ -25,7 +25,7 @@
 //// refill_timer ─▶ the slot at its max ─▶ Changed
 //// empty_timer ─▶ the slot at 0 ─▶ Changed
 //// died ─▶ every timer cancelled;  came_back ─▶ the slot at its start, Focus at its pool ─▶ Changed when they moved
-//// the player's properties change (genesis_prime/game/unit_properties) ─▶ properties_followed: Focus's pool and numbers
+//// the player's properties change (genesis_prime/shared/unit_properties) ─▶ properties_followed: Focus's pool and numbers
 //// ```
 ////
 //// - **The slot** a class's resource lives in is the one its bar reads: 1 for the
@@ -74,7 +74,7 @@
 ////   (`UnitProperty2.5.class_pool`): a flat 1000 at every level plus what worn items add, full
 ////   at entry and when coming back (migration 0048). A cost is paid like a slot's, at the cast's first go; the
 ////   points are `focus.required_points`. It recovers each `focus.Formulas.tick_ms` by the
-////   pool x the share x the tick (genesis_prime/game/focus), on `focus_timer`, which runs
+////   pool x the share x the tick (genesis_prime/shared/focus), on `focus_timer`, which runs
 ////   exactly while the pool is below its maximum and the player lives. A class that holds
 ////   no Focus holds 0 of it with a maximum of 0 and ignores a payment of it.
 //// - **Death** stops every timer; **coming back** sets the slot to its start (the
@@ -82,10 +82,10 @@
 ////   saved: each entry starts at the start.
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
-import genesis_prime/game/focus
-import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/gap
 import genesis_prime/message/float32
+import genesis_prime/shared/focus
+import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/class
 import genesis_prime/table/id.{type ClassId, ClassId}
@@ -1058,7 +1058,7 @@ fn focus_ticked(resources resources: Resources) -> #(Resources, List(Effect)) {
   }
 }
 
-/// The player's properties changed (genesis_prime/game/unit_properties): Focus takes the
+/// The player's properties changed (genesis_prime/shared/unit_properties): Focus takes the
 /// new numbers, the pool and the shares the tick reads, the cost modifier and the level,
 /// a pool above a lowered maximum is clamped to it (one change), and a raised maximum
 /// starts the timer. A class that holds no Focus changes nothing.

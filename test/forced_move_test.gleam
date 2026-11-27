@@ -1,4 +1,4 @@
-//// The path a ForcedMove row throws a creature along (`genesis_prime/game/forced_move`).
+//// The path a ForcedMove row throws a creature along (`genesis_prime/shared/forced_move`).
 //// Expected values come from these places, each written out in its test:
 //// - `Spell4Effects.effectType.3` and `.direction`: the columns and the five ways. The
 ////   rows are the client's, from `table_rows -- Spell4Effects 73826 74889 75297 287 49061`
@@ -9,16 +9,16 @@
 ////   least 2 m, a launch with an arc lasts 2 sqrt(h / 16) seconds.
 //// - `0x140783e10`: a kind 3 path whose span is under 1 ms samples its first point, so a
 ////   move with no time goes at once.
-//// - `genesis_prime/world_map/creature_path`: the leash circle clips a path.
+//// - `genesis_prime/shared/creature_path`: the leash circle clips a path.
 //// The places are chosen so the arithmetic is exact: a 3-4-5 triangle between the units.
 
-import genesis_prime/game/forced_move.{
+import genesis_prime/game/start_place.{type Place}
+import genesis_prime/shared/creature_path.{Circle, Standing, Timed}
+import genesis_prime/shared/forced_move.{
   type Move, AlongVelocity, AtOnce, Away, Draws, Flight, Launch, Move, Random,
   Reference, ToUnit, Toward,
 }
-import genesis_prime/game/start_place.{type Place}
 import genesis_prime/table/spell4_effects
-import genesis_prime/world_map/creature_path.{Circle, Standing, Timed}
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -546,7 +546,7 @@ pub fn a_launch_with_no_arc_and_no_time_is_at_once_test() -> Nil {
 
 pub fn flags_4_faces_the_reference_and_flags_8_faces_along_the_move_test() -> Nil {
   use <- owned_test.run(5000)
-  // The client's yaw is atan2(-dx, -dz) of the direction faced (`genesis_prime/game/area`).
+  // The client's yaw is atan2(-dx, -dz) of the direction faced (`genesis_prime/shared/area`).
   // Flag 4: from the end (6, 0, 8) to the reference at the origin, atan2(6, 8).
   // Flag 8: along the move (3, 0, 4) to (6, 0, 8), atan2(-3, -4). An at-once move that
   // turns is one timed point, which carries the facing.

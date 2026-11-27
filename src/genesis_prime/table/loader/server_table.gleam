@@ -99,7 +99,7 @@ import genesis_prime/table/xp_per_level
 ///   (genesis_prime/game/character_creation).
 /// - ChatChannel: the flags of each chat channel (genesis_prime/game/chat).
 /// - CharacterCustomization and CharacterCustomizationLabel: the rows and
-///   labels of a character's look (genesis_prime/game/appearance).
+///   labels of a character's look (genesis_prime/shared/appearance).
 /// - Creature2 with its ArcheType, Difficulty, DisplayGroupEntry, DisplayInfo,
 ///   OutfitGroupEntry, OverrideProperties, Resist and Tier, InstancePortal and
 ///   PathMission, and CreatureLevel: the creatures that stand and their values
@@ -109,57 +109,57 @@ import genesis_prime/table/xp_per_level
 ///   (genesis_prime/game/communicator).
 /// - Faction2 and Faction2Relationship: which creatures a player can attack
 ///   (genesis_prime/world_map/spawn) and which receivers of a quest are Hostile to a
-///   player's faction (genesis_prime/game/faction_level, genesis_prime/game/communicator).
+///   player's faction (genesis_prime/shared/faction_level, genesis_prime/game/communicator).
 /// - CurrencyType: the cap of a currency other than credits and Renown
 ///   (genesis_prime/game/currency).
 /// - CustomizationParameter and CustomizationParameterMap: the bone values a
-///   create request carries (genesis_prime/game/appearance).
-/// - GameFormula and XpPerLevel: the starting level (genesis_prime/game/level).
+///   create request carries (genesis_prime/shared/appearance).
+/// - GameFormula and XpPerLevel: the starting level (genesis_prime/shared/level).
 /// - EldanAugmentation, EldanAugmentationCategory and Class, with GameFormula: the AMPs a
-///   player may pick, their categories and the power a level gives (genesis_prime/game/amp_spec).
-/// - CreatureLevel: a player's Base Health by level (genesis_prime/game/loadout).
+///   player may pick, their categories and the power a level gives (genesis_prime/shared/amp_spec).
+/// - CreatureLevel: a player's Base Health by level (genesis_prime/shared/loadout).
 /// - Item2, Item2Category, Item2Family, Item2Type and ItemSlot, with GameFormula:
-///   the Novice gear's properties (genesis_prime/game/item_property).
+///   the Novice gear's properties (genesis_prime/shared/item_property).
 /// - ItemBudget and ItemStat, with Item2, ItemSlot, UnitProperty2 and GameFormula: the
-///   properties a worn item's budget gives (genesis_prime/game/item_property).
+///   properties a worn item's budget gives (genesis_prime/shared/item_property).
 /// - ItemRandomStat, with ItemStat: the properties a random-stat entry of an item may
-///   pick, by group id (genesis_prime/game/random_stat and genesis_prime/game/item_property).
+///   pick, by group id (genesis_prime/game/random_stat and genesis_prime/shared/item_property).
 /// - ItemProficiency and ItemSpecial, with Item2 and Item2Category: whether a
-///   character may wear an item (genesis_prime/game/item_property and
+///   character may wear an item (genesis_prime/shared/item_property and
 ///   genesis_prime/game/equip_requirement).
 /// - ItemDisplay and ItemDisplaySourceEntry: what a worn item is drawn with
-///   (genesis_prime/game/worn_visual).
-/// - Spell4 and SpellLevel: a class's level-1 abilities (genesis_prime/game/loadout).
+///   (genesis_prime/shared/worn_visual).
+/// - Spell4 and SpellLevel: a class's level-1 abilities (genesis_prime/shared/loadout).
 /// - Spell4, Spell4Base, Spell4Conditions, Spell4Effects, Spell4Thresholds,
 ///   SpellPhase, SpellCoolDown and Class: the tree of casts each of those abilities
 ///   starts, the stages of a RapidTap or ChargeRelease one, and whether its caster
-///   may be dead (genesis_prime/game/spell_plan).
+///   may be dead (genesis_prime/shared/spell_plan).
 /// - Spell4CCConditions: the crowd-control states that refuse a press of a spell
-///   (genesis_prime/game/spell_plan).
+///   (genesis_prime/shared/spell_plan).
 /// - Spell4TargetAngle: how far off the caster's facing a press at a player may stand
-///   (genesis_prime/game/spell_plan).
+///   (genesis_prime/shared/spell_plan).
 /// - CCStates: the states whose flags stop a creature moving
-///   (genesis_prime/game/crowd_control `stopping_mask`).
+///   (genesis_prime/shared/crowd_control `stopping_mask`).
 /// - CCStateAdditionalData, with Spell4 and Spell4Effects: the helper spell whose move
 ///   a Knockback, Pushback or Pull state throws its creature by
-///   (genesis_prime/game/spell_plan).
+///   (genesis_prime/shared/spell_plan).
 /// - Spell4GroupList and Spell4StackGroup: the spell groups a Spell4Effects type 80 row
 ///   removes by and the stack group and cap of a spell that lasts on a unit
-///   (genesis_prime/game/spell_plan).
+///   (genesis_prime/shared/spell_plan).
 /// - Spell4, Spell4AoeTargetConstraints, Spell4Telegraph, TelegraphDamage,
 ///   Spell4ValidTargets and Spell4Effects: what each spell strikes, its area, hit
-///   shapes and damage effects (genesis_prime/game/spell_area).
+///   shapes and damage effects (genesis_prime/shared/spell_area).
 /// - GameFormula and UnitProperty2: the hit rule's rating formulas and a player's
-///   bases (genesis_prime/game/rating); with CreatureLevel and the creature tables, a
+///   bases (genesis_prime/shared/rating); with CreatureLevel and the creature tables, a
 ///   creature's defence (genesis_prime/world_map/spawn).
 /// - Prerequisite: the gate of a spell's resource gains and Proxies
-///   (genesis_prime/game/spell_plan) and the caster prerequisite of a creature attack's
+///   (genesis_prime/shared/spell_plan) and the caster prerequisite of a creature attack's
 ///   damage effects, which the content load reads (genesis_prime/world_map/creature_attack).
 /// - PositionalRequirement: the arc a type 108 prerequisite condition names
-///   (genesis_prime/game/prerequisite).
+///   (genesis_prime/shared/prerequisite).
 /// - Quest2 and QuestObjective: the quests a saved quest log may name, each with its
 ///   objectives and period (genesis_prime/game/quest_log), and the quests a
-///   prerequisite's quest conditions name (genesis_prime/game/prerequisite).
+///   prerequisite's quest conditions name (genesis_prime/shared/prerequisite).
 /// - Quest2Reward: the rewards of a quest and the choices it offers
 ///   (genesis_prime/game/equip_requirement, genesis_prime/game/quest_turn_in).
 /// - Quest2Difficulty and LevelDifferentialAttribute, with Quest2 and XpPerLevel: the
@@ -169,15 +169,15 @@ import genesis_prime/table/xp_per_level
 /// - Episode, EpisodeQuest and PeriodicQuestGroup, with Quest2 and GameFormula: whether
 ///   a player may accept a quest (genesis_prime/game/quest).
 /// - PathSoldierActivate: whether a type 28 objective is a checklist, which a
-///   prerequisite's progress condition reads (genesis_prime/game/prerequisite).
-/// - Race: a player's hit radius (genesis_prime/game/hit_radius).
+///   prerequisite's progress condition reads (genesis_prime/shared/prerequisite).
+/// - Race: a player's hit radius (genesis_prime/shared/hit_radius).
 /// - RewardPropertyPremiumModifier: the bag and bank slots a premium tier gives
 ///   (genesis_prime/game/reward_property).
 /// - World: the worlds a map can run in, each of which gets a term of its spawns
 ///   (genesis_prime/world_map/spawn), and the worlds a `!go` may name
 ///   (genesis_prime/game/dev_command).
 /// - WorldLocation2: the start places (genesis_prime/game/start_place).
-/// - WorldZone: the top zone of each zone (genesis_prime/game/top_zone).
+/// - WorldZone: the top zone of each zone (genesis_prime/shared/top_zone).
 pub fn entries() -> List(store.Entry) {
   [
     action_slot_prereq.entry(),

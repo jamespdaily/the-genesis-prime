@@ -1,5 +1,5 @@
 //// The Engineer's Volatility gain in the cast rule (`genesis_prime/game/cast` `Gain`,
-//// the server's Proxy of `genesis_prime/game/server_proxy`): a Pulse Blast casts the
+//// the server's Proxy of `genesis_prime/shared/server_proxy`): a Pulse Blast casts the
 //// hidden spell 42148 with the last go of the spell that strikes, and 42148's gain gives
 //// +15 of slot 1 behind prerequisite 903 (the caster is in combat). Expected values
 //// come from these places, each named at its assertion:
@@ -19,11 +19,11 @@
 
 import cast_support as support
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
-import genesis_prime/game/class_resource.{Gain, Payment}
-import genesis_prime/game/spell_plan
 import genesis_prime/game/unit_news
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_started
+import genesis_prime/shared/class_resource.{Gain, Payment}
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{Spell4Id}
 import gleam/dict
 import gleam/list

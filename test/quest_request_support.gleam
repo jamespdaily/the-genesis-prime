@@ -3,11 +3,11 @@
 
 import game_connection_support as connection_support
 import genesis_prime/game/interaction
-import genesis_prime/game/prerequisite.{Factions}
 import genesis_prime/game/quest.{type Asker, Asker}
 import genesis_prime/game/shown
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/quest_accept.{QuestAccept}
+import genesis_prime/shared/prerequisite.{Factions}
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/id.{RaceId}
 import prerequisite_support

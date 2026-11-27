@@ -1,4 +1,4 @@
-//// A class's level-1 innate (`genesis_prime/game/innate`): which spells a Class
+//// A class's level-1 innate (`genesis_prime/shared/innate`): which spells a Class
 //// row holds and what refuses the load; and the client's switch 0x16F
 //// (`genesis_prime/game/innate_choice`). Expected values come from these places.
 //// - `Class.spell4IdInnateAbilityActive00` and `Class.spell4IdInnateAbilityPassive00`:
@@ -17,11 +17,11 @@
 
 import client_tables
 import genesis_prime/client_connection.{Undecoded}
-import genesis_prime/game/innate.{
-  type Innate, Innate, InnateAlsoAnAbility, NoSpell, Passive, SlotZeroGated,
-}
 import genesis_prime/game/innate_choice.{NotHeld}
 import genesis_prime/message/bit_stream
+import genesis_prime/shared/innate.{
+  type Innate, Innate, InnateAlsoAnAbility, NoSpell, Passive, SlotZeroGated,
+}
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{
   type Spell4BaseId, type Spell4Id, Spell4BaseId, Spell4Id,

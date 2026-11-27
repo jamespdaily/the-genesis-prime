@@ -100,15 +100,15 @@ import genesis_prime/game/cast/state.{
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/player_state.{type PlayerState}
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{type Plans, type Spell}
-import genesis_prime/game/target_mechanic
-import genesis_prime/game/unit_properties
-import genesis_prime/game/unit_state
 import genesis_prime/gap
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{type Plans, type Spell}
+import genesis_prime/shared/target_mechanic
+import genesis_prime/shared/unit_properties
+import genesis_prime/shared/unit_state
 import genesis_prime/step.{type TimerId, LogDebug, LogWarning}
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import gleam/bool
@@ -281,7 +281,7 @@ pub fn target_held(
 /// result comes first among the target checks (`0x1403b2240`): a hostile press at a creature
 /// that the picture shows holding an `Invulnerable` state is refused with 306, and a
 /// beneficial press at one holding an `ImmuneToBeneficial` state with 308
-/// (genesis_prime/game/unit_state `cast_refusal`). A press is beneficial by the target
+/// (genesis_prime/shared/unit_state `cast_refusal`). A press is beneficial by the target
 /// mechanics flag bit 0 of its aim (`Spell4TargetMechanics.flags`, `Unit.GetBuffs`); any other
 /// press goes on to `otherwise`. A picture that lags is safe: the creature decides the strike.
 pub fn unit_state_refusal(

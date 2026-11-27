@@ -14,8 +14,8 @@
 
 import fixture_tables
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/spell_area.{type AreaError, type Areas}
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/spell_area.{type AreaError, type Areas}
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{
   Spell4AoeTargetConstraintsId, Spell4EffectsId, Spell4TargetMechanicsId,
   Spell4ValidTargetsId, TelegraphDamageId,

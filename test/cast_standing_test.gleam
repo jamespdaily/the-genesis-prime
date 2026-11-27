@@ -11,9 +11,9 @@
 import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
-import genesis_prime/game/spell_plan.{type Spell, LandsHit}
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties
+import genesis_prime/shared/spell_plan.{type Spell, LandsHit}
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{LogWarning}
 import gleam/dict
 import gleam/int

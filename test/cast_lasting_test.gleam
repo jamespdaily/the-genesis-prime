@@ -17,25 +17,12 @@
 
 import cast_support as support
 import fixture_tables
-import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/cast/creature_view
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/crowd_control
-import genesis_prime/game/damage.{Formula, Parameter}
-import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
-import genesis_prime/game/lasting.{LastingRow, LifeOnly, Listed, Stack}
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{
-  type Plans, type Spell, Always, GatedOnCaster, GatedOnTarget, Lasting,
-}
-import genesis_prime/game/spend
-import genesis_prime/game/ticking
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{type News, CastFinished, CastTargetsRemoved}
 import genesis_prime/message/cast_result
@@ -48,6 +35,19 @@ import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed.{
   type SpellTargetsRemoved, SpellTargetsRemoved,
 }
+import genesis_prime/shared/area
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/damage.{Formula, Parameter}
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting.{LastingRow, LifeOnly, Listed, Stack}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{
+  type Plans, type Spell, Always, GatedOnCaster, GatedOnTarget, Lasting,
+}
+import genesis_prime/shared/spend
+import genesis_prime/shared/ticking
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict
 import gleam/int

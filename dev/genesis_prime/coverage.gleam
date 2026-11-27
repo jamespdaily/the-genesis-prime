@@ -18,18 +18,18 @@
 //// (genesis_prime/coverage/starting_ability).
 ////
 //// It then counts the class abilities above level 1 that no plan is built for
-//// (genesis_prime/game/spell_plan `unplanned`): the total, a count for each class, and a line
+//// (genesis_prime/shared/spell_plan `unplanned`): the total, a count for each class, and a line
 //// for each ability with its class, level, Spell4 and the sentence that says what the server
 //// does not build. A character is granted each of them; a press of one is refused as an
 //// unknown spell.
 ////
-//// It then counts the tier 2 to 9 spells of the planned abilities (genesis_prime/game/spell_plan
+//// It then counts the tier 2 to 9 spells of the planned abilities (genesis_prime/shared/spell_plan
 //// `tier_plans`, `unplanned_tiers`): how many are planned and how many left out, a count for each
 //// class, a line for each left out with its class, level, Spell4Base, tier, Spell4, the tier a
 //// player who holds it casts and the sentence that says what the server does not build, and a
 //// line for the Spell4Effects rows only the tier plans reach.
 ////
-//// It then counts the equip spells of the worn items (genesis_prime/game/spell_plan
+//// It then counts the equip spells of the worn items (genesis_prime/shared/spell_plan
 //// `standing_plans`, `standing_unplanned`; genesis_prime/coverage/standing_root): how many
 //// are planned, which of those stand only in part, with the first row no cast plays, and
 //// which are left out, with the sentence that says what the server does not build.
@@ -83,12 +83,12 @@ import genesis_prime/coverage/starting_ability
 import genesis_prime/dev_database
 import genesis_prime/dev_exit
 import genesis_prime/game/held_tier
-import genesis_prime/game/rating
-import genesis_prime/game/server_proxy
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan
-import genesis_prime/game/spell_tier
 import genesis_prime/game/vendor
+import genesis_prime/shared/rating
+import genesis_prime/shared/server_proxy
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/spell_tier
 import genesis_prime/store/worker
 import genesis_prime/table
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}

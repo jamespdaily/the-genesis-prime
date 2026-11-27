@@ -37,13 +37,13 @@
 ////   is one of them, with the class's own base pool added (`bases`), so a healer's
 ////   maximum Focus is that pool plus what its items give.
 
-import genesis_prime/game/equip_spell
-import genesis_prime/game/item_property.{
+import genesis_prime/message/item_visual.{type ItemVisual}
+import genesis_prime/shared/equip_spell
+import genesis_prime/shared/item_property.{
   type ItemProperties, type ItemPropertyError, Shield,
 }
-import genesis_prime/game/unit_properties
-import genesis_prime/game/worn_visual.{type WornVisualError}
-import genesis_prime/message/item_visual.{type ItemVisual}
+import genesis_prime/shared/unit_properties
+import genesis_prime/shared/worn_visual.{type WornVisualError}
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/creature_level
 import genesis_prime/table/id.{
@@ -316,7 +316,7 @@ fn new_items(
 }
 
 /// The UnitProperty2 defaultValue of a property the player's rules read; the load
-/// refuses tables without its row (genesis_prime/game/unit_properties).
+/// refuses tables without its row (genesis_prime/shared/unit_properties).
 fn default_of(
   defaults defaults: List(#(UnitProperty2Id, Float)),
   id id: UnitProperty2Id,

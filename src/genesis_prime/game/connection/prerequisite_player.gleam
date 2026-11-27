@@ -15,11 +15,11 @@
 import genesis_prime/game/ability_book
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/movement
-import genesis_prime/game/prerequisite.{type Player}
 import genesis_prime/game/start_place
 import genesis_prime/game/world_entry
+import genesis_prime/shared/prerequisite.{type Player}
+import genesis_prime/shared/unit_fields
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/unit_fields
 
 /// The player the entered character is.
 pub fn of(

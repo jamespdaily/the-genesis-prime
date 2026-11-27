@@ -14,7 +14,7 @@
 ////
 //// - **The aggro range** lies inside sight, so a creature whose ring a player enters
 ////   is Live, and a player in its ring is one of its viewers
-////   (genesis_prime/world_map/sight).
+////   (genesis_prime/shared/sight).
 //// - **The leash range** lies outside the aggro range, so a creature at home with a
 ////   player in its ring does not leash at once.
 //// - **The aggro threat** is above 0 and **the chase stop fraction** lies strictly

@@ -3,11 +3,11 @@
 //// from a loadout.
 
 import fixture_tables
-import genesis_prime/game/item_property.{Shield}
-import genesis_prime/game/loadout.{type Loadout}
-import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/shared/item_property.{Shield}
+import genesis_prime/shared/loadout.{type Loadout}
+import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/table/id.{type UnitProperty2Id}
 import gleam/int
 import gleam/list

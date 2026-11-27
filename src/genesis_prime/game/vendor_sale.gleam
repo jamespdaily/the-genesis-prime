@@ -97,7 +97,6 @@ import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_price
-import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/game/vendor
@@ -117,6 +116,8 @@ import genesis_prime/message/float32
 import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/vendor_sale as vendor_sale_message
 import genesis_prime/message/vendor_sell_junk as vendor_sell_junk_message
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/item_property
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
   type SessionEpoch, HeldItem, ItemsNotSaved, SaveRefused, Sold,
@@ -125,7 +126,6 @@ import genesis_prime/table/id.{type Item2Id, Item2Id}
 import genesis_prime/table/item2
 import genesis_prime/table/loader/formula_requirement
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_path
 import gleam/bit_array
 import gleam/bool
 import gleam/dict

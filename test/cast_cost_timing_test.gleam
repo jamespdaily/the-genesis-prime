@@ -1,5 +1,5 @@
 //// When a spell's innate cost is paid (`genesis_prime/game/cast` with
-//// `genesis_prime/game/class_resource`): checked at the accept against the slot less
+//// `genesis_prime/shared/class_resource`): checked at the accept against the slot less
 //// what live casts have reserved, reserved on the live cast, and paid at the cast's
 //// first go, once, for every spell but a pressed channel, which pays at each of its gos
 //// (`cast_channel_cost_test`). Expected values come from these places, each named at its
@@ -15,7 +15,7 @@
 //// - `opcode.0x801`: reason 11 (SpellInterrupted) with the bit 1 is what a jump sends.
 //// - `Spell4CastResult.vital_cost`: a cost the slot cannot meet is refused with the
 ////   cost's result (55 for the Medic's last slot, 51 for the Esper's Psi Points).
-//// - The class resource's own rules (`genesis_prime/game/class_resource`): the
+//// - The class resource's own rules (`genesis_prime/shared/class_resource`): the
 ////   Esper's empty runs while the slot holds above 0, the Medic's refill starts from a
 ////   payment made out of combat.
 //// - The design of the step: at one go the cost is paid before that go's gains
@@ -27,11 +27,13 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{type Spell, Spell}
-import genesis_prime/game/spend
 import genesis_prime/message/cast_result
+import genesis_prime/shared/class_resource.{
+  type Payment, type Resources, Payment,
+}
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{type Spell, Spell}
+import genesis_prime/shared/spend
 import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/int

@@ -1,4 +1,4 @@
-//// The level an amount of experience is (`genesis_prime/game/level`).
+//// The level an amount of experience is (`genesis_prime/shared/level`).
 //// Expected values come from these places.
 //// - The client's GetLevelForExperience 0x140029820 (fact `0x140029820`): the
 ////   highest level is GameFormula row 145's dataint0 (50); the level is the
@@ -12,7 +12,7 @@
 ////   GameFormula row 145 or a missing XpPerLevel record fails the table load.
 
 import fixture_tables
-import genesis_prime/game/level
+import genesis_prime/shared/level
 import genesis_prime/table/game_formula
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level

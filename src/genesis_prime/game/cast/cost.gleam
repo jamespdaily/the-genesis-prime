@@ -63,7 +63,7 @@
 ////   nothing, and its reservation ends with it. A spell whose first go is at once, or
 ////   that has no go of its own, pays at its accept, in the step of its check
 ////   (`pays_at_accept`). A second press taken in the same step is checked against what
-////   the first left (genesis_prime/game/class_resource).
+////   the first left (genesis_prime/shared/class_resource).
 //// - **A channel pays its cost at every go** (`pulse_costs`): the tooltip prices every pulse of
 ////   a Channeled spell ("per tick", `UI/ToolTips/ToolTips.lua` 2458-2491) and the tables hold
 ////   no cost per pulse, so each go after the first pays the spell's costs again, checked at
@@ -74,7 +74,7 @@
 ////   needs one pulse's cost only, as the client checks it (`0x1403b3320`); a channel a
 ////   Proxy started pays nothing, as at its first go, and one whose cost spends every point
 ////   held pays once, at its first go, the six rows of it being no player's.
-//// - **A spend of every point held** (`spell_plan.SpendAllCost`, genesis_prime/game/spend):
+//// - **A spend of every point held** (`spell_plan.SpendAllCost`, genesis_prime/shared/spend):
 ////   the check is of the base cost alone, as the client's is (`0x1403b3320`), and the
 ////   accept then reserves every whole point the slot holds less the reserved, which the
 ////   first go takes and whose new value the client is sent (`opcode.0x935`). The points
@@ -95,13 +95,15 @@ import genesis_prime/game/cast/state.{
   StealthChanged, Strike, TargetChangeEnds, TargetChangeStarts, TickStrike,
   Unheld, Unpaid, UnreadSpend,
 }
-import genesis_prime/game/class_resource.{type Payment, type Resources, Payment}
-import genesis_prime/game/cooldown
-import genesis_prime/game/crowd_control
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/gap
 import genesis_prime/message/cast_result
+import genesis_prime/shared/class_resource.{
+  type Payment, type Resources, Payment,
+}
+import genesis_prime/shared/cooldown
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Spell}
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/bool
 import gleam/dict

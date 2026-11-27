@@ -1,5 +1,5 @@
-//// The heals and shield overloads of the plan (`genesis_prime/game/spell_plan`
-//// `Heal`, `TickingHeal`, `Lasting`, `genesis_prime/game/effect_kind`).
+//// The heals and shield overloads of the plan (`genesis_prime/shared/spell_plan`
+//// `Heal`, `TickingHeal`, `Lasting`, `genesis_prime/shared/effect_kind`).
 //// Expected values come from these places.
 //// - `Spell4Effects.effectType.118`: a HealShields row restores shield to the unit it
 ////   lands on, by the amount of `0x140565600`'s formula; its columns are the Medic's
@@ -37,19 +37,19 @@
 import cast_support
 import client_tables
 import fixture_tables
-import genesis_prime/game/damage.{Formula, Parameter}
-import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/damage.{Formula, Parameter}
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan.{
   AimedAtOtherUnits, AimsAtArea, AimsAtCaster, AimsAtCasterAndArea,
   AimsAtCasterAndPrimaryTarget, AimsAtPrimaryTarget, Always, Applied, Heal,
   Lasting, LeftOut, TickingHeal,
 }
-import genesis_prime/game/spend
-import genesis_prime/game/target_mechanic
-import genesis_prime/game/ticking
+import genesis_prime/shared/spend
+import genesis_prime/shared/target_mechanic
+import genesis_prime/shared/ticking
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite
@@ -570,7 +570,7 @@ pub fn a_heal_row_that_lives_shorter_than_a_tick_fails_the_load_test() -> Nil {
       tick_ms: 1000,
       duration_ms: 0,
     ))
-    as "row 80077 as edited: tickTime 1000, durationTime 0 and no flags bit 2, so no tick lands within its life (genesis_prime/game/ticking `NoTick`)"
+    as "row 80077 as edited: tickTime 1000, durationTime 0 and no flags bit 2, so no tick lands within its life (genesis_prime/shared/ticking `NoTick`)"
 }
 
 pub fn a_heal_row_with_an_unread_parameter_or_number_is_refused_test() -> Nil {

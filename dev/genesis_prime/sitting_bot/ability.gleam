@@ -13,7 +13,7 @@
 ////   level-1 abilities, its innate, and each later ability whose level is at or
 ////   below its own (`genesis_prime/game/ability_book`), so the level that gives an
 ////   ability is the level the bot is seated at: 1 for a level-1 ability or the
-////   innate, else the SpellLevel row's `characterLevel` (`genesis_prime/game/loadout`).
+////   innate, else the SpellLevel row's `characterLevel` (`genesis_prime/shared/loadout`).
 //// - **The faction is the pressed player's**, because a beneficial press at a
 ////   player of another faction is refused as a hostile target (result 99,
 ////   `genesis_prime/game/cast/press_target`).
@@ -25,12 +25,12 @@
 ////   dressed as a new character of that class does.
 //// - Gap: facing is not set, so a Targeted spell with an arc of less than 360
 ////   degrees is refused 101 when the bot stands on its target's own point
-////   (`genesis_prime/game/area.faces`).
+////   (`genesis_prime/shared/area.faces`).
 
 import genesis_prime/dev_database
 import genesis_prime/game/character_creation
-import genesis_prime/game/loadout
 import genesis_prime/language_file.{type LanguageFile}
+import genesis_prime/shared/loadout
 import genesis_prime/sitting_bot/sql
 import genesis_prime/store/sql as store_sql
 import genesis_prime/table/class

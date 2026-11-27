@@ -1,4 +1,4 @@
-//// Prerequisite types 13, 14, 246 and 143 (`genesis_prime/game/prerequisite`): what the
+//// Prerequisite types 13, 14, 246 and 143 (`genesis_prime/shared/prerequisite`): what the
 //// checker's own game object holds. Expected values come from these places:
 //// - `Prerequisite.prerequisiteTypeId.13`, `.14` and `.246` and `HoldsItemInLocations`
 ////   (0x1403ac590): bit n of the mask the type passes (1, 0x303 and 0x707) is inventory
@@ -14,7 +14,7 @@
 ////   step is decided for a caster.
 
 import client_tables
-import genesis_prime/game/prerequisite.{Fails, NotRead, Passes}
+import genesis_prime/shared/prerequisite.{Fails, NotRead, Passes}
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/int
 import gleam/list

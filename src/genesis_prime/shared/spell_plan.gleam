@@ -5,8 +5,8 @@
 ////
 //// ```
 //// SpellLevel (class, no prerequisite) ─▶ Spell4 (the ability) ─▶ Spell4Base
-//// Class (the first innate slot, genesis_prime/game/innate) ─▶ Spell4 (the innate's active and passive) ─▶ Spell4Base
-//// Item2 (takes a slot) ─▶ ItemSpecial.spell4IdOnEquip ─▶ Spell4 (the equip spell, genesis_prime/game/equip_spell)
+//// Class (the first innate slot, genesis_prime/shared/innate) ─▶ Spell4 (the innate's active and passive) ─▶ Spell4Base
+//// Item2 (takes a slot) ─▶ ItemSpecial.spell4IdOnEquip ─▶ Spell4 (the equip spell, genesis_prime/shared/equip_spell)
 ////      Spell4Effects (spellId = the Spell4 id), each effect of type Proxy (26) ─▶ the Spell4 it names, as a child
 ////      Spell4Thresholds (parent = the Spell4 id), by order index ─▶ the Spell4 each tap or charge level casts, as a stage
 ////      SpellPhase (owner = a Multiphase Spell4) ─▶ the phase delays and flags, in row order
@@ -23,11 +23,11 @@
 //// - **The tiers.** Every tier 2 to 9 row of every ability the plans hold, an alternate's tiers
 ////   inside its ability's, is planned as a later ability is, by the Spell4 id of the tier row
 ////   (`tier_plans`, `tier_derivation`): the Spell4 row that is a tier is the client's
-////   `GetSpellIdForTier` (genesis_prime/game/spell_tier). A tier whose error `refusal_of` says leaves out is left
+////   `GetSpellIdForTier` (genesis_prime/shared/spell_tier). A tier whose error `refusal_of` says leaves out is left
 ////   out and listed by `unplanned_tiers`, and a player who holds it casts the best lower tier
 ////   (genesis_prime/game/held_tier); any other error fails the load.
 //// - **The equip spells.** The equip spell of each Item2 row that takes a slot
-////   (genesis_prime/game/equip_spell `roots`) is planned as a spell no ability holds, by Spell4
+////   (genesis_prime/shared/equip_spell `roots`) is planned as a spell no ability holds, by Spell4
 ////   id (`standing_plans`): the spells a worn item puts on its wearer. The same fold plans it or
 ////   leaves it out as it does a later ability (`planned_or_left_out`): one whose error
 ////   `refusal_of` says leaves out is listed by `standing_unplanned`, which is not `unplanned`, so the ability
@@ -39,7 +39,7 @@
 ////   holds it and it stands while the AMP is picked. An AMP that a type 227 Prerequisite
 ////   condition names unlocks a class ability and its spell is that ability's: it is left out
 ////   with `AmpUnlocksClassAbility`, as "unlocks a class ability, not built"
-////   (genesis_prime/game/amp_spec `roots`; the unlock itself is not built). Another one whose
+////   (genesis_prime/shared/amp_spec `roots`; the unlock itself is not built). Another one whose
 ////   error `refusal_of` says leaves out is listed by `unplanned_amps`; any other error fails
 ////   the load, and so does an AMP naming a Spell4 the table lacks (`AmpSpellNotRead`).
 //// - **One decision for each effect row.** `read_row` says what the plan makes of a
@@ -98,7 +98,7 @@
 ////   42569, 33154) and 212838 (80382 to 80383, 32921).
 //// - **The gains.** A VitalModifier (`Spell4Effects.effectType.1`) of a tree gives
 ////   the caster a `Gift` by its vital, behind its caster apply prerequisite, which the
-////   cast rule checks (genesis_prime/game/prerequisite): dataBits02 points of the resource
+////   cast rule checks (genesis_prime/shared/prerequisite): dataBits02 points of the resource
 ////   slot of vital 6 (slot 1) or 8 (slot 3); of Focus (vital 15) dataBits02 points, or,
 ////   when it is 0, the share of the maximum Focus in dataBits05, a float from above 0 to
 ////   1.0 (`Spell4Effects.dataBits05`); dataBits02 points of the class slot that names the
@@ -114,7 +114,7 @@
 //// - **The lasting effects.** A Fluff effect (`Spell4Effects.effectType.17`), a Scale
 ////   effect (18), an ItemVisualSwap effect (76), a RavelSignal effect (81) and a FullScreenEffect
 ////   effect (95, `Spell4Effects.effectType.95`) of a tree are each a `Lasting` row: the unit
-////   its targetFlags aim at, its delay, durationTime and flags bit 2, which give its spell a life there (genesis_prime/game/lasting). A
+////   its targetFlags aim at, its delay, durationTime and flags bit 2, which give its spell a life there (genesis_prime/shared/lasting). A
 ////   SpellForceRemove effect (`Spell4Effects.effectType.80`) is a `ForceRemove` row:
 ////   dataBits00 picks a spell group (1), a Spell4 (2) or a Spell4Base (3) by
 ////   dataBits01, which must name a row, and the count of stacks is read only where
@@ -131,16 +131,16 @@
 ////   casts; a row aimed at the caster holds Ability Restriction (27) on it, which
 ////   `restrictions_in_phase` lists apart from the strike's), and its Stun (0),
 ////   Knockdown (8) or Ability Restriction state, delay, durationTime and the
-////   Interrupt Armor it removes (genesis_prime/game/crowd_control). The strike
+////   Interrupt Armor it removes (genesis_prime/shared/crowd_control). The strike
 ////   tells the units it selects the row's state, even when its phase has no damage
-////   (genesis_prime/game/spell_area `phase`); the cast rule lists the states that
+////   (genesis_prime/shared/spell_area `phase`); the cast rule lists the states that
 ////   landed in the go and keeps a node for their life (genesis_prime/game/cast).
 ////   Each state's `Spell4Effects.emmComparison` tag chooses it by the points spent,
 ////   as a gain's does.
 //// - **The property modifiers.** A UnitPropertyModifier effect
 ////   (`Spell4Effects.effectType.11`) whose targetFlags include the caster is a
 ////   `PropertyModifier` row: the property, mode, multiplier, flat amount and amount for
-////   each level (genesis_prime/game/unit_properties), and its delay, durationTime and
+////   each level (genesis_prime/shared/unit_properties), and its delay, durationTime and
 ////   flags bit 2, which start and end the change and give the caster's node of the cast
 ////   its life. A row aimed only at other units (targetFlags 2, 4 or 6) is a `StruckChange`
 ////   that changes the creatures a strike hits, and a row that names the caster and others
@@ -155,7 +155,7 @@
 ////   into dataBits01 at the 32-bit float dataBits02; both properties must have a
 ////   UnitProperty2 row. A DisguiseOutfit effect (`Spell4Effects.effectType.112`) whose
 ////   targetFlags include the caster is a `PropertyModifier` row too, whose change is a
-////   `LookChange`: the displays it shows (genesis_prime/game/look), each in the slot of
+////   `LookChange`: the displays it shows (genesis_prime/shared/look), each in the slot of
 ////   its item type, from dataBits02 or dataBits01. It starts, ends and gives the node its
 ////   life as a property change does. A row with an outfit (dataBits00 or dataBits08), no
 ////   display, or a display whose item type has no slot fails the load
@@ -177,7 +177,7 @@
 ////   include the caster (bit 1), or are the primary target alone (2) in a spell cast on the
 ////   caster, is a `PropertyModifier` row whose change is an `AbsorbChange`: the formula of
 ////   the pool's amount (dataBits00 and dataBits01 as floats and the four parameters, whose
-////   kinds must be those the caster's value reads, genesis_prime/game/damage
+////   kinds must be those the caster's value reads, genesis_prime/shared/damage
 ////   `absorption_formula_of`), the damage types it takes (dataBits04 as a mask) and its
 ////   aim. It starts, ends and gives the node its life as a type 11 row does. A row with a
 ////   tickTime, with neither a durationTime nor flags bit 2, with a non-finite number or a
@@ -190,10 +190,10 @@
 ////   alone (2) in a spell cast on the caster, is a `Heal` row carrying the vital it
 ////   restores (health or shield): its formula (dataBits00 as a float,
 ////   dataBits01 and the four parameters, which must be kinds the caster's value reads,
-////   genesis_prime/game/damage `unread`), its delay, aim and caster apply
+////   genesis_prime/shared/damage `unread`), its delay, aim and caster apply
 ////   prerequisite, which the cast rule checks, and target apply prerequisite, which it
 ////   checks for the unit the row heals; a row with a tickTime is a `TickingHeal`, with the schedule of
-////   its ticks (genesis_prime/game/ticking), each tick its own 0x7f8. A periodic row that
+////   its ticks (genesis_prime/shared/ticking), each tick its own 0x7f8. A periodic row that
 ////   lasts until removed (flags bit 2) is left out (`HealUntilRemoved`). A row
 ////   aimed only at other units (4 and 6) is not read. A child a Proxy starts on each struck unit that holds a heal whose
 ////   aim names its primary target (flags 2, 3 or 7) fails the load: a heal on a struck unit is not built.
@@ -249,7 +249,7 @@
 ////   (`Spell4Effects.effectType.73`) whose targetFlags include the caster is a
 ////   `CooldownModifier` row: the selector (dataBits00 and the id of dataBits01, kept as
 ////   given and looked up in no table) and the operation with its 32-bit float
-////   (genesis_prime/game/cooldown), and its delay, durationTime and flags bit 2, which
+////   (genesis_prime/shared/cooldown), and its delay, durationTime and flags bit 2, which
 ////   time the change and give the caster's node of the cast its life. A row aimed only
 ////   at other units is not read. A spell also holds its cooldown groups, the non-zero
 ////   spellCoolDownId00 to 02, each of which must be a SpellCoolDown row. Its caster
@@ -300,15 +300,15 @@
 ////   row's cost the same types go to the first such slot that holds a point
 ////   (`RowClassCost`). Focus (15) on a Spell4 row is a `FocusCost` of its amount, which
 ////   the caster's own Focus meets or is refused 167 (`CheckInnateCost` 0x1403b3320 case
-////   0xe, genesis_prime/game/class_resource); Health (1), shield (3), Focus on a threshold
+////   0xe, genesis_prime/shared/class_resource); Health (1), shield (3), Focus on a threshold
 ////   row and 16 (slot 7) give their own results (44, 176, 167, 177) and are held by no
 ////   rule of the server; any other type, the client's slots 8 to 10 (types 27 to 29)
 ////   among them, is an `UnreadCost`.
-//// - **The spend.** A cost's Spell4 EMM id (`Spell4.innateCostEMMId0`, genesis_prime/game/spend)
+//// - **The spend.** A cost's Spell4 EMM id (`Spell4.innateCostEMMId0`, genesis_prime/shared/spend)
 ////   of 4 or 7 on a slot cost makes it a `SpendAllCost`, which takes every point the
 ////   slot holds; any other id, one on a slot or unheld cost and one on no cost are an
 ////   `UnreadSpendCost`; a class cost keeps its check whatever its id. Each gain, Proxy
-////   and (in genesis_prime/game/spell_area) damage effect keeps its row's tag (`Spell4Effects.emmComparison`), and the cast
+////   and (in genesis_prime/shared/spell_area) damage effect keeps its row's tag (`Spell4Effects.emmComparison`), and the cast
 ////   rule chooses by it with the points spent.
 //// - **The caster requirements.** A spell's two caster vital requirements
 ////   (`0x1403b1780`): types 5 to 11 read the same slots with the same results,
@@ -322,7 +322,7 @@
 ////   target the client picks (`Spell4TargetMechanics.targetType`), so the plan holds
 ////   no range and no target rule.
 //// - **A spell's own cast conditions** are its four Prerequisite columns, each loaded with
-////   the rows it nests (genesis_prime/game/prerequisite `load`), and kept on every spell
+////   the rows it nests (genesis_prime/shared/prerequisite `load`), and kept on every spell
 ////   of a tree, the stages and children too. The press checks the pressed or staged
 ////   spell's CasterCast (`CastGate`, failure 151) then its TargetCast (281), after every
 ////   other check (`0x1403ace00`); a spell whose propertyFlags has bit 2 and whose
@@ -335,7 +335,7 @@
 ////   hold a gate (Warrior 46867, Esper 58586, Stalker 46073, Spellslinger 47273) and
 ////   Spell Surge's buff 47439 a persistence.
 //// - **The innates.** A slot-0 innate's active spell is held as an ability in the
-////   bag at the index after the level-1 abilities (genesis_prime/game/loadout), so its
+////   bag at the index after the level-1 abilities (genesis_prime/shared/loadout), so its
 ////   plan is the ability's. Its passive is never pressed: the server starts it itself
 ////   (genesis_prime/game/cast `standing_changed`).
 //// - **The caster's death.** Bit 0 of the spell's caster condition row says
@@ -367,35 +367,35 @@
 ////   aimed at the caster or by other flags, of Ability Restriction aimed anywhere but at
 ////   the caster, or behind an apply prerequisite.
 
-import genesis_prime/game/amp_spec
-import genesis_prime/game/cast_bar_kind
-import genesis_prime/game/class_resource
-import genesis_prime/game/column_reading
-import genesis_prime/game/cooldown
-import genesis_prime/game/crowd_control
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
-import genesis_prime/game/equip_spell
-import genesis_prime/game/forced_move
-import genesis_prime/game/innate
-import genesis_prime/game/item_property
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
-import genesis_prime/game/loadout
-import genesis_prime/game/look
-import genesis_prime/game/prerequisite.{type Prerequisite}
-import genesis_prime/game/spell_effect.{type PlannedEffect, PlannedEffect}
-import genesis_prime/game/spell_tier
-import genesis_prime/game/spend
-import genesis_prime/game/target_mechanic
-import genesis_prime/game/ticking
-import genesis_prime/game/unit_properties
-import genesis_prime/game/unit_state
-import genesis_prime/game/worn_visual
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
+import genesis_prime/shared/amp_spec
+import genesis_prime/shared/cast_bar_kind
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/column_reading
+import genesis_prime/shared/cooldown
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/equip_spell
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/innate
+import genesis_prime/shared/item_property
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/loadout
+import genesis_prime/shared/look
+import genesis_prime/shared/prerequisite.{type Prerequisite}
 import genesis_prime/shared/quest_row.{type Quest, type QuestRowError}
+import genesis_prime/shared/spell_effect.{type PlannedEffect, PlannedEffect}
+import genesis_prime/shared/spell_tier
+import genesis_prime/shared/spend
+import genesis_prime/shared/target_mechanic
+import genesis_prime/shared/ticking
+import genesis_prime/shared/unit_properties
+import genesis_prime/shared/unit_state
+import genesis_prime/shared/worn_visual
 import genesis_prime/table/cc_state_additional_data
 import genesis_prime/table/id.{
   type ItemSlotId, type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId,
@@ -526,7 +526,7 @@ pub type Condition {
 /// (`Spell4Effects.effectType.1`), what it `gift`s, in the phases of `phase_flags`, given
 /// when its `condition` passes against the caster, whose own unit is the unit the row
 /// reaches, and when its `tag` holds for the points the cast spent
-/// (genesis_prime/game/spend).
+/// (genesis_prime/shared/spend).
 pub type Gain {
   Gain(
     effect_id: Spell4EffectsId,
@@ -830,7 +830,7 @@ pub type Spell {
     stages: List(Stage),
     /// The pulse times of a Channeled spell.
     channel: Option(Channel),
-    /// The spell's effect rows, each an envelope (`genesis_prime/game/spell_effect`) round
+    /// The spell's effect rows, each an envelope (`genesis_prime/shared/spell_effect`) round
     /// its kind, sorted by the rank of the kind and, within a kind, in row order (`rank`).
     /// `in_phase` reads the rows of one kind that apply in a phase. The gains in it are the
     /// spell's own, given at its gos; none of a child started at each struck unit, whose
@@ -917,7 +917,7 @@ pub type StealthChange {
 /// is removed, and a Stealth effect with a delayTime or durationTime is not built), the
 /// phases of `phase_flags` it applies in,
 /// when its `condition` holds (its caster apply prerequisite against the caster), and
-/// when its `tag` holds for the points the cast spent (genesis_prime/game/spend).
+/// when its `tag` holds for the points the cast spent (genesis_prime/shared/spend).
 pub type StealthRow {
   StealthRow(
     effect_id: Spell4EffectsId,
@@ -1083,7 +1083,7 @@ pub type ProcAim {
 /// holding cast its life (a Proc with no durationTime and flags bit 2 lasts until
 /// removed, `Spell4Effects.effectType.14.lifetime`), in the phases of `phase_flags`, when
 /// `condition` holds (its caster apply prerequisite against the caster) and its `tag`
-/// holds for the points the cast spent (genesis_prime/game/spend). The proc's `spell` is
+/// holds for the points the cast spent (genesis_prime/shared/spend). The proc's `spell` is
 /// planned as a Proxy's child is.
 pub type ProcRow {
   ProcRow(
@@ -1148,7 +1148,7 @@ pub type ProcRead {
 /// `phase_flags` it applies in, when its `condition` holds (its caster apply
 /// prerequisite against the caster, its target apply prerequisite against the caster
 /// as the only unit it reaches), and when its `tag` holds for the points the cast spent
-/// (genesis_prime/game/spend). A row aimed only at other units is not read, and the
+/// (genesis_prime/shared/spend). A row aimed only at other units is not read, and the
 /// part of a row's aim that is not the caster is not applied (`effect_kind.is_row_read`).
 pub type CooldownModifier {
   CooldownModifier(
@@ -1167,7 +1167,7 @@ pub type CooldownModifier {
 /// (`Spell4Effects.effectType.3.player`) and no rule of the server reads), the phases of `phase_flags` it applies in, when its `condition`
 /// holds (its caster apply prerequisite against the caster, its target apply
 /// prerequisite against the caster as the only unit it reaches), and when its `tag` holds for the points the cast spent
-/// (genesis_prime/game/spend). A row aimed only at other units is not read, and the part
+/// (genesis_prime/shared/spend). A row aimed only at other units is not read, and the part
 /// of a row's aim that is not the caster is not applied (`effect_kind.is_row_read`).
 pub type ForcedMove {
   ForcedMove(
@@ -1182,12 +1182,12 @@ pub type ForcedMove {
 /// A ForcedMove effect (`Spell4Effects.effectType.3`) of a spell whose targetFlags are 2,
 /// 4 or 6, the units a strike hits (a row that includes the caster is a `ForcedMove`
 /// and moves the caster only): the `move` its columns decode to
-/// (genesis_prime/game/forced_move), the units it strikes (`aim`: the primary target,
+/// (genesis_prime/shared/forced_move), the units it strikes (`aim`: the primary target,
 /// the area or both), the `delay_ms` after the go the creature is thrown at, the phases
 /// of `phase_flags` it applies in, when its `condition` holds (its caster apply
 /// prerequisite against the caster, its target apply prerequisite against each struck
 /// unit it throws), and when its `tag` holds for the points
-/// the cast spent (genesis_prime/game/spend). The cast throws each creature the go
+/// the cast spent (genesis_prime/shared/spend). The cast throws each creature the go
 /// `Hit` (genesis_prime/game/cast/control `struck_moves_armed`); a unit that is the caster or
 /// another player is not thrown, since no rule moves another player.
 pub type StruckMove {
@@ -1208,7 +1208,7 @@ pub type StruckMove {
 /// `aim` names the units it strikes (the primary target, the area or both, as `StruckMove`
 /// does), `phase_flags` the phases it applies in, `condition` when it holds (its caster apply
 /// prerequisite against the caster, its target apply prerequisite against each struck unit),
-/// and `tag` when it holds for the points the cast spent (genesis_prime/game/spend). The cast
+/// and `tag` when it holds for the points the cast spent (genesis_prime/shared/spend). The cast
 /// tells each creature it removes (genesis_prime/game/cast/control `despawns_told`); a unit
 /// that is the caster or another player is not removed.
 pub type Despawn {
@@ -1224,12 +1224,12 @@ pub type Despawn {
 
 /// A UnitStateSet effect (`Spell4Effects.effectType.15`) aimed past the caster with a time:
 /// the unit state `row.state` (dataBits00) held on each creature the go `Hit` from the go plus
-/// the row's delay for its duration (genesis_prime/game/unit_state `Row`); the client reads no
+/// the row's delay for its duration (genesis_prime/shared/unit_state `Row`); the client reads no
 /// row of this type, so the state shows only through the cast results the server gives.
 /// `aim` names the units it strikes (the primary target, the area or both, as `StruckMove`
 /// does), `phase_flags` the phases it applies in, `condition` when it holds (its caster apply
 /// prerequisite against the caster, its target apply prerequisite against each struck unit),
-/// and `tag` when it holds for the points the cast spent (genesis_prime/game/spend). The cast
+/// and `tag` when it holds for the points the cast spent (genesis_prime/shared/spend). The cast
 /// tells each creature it holds the state on (genesis_prime/game/cast/control
 /// `unit_states_told`); a unit that is the caster or another player holds none.
 pub type UnitState {
@@ -1249,7 +1249,7 @@ pub type UnitState {
 /// this type (its effect switch has no case 35), so what the row means is the server's
 /// reading and the hold's start a guess (genesis_prime/world_map/creature_life `Charged`).
 /// A player's cast reads none: no spell a player's route holds has a row of the type.
-/// `tag` is when it holds for the points the cast spent (genesis_prime/game/spend).
+/// `tag` is when it holds for the points the cast spent (genesis_prime/shared/spend).
 pub type Delay {
   Delay(
     effect_id: Spell4EffectsId,
@@ -1269,7 +1269,7 @@ pub type Delay {
 /// the client, a guess), `condition` when it holds (its caster apply prerequisite against the
 /// caster, its target apply prerequisite against the unit it reaches), `phase_flags` the phases
 /// it applies in and `tag` when it holds for the points the cast spent
-/// (genesis_prime/game/spend). A quest or an index the tables lack is planned and names no
+/// (genesis_prime/shared/spend). A quest or an index the tables lack is planned and names no
 /// objective at run time.
 pub type QuestAdvance {
   QuestAdvance(
@@ -1289,7 +1289,7 @@ pub type QuestAdvance {
 /// creature checks against its own state (`Spell4Effects.prerequisiteIdTargetApply`): the
 /// row's Spell4Effects id, the phases of `phase_flags` it applies in, who it aims at, the
 /// prerequisite as the load parsed it, and the `tag` that chooses it by the points the cast
-/// spent (genesis_prime/game/spend). The strike tells each unit `aim` names the gate
+/// spent (genesis_prime/shared/spend). The strike tells each unit `aim` names the gate
 /// (genesis_prime/game/strike_tell `Gate`), and a go row with a gate applies on a unit only
 /// when that unit's answer lists the row's id as passed (genesis_prime/game/cast `went`).
 pub type StruckGate {
@@ -1338,7 +1338,7 @@ pub type Absorption {
 /// `phase_flags` it applies in, when its `condition` holds (its caster apply
 /// prerequisite against the caster, its target apply prerequisite against the caster
 /// as the only unit it reaches), and when its `tag` holds for the points the cast spent
-/// (genesis_prime/game/spend). A type 11 row aimed only at other units (2, 4, 6) is a
+/// (genesis_prime/shared/spend). A type 11 row aimed only at other units (2, 4, 6) is a
 /// `StruckChange` on the creatures a strike hits; any other row aimed only at other
 /// units is not read, and the part of a row's aim that is not the caster is not applied
 /// (`effect_kind.is_row_read`).
@@ -1367,7 +1367,7 @@ pub type InterruptArmor {
 /// A CCStateSet effect (`Spell4Effects.effectType.4`) of a spell: the unit it aims
 /// at (the primary target, the area or both), its `row` (state, delay, duration and
 /// the armor it removes), the phases of `phase_flags` it fires in, and the `tag` that
-/// chooses it by the points the cast spent (genesis_prime/game/spend). Its dataBits
+/// chooses it by the points the cast spent (genesis_prime/shared/spend). Its dataBits
 /// beyond the state, the armor and the helper spell of dataBits07 need no handling
 /// (`Spell4Effects.effectType.4`), and it has no apply prerequisite. `move` is the
 /// move a Knockback, Pushback or Pull state throws its creature by: the helper
@@ -1391,7 +1391,7 @@ pub type CrowdControl {
 /// spell a life there, from its `row`, in the phases of `phase_flags`, when its
 /// `condition` holds (its caster apply prerequisite against the caster, its target
 /// apply prerequisite against each unit the row reaches), and when its `tag` holds for the points
-/// the cast spent (genesis_prime/game/spend). Its dataBits need no handling: the client
+/// the cast spent (genesis_prime/shared/spend). Its dataBits need no handling: the client
 /// resizes the unit of a Scale effect itself (`Spell4Effects.effectType.18`), swaps and
 /// restores the visual of an ItemVisualSwap effect itself (`Spell4Effects.effectType.76`),
 /// and a RavelSignal effect is only a life (`Spell4Effects.effectType.81`); the client marks a
@@ -1413,11 +1413,11 @@ pub type Lasting {
 /// or the primary target of a spell cast on the caster), the phases of `phase_flags` it
 /// applies in, when its `condition` holds (its caster apply prerequisite against the
 /// caster, its target apply prerequisite against the unit it heals), and when its `tag`
-/// holds for the points the cast spent (genesis_prime/game/spend). The part of a row's
+/// holds for the points the cast spent (genesis_prime/shared/spend). The part of a row's
 /// aim that is not the caster is not applied (`effect_kind.is_row_read`).
 pub type Heal {
   /// A heal that lands once, `delay_ms` after its go, by `formula` read for the caster
-  /// (genesis_prime/game/damage `value_on_caster`).
+  /// (genesis_prime/shared/damage `value_on_caster`).
   Heal(
     effect_id: Spell4EffectsId,
     vital: effect_kind.Vital,
@@ -1477,7 +1477,7 @@ pub fn telling_of(heal heal: Heal) -> Telling {
 /// A SpellForceRemove effect (`Spell4Effects.effectType.80`) of a spell: it takes
 /// `count` stacks of the casts `selector` names off the unit it aims at, in the
 /// phases of `phase_flags`, when its `condition` holds (as a Fluff effect's does), and
-/// when its `tag` holds for the points the cast spent (genesis_prime/game/spend).
+/// when its `tag` holds for the points the cast spent (genesis_prime/shared/spend).
 pub type ForceRemove {
   ForceRemove(
     effect_id: Spell4EffectsId,
@@ -1497,14 +1497,14 @@ pub type Cost {
   /// as a whole number, holds less (both as absolute values).
   SlotCost(slot: Int, amount: Int, result: Int)
   /// `amount` points of the class vital `vital`, found among the casting class's
-  /// slots when the press is checked (genesis_prime/game/class_resource
+  /// slots when the press is checked (genesis_prime/shared/class_resource
   /// `class_cost`, `0x1405e7980`): it passes at the first slot naming the vital
   /// whose value less `amount` lies between 0 and the slot's maximum, else is refused
   /// with the last such slot's result; a class with no such slot passes and pays
   /// nothing.
   ClassVitalCost(vital: Int, amount: Int)
   /// `amount` points of the class vital `vital` on a stage's threshold row, checked
-  /// as the client checks a row's cost (genesis_prime/game/class_resource
+  /// as the client checks a row's cost (genesis_prime/shared/class_resource
   /// `row_class_cost`, `0x1403c0620`): the points held must be at least `amount`,
   /// with no maximum, and a refusal is the vital slot's result or 175.
   RowClassCost(vital: Int, amount: Int)
@@ -1517,7 +1517,7 @@ pub type Cost {
   /// threshold row): refused with `result`, and logged once.
   UnheldCost(result: Int)
   /// A slot cost whose Spell4 EMM id the server reads as a spend of every point
-  /// held (genesis_prime/game/spend `AllHeld`): refused with `result` when the slot
+  /// held (genesis_prime/shared/spend `AllHeld`): refused with `result` when the slot
   /// holds fewer whole points than the base `amount`, else it takes every whole
   /// point held, and the points above `amount` are the cast's n.
   SpendAllCost(slot: Int, amount: Int, result: Int)
@@ -1573,7 +1573,7 @@ pub type Proxy {
     phase_flags: Int,
     condition: Condition,
     /// The Proxy starts when its tag holds for the points the cast spent
-    /// (genesis_prime/game/spend).
+    /// (genesis_prime/shared/spend).
     tag: spend.Tag,
     /// Which unit the child cast is made on, from the effect's `targetFlags`.
     target: ProxyTarget,
@@ -1599,7 +1599,7 @@ pub type Periodic {
 }
 
 /// The payload of one effect row of a planned spell, by what the row does. `planned` makes
-/// the row's envelope (`genesis_prime/game/spell_effect`) from it, and `rank` fixes its place
+/// the row's envelope (`genesis_prime/shared/spell_effect`) from it, and `rank` fixes its place
 /// in the spell's list.
 pub type Kind {
   /// A Proxy row: the child spell it starts and when.
@@ -2366,7 +2366,7 @@ pub type RowReading {
   Held(row: ReadRow)
   /// The row is in no list of its spell and the load goes on.
   LeftOut(why: LeftOutReason)
-  /// A damage row: the area load reads it (genesis_prime/game/spell_area `damage_row_of`),
+  /// A damage row: the area load reads it (genesis_prime/shared/spell_area `damage_row_of`),
   /// and the plan holds it in no list.
   ReadByArea
   /// An Activate row: the activate plan lists it (genesis_prime/game/activate), and the
@@ -2679,9 +2679,9 @@ pub type PlanError {
   /// leaves it out (`HealUntilRemoved`).
   HealUntilRemovedNotRead(spell4_id: Int, effect_id: Int)
   /// A periodic Heal or HealShields effect lives shorter than one tick
-  /// (genesis_prime/game/ticking `NoTick`).
+  /// (genesis_prime/shared/ticking `NoTick`).
   HealNoTick(spell4_id: Int, effect_id: Int, tick_ms: Int, duration_ms: Int)
-  /// A Proxy with a tickTime lives shorter than one tick (genesis_prime/game/ticking
+  /// A Proxy with a tickTime lives shorter than one tick (genesis_prime/shared/ticking
   /// `NoTick`).
   ProxyNoTick(spell4_id: Int, effect_id: Int, tick_ms: Int, duration_ms: Int)
   /// A Proxy of a tree starts a child on each unit its area strikes, and the child holds
@@ -2737,13 +2737,13 @@ pub type PlanError {
   /// A DisguiseOutfit effect of a tree aimed at the caster shows nothing the server can
   /// draw with 0x933 (`Spell4Effects.effectType.112`).
   DisguiseNotRead(spell4_id: Int, effect_id: Int, reason: DisguiseGap)
-  /// A class's innate cannot be held (genesis_prime/game/innate).
+  /// A class's innate cannot be held (genesis_prime/shared/innate).
   InnateFailed(error: innate.InnateError)
   /// A Prerequisite row a spell or effect names nests itself through the rows it
   /// nests (type 11): the ids from the named row to the one that repeats.
   PrerequisiteCycle(path: List(Int))
   /// A spell of a tree has an area or a strike the area rule does not build
-  /// (genesis_prime/game/spell_area): the reason is the area rule's sentence.
+  /// (genesis_prime/shared/spell_area): the reason is the area rule's sentence.
   AreaNotBuilt(spell4_id: Int, reason: String)
   /// A spell of a tree has an area row the client's table leaves incomplete or a
   /// number that is no number: the reason is the area rule's sentence.
@@ -3231,7 +3231,7 @@ pub fn derivation(
 }
 
 /// What a spell of a later ability must also pass to be planned: the area rule builds every
-/// spell of its tree as it is started (genesis_prime/game/spell_area `checker`). Its error is a `PlanError`,
+/// spell of its tree as it is started (genesis_prime/shared/spell_area `checker`). Its error is a `PlanError`,
 /// and `refusal_of` says whether the ability is left out or the load fails.
 pub type Checker =
   fn(Spell, Start) -> Result(Nil, PlanError)
@@ -3441,7 +3441,7 @@ const tier_plans_key: table_store.DerivedKey(TierPlanSet) =
   table_store.DerivedKey("SpellTierPlans")
 
 /// The tier plans as a value the tables' load builds once, under the tables' key, after the
-/// plans and the tiers it reads (`derivation`, genesis_prime/game/spell_tier). Every tier 2 to 9 row
+/// plans and the tiers it reads (`derivation`, genesis_prime/shared/spell_tier). Every tier 2 to 9 row
 /// of every ability of the plans is planned as `derivation` plans a later ability: a tier whose
 /// error `refusal_of` says leaves out is left out and listed (`unplanned_tiers`), and any other error fails
 /// the load. An ability another names as its alternate is planned inside that ability's
@@ -3930,7 +3930,7 @@ fn opening_costs_lifted(spell spell: Spell) -> Spell {
 /// A Proxy the server adds to a tree, which starts `child` on the caster at once at
 /// each go of the phases `phase_flags` names, with no gate and no gain lifted. It
 /// stands for no Spell4Effects row, so its effect id is 0
-/// (genesis_prime/game/server_proxy).
+/// (genesis_prime/shared/server_proxy).
 pub fn server_proxy(child child: Spell, phase_flags phase_flags: Int) -> Proxy {
   Proxy(
     effect_id: Spell4EffectsId(0),
@@ -4693,10 +4693,10 @@ fn gain_row_of(
 /// One Heal (type 10) or HealShields (type 118) row that reaches the caster as a heal of
 /// `vital`, the one its type names (`effect_kind.kind_of`), or the error that fails the
 /// load: its dataBits00 must be a finite 32-bit float and its formula must read only the
-/// parameter types an effect on its caster reads (genesis_prime/game/damage `unread`). It
+/// parameter types an effect on its caster reads (genesis_prime/shared/damage `unread`). It
 /// aims at the caster when its targetFlags include it and else at the primary target. A
 /// row with a tickTime is periodic, a `TickingHeal` with its schedule
-/// (genesis_prime/game/ticking `schedule_of`), or `HealUntilRemovedNotRead` for one that
+/// (genesis_prime/shared/ticking `schedule_of`), or `HealUntilRemovedNotRead` for one that
 /// lasts until removed.
 fn heal_of(
   spell4_id spell4_id: Int,
@@ -5239,7 +5239,7 @@ fn reached_aim_of(effect effect: spell4_effects.Spell4Effects) -> Aim {
 
 /// A formula the caster's own value reads: `formula` as the row gave it, or `not_finite`
 /// when a number is not finite, or `not_read` of the first parameter type an effect on its
-/// caster does not read (genesis_prime/game/damage `unread`).
+/// caster does not read (genesis_prime/shared/damage `unread`).
 fn caster_formula_read(
   formula formula: Result(damage.Formula, Nil),
   not_finite not_finite: PlanError,
@@ -5264,7 +5264,7 @@ fn parameter_row_name(row row: ParameterRow) -> String {
 /// The pool an Absorption row gives (`Spell4Effects.effectType.29`), or the error that
 /// fails the load: dataBits00 and dataBits01 must be finite 32-bit floats, the formula
 /// must read only the parameter types an effect on its caster reads
-/// (genesis_prime/game/damage `unread`), the row must not be periodic (a tickTime)
+/// (genesis_prime/shared/damage `unread`), the row must not be periodic (a tickTime)
 /// and must have a life (a durationTime or flags bit 2). dataBits04 is the damage types it
 /// takes, as a mask, and its targetFlags aim it at the caster when they include it and
 /// else at the primary target.
@@ -6017,7 +6017,7 @@ pub fn spends_all(row row: spell4.Spell4) -> Bool {
 /// cannot be planned: the plan's load of a spell, whichever Spell4 row names it. `chain`
 /// holds the Spell4 ids from the pressed ability to the spell that casts it, none for a
 /// spell planned as an ability, so a tree that leads back to one of them fails as a
-/// `ProxyCycle` (genesis_prime/game/server_proxy).
+/// `ProxyCycle` (genesis_prime/shared/server_proxy).
 pub fn spell_alone(
   tables tables: table_store.Tables,
   sources sources: Sources,
@@ -8597,7 +8597,7 @@ fn costs_of(
   option.values(list.append(threshold, innate))
 }
 
-/// The cost as its Spell4 EMM id spends it (genesis_prime/game/spend): a slot cost
+/// The cost as its Spell4 EMM id spends it (genesis_prime/shared/spend): a slot cost
 /// with an id read as a spend of every point held becomes a `SpendAllCost`; any other
 /// slot or unheld cost with an id, or no cost with one, is an `UnreadSpendCost` with
 /// the result the cost gives, or 285 when there is none (`Spell4.innateCostEMMId0`:

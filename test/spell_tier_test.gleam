@@ -1,4 +1,4 @@
-//// The tiers of an ability (`genesis_prime/game/spell_tier`): what each costs, what level it
+//// The tiers of an ability (`genesis_prime/shared/spell_tier`): what each costs, what level it
 //// needs, which Spell4 row is the tier, and what makes the load refuse. Expected values come
 //// from these places.
 //// - `Spell4.abilityPointCost`, `Spell4.tierIndex` and `Spell4.spell4BaseIdBaseSpell`
@@ -17,7 +17,7 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/spell_tier
+import genesis_prime/shared/spell_tier
 import genesis_prime/table/class
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store as table_store

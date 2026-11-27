@@ -29,16 +29,16 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/lasting
-import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
-import genesis_prime/game/spell_plan.{
+import genesis_prime/message/cast_result
+import genesis_prime/shared/lasting
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{
   type Plans, type Spell, Always, BrokenByDamage, EndsStealthAfterLastGo,
   EndsStealthAtEachGo, GatedOnCaster, KeepsStealth, KeptOnDamage, Proxy,
   RemoveStealthRow, Spell, StealthRow,
 }
-import genesis_prime/game/spend
-import genesis_prime/message/cast_result
+import genesis_prime/shared/spend
 import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/list

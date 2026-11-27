@@ -20,40 +20,27 @@ import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
-import genesis_prime/game/class_resource
 import genesis_prime/game/click_objective
 import genesis_prime/game/communicator
 import genesis_prime/game/connection/landing as connection_landing
-import genesis_prime/game/cooldown
 import genesis_prime/game/dev_command
 import genesis_prime/game/dropped
-import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/held_objective
 import genesis_prime/game/hello_reply
-import genesis_prime/game/hit
 import genesis_prime/game/interaction
 import genesis_prime/game/item_price
-import genesis_prime/game/item_property
 import genesis_prime/game/item_use
 import genesis_prime/game/kill_objective
 import genesis_prime/game/limited_action_set
-import genesis_prime/game/look
 import genesis_prime/game/movement
 import genesis_prime/game/objective
-import genesis_prime/game/prerequisite
 import genesis_prime/game/quest
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/random_stat
 import genesis_prime/game/routing
-import genesis_prime/game/server_proxy
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan
 import genesis_prime/game/strike
 import genesis_prime/game/target_group
-import genesis_prime/game/ticking
-import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_sale
 import genesis_prime/game/world_entry
@@ -68,6 +55,19 @@ import genesis_prime/message/spell_damage_description
 import genesis_prime/message/spell_missed
 import genesis_prime/message/spell_started
 import genesis_prime/message/vendor_items
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/cooldown
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/hit
+import genesis_prime/shared/item_property
+import genesis_prime/shared/look
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/server_proxy
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/ticking
+import genesis_prime/shared/unit_properties
 import genesis_prime/wire_recording/fixture as wire_recording_fixture
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_control

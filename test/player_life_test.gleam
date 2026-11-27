@@ -10,7 +10,7 @@
 ////   (`Spell4Effects.damageType`). The creature's armor pierce is planted at 0: its
 ////   IgnoreArmorBase (property 122) is not read, a gap the decode named.
 //// - The hit order, after mitigation the shield, and rounding half away from zero at
-////   each step are the server's choice (genesis_prime/game/hit, 274 section 3):
+////   each step are the server's choice (genesis_prime/shared/hit, 274 section 3):
 ////   Armor 150 takes 12 x (1 - 0.5996959) = 4.80 to 5, the shield round(5 x 0.625) =
 ////   3 of it, the health 2; Armor 250 takes 3, the shield round(1.875) = 2, the health
 ////   1. A level-1 player has 736 health (`player.level1_base_health`).
@@ -21,23 +21,23 @@
 
 import cast_support
 import character_tables
-import genesis_prime/game/hit
-import genesis_prime/game/loadout
 import genesis_prime/game/player_life.{
   Answer, CancelTimer, ControlBody, ControlGhost, ControlGiven, EndCasts,
   GhostCreated, GhostRemoved, GoToHolocrypt, OwnCameBackLogged, OwnCombatState,
   OwnDeathLogged, OwnDeathState, OwnHealth, OwnInterruptArmor,
   OwnResurrectionWindow, OwnShield, StartTimer, StreamTo, ToClient, ToViewers,
 }
-import genesis_prime/game/rating
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
   Answered, CreatureStriker, Key, Landed, Refused, Strike,
 }
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/hit
+import genesis_prime/shared/loadout
+import genesis_prime/shared/rating
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{TimerId}
 import genesis_prime/table/id.{
   ClassId, Spell4EffectsId, Spell4Id, UnitProperty2Id,

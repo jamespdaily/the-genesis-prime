@@ -26,17 +26,17 @@ import fixture_tables
 import genesis_prime/game/ability_book
 import genesis_prime/game/ability_book_frame
 import genesis_prime/game/ability_points
-import genesis_prime/game/amp_spec
 import genesis_prime/game/limited_action_set.{
   Player, RowOutsideTable, RowRepeated, StoredAmp, StoredSlot, StoredTier,
 }
-import genesis_prime/game/loadout
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_tier
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
+import genesis_prime/shared/amp_spec
+import genesis_prime/shared/loadout
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_tier
 import genesis_prime/step.{LogWarning}
 import genesis_prime/store
 import genesis_prime/table/action_slot_prereq

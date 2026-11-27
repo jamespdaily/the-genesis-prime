@@ -1,4 +1,4 @@
-//// The resource gains of the plan (`genesis_prime/game/spell_plan` `Gain`) and the
+//// The resource gains of the plan (`genesis_prime/shared/spell_plan` `Gain`) and the
 //// Proxies it keeps behind a prerequisite. Expected values come from the client's
 //// rows, which `spell_tables` plants as `table_rows` prints them and the real tables
 //// hold where the client is present:
@@ -24,9 +24,9 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{
   type Gain, type Gift, type Proxy, type Spell, ClassVitalPoints, FocusPoints,
   FocusShare, Gain, TickingGain,
 }

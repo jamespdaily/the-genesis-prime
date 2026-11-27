@@ -70,12 +70,12 @@
 ////   ledger.
 
 import genesis_prime/game/cast/target_info
-import genesis_prime/game/lasting
 import genesis_prime/message/combat_result
 import genesis_prime/message/spell_target_info.{type SpellTargetInfo}
 import genesis_prime/message/unit_create_cast.{
   type UnitCreateCast, UnitCreateCast,
 }
+import genesis_prime/shared/lasting
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import gleam/int
 import gleam/list

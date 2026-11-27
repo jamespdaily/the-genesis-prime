@@ -1,6 +1,6 @@
 //// A Prerequisite row as the client reads it, and its check against a unit: the
 //// gate of an effect such as a resource gain, or of a Proxy
-//// (genesis_prime/game/spell_plan `Gain`, `Condition`). The rule is pure: the
+//// (genesis_prime/shared/spell_plan `Gain`, `Condition`). The rule is pure: the
 //// cast rule (genesis_prime/game/cast) supplies what the unit is, and the
 //// connection supplies the rolls from its seed.
 ////
@@ -225,14 +225,14 @@
 ////   unit (`of_creature`), and only types 15, 59 and 129, which read every caster's casts
 ////   on it, stay unread (`struck_unread_types`).
 
-import genesis_prime/game/area.{type Pose}
-import genesis_prime/game/lasting
-import genesis_prime/game/top_zone
 import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/random
+import genesis_prime/shared/area.{type Pose}
+import genesis_prime/shared/lasting
 import genesis_prime/shared/quest_row.{type Quest, type QuestRowError}
 import genesis_prime/shared/quest_view.{type QuestView}
+import genesis_prime/shared/top_zone
 import genesis_prime/store.{type Character, type HeldItem}
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4BaseId, type Spell4Id, PrerequisiteId,
@@ -600,7 +600,7 @@ pub type Subject {
   Subject(
     /// What the casts of the subject's first unit hold on it: the nodes of live and
     /// lingering casts, and a live cast whose primary target it is with count 0
-    /// (genesis_prime/game/lasting `Held`).
+    /// (genesis_prime/shared/lasting `Held`).
     under: List(lasting.Held),
     /// The check's second unit: the unit id of the caster for the caster-side checks
     /// of this module (`Spell4Effects.prerequisiteIdTargetApply`); none when the check
@@ -828,7 +828,7 @@ const breath_maximum = 100.0
 /// are the values its unit holds when its 0x262 sends no stat 20 or 19
 /// (`opcode.0x262.absent_stats`). The caster's own facts are not in it: a gate that reads
 /// them is not a creature gate and stays on the caster's side
-/// (genesis_prime/game/spell_plan `struck_gates_in_phase`).
+/// (genesis_prime/shared/spell_plan `struck_gates_in_phase`).
 pub fn of_creature(facts facts: CreatureFacts) -> Subject {
   Subject(
     under: facts.under,

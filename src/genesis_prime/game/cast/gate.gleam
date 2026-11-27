@@ -5,7 +5,7 @@
 ////   at each struck unit when the round has a Hit and the Proxy's gate passes
 ////   (`spell_plan.Gain`). Each is given when its caster apply and target apply
 ////   prerequisites pass against the caster, the only unit a gain reaches
-////   (genesis_prime/game/prerequisite): the spells of the caster's own live
+////   (genesis_prime/shared/prerequisite): the spells of the caster's own live
 ////   casts whose primary target it is, whether it is in combat, its health, shield
 ////   and the class resource slot it holds as the vitals 1, 3 and 5 to 11, and the
 ////   rolls the connection drew. A prerequisite of a type or a vital not read, and a
@@ -34,14 +34,14 @@ import genesis_prime/game/cast/state.{
   GateFails, Given, Hit, HitCaster, HitCreature, HitOtherPlayer, Immune, Log,
   NotApplied, Starts, Withheld,
 } as cast_state
-import genesis_prime/game/class_resource
-import genesis_prime/game/lasting
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{type Proxy, type Spell}
 import genesis_prime/game/strike_tell
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/lasting
+import genesis_prime/shared/prerequisite
 import genesis_prime/shared/quest_view.{type QuestView}
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{type Proxy, type Spell}
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import gleam/bool

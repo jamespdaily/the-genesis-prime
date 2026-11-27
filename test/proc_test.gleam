@@ -17,18 +17,18 @@
 ////   (`Spell4Effects.effectType.14.client_evaluation`).
 
 import cast_support
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
 import genesis_prime/game/proc.{
   type EventSpell, CannotTell, EventGateFails, EventSpell, FilteredOut, Fires,
   HolderGateFails, MissedChance, OutOfLimit,
 }
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{
   Always, AnySpell, AtHolder, AtOtherUnit, ForLife, InGroup, InWindow, LandsHit,
   OfBase, OneSpell, ProcRow,
 }
-import genesis_prime/game/spend
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/int
 import gleam/option.{type Option, None, Some}

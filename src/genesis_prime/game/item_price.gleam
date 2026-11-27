@@ -34,9 +34,9 @@
 
 import genesis_prime/game/currency
 import genesis_prime/game/currency_kind
-import genesis_prime/game/item_property
 import genesis_prime/gap
 import genesis_prime/message/float32
+import genesis_prime/shared/item_property
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   type Item2Id, GameFormulaId, Item2CategoryId, Item2FamilyId, Item2Id,

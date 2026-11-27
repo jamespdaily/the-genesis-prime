@@ -13,12 +13,12 @@ import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/experience.{Progress}
 import genesis_prime/game/interaction
 import genesis_prime/game/player_life.{type Life}
-import genesis_prime/game/prerequisite.{type Factions, Factions}
 import genesis_prime/game/quest.{type Asker, Asker}
 import genesis_prime/game/quest_turn_in.{type Taken}
 import genesis_prime/game/shown
 import genesis_prime/game/vendor_trade.{type Effect}
 import genesis_prime/message/quest_turn_in.{QuestTurnIn} as quest_turn_in_message
+import genesis_prime/shared/prerequisite.{type Factions, Factions}
 import genesis_prime/store.{type HeldItem, type QuestRow}
 import genesis_prime/table/id.{RaceId}
 import genesis_prime/table/loader/store as table_store

@@ -1,5 +1,5 @@
 //// A planned spell holds its effect rows as one list (`spell_plan.Spell.effects`), each an
-//// envelope (`genesis_prime/game/spell_effect`) around a kind. Expected values come from
+//// envelope (`genesis_prime/shared/spell_effect`) around a kind. Expected values come from
 //// these places.
 //// - The order the gates draw their rolls and a go lists its effects in
 ////   (`cast/gate.rolls_needed`, `cast/control.lasting_applied`): the Proxies, the gains,
@@ -8,23 +8,23 @@
 ////   removals, the procs, the heals and the crowd-control rows, each kind in the order of
 ////   its rows (`Spell4Effects`, by orderIndex and ID).
 //// - `Spell4Effects.targetFlags`: bit 1 the caster, bit 2 the primary target; 3 names both.
-//// - `genesis_prime/game/ticking`: a periodic row's schedule has count durationTime / tickTime
+//// - `genesis_prime/shared/ticking`: a periodic row's schedule has count durationTime / tickTime
 ////   rounded down, from its delayTime.
 //// - The client's own Spell4Effects rows, one of each effect type the plan reads
-////   (`genesis_prime/game/effect_kind`).
+////   (`genesis_prime/shared/effect_kind`).
 //// The rows are planted on Telekinetic Strike's spell (`spell_tables`).
 
 import fixture_tables
-import genesis_prime/game/effect_kind
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{
   Applied, ControlEffect, CooldownEffect, DelayEffect, DespawnEffect,
   ForcedMoveEffect, GainEffect, HealEffect, Held, LastingEffect, LeftOut,
   ModifierEffect, ProcEffect, ProxyEffect, QuestAdvanceEffect, ReadByActivation,
   ReadByArea, ReadEffects, ReadProc, ReadProxy, RemoveEffect,
   RemoveStealthEffect, StealthEffect, StruckMoveEffect, UnitStateEffect,
 }
-import genesis_prime/game/ticking
+import genesis_prime/shared/ticking
 import genesis_prime/table/spell4_effects
 import gleam/bool
 import gleam/list

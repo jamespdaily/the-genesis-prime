@@ -33,9 +33,9 @@ import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state.{
   type Caster, type Effect, type Holder, type State, Log, Send, State,
 } as cast_state
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/message/cast_result
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Spell}
 import genesis_prime/step.{LogDebug}
 import gleam/bool
 import gleam/int

@@ -3,8 +3,8 @@
 //// and the types the client's code was read for that it does not handle. The
 //// coverage measure reads these declarations.
 ////
-//// A rule that decodes its type once for its dispatch (genesis_prime/game/effect_kind,
-//// genesis_prime/game/prerequisite) hands the measure that decode: a type is
+//// A rule that decodes its type once for its dispatch (genesis_prime/shared/effect_kind,
+//// genesis_prime/shared/prerequisite) hands the measure that decode: a type is
 //// handled when the decode does not give its unread case, so a rule and the
 //// measure cannot disagree. An engine with no such decode lists the ids its rules
 //// name.
@@ -14,12 +14,12 @@ import genesis_prime/coverage/effect_row
 import genesis_prime/coverage/sent_message
 import genesis_prime/coverage/starting_ability
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/effect_kind
 import genesis_prime/game/objective_kind
-import genesis_prime/game/prerequisite as game_prerequisite
-import genesis_prime/game/spell_plan
-import genesis_prime/game/spend
 import genesis_prime/login/auth_connection
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/prerequisite as game_prerequisite
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/spend
 import genesis_prime/table/creature2
 import genesis_prime/table/loader/store
 import genesis_prime/table/prerequisite
@@ -127,7 +127,7 @@ pub fn handles(
 /// (`game_table.schema`); each names a PrerequisiteType row, and the client's
 /// handler of type 71 is fact 0x1404a4e48. No fact records the code that reads
 /// the three columns. A type is handled when the prerequisite rule's decode reads
-/// it (genesis_prime/game/prerequisite `is_read`).
+/// it (genesis_prime/shared/prerequisite `is_read`).
 fn prerequisites() -> EngineDeclaration {
   EngineDeclaration(
     name: "Prerequisites",
@@ -297,7 +297,7 @@ const conversion_gap =
 /// The spell effect engine: the `effectType` column of Spell4Effects, the
 /// client's own column name (`game_table.schema`). No fact records the code that
 /// reads the column. A type is handled when the effect rule's decode reads it
-/// (genesis_prime/game/effect_kind `is_read`). A row is read when the plan applies it
+/// (genesis_prime/shared/effect_kind `is_read`). A row is read when the plan applies it
 /// (genesis_prime/coverage/effect_row); a spell the plan refuses for a column of its own
 /// (a cost, a requirement, a cycle) is left out of the counts, and each of its rows is
 /// counted by its own columns.
@@ -468,7 +468,7 @@ fn spell_effects() -> EngineDeclaration {
 /// column holds the EMM id of the cost beside it, so every non-zero value of the two
 /// is one use of an id, except one beside no cost. The client reads neither column (`Spell4.innateCostEMMId0`),
 /// so the id's meaning is the server's. An id is handled when the spend rule's decode
-/// reads it (genesis_prime/game/spend `is_read`).
+/// reads it (genesis_prime/shared/spend `is_read`).
 fn spend_scaled_costs() -> EngineDeclaration {
   let unread = fn(type_number) {
     Missing(

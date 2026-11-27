@@ -1,6 +1,6 @@
 //// The lasting modifiers, restrictions and crowd control a cast starts, and the cooldowns it arms.
 ////
-//// - **A go's lasting effects** (genesis_prime/game/lasting): each Fluff (17), Scale (18),
+//// - **A go's lasting effects** (genesis_prime/shared/lasting): each Fluff (17), Scale (18),
 ////   ItemVisualSwap (76), RavelSignal (81) and SpellForceRemove (80) effect of the phase whose gate against the
 ////   caster passes is listed in the target info of each unit its targetFlags aim at, with
 ////   the effect's delay, a result bit, the instance count 1 and the lifetime 0 the client
@@ -14,7 +14,7 @@
 ////   server's choice). A cast pushed off a creature while its node holds crowd-control
 ////   states ends them there (`creature_controls_ended`), since the client ends a state
 ////   only with a 0x880 (`cc_state.end`).
-//// - **A go's property modifiers** (genesis_prime/game/unit_properties): each type 11
+//// - **A go's property modifiers** (genesis_prime/shared/unit_properties): each type 11
 ////   and type 145 effect of the phase that has a life (a durationTime, or flags bit 2) and
 ////   whose gate against the caster passes is listed on the caster like a Fluff effect, gives the
 ////   caster's node its life, and starts at the go plus its delay and ends after its
@@ -68,7 +68,7 @@
 ////   a Proxy started on the caster or on a struck unit has no press target and is not put on
 ////   the caster.
 //// - **A go's throws of creatures** (type 3 rows whose targetFlags name a unit other than
-////   the caster, a `StruckMove`, genesis_prime/game/forced_move; 3, 5 and 7 also move
+////   the caster, a `StruckMove`, genesis_prime/shared/forced_move; 3, 5 and 7 also move
 ////   the caster): each is aimed at the creatures the go
 ////   hit, in the life and at the time the go struck them. The rule tells
 ////   `ForcedMoveStarts` at the go's own step when the row has no delay, and else arms a
@@ -89,7 +89,7 @@
 ////   each creature one `CreatureHoldsUnitStates` in the go's own step, with the creature's
 ////   rows in row order and the go's time, and arms no timer: the creature owns the end of
 ////   each state (`unit_states_told`).
-//// - **A go's disguises** (genesis_prime/game/look): each type 112 effect of the phase
+//// - **A go's disguises** (genesis_prime/shared/look): each type 112 effect of the phase
 ////   that has a life and whose gate against the caster passes is a modifier row whose change is a
 ////   `Look`, so it is listed, started, ended, cancelled with the node and ended at death
 ////   by the modifiers' rules above, as `CasterChangeStarts` and `CasterChangeEnds`; the
@@ -97,7 +97,7 @@
 ////   (genesis_prime/game/connection/look). The rule keeps no look: two disguises on one
 ////   slot, the base and what shows are the look's.
 //// - **A go's Interrupt Armor** (`Spell4Effects.effectType.52`): each ModifyInterruptArmor
-////   row of the phase that reaches the caster (genesis_prime/game/spell_plan
+////   row of the phase that reaches the caster (genesis_prime/shared/spell_plan
 ////   `PropertyModifier.armor`) is a property modifier of property 44, the armor's maximum,
 ////   and goes through every rule of the property modifiers above: the same listing, node
 ////   life, start, timer, end and removal. The player's armor follows its maximum
@@ -111,8 +111,8 @@
 ////   info like a Fluff effect, gives the caster's node its life, and starts a pool on
 ////   the caster, as a heal and a property modifier do, from the amount worked out at
 ////   the go from the caster's stats as they stood before the go's own effects
-////   (genesis_prime/game/damage). The plan reads a type 29 row as a property modifier row
-////   whose change is an `AbsorbChange` (genesis_prime/game/spell_plan), so it goes
+////   (genesis_prime/shared/damage). The plan reads a type 29 row as a property modifier row
+////   whose change is an `AbsorbChange` (genesis_prime/shared/spell_plan), so it goes
 ////   through the same listing, node life, timers, end and removal. The sequence of one go:
 ////
 ////   ```
@@ -139,7 +139,7 @@
 ////   the movement rule takes as any other. A forced move gives no node a life, starts no
 ////   timer and changes no property.
 //// - **A go's cooldown effects** (`Spell4Effects.effectType.73`,
-////   genesis_prime/game/cooldown): the spell's own cooldown and a stage's ability
+////   genesis_prime/shared/cooldown): the spell's own cooldown and a stage's ability
 ////   cooldown start before the go's effects apply, as in the client (`0x14053e5a0`), so
 ////   a type 73 effect of the phase aimed at the caster whose gate passes already sees
 ////   them. It is listed in the caster's target info with its delay, and it changes the
@@ -175,22 +175,22 @@ import genesis_prime/game/cast/state.{
   StartHeld, State, StateEnd, TargetChangeStarts, TargetModifierStart, Tick,
   WindowEnd,
 } as cast_state
-import genesis_prime/game/crowd_control
-import genesis_prime/game/damage
-import genesis_prime/game/forced_move
 import genesis_prime/game/held_changes
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
 import genesis_prime/game/player_address.{type PlayerAddress}
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/damage
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{type Spell}
+import genesis_prime/shared/unit_properties
 import genesis_prime/table/id.{type Spell4EffectsId}
 import gleam/bool
 import gleam/dict

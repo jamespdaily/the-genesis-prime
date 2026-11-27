@@ -6,8 +6,8 @@
 ////   not take).
 ////   Shares run from 0 to 2, so the property covers a share above 1.
 
-import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split.{Scaling}
+import genesis_prime/shared/effect_kind
 import gleam/list
 import owned_test
 import qcheck

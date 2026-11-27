@@ -16,10 +16,10 @@
 ////   a change of.
 
 import genesis_prime/game/activate
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
 import genesis_prime/game/item_use
 import genesis_prime/game/shortcut_spell
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store

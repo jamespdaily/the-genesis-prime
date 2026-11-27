@@ -22,9 +22,10 @@
 import character_tables
 import client_tables
 import fixture_tables
-import genesis_prime/game/rating
 import genesis_prime/game/start_place.{Facing}
 import genesis_prime/game/vendor
+import genesis_prime/shared/rating
+import genesis_prime/shared/unit_fields
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_faction
@@ -32,7 +33,6 @@ import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{Summoned}
-import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}

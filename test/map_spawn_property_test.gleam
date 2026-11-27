@@ -7,7 +7,7 @@
 ////   or no player has seen it for less than 70 s (60 s of idle stop and a sweep
 ////   every 10 s); the players who see a live spawn are exactly the viewers the map
 ////   holds for it; unit ids are distinct and below 2^20.
-//// - Sight (`genesis_prime/world_map/sight`): 1024 units, inclusive; the spawns and
+//// - Sight (`genesis_prime/shared/sight`): 1024 units, inclusive; the spawns and
 ////   the players stand on the x axis, so a spawn is seen when its x is within 1024
 ////   of the player's.
 //// The harness has a planted bug to prove it can fail: with the sweep never fired,

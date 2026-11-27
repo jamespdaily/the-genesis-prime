@@ -30,11 +30,6 @@ import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
-import genesis_prime/game/crowd_control
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_plan.{type Spell, GlobalCooldown, Spell}
-import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news
 import genesis_prime/message/cast_result
@@ -64,6 +59,11 @@ import genesis_prime/message/unit_cc_state_ended.{
   type UnitCcStateEnded, UnitCcStateEnded,
 }
 import genesis_prime/message/unit_tether_anchor
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan.{type Spell, GlobalCooldown, Spell}
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/int
 import gleam/list

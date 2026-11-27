@@ -26,18 +26,18 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/class_resource.{Gain}
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Proxy, type Spell, Proxy, Spell}
-import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
-import genesis_prime/game/ticking
+import genesis_prime/shared/class_resource.{Gain}
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Proxy, type Spell, Proxy, Spell}
+import genesis_prime/shared/spend
+import genesis_prime/shared/ticking
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/dict

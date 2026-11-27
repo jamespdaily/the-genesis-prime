@@ -86,11 +86,11 @@ import genesis_prime/game/item_expiry
 import genesis_prime/game/movement
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/top_zone
-import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
+import genesis_prime/shared/top_zone
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome, LogInfo,
   LogWarning, Unwatch,

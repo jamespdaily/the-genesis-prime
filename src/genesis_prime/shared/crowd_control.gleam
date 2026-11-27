@@ -7,7 +7,7 @@
 ////
 //// - **The state** is the row's dataBits00 (`Unit.CodeEnumCCState`): the plan reads
 ////   all 28 states, 0 to 27, and fails the load for any other value
-////   (genesis_prime/game/spell_plan). The caster's own state is held by the cast rule
+////   (genesis_prime/shared/spell_plan). The caster's own state is held by the cast rule
 ////   until its cast ends (genesis_prime/game/cast `restrictions`), a creature's by the
 ////   creature (genesis_prime/world_map/creature_control).
 //// - **The results** a held state gives a press are the client's own, per state
@@ -22,8 +22,8 @@
 ////   select, and `cast.restrictions_told` for the states on the caster itself. They
 ////   number the states of different units, a creature's and the caster's own.
 
-import genesis_prime/game/lasts.{type Lasts}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/shared/lasts.{type Lasts}
 import genesis_prime/table/cc_states
 import genesis_prime/table/id.{CCStatesId, Spell4CCConditionsId}
 import genesis_prime/table/loader/store as table_store

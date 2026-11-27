@@ -25,29 +25,29 @@ import attacker_support
 import cast_support as support
 import client_tables
 import genesis_prime/game/activate
-import genesis_prime/game/area
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/player_state.{PlayerState}
-import genesis_prime/game/prerequisite
 import genesis_prime/game/proc as event_proc
-import genesis_prime/game/spell_plan.{type Plans, type Spell, Always, Spell}
-import genesis_prime/game/spend
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_properties.{type Source}
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_started
+import genesis_prime/shared/area
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Plans, type Spell, Always, Spell}
+import genesis_prime/shared/spend
+import genesis_prime/shared/unit_properties.{type Source}
 import genesis_prime/step.{type TimerId, ConnectionId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4

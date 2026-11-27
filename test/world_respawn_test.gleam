@@ -19,8 +19,8 @@ import genesis_prime/client_connection.{ForStay, SentByFoe}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Threatened}
 import genesis_prime/service
+import genesis_prime/shared/creature_path
 import genesis_prime/step.{ConnectionId}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/relay

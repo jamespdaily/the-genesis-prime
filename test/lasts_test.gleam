@@ -1,4 +1,4 @@
-//// How long a Spell4Effects row lasts (`genesis_prime/game/lasts`). Expected values come
+//// How long a Spell4Effects row lasts (`genesis_prime/shared/lasts`). Expected values come
 //// from these places.
 //// - `Spell4Effects.flags` bit 2 is a row that lasts until removed, whatever its
 ////   durationTime (`lasting.life_of`, `opcode.0x7f4.effect_time`).
@@ -6,9 +6,9 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/spell4_effects.{Spell4Effects}
 import gleam/list
 import owned_test

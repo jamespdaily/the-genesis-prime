@@ -1,5 +1,5 @@
-//// The FullScreenEffect (95) rows of the plan (`genesis_prime/game/spell_plan`,
-//// `genesis_prime/game/effect_kind`). Expected values come from these places:
+//// The FullScreenEffect (95) rows of the plan (`genesis_prime/shared/spell_plan`,
+//// `genesis_prime/shared/effect_kind`). Expected values come from these places:
 //// - `Spell4Effects.effectType.95`: the client draws a FullScreenEffect only for the
 ////   player's own unit and does all of it, so the server lists a row aimed at the caster in
 ////   the go with its life; the game holds 136 rows of it, targetFlags 1 for 78, 2 for 37 and
@@ -12,10 +12,10 @@
 ////   `-- Spell4Effects spellId=<tier>`), kept in the fixture.
 
 import fixture_tables
-import genesis_prime/game/effect_kind
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_plan.{AimsAtCaster}
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan.{AimsAtCaster}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects
 import gleam/int

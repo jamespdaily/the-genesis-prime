@@ -4,7 +4,7 @@ import genesis_prime/game/start_place.{type Place}
 import gleam/float
 
 /// The hit radius of a player: the Race row's hitRadius, 1.2 for the eight player races
-/// as the table's 32-bit float reads (genesis_prime/game/hit_radius).
+/// as the table's 32-bit float reads (genesis_prime/shared/hit_radius).
 pub const player_hit_radius = 1.2000000476837158
 
 /// Where the live character of the client's 0x262 vector stands, in World 3460

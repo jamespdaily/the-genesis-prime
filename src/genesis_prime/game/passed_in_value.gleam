@@ -17,7 +17,7 @@
 //// - **An item with Item2.flags bit 3** builds at level 1 (`0x14040d060`); no item whose
 ////   spell holds a type 18 row has it, so `of_item` does not model it.
 
-import genesis_prime/game/item_property
+import genesis_prime/shared/item_property
 import genesis_prime/table/id.{type Item2Id}
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store

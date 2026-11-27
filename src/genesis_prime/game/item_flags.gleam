@@ -10,7 +10,7 @@
 ////   shows bound whatever the byte holds needs no bit (`0x14056a3f0`).
 //// - Bit 3 is no refund (`opcode.0x111.shared_item_unnamed`); no rule here sets it.
 
-import genesis_prime/game/item_property.{type ItemPropertyError}
+import genesis_prime/shared/item_property.{type ItemPropertyError}
 import genesis_prime/store.{type HeldItem, type ItemPlace}
 import genesis_prime/table/loader/store as table_store
 import gleam/bool

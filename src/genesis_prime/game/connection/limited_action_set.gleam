@@ -9,13 +9,13 @@ import genesis_prime/client_connection.{Continue}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/ability_book
 import genesis_prime/game/ability_points
-import genesis_prime/game/amp_spec
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/player_life
-import genesis_prime/game/spell_tier
 import genesis_prime/game/world_entry
+import genesis_prime/shared/amp_spec
+import genesis_prime/shared/spell_tier
 import genesis_prime/step.{type Now}
 import gleam/list
 

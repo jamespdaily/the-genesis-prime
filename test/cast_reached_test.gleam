@@ -1,7 +1,7 @@
 //// The effects a go reaches (`genesis_prime/game/cast` `aimed_at`): one list, each row once
 //// for each unit it reaches, in the plan's rank order. Expected values come from these
 //// places, each named at its assertion:
-//// - The plan's rank (`genesis_prime/game/spell_effect` `ranked`, `spell_plan.kind_rank`):
+//// - The plan's rank (`genesis_prime/shared/spell_effect` `ranked`, `spell_plan.kind_rank`):
 ////   lasting, then property modifiers, then cooldown modifiers, then heals, whatever order
 ////   the rows were given in.
 //// - The cast rule's own cases: a heal's amount is its formula's `amount_on_caster`
@@ -15,14 +15,14 @@ import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/cooldown.{AddMs, Base, Modifier}
-import genesis_prime/game/damage.{Formula, Parameter}
-import genesis_prime/game/effect_kind
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Spell, Spell}
-import genesis_prime/game/spend
+import genesis_prime/shared/cooldown.{AddMs, Base, Modifier}
+import genesis_prime/shared/damage.{Formula, Parameter}
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Spell, Spell}
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/dict
 import gleam/list

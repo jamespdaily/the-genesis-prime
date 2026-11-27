@@ -10,7 +10,7 @@ import genesis_prime/coverage/measurement.{
   type Measurement, type TypeLine, HandledWithGap, Measured,
 }
 import genesis_prime/coverage/starting_ability.{type LeftOut}
-import genesis_prime/game/column_reading
+import genesis_prime/shared/column_reading
 import genesis_prime/tooltip_token
 import gleam/int
 import gleam/list

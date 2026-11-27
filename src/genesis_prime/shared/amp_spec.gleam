@@ -32,7 +32,7 @@
 ////
 //// A refusal's number is the client's (`ktAugmentationValidationResult`).
 
-import genesis_prime/game/prerequisite
+import genesis_prime/shared/prerequisite
 import genesis_prime/table/class
 import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/eldan_augmentation_category

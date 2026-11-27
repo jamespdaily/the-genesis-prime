@@ -16,7 +16,6 @@
 ////   unit inside the area when it is aimed at the area, which the connection finds at the
 ////   tick (`FindProxyTickUnits`), `Spell4Effects.effectType.26.periodic`.
 
-import genesis_prime/game/area
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
@@ -34,18 +33,8 @@ import genesis_prime/game/cast/state.{
   StartHeld, Starts, State, StateEnd, StrikeWithBlow, TargetModifierStart,
   TellHeal, Tick, TickAsked, TickStrike, TickingOn, UnitSide, WindowEnd,
 } as cast_state
-import genesis_prime/game/class_resource
-import genesis_prime/game/cooldown
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/ticking
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription,
@@ -53,6 +42,17 @@ import genesis_prime/message/spell_damage_description.{
 import genesis_prime/message/spell_effect_tick.{SpellEffectTick}
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
+import genesis_prime/shared/area
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/cooldown
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Proxy, type Spell}
+import genesis_prime/shared/ticking
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{type Spell4EffectsId}
 import gleam/bool
@@ -331,7 +331,7 @@ fn tick_timers_cancelled(
 /// starts its child on its unit with `start_child` (`proxy_tick_child`), and one aimed at the area asks the connection for
 /// the units inside its area (`FindProxyTickUnits`), whose answer starts a child on each
 /// (`cast.proxy_tick_units_found`). Then each row that fired has its next tick armed,
-/// or none after its last (genesis_prime/game/ticking `next_tick`). Any tick timer of the
+/// or none after its last (genesis_prime/shared/ticking `next_tick`). Any tick timer of the
 /// cast fires every tick due with it, so ticks due together keep that order whichever
 /// timer fires first.
 pub fn ticks_due(

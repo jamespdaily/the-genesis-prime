@@ -18,7 +18,7 @@
 ////   `creature.Despawn`.
 //// - A UnitStateSet effect (Spell4Effects type 15) holds a unit state on the creature from the
 ////   go for its delay plus duration. The client reads no such row, so what a state does is the
-////   server's reading (`genesis_prime/game/unit_state`); the rest of the rule is the doc
+////   server's reading (`genesis_prime/shared/unit_state`); the rest of the rule is the doc
 ////   comment of `creature.UnitStates`.
 
 import ask_support
@@ -29,8 +29,6 @@ import creature_news_support
 import crowd_control_support
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/experience.{Credit}
-import genesis_prime/game/forced_move
-import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed, Refused, Strike}
 import genesis_prime/game/unit_casts.{
@@ -40,14 +38,17 @@ import genesis_prime/game/unit_news.{
   type PeerNews, CreatureAppeared, CreatureMoved, PeerNews, PropertiesChanged,
   Removed,
 }
-import genesis_prime/game/unit_properties.{type Modifier, type Source, Change}
-import genesis_prime/game/unit_state
 import genesis_prime/message/float32
 import genesis_prime/message/unit_create_cast.{
   type UnitCreateCast, UnitCreateCast,
 }
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/hit.{Blow, Offence, Rolls, Worked}
+import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_properties.{type Modifier, type Source, Change}
+import genesis_prime/shared/unit_state
 import genesis_prime/step.{
   type ConnectionId, type Event, type ServiceEvent, type ServiceStep, Connection,
   ConnectionId, CreatureStart, OwnEffect, OwnEvent, Reply, Send, StartCreature,
@@ -67,7 +68,6 @@ import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
-import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/dynamic/decode
 import gleam/erlang/process

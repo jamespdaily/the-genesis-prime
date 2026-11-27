@@ -1,4 +1,4 @@
-//// The plan's Proxies behind a target apply prerequisite (`genesis_prime/game/spell_plan`
+//// The plan's Proxies behind a target apply prerequisite (`genesis_prime/shared/spell_plan`
 //// `GatedOnCasterAndTarget`), read from the client's tables where the client is present.
 //// Expected values come from these places:
 //// - The client's rows (`table_rows -- Spell4Effects 83818 83819 85673 85682`): Impale's
@@ -16,8 +16,8 @@
 ////   Proxy, and a Proxy that may start no child on some unit has none to give.
 
 import client_tables
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{
   type Proxy, type Spell, GatedOnCasterAndTarget,
 }
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}

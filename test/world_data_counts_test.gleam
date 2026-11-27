@@ -84,17 +84,17 @@ import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/activate
 import genesis_prime/game/click_objective
-import genesis_prime/game/faction_level
 import genesis_prime/game/kill_objective
 import genesis_prime/game/place_objective
-import genesis_prime/game/prerequisite
 import genesis_prime/game/quest as quest_rules
 import genesis_prime/game/quest_log
-import genesis_prime/game/rating
 import genesis_prime/game/target_group
 import genesis_prime/game/vendor
 import genesis_prime/import_world_data
 import genesis_prime/readiness
+import genesis_prime/shared/faction_level
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/rating
 import genesis_prime/step/runtime
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Quest2Id, QuestObjectiveId}

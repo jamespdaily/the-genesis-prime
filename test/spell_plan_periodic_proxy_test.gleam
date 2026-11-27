@@ -1,5 +1,5 @@
 //// A Proxy effect (`Spell4Effects.effectType.26`) with a tickTime, which the plan reads as a
-//// cast of its named spell at each tick (`genesis_prime/game/spell_plan`). Expected values
+//// cast of its named spell at each tick (`genesis_prime/shared/spell_plan`). Expected values
 //// come from these places:
 //// - `Spell4Effects.effectType.26.periodic`: the client gives a Proxy no behaviour, so its
 ////   name is the rows': dataBits00, else dataBits01 when that is a Spell4 row (of 1,808 rows
@@ -28,12 +28,12 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/prerequisite.{Fails, Passes, Subject}
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/prerequisite.{Fails, Passes, Subject}
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{
   Applied, LeftOut, ProxyNamesNoSpell, ReadProxy,
 }
-import genesis_prime/game/ticking.{Schedule, Ticks}
+import genesis_prime/shared/ticking.{Schedule, Ticks}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4

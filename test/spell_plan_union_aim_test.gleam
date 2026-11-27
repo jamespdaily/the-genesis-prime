@@ -1,5 +1,5 @@
 //// How an effect row's aim (`Spell4Effects.targetFlags`) becomes the units it reaches
-//// (`genesis_prime/game/spell_plan` `aim_of`, `units_aimed_at`, `spell_hits_foes`,
+//// (`genesis_prime/shared/spell_plan` `aim_of`, `units_aimed_at`, `spell_hits_foes`,
 //// `read_row`). Expected values come from these places.
 //// - The client's rows, kept in the fixture (`table_rows -- Spell4Effects <ids>`):
 ////   196409 (Spell4 75957, type 8, flags 5), 196408 (75957, type 26, flags 5), 60607
@@ -22,8 +22,8 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{
   type Aim, type Kind, type RowReading, AimsAtArea, AimsAtCaster,
   AimsAtCasterAndArea, AimsAtCasterAndPrimaryTarget,
   AimsAtCasterPrimaryTargetAndArea, AimsAtPrimaryTarget,

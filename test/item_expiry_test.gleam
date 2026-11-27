@@ -19,7 +19,7 @@ import genesis_prime/game/deadline_timer.{
   CancelDeadlineTimer, StartDeadlineTimer,
 }
 import genesis_prime/game/item_expiry
-import genesis_prime/game/item_property.{NoRow}
+import genesis_prime/shared/item_property.{NoRow}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/item2
 import gleam/int

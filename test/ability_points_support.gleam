@@ -10,8 +10,8 @@ import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/loadout
 import genesis_prime/message/ability_points
+import genesis_prime/shared/loadout
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store
 import genesis_prime/table/id.{ClassId}

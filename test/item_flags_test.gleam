@@ -10,7 +10,7 @@
 
 import fixture_tables
 import genesis_prime/game/item_flags
-import genesis_prime/game/item_property
+import genesis_prime/shared/item_property
 import genesis_prime/store.{ItemPlace}
 import gleam/list
 import gleam/option.{None}

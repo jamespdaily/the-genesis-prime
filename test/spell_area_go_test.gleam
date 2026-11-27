@@ -1,4 +1,4 @@
-//// The hit shapes of a creature's cast at each of its gos (`genesis_prime/game/spell_area`
+//// The hit shapes of a creature's cast at each of its gos (`genesis_prime/shared/spell_area`
 //// `hit_shapes_by_go`), on the client's committed rows. Expected values come from these places.
 //// - `cast.multiphase_telegraph_rows` and the server's choice: a go strikes with the hit rows its phase names
 ////   (`TelegraphDamage.phaseFlags`: bit n is go n, -1 every go) that the client is drawing at the
@@ -11,11 +11,11 @@
 ////   param00 by param02, shape 2 a box of param00 by param02.
 
 import fixture_tables
-import genesis_prime/game/area.{
+import genesis_prime/shared/area.{
   type Inside, type Placement, Box, Circle, Cone, InsideRow, InsideShapes,
   Placement, Rectangle,
 }
-import genesis_prime/game/spell_area
+import genesis_prime/shared/spell_area
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/list

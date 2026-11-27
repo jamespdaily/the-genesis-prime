@@ -23,8 +23,6 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/connection/viewers
-import genesis_prime/game/effect_kind
-import genesis_prime/game/faction_level
 import genesis_prime/game/held_changes
 import genesis_prime/game/held_state
 import genesis_prime/game/move_stamp
@@ -37,7 +35,6 @@ import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{
   Appeared, CastFinished, LookChanged, PeerNews, PropertiesChanged, Removed,
 }
-import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
@@ -79,6 +76,11 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/server
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/faction_level
+import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   ConnectionId, LogError, LogInfo, LogWarning, Map, OwnEffect, OwnEvent, Woken,
 }
@@ -86,7 +88,6 @@ import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
 import genesis_prime/table/id.{ClassId, Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_fight
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/generation
@@ -97,7 +98,6 @@ import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/static_object.{type Created}
 import genesis_prime/world_map/stay.{type Stay}
-import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/int
 import gleam/list

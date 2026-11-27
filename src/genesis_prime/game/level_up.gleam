@@ -27,9 +27,9 @@
 ////   planned, or a tier holds no full-screen row aimed at the caster.
 
 import genesis_prime/client_connection.{type Undecoded}
-import genesis_prime/game/level
-import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/message/replay_level_up
+import genesis_prime/shared/level
+import genesis_prime/shared/spell_plan.{type Spell}
 import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4

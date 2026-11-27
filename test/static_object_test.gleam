@@ -30,13 +30,13 @@ import genesis_prime/game/connection/frames
 import genesis_prime/game/start_place.{Facing}
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_create_static
+import genesis_prime/shared/unit_fields
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/static_object.{
   type StaticObject, Health, StaticObject,
 }
-import genesis_prime/world_map/unit_fields
 import gleam/option.{Some}
 import map_support
 import message_support

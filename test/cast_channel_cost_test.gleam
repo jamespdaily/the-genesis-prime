@@ -27,11 +27,11 @@ import channel_support.{type Run, type Scene, type Step}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/class_resource.{type Payment, Payment}
-import genesis_prime/game/cooldown
-import genesis_prime/game/prerequisite.{type Prerequisite}
-import genesis_prime/game/spell_plan.{type Spell, Spell}
 import genesis_prime/message/cast_result
+import genesis_prime/shared/class_resource.{type Payment, Payment}
+import genesis_prime/shared/cooldown
+import genesis_prime/shared/prerequisite.{type Prerequisite}
+import genesis_prime/shared/spell_plan.{type Spell, Spell}
 import genesis_prime/step.{type TimerId}
 import gleam/dict
 import gleam/float

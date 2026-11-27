@@ -1,4 +1,4 @@
-//// The Focus formulas (`genesis_prime/game/focus`): what a Focus cost needs, the share
+//// The Focus formulas (`genesis_prime/shared/focus`): what a Focus cost needs, the share
 //// of the pool recovered and what each tick adds. Expected values come from these
 //// places, each named at its assertion:
 //// - `CheckInnateCost` 0x1403b3320 case 0xe: a cost needs `(int)(m x cost + 0.5)` whole
@@ -25,9 +25,9 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/focus.{Numbers}
-import genesis_prime/game/rating.{Formula}
 import genesis_prime/message/float32
+import genesis_prime/shared/focus.{Numbers}
+import genesis_prime/shared/rating.{Formula}
 import genesis_prime/table/loader/store as table_store
 import gleam/float
 import gleam/int

@@ -1,4 +1,4 @@
-//// A timed path of a thrown creature (`genesis_prime/world_map/creature_path`). Expected
+//// A timed path of a thrown creature (`genesis_prime/shared/creature_path`). Expected
 //// values come from the client's reading of kind 3 type 0 (`0x140783e10`, the sampler
 //// `SampleTimedPathKeys`): straight lines between the points, the first point held before
 //// the first time and the last held after the last time (`cc_state.forced_move_end`: the
@@ -6,7 +6,7 @@
 
 import creature_path_support as support
 import genesis_prime/game/start_place.{type Place, Facing}
-import genesis_prime/world_map/creature_path.{Standing, Timed, TooManyPoints}
+import genesis_prime/shared/creature_path.{Standing, Timed, TooManyPoints}
 import gleam/float
 import gleam/list
 import gleam/option.{None, Some}

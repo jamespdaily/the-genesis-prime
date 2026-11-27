@@ -14,8 +14,8 @@ import client_tables
 import fixture_tables
 import genesis_prime/client_connection
 import genesis_prime/game/level_up
-import genesis_prime/game/spell_plan
 import genesis_prime/message/bit_stream
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/sound_event
 import genesis_prime/table/spell4

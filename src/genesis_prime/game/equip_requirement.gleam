@@ -16,7 +16,7 @@
 ////   has a spell to activate) must each pass. A prerequisite whose condition the
 ////   server does not read is refused and named in `PrerequisiteNotRead`: the
 ////   client would decide it, the server cannot, and the cast rule makes the same
-////   choice (genesis_prime/game/prerequisite `NotRead`).
+////   choice (genesis_prime/shared/prerequisite `NotRead`).
 //// - **Proficiency:** the item category's ItemProficiency mask must be among the
 ////   wearer's item proficiencies; no row or a mask of 0 needs none
 ////   (`0x1403ca2b0`).
@@ -25,9 +25,9 @@
 ////
 //// The codes are the client's `GameLib.CodeEnumGenericError`.
 
-import genesis_prime/game/item_property
-import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_reward_kind
+import genesis_prime/shared/item_property
+import genesis_prime/shared/prerequisite
 import genesis_prime/table/id.{type Item2Id, PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2_reward.{type Quest2Reward}

@@ -14,11 +14,11 @@ import genesis_prime/game/connection/state.{type Session, Session} as connection
 import genesis_prime/game/deadline_timer
 import genesis_prime/game/interaction
 import genesis_prime/game/movement
-import genesis_prime/game/prerequisite.{Factions}
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log
 import genesis_prime/game/shown
 import genesis_prime/game/world_entry
+import genesis_prime/shared/prerequisite.{Factions}
 import genesis_prime/step.{type Now}
 import gleam/list
 

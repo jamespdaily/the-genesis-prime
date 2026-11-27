@@ -1,5 +1,5 @@
 //// The Scale (18), RavelSignal (81) and UnitPropertyConversion (145) rows of the plan
-//// (`genesis_prime/game/spell_plan`, `genesis_prime/game/effect_kind`). Expected values
+//// (`genesis_prime/shared/spell_plan`, `genesis_prime/shared/effect_kind`). Expected values
 //// come from these places:
 //// - `Spell4Effects.effectType.18`: the client resizes any unit it lands on and the
 ////   server only lists the row in the go with its lifetime, so a Scale row is a lasting
@@ -34,17 +34,17 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{
   AimsAtArea, AimsAtCaster, AimsAtPrimaryTarget, AimsAtPrimaryTargetAndArea,
   Always, GatedOnCaster, GatedOnCasterAndTarget, GatedOnTarget,
 }
-import genesis_prime/game/spend
-import genesis_prime/game/unit_properties
+import genesis_prime/shared/spend
+import genesis_prime/shared/unit_properties
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId, UnitProperty2Id}
 import genesis_prime/table/spell4_effects
 import gleam/dict

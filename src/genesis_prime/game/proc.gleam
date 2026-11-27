@@ -3,16 +3,16 @@
 //// draws it was given: the cast rule (genesis_prime/game/cast) keeps the fires, raises the
 //// events and starts the spells, and the connection draws the random values. No client code
 //// reads a Proc row (`Spell4Effects.effectType.14.client_evaluation`), so each reading is
-//// the one the plan marks (genesis_prime/game/spell_plan).
+//// the one the plan marks (genesis_prime/shared/spell_plan).
 ////
 //// The checks run in a fixed order: the limit, the filter, the holder gate, the event gate
 //// and the chance. Each proc that matches the event's trigger takes its draw and its gate
 //// rolls whether or not an earlier check stopped it, so the number to draw before a pass is
 //// known (`draws_needed`).
 
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type ProcRow}
 import genesis_prime/random
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type ProcRow}
 import genesis_prime/table/id.{type Spell4BaseId, type Spell4Id}
 import gleam/bool
 import gleam/int

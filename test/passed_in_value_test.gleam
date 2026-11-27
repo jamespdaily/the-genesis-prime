@@ -9,10 +9,10 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/damage
-import genesis_prime/game/item_property
 import genesis_prime/game/passed_in_value
 import genesis_prime/message/float32
+import genesis_prime/shared/damage
+import genesis_prime/shared/item_property
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/item2
 import genesis_prime/table/item_special
