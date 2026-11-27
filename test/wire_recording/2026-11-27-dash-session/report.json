@@ -1,6 +1,6 @@
 {
   "nMaxHealth": 1514,
-  "nTime": 1795813318,
+  "nTime": 1795822966,
   "strName": "Grozim Vroc",
   "tPos": {
     "y": -735.9951171875,
@@ -17,13 +17,13 @@
   ],
   "bModelLoaded": true,
   "bControlled": true,
-  "nPolls": 15,
+  "nPolls": 14,
   "nHealth": 1514,
   "bCharacterLoaded": true,
   "bPlayerUnit": true,
   "bReported": true,
   "nLevel": 6,
-  "nReportedAt": 1795813318,
+  "nReportedAt": 1795822966,
   "tAddonErrors": {},
   "bDead": false,
   "tLuaErrorEvents": {},
