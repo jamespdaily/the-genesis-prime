@@ -51,13 +51,13 @@ pub fn breaches(
     False -> {
       let module = syntax.parse(file)
       let imports =
-        list.filter_map(module.imports, fn(definition) {
-          case is_effectful(definition.definition.module) {
+        list.filter_map(syntax.import_offsets(file), fn(found) {
+          case is_effectful(found.1) {
             True ->
               Ok(breach(
                 file:,
-                byte_offset: definition.definition.location.start,
-                what: "imports " <> definition.definition.module,
+                byte_offset: found.0,
+                what: "imports " <> found.1,
               ))
             False -> Error(Nil)
           }

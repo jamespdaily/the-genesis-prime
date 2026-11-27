@@ -36,7 +36,16 @@ fn parse_text(file: SourceFile) -> glance.Module {
 
 /// The name of every module the file imports, as written in its imports.
 pub fn imported_modules(file: SourceFile) -> List(String) {
-  list.map(parse(file).imports, fn(definition) { definition.definition.module })
+  list.map(import_offsets(file), fn(found) { found.1 })
+}
+
+/// Each import of the file as the byte offset where it starts and the module
+/// it names, in the order written (the parser lists them in reverse).
+pub fn import_offsets(file: SourceFile) -> List(#(Int, String)) {
+  list.map(parse(file).imports, fn(definition) {
+    #(definition.definition.location.start, definition.definition.module)
+  })
+  |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
 }
 
 /// The module's name from its path: `src/genesis_prime/server.gleam` is

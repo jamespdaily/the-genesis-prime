@@ -17,29 +17,38 @@
 //// level unit      imports data platform shared unit messages of character map link
 //// level map       imports data platform shared map messages of unit
 //// level host      imports data platform shared link character unit map host messages of
+//// level root      imports data platform shared link character unit map host root messages of
 ////
 //// Enforced levels: data platform
 ////
-//// - data: client tables, content tables and readers of world data.
+//// - data: client tables, content tables and readers of world data, and the
+////   vocabulary a table row decodes into.
 //// - platform: the process model (step, service, store, hand-off, wire
-////   recording) and the ids that name a process.
+////   recording), the ids that name a process, and the connection modules
+////   the STS, auth and game listeners share.
 //// - shared: pure vocabulary and rules read by more than one level.
-//// - link, character, unit, map: the connection, one character's rows, the
-////   body in a map run, and the relations between units.
-//// - host: a module that composes the levels, or one whose imports reach
-////   across them today. It may import every level and is not checked. The
-////   levels that are not enforced are not checked either; a module of the
-////   enforced levels may import only the levels the lines above give it.
+//// - link, character, unit, map: the game connection, one character's rows,
+////   the body in a map run, and the relations between units.
+//// - host: the level of the rule that composes the levels. No module has it.
+//// - root: the modules that start the server and its tables and import every
+////   level. No module of another level imports a root module, enforced or
+////   not (`root_breaches`).
 ////
-//// A row for a module of `src` outside the generated `message/` and `table/`
-//// folders and the generated `sql` modules is required, once, in order; a
-//// row for a module that is gone is a breach at the row. An import of a
-//// module with no row (a library, a generated module) is not checked.
+//// The levels that are not enforced are not checked; a module of the
+//// enforced levels may import only the levels the lines above give it, except
+//// the imports listed in `level_imports.txt` (`importer imported`). The list
+//// can only shrink: a listed import that the matrix allows or that is gone is
+//// a breach at its row, and a forbidden import not listed is a breach at the
+//// import.
+////
+//// A module of `src` needs one row, in order, unless its first line says it
+//// is generated (`generated_markers`); a row for a module that is gone is a
+//// breach at the row. An import of a module with no row (a library, a
+//// generated module) is not checked.
 
 import code_rule/list_file
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
-import gleam/int
 import gleam/list
 import gleam/option.{type Option, Some}
 import gleam/result
@@ -55,6 +64,7 @@ pub type Level {
   Unit
   Map
   Host
+  Root
 }
 
 /// A row of the levels table: the module's full name, its level and the row's
@@ -78,7 +88,7 @@ type Imports {
 
 /// Every level.
 pub fn all_levels() -> List(Level) {
-  [Data, Platform, Shared, Link, Character, Unit, Map, Host]
+  [Data, Platform, Shared, Link, Character, Unit, Map, Host, Root]
 }
 
 /// The level's word in the table and in the diagram.
@@ -92,6 +102,7 @@ pub fn name(level: Level) -> String {
     Unit -> "unit"
     Map -> "map"
     Host -> "host"
+    Root -> "root"
   }
 }
 
@@ -105,7 +116,8 @@ fn imports(level: Level) -> Imports {
     Character -> Imports(list.append(above, [Character]), [Unit, Map, Link])
     Unit -> Imports(list.append(above, [Unit]), [Character, Map, Link])
     Map -> Imports(list.append(above, [Map]), [Unit])
-    Host -> Imports(all_levels(), [])
+    Host -> Imports(list.filter(all_levels(), fn(each) { each != Root }), [])
+    Root -> Imports(all_levels(), [])
   }
 }
 
@@ -127,7 +139,7 @@ pub fn contract(level: Level) -> List(String) {
     Character -> ["genesis_prime/character/message"]
     Unit -> ["genesis_prime/unit/message"]
     Map -> ["genesis_prime/map/message"]
-    Data | Platform | Shared | Host -> []
+    Data | Platform | Shared | Host | Root -> []
   }
 }
 
@@ -153,28 +165,49 @@ pub fn parse_rows(text text: String) -> List(Row) {
 /// The module name of each import of the file and the line of the import
 /// (from 1), in the order written.
 pub fn imports_of(file file: SourceFile) -> List(#(Int, String)) {
-  let imported = syntax.parse(file).imports
+  let imported = syntax.import_offsets(file)
   let lines =
     syntax.lines_of(
       text: file.text,
-      byte_offsets: list.map(imported, fn(definition) {
-        definition.definition.location.start
-      }),
+      byte_offsets: list.map(imported, fn(found) { found.0 }),
     )
-  list.zip(
-    lines,
-    list.map(imported, fn(definition) { definition.definition.module }),
-  )
-  |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+  list.zip(lines, list.map(imported, fn(found) { found.1 }))
 }
 
-/// Whether the path is a module whose row the table must hold: a `.gleam`
-/// file of `src/genesis_prime` (or the package's own module) that is not
-/// generated message, table or SQL code.
-fn needs_row(path: String) -> Bool {
-  !string.contains(path, "/message/")
-  && !string.contains(path, "/table/")
-  && !string.ends_with(path, "/sql.gleam")
+/// A forbidden import that stays: the importing module, the module it
+/// imports, and the line of the list's row (from 1).
+pub type Allowed {
+  Allowed(importer: String, imported: String, line: Int)
+}
+
+/// The forbidden imports the list allows.
+pub const allowed_path = "test/code_rule/level_imports.txt"
+
+/// The rows of the list of allowed imports as its file writes them:
+/// `importer imported` on each line.
+pub fn parse_allowed(text text: String) -> List(Allowed) {
+  list_file.rows(text)
+  |> list.map(fn(entry) {
+    let #(row, line) = entry
+    let assert [importer, imported] = string.split(row, " ")
+      as list_file.bad_row(line:, what: "is not an importer and an import")
+    Allowed(importer:, imported:, line:)
+  })
+}
+
+/// The first line of a generated module names its generator or says it holds
+/// the code of its queries; no row is kept for such a module.
+pub const generated_markers = [
+  "//// Generated", "//// This module contains the code to run the sql queries",
+]
+
+/// Whether the module's first line marks it as generated.
+pub fn is_generated(file: SourceFile) -> Bool {
+  let first = case string.split_once(file.text, "\n") {
+    Ok(#(first, _)) -> first
+    Error(Nil) -> file.text
+  }
+  list.any(generated_markers, string.starts_with(first, _))
 }
 
 fn module_of(file: SourceFile) -> String {
@@ -190,7 +223,7 @@ pub fn table_breaches(
 ) -> List(Breach) {
   let modules =
     files
-    |> list.filter(fn(file) { needs_row(file.path) })
+    |> list.filter(fn(file) { !is_generated(file) })
   let unlisted =
     list.filter_map(modules, fn(file) {
       case list.any(rows, fn(row) { row.module == module_of(file) }) {
@@ -228,27 +261,145 @@ pub fn table_breaches(
 }
 
 /// A breach, at its line, for each import of a module of an enforced level
-/// that the matrix forbids: a module that has a row, at a level the importer's
-/// level may not import, unless it is a message module of a level the
-/// importer talks to.
+/// that the matrix forbids and the list does not allow: a module that has a
+/// row, at a level the importer's level may not import, unless it is a
+/// message module of a level the importer talks to. An allowed import that
+/// the matrix permits or that is gone is a breach at its row of the list, and
+/// so is a row out of order or repeated.
 pub fn import_breaches(
   files files: List(SourceFile),
   rows rows: List(Row),
   enforced enforced: List(Level),
+  allowed allowed: List(Allowed),
 ) -> List(Breach) {
+  let forbidden = forbidden_imports(files:, rows:, enforced:)
+  let unlisted =
+    list.filter_map(forbidden, fn(found) {
+      let #(importer, imported, breach) = found
+      case
+        list.any(allowed, fn(each) {
+          each.importer == importer && each.imported == imported
+        })
+      {
+        True -> Error(Nil)
+        False -> Ok(breach)
+      }
+    })
+  let gone =
+    list.filter_map(allowed, fn(each) {
+      case
+        list.any(forbidden, fn(found) {
+          found.0 == each.importer && found.1 == each.imported
+        })
+      {
+        True -> Error(Nil)
+        False ->
+          Ok(Breach(
+            path: allowed_path,
+            line: each.line,
+            rule: each.importer
+              <> " does not import "
+              <> each.imported
+              <> " against the matrix, so its row is gone from the list",
+          ))
+      }
+    })
+  let disordered =
+    list_file.disordered(
+      rows: allowed,
+      compare: fn(before, each) {
+        string.compare(
+          before.importer <> " " <> before.imported,
+          each.importer <> " " <> each.imported,
+        )
+      },
+      path: allowed_path,
+      line: fn(each) { each.line },
+      name: fn(each) { each.importer <> " " <> each.imported },
+      what: "is out of order or repeated in the list of allowed imports",
+    )
+  list.flatten([unlisted, gone, disordered])
+}
+
+/// Each import of a module of an enforced level that the matrix forbids:
+/// the importer, the imported module and the breach.
+fn forbidden_imports(
+  files files: List(SourceFile),
+  rows rows: List(Row),
+  enforced enforced: List(Level),
+) -> List(#(String, String, Breach)) {
   list.flat_map(files, fn(file) {
-    case list.find(rows, fn(row) { row.module == module_of(file) }) {
-      Ok(Row(level: from, ..)) ->
+    case level_of(rows:, module: module_of(file)) {
+      Ok(from) ->
         case list.contains(enforced, from) {
-          True ->
-            list.filter_map(imports_of(file:), fn(found) {
-              breach_of_import(file:, rows:, from:, found:)
-            })
+          True -> forbidden_in_file(file:, rows:, from:)
           False -> []
         }
       Error(Nil) -> []
     }
   })
+}
+
+fn forbidden_in_file(
+  file file: SourceFile,
+  rows rows: List(Row),
+  from from: Level,
+) -> List(#(String, String, Breach)) {
+  list.filter_map(imports_of(file:), fn(found) {
+    breach_of_import(file:, rows:, from:, found:)
+    |> result.map(fn(breach) { #(module_of(file), found.1, breach) })
+  })
+}
+
+/// A breach, at its line, for each import of a root module by a module of
+/// another level, whether or not that level is enforced.
+pub fn root_breaches(
+  files files: List(SourceFile),
+  rows rows: List(Row),
+) -> List(Breach) {
+  list.flat_map(files, fn(file) {
+    case level_of(rows:, module: module_of(file)) {
+      Ok(from) if from != Root ->
+        list.filter_map(imports_of(file:), root_import_breach(
+          file:,
+          rows:,
+          from:,
+          found: _,
+        ))
+      Ok(_) | Error(Nil) -> []
+    }
+  })
+}
+
+fn level_of(rows rows: List(Row), module module: String) -> Result(Level, Nil) {
+  list.find(rows, fn(row) { row.module == module })
+  |> result.map(fn(row) { row.level })
+}
+
+/// The breach of one import `found` (its line and module) of a file of level
+/// `from`, when the imported module is a root module.
+fn root_import_breach(
+  file file: SourceFile,
+  rows rows: List(Row),
+  from from: Level,
+  found found: #(Int, String),
+) -> Result(Breach, Nil) {
+  let #(line, imported) = found
+  use level <- result.try(level_of(rows:, module: imported))
+  case level {
+    Root ->
+      Ok(Breach(
+        path: file.path,
+        line:,
+        rule: name(from)
+          <> " module "
+          <> module_of(file)
+          <> " imports the root module "
+          <> imported
+          <> ", which only root modules may import",
+      ))
+    _ -> Error(Nil)
+  }
 }
 
 /// The breach of one import `found` (its line and module) of a file of level

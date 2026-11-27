@@ -84,7 +84,7 @@
 //// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
 ////   an asker waiting on one gets `EndedBeforeAnswer`.
 
-import genesis_prime/game/currency
+import genesis_prime/game/currency_kind
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/login/guid
 import genesis_prime/migration.{
@@ -585,7 +585,7 @@ fn turn_in_quest(
           character_id,
           account_id,
           store.session_epoch_number(session_epoch),
-          currency.credits_type,
+          currency_kind.credits_type,
           credits_held,
           credits_after,
           list.map(grown, fn(one) { { one.1 }.item_guid }),

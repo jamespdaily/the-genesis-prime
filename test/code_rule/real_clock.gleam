@@ -208,7 +208,7 @@ pub fn breaches(file: SourceFile) -> List(Breach) {
   list.flatten([
     named_sources(module),
     unbounded_receives(module),
-    node_imports(module),
+    node_imports(file),
     entry_point_calls(module),
     short_deadlines(module),
   ])
@@ -362,15 +362,11 @@ fn entry_point_calls(module: glance.Module) -> List(#(Int, String)) {
 }
 
 /// The offset of each import of a module that starts the release's processes.
-fn node_imports(module: glance.Module) -> List(#(Int, String)) {
-  list.filter_map(module.imports, fn(definition) {
-    let import_ = definition.definition
-    case list.contains(node_modules, import_.module) {
+fn node_imports(file: SourceFile) -> List(#(Int, String)) {
+  list.filter_map(syntax.import_offsets(file), fn(found) {
+    case list.contains(node_modules, found.1) {
       True ->
-        Ok(#(
-          import_.location.start,
-          "names real time (the import of " <> import_.module <> ")",
-        ))
+        Ok(#(found.0, "names real time (the import of " <> found.1 <> ")"))
       False -> Error(Nil)
     }
   })
