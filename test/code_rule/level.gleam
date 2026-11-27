@@ -448,3 +448,17 @@ fn may_import(from from: Level, to to: Level, module module: String) -> Bool {
     && list.contains(contract(to), module)
   }
 }
+
+/// The folder every shared module lives in.
+pub const shared_folder = "genesis_prime/shared/"
+
+/// A breach for each row at level shared whose module is outside the shared
+/// folder (at the row's line of the table), and for each file inside the
+/// shared folder whose row names another level (at the file's first line).
+pub fn shared_folder_breaches(
+  files files: List(SourceFile),
+  rows rows: List(Row),
+) -> List(Breach) {
+  let _ = #(files, rows)
+  []
+}

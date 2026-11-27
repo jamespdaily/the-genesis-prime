@@ -132,6 +132,7 @@ pub fn a_module_importing_a_level_the_matrix_forbids_fails_when_that_level_is_en
       #("genesis_prime/runner", Platform),
       #("genesis_prime/rules", Shared),
       #("genesis_prime/server", Platform),
+      #("genesis_prime/tracker", Character),
     ])
   list.each(
     [
@@ -156,6 +157,13 @@ pub fn a_module_importing_a_level_the_matrix_forbids_fails_when_that_level_is_en
         [],
         "a platform module imports data and platform",
       ),
+      #(
+        module_file("genesis_prime/rules", [
+          "genesis_prime/reader", "genesis_prime/tracker",
+        ]),
+        [2],
+        "a shared module imports a character module",
+      ),
     ],
     fn(row) {
       let #(file, expected, reason) = row
@@ -163,7 +171,7 @@ pub fn a_module_importing_a_level_the_matrix_forbids_fails_when_that_level_is_en
         level.import_breaches(
           files: [file],
           rows: table,
-          enforced: [Data, Platform],
+          enforced: level.enforced,
           allowed: [],
         )
       assert planted.lines(breaches) == expected as reason
@@ -570,4 +578,70 @@ pub fn the_list_of_allowed_imports_reads_its_rows_by_line_test() -> Nil {
   use <- unitest.tag("code_rule")
   assert level.parse_allowed("a/x b/y\n\nc/z d/w\n")
     == [Allowed("a/x", "b/y", 1), Allowed("c/z", "d/w", 3)]
+}
+
+pub fn a_module_is_under_shared_exactly_when_its_row_says_shared_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.tag("code_rule")
+  list.each(
+    [
+      #(
+        "genesis_prime/game/misplaced",
+        Shared,
+        [1],
+        "a shared row for a module outside shared/ fails at the row",
+      ),
+      #(
+        "genesis_prime/game/unit_rule",
+        Unit,
+        [],
+        "a unit module outside shared/ passes",
+      ),
+      #(
+        "genesis_prime/shared/other_level",
+        Unit,
+        [1],
+        "a module under shared/ with another level's row fails at its file",
+      ),
+      #(
+        "genesis_prime/shared/vocabulary",
+        Shared,
+        [],
+        "a module under shared/ with a shared row passes",
+      ),
+    ],
+    fn(row) {
+      let #(module, module_level, expected, reason) = row
+      assert planted.lines(level.shared_folder_breaches(
+          files: [module_file(module, [])],
+          rows: rows([#(module, module_level)]),
+        ))
+        == expected
+        as reason
+    },
+  )
+  let files = repository.sources(under: ["src"])
+  let real = level.parse_rows(source.read(level.list_path))
+  let breaches = level.shared_folder_breaches(files:, rows: real)
+  assert breaches == []
+    as {
+      int.to_string(list.length(breaches))
+      <> " breaches, the first: "
+      <> string.inspect(list.first(breaches))
+    }
+  let under_folder =
+    files
+    |> list.map(fn(file) {
+      string.remove_prefix(file.path, "src/")
+      |> string.remove_suffix(".gleam")
+    })
+    |> list.filter(string.starts_with(_, "genesis_prime/shared/"))
+    |> list.sort(string.compare)
+  let shared_rows =
+    real
+    |> list.filter(fn(row) { row.level == Shared })
+    |> list.map(fn(row) { row.module })
+    |> list.sort(string.compare)
+  assert shared_rows == under_folder
+    as "the tree's shared/ folder and the table's shared rows differ"
 }
