@@ -27,11 +27,13 @@ import session_state  # noqa: E402
 PROJECT = "2"
 OWNER = "jamespdaily"
 WITHOUT_COMMENT = timedelta(hours=24)
+# The board's item list took 11.7 s at 545 items (2026-11-27), past the session start's 10 s cap.
+CAP_SECONDS = 60
 
 
 def gh_json(*arguments):
     """The parsed JSON a `gh` call prints; raises when the call fails."""
-    return json.loads(session_state.run(["gh", *arguments]))
+    return json.loads(session_state.run(["gh", *arguments], cap_seconds=CAP_SECONDS))
 
 
 def parse_time(text):
