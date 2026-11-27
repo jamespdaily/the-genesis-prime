@@ -6,13 +6,16 @@
 //// 4.0 0x40800000, 5.0 0x40A00000, 6.0 0x40C00000 and 1.5 0x3FC00000).
 
 import ask_support
+import client_tables
 import creature_path_support as support
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection/frames
+import genesis_prime/game/look
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/world_entry
 import genesis_prime/message/float32
+import genesis_prime/message/item_visual.{ItemVisual}
 import genesis_prime/message/movement_face_point.{MovementFacePoint}
 import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
 import genesis_prime/message/movement_float_vector.{MovementFloatVector}
@@ -26,12 +29,18 @@ import genesis_prime/message/movement_state_flags.{MovementStateFlags}
 import genesis_prime/message/movement_time.{MovementTime}
 import genesis_prime/message/movement_timed_path.{MovementTimedPath}
 import genesis_prime/message/relayed_movement
+import genesis_prime/message/unit_create_cast.{UnitCreateCast}
 import genesis_prime/message/unit_create_ghost
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
+import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_float_stat_changed.{UnitFloatStatChanged}
 import genesis_prime/message/unit_movement.{type UnitMovement, UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
+import genesis_prime/message/unit_properties_changed
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/step.{Now}
+import genesis_prime/table/item_slot
+import genesis_prime/table/unit_property2
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_turn
 import gleam/bit_array
@@ -41,6 +50,7 @@ import gleam/option.{type Option, None, Some}
 import gleam/string
 import owned_test
 import place_support
+import unitest
 import world_entry_support
 
 /// A player that entered a map whose clock started at 600 ms on the monotonic clock.
@@ -679,4 +689,101 @@ pub fn unit_removed_frame_past_32_bits_crashes_naming_the_value_field_and_width_
     as { "the crash names the field; it says: " <> text }
   assert string.contains(text, "32 bits")
     as { "the crash gives the width of a unit id, 32 bits; it says: " <> text }
+}
+
+pub fn a_properties_frame_of_every_unit_property_id_encodes_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.guard(client_tables.present())
+  let ids =
+    list.map(unit_property2.all(client_tables.shared()), fn(row) { row.id })
+  assert list.length(ids) == 200
+    as "UnitProperty2 has 200 rows, at most the 255 an 8-bit count holds"
+  let Frame(body:, ..) =
+    frames.properties_changed_frame(
+      unit_id: 40,
+      properties: list.map(ids, fn(property_id) {
+        UnitProperty(property_id:, base: 1, value: 1)
+      }),
+    )
+  let assert Ok(decoded) = unit_properties_changed.decode(body)
+    as "the server's codec reads the frame back; the client fails the message at an entry of id 197 or more (schema unit_properties_changed), which the load guard refuses"
+  assert list.map(decoded.properties, fn(property) { property.property_id })
+    == ids
+    as "one entry for each UnitProperty2 id, in order"
+}
+
+pub fn a_creature_path_of_the_most_points_makes_a_movement_frame_test() -> Nil {
+  use <- owned_test.run(5000)
+  let path =
+    support.running(
+      points: support.line(count: creature_path.most_points),
+      started_ms: 1000,
+      speed: 10.0,
+    )
+  let assert Some(Frame(message_id: 0x0638, body:)) =
+    frames.path_frame(entered: entered(), unit_id: 40, path:, face: None)
+    as "a path of the most points is written as one 0x638"
+  let assert Ok(_) = unit_movement.decode(body)
+    as "the frame is a 0x638 the client's reader takes"
+  Nil
+}
+
+pub fn a_player_unit_with_the_largest_name_bones_and_visuals_encodes_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.guard(client_tables.present())
+  let body_visuals =
+    list.map(item_slot.all(client_tables.shared()), fn(row) {
+      ItemVisual(slot: row.id, display_id: 1, item_color_set_id: 0, dye: 0)
+    })
+  assert list.length(body_visuals) == 50
+    as "ItemSlot has 50 rows, the body's visuals of a player (`with_gear`)"
+  // `player_unit.with_gear` appends the worn visuals (up to 31 equipped slots) to the
+  // body's and removes no repeat, so a player's list holds 50 + 31.
+  let worn_visuals = list.take(body_visuals, 31)
+  let visuals = list.append(body_visuals, worn_visuals)
+  let casts =
+    list.map(list.repeat(Nil, 511), fn(_) {
+      UnitCreateCast(
+        caster_unit_id: 1,
+        primary_target_unit_id: 1,
+        cast_id: 1,
+        spell4_id: 1,
+        started: 0,
+        targets: [],
+        initial_positions: [],
+        telegraph_positions: [],
+      )
+    })
+  let name = string.repeat("A", 30)
+  let entered = entered()
+  let unit =
+    UnitCreatePlayer(
+      ..entered.unit,
+      name:,
+      bone_values: list.repeat(0, 48),
+      tail: UnitCreateTail(..entered.unit.tail, item_visuals: visuals, casts:),
+    )
+  let entered =
+    world_entry.Entered(..entered, unit:, look: look.new(base: visuals))
+  let Frame(body: ghost_body, ..) =
+    frames.own_unit_frame(
+      entered:,
+      now: Now(monotonic_ms: 700, filetime: 0),
+      written: player_life.GhostCreated(place: at(x: 1.0, y: 2.0, z: 3.0)),
+    )
+  let assert Ok(ghost) = unit_create_ghost.decode(ghost_body)
+    as "the ghost's frame is a 0x262 the client's reader takes"
+  assert ghost.name == name && list.length(ghost.bone_values) == 48
+    as "the ghost holds the 30-unit name and the 48 bones"
+  assert list.length(ghost.tail.casts) == 511
+    as "the ghost's tail holds 511 casts, the most its 9-bit count holds"
+  let Frame(body: player_body, ..) = world_entry.unit_created_frame(unit:)
+  let assert Ok(player) = unit_create_player.decode(player_body)
+    as "the player's frame is a 0x262 the client's reader takes"
+  assert player.name == name && list.length(player.bone_values) == 48
+    as "the player holds the 30-unit name and the 48 bones"
+  assert list.length(player.tail.item_visuals) == list.length(visuals)
+    as "the player holds 81 visuals, the body's 50 and 31 worn, which its 7-bit count holds and a 6-bit count would not"
+  assert list.length(player.tail.casts) == 511
+    as "the player's tail holds 511 casts"
 }

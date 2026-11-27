@@ -14,8 +14,10 @@
 
 import gleam/bit_array
 import gleam/bool
+import gleam/int
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/string
 
 /// The bytes of a frame before its body: the 32-bit length and the 16-bit id
 /// (WriteMessageFrame 0x1403355e0 writes widths 0x20 and 0x10).
@@ -70,6 +72,31 @@ pub fn encode(
     return: Error(LengthOverLimit(length)),
   )
   Ok(<<length:size(32)-little, message_id:size(16)-little, body:bits>>)
+}
+
+/// The bytes of `encode`, for a frame whose id and body the caller keeps within
+/// the header's limits. A failure is the server's bug, so it ends the process
+/// naming the message id and the error, never the body, which may be 131 KB.
+pub fn must_encode(
+  message_id message_id: Int,
+  body body: BitArray,
+) -> BitArray {
+  case encode(message_id:, body:) {
+    Ok(bytes) -> bytes
+    Error(error) ->
+      panic as {
+        "message "
+        <> case message_id < 0 {
+          True -> int.to_string(message_id)
+          False -> "0x" <> int.to_base16(message_id)
+        }
+        <> ": "
+        <> describe(error:)
+        <> " ("
+        <> string.inspect(error)
+        <> ")"
+      }
+  }
 }
 
 /// The first frame whole in the received bytes and the bytes after it, or
