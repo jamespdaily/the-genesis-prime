@@ -209,6 +209,13 @@ pub fn must_encode_of_an_id_past_16_bits_crashes_naming_the_id_test() -> Nil {
     as { "the crash says why, in describe's sentence; it says: " <> text }
 }
 
+pub fn must_encode_of_a_negative_id_crashes_naming_it_in_decimal_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let text = crash_of_must_encode(-1, <<>>)
+  assert string.contains(text, "message -1:") && !string.contains(text, "0x-")
+    as { "the crash names the id plainly; it says: " <> text }
+}
+
 pub fn must_encode_of_a_body_past_the_size_limit_crashes_without_printing_the_body_test() -> Nil {
   use <- owned_test.run(10_000)
   let text = crash_of_must_encode(0x0244, zeroes(131_071 - frame.header_size))

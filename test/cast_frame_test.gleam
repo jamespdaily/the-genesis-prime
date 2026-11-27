@@ -29,7 +29,6 @@ import genesis_prime/table/spell4_telegraph
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
 import gleam/result
 import gleam/string
 import owned_test
@@ -271,15 +270,9 @@ pub fn no_spell_has_more_than_85_effect_rows_or_81_telegraph_rows_test() -> Nil 
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let most_rows_of = fn(spell4_ids: List(Int)) {
-    list.fold(spell4_ids, dict.new(), fn(counts, spell4_id) {
-      dict.upsert(counts, spell4_id, fn(count) {
-        case count {
-          Some(count) -> count + 1
-          None -> 1
-        }
-      })
-    })
+    list.group(spell4_ids, by: fn(spell4_id) { spell4_id })
     |> dict.values
+    |> list.map(list.length)
     |> list.fold(0, int.max)
   }
   let effects =
@@ -288,6 +281,7 @@ pub fn no_spell_has_more_than_85_effect_rows_or_81_telegraph_rows_test() -> Nil 
     most_rows_of(
       list.filter_map(spell4_telegraph.all(tables), fn(row) {
         case row.spell4_id {
+          // Spell4 has no row 0, so no cast draws the rows with spell4Id 0.
           0 -> Error(Nil)
           spell4_id -> Ok(spell4_id)
         }
@@ -295,7 +289,7 @@ pub fn no_spell_has_more_than_85_effect_rows_or_81_telegraph_rows_test() -> Nil 
     )
   assert effects <= 85 as "Spell4Effects: no Spell4 has more than 85 rows"
   assert telegraphs <= 81
-    as "Spell4Telegraph: no Spell4 has more than 81 rows, the rows of spell 0 (no spell) left out"
-  assert effects + telegraphs < 255
-    as "the entries of one spell's message, one for each row, stay below an 8-bit count"
+    as "Spell4Telegraph: no Spell4 has more than 81 rows, the rows of spell4Id 0 left out (Spell4 holds no row 0, so no cast draws them)"
+  assert 2 * telegraphs <= 255
+    as "the started frame's telegraph positions, one for each drawn row on the caster and one on the target (`telegraph_entries.opening_of`), stay within an 8-bit count"
 }

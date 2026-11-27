@@ -85,8 +85,11 @@ pub fn must_encode(
     Ok(bytes) -> bytes
     Error(error) ->
       panic as {
-        "message 0x"
-        <> int.to_base16(message_id)
+        "message "
+        <> case message_id < 0 {
+          True -> int.to_string(message_id)
+          False -> "0x" <> int.to_base16(message_id)
+        }
         <> ": "
         <> describe(error:)
         <> " ("

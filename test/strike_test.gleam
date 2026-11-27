@@ -1069,9 +1069,10 @@ fn selected_units(selection selection: Selection) -> List(Int) {
 
 pub fn a_selection_from_a_200_row_holds_at_most_202_units_test() -> Nil {
   use <- owned_test.run(10_000)
-  // 300 foes inside Kick's cone (1 to 7 m ahead), the primary target 7 standing outside
-  // it, and a row that takes 200: one area row serves a go (`SpellArea.row`), so the units
-  // are the row's 200 and the primary target.
+  // 300 foes inside Kick's cone (1 to 7 m ahead), the primary target 8 standing outside
+  // it, and a row that takes 200: one area row serves a go (`SpellArea.row`). Kick's damage
+  // is planted as aimed at the primary target as well as the area, so the units are the
+  // row's 200 and the primary target.
   let both = Attackable(exile: True, dominion: True)
   let crowd =
     list.map(numbers(from: 100, to: 399), fn(unit_id) {
@@ -1088,7 +1089,7 @@ pub fn a_selection_from_a_200_row_holds_at_most_202_units_test() -> Nil {
   let picture =
     dict.from_list([
       #(
-        7,
+        8,
         strike_support.creature_at(
           x: 40.0,
           z: 40.0,
@@ -1100,16 +1101,28 @@ pub fn a_selection_from_a_200_row_holds_at_most_202_units_test() -> Nil {
     ])
   let chosen =
     strike.select(
-      asked: GoAsked(..asked(cast_id: 5, phase: 0), primary_target: 7),
+      asked: GoAsked(..asked(cast_id: 5, phase: 0), primary_target: 8),
       attacker: strike_support.attacker(),
       picture:,
-      areas: kick_areas_ordered(order: area.Nearest, target_count: 200),
+      areas: kick_areas_changed(change: fn(kick) {
+        let assert Some(row) = kick.row as "Kick has an area row"
+        spell_area.SpellArea(
+          ..kick,
+          row: Some(area.Row(..row, order: area.Nearest, target_count: 200)),
+          damage: list.map(kick.damage, fn(effect) {
+            spell_area.DamageEffect(
+              ..effect,
+              aim: spell_plan.AimsAtPrimaryTargetAndArea,
+            )
+          }),
+        )
+      }),
       now_ms: 0,
     )
   assert list.length(chosen.area) == 200
     as "the area row's count of 200 takes 200 of the 300 foes inside"
-  assert list.length(chosen.units) <= 202
-    as "the units are the area's 200, the primary target and the caster at most, the 202 a go's 8-bit target count holds"
+  assert list.length(chosen.units) == 201
+    as "the units are the area's 200 and the primary target 8, which the area did not select; the caster is not in the picture, and 202 with it is what a go's 8-bit target count holds"
 }
 
 pub fn a_player_area_that_picks_the_furthest_strikes_the_furthest_units_inside_its_count_test() -> Nil {

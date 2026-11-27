@@ -706,7 +706,7 @@ pub fn a_properties_frame_of_every_unit_property_id_encodes_test() -> Nil {
       }),
     )
   let assert Ok(decoded) = unit_properties_changed.decode(body)
-    as "the frame is a 0x93a the client's reader takes"
+    as "the server's codec reads the frame back; the client fails the message at an entry of id 197 or more (schema unit_properties_changed), which the load guard refuses"
   assert list.map(decoded.properties, fn(property) { property.property_id })
     == ids
     as "one entry for each UnitProperty2 id, in order"
@@ -731,10 +731,16 @@ pub fn a_creature_path_of_the_most_points_makes_a_movement_frame_test() -> Nil {
 pub fn a_player_unit_with_the_largest_name_bones_and_visuals_encodes_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.guard(client_tables.present())
-  let visuals =
+  let body_visuals =
     list.map(item_slot.all(client_tables.shared()), fn(row) {
       ItemVisual(slot: row.id, display_id: 1, item_color_set_id: 0, dye: 0)
     })
+  assert list.length(body_visuals) == 50
+    as "ItemSlot has 50 rows, the body's visuals of a player (`with_gear`)"
+  // `player_unit.with_gear` appends the worn visuals (up to 31 equipped slots) to the
+  // body's and removes no repeat, so a player's list holds 50 + 31.
+  let worn_visuals = list.take(body_visuals, 31)
+  let visuals = list.append(body_visuals, worn_visuals)
   let casts =
     list.map(list.repeat(Nil, 511), fn(_) {
       UnitCreateCast(
@@ -777,7 +783,7 @@ pub fn a_player_unit_with_the_largest_name_bones_and_visuals_encodes_test() -> N
   assert player.name == name && list.length(player.bone_values) == 48
     as "the player holds the 30-unit name and the 48 bones"
   assert list.length(player.tail.item_visuals) == list.length(visuals)
-    as "the player holds a visual for every ItemSlot row"
+    as "the player holds 81 visuals, the body's 50 and 31 worn, which its 7-bit count holds and a 6-bit count would not"
   assert list.length(player.tail.casts) == 511
     as "the player's tail holds 511 casts"
 }
