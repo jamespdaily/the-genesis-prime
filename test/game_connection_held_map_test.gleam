@@ -1325,13 +1325,10 @@ pub fn level_by_command_reaches_the_client_as_the_gain_and_the_level_stat_test()
   assert experience_support.level_writes(taken:)
     == [#(connection_support.own_unit_id, 4)]
     as "opcode.0x938: stat 10 of the player's own unit is the new level"
-  let watchers = [2, 3, 4, 5]
-  assert list.all(watchers, fn(viewer) {
-    list.contains(
-      connection_support.news_told(taken:, viewer:),
-      unit_news.Level(level: 4),
-    )
-  })
+  assert list.contains(
+    connection_support.news_broadcast(taken),
+    unit_news.Level(level: 4),
+  )
     as "each connection the map named as a watcher is told the level, to write the same 0x938 under the unit it shows"
 }
 
@@ -1345,9 +1342,7 @@ pub fn an_xp_command_in_two_steps_reaches_the_level_at_its_minimum_test() -> Nil
     as "2859 is one short of level 4's 2860 (XpPerLevel)"
   assert experience_support.level_writes(taken: below) == []
     as "no level is written below level 4's minimum"
-  assert list.all([2, 3, 4, 5], fn(viewer) {
-    connection_support.news_told(taken: below, viewer:) == []
-  })
+  assert connection_support.news_broadcast(below) == []
     as "no watcher is told a level"
   let #(_, reached) = dev_support.said(state:, text: "!xp 2860")
   assert experience_support.gains(taken: reached) == [cheat_gain(experience: 1)]
@@ -1356,7 +1351,7 @@ pub fn an_xp_command_in_two_steps_reaches_the_level_at_its_minimum_test() -> Nil
     == [#(connection_support.own_unit_id, 4)]
     as "level 4 at its minimum"
   assert list.contains(
-    connection_support.news_told(taken: reached, viewer: 2),
+    connection_support.news_broadcast(reached),
     unit_news.Level(level: 4),
   )
     as "a watcher is told the level"
@@ -1495,10 +1490,8 @@ pub fn go_to_another_world_enters_it_and_the_first_maps_watcher_sees_the_unit_le
       experience: 1800,
     )
   let #(state, leaving) = dev_support.said(state:, text: "!go 8300")
-  list.each([2, 3, 4, 5], fn(viewer) {
-    assert connection_support.news_told(taken: leaving, viewer:) == []
-      as "each watcher of the first map is told nothing by the leaving connection: the unit's 0x355 is the first map's PlayerUnseen when it takes the leave"
-  })
+  assert connection_support.news_broadcast(leaving) == []
+    as "each watcher of the first map is told nothing by the leaving connection: the unit's 0x355 is the first map's PlayerUnseen when it takes the leave"
   let #(first_map, left, held) =
     connection_support.mapped_logging(map_state: first_map, taken: leaving)
   assert left == Left as "the first map answers the leave"

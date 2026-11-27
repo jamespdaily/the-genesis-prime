@@ -10,7 +10,7 @@ import game_client
 import game_connection_support
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, ForStay, FromMap, FromStore,
-  SentByPeer, TellPeer,
+  SentByPeer,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/chat_channel
@@ -31,9 +31,10 @@ import genesis_prime/message/unit_position_command
 import genesis_prime/message/whisper_failed
 import genesis_prime/server
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionStep, type Event, ConnectionId,
-  EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning, OwnEffect, OwnEvent,
-  StoppedWaiting, Unwatch, Watch, WatchEnded, WatchId, Woken,
+  type ConnectionEvent, type ConnectionId, type ConnectionStep, type Event,
+  ConnectionId, EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning,
+  OwnEffect, OwnEvent, StoppedWaiting, Unwatch, Watch, WatchEnded, WatchId,
+  Woken,
 }
 import genesis_prime/store.{CharacterLoaded, ForSelect, ForWorld, Listed}
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
@@ -68,8 +69,7 @@ fn chat_tells(
 ) -> List(#(step.Address, chat_tell.Tell)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(step.Tell(to:, request: client_connection.TellChat(tell:)))
-      | OwnEffect(step.Tell(to:, request: client_connection.TellLine(tell:, ..))) ->
+      OwnEffect(step.Tell(to:, request: client_connection.TellChat(tell:))) ->
         Ok(#(to, tell))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
@@ -77,20 +77,25 @@ fn chat_tells(
   })
 }
 
-/// The stay each line tell of a step names, in the order of the step's effects.
-fn line_stays(taken: ConnectionStep(Request)) -> List(Stay) {
+/// The lines of local chat a step tells the map, in the order of the step's effects: the
+/// connection and the stay each names and the line.
+fn said_to_the_map(
+  taken: ConnectionStep(Request),
+) -> List(#(ConnectionId, Stay, chat_tell.Said)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(step.Tell(request: client_connection.TellLine(stay:, ..), ..)) ->
-        Ok(stay)
+      OwnEffect(step.Tell(
+        to: step.Map(..),
+        request: client_connection.TellSay(connection:, stay:, said:),
+      )) -> Ok(#(connection, stay, said))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
   })
 }
 
-/// A Say line of another player's unit 9, as its connection tells a viewer.
-fn a_said_tell() -> chat_tell.Tell {
+/// A Say line of another player's unit 9, as the map relays it to a viewer.
+fn a_said_line() -> chat_tell.Said {
   chat_tell.Said(
     speaker: chat_tell.Speaker(
       realm_id: 1,
@@ -110,20 +115,14 @@ fn a_said_tell() -> chat_tell.Tell {
   )
 }
 
-fn peer_tell_kinds(taken: ConnectionStep(Request)) -> List(String) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(request: TellPeer(..), ..)) -> Ok("unit news")
-      OwnEffect(step.Tell(request: client_connection.TellChat(..), ..))
-      | OwnEffect(step.Tell(request: client_connection.TellLine(..), ..)) ->
-        Ok("chat")
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
-  })
+/// A Say line of another player's unit 9 as a chat tell between characters is never built:
+/// the same speaker's zone line, for a test that sends a tell of another kind.
+fn a_zone_line() -> chat_tell.Tell {
+  let chat_tell.Said(speaker:, line:) = a_said_line()
+  chat_tell.ZoneLine(speaker:, top_zone_id: 1, line:)
 }
 
-pub fn a_say_line_in_the_world_writes_the_accept_and_tells_each_viewer_test() -> Nil {
+pub fn a_say_line_in_the_world_writes_the_accept_and_tells_the_map_once_test() -> Nil {
   use <- owned_test.run(10_000)
   let state =
     game_connection_support.watched_by(game_connection_support.in_world(), [
@@ -137,25 +136,23 @@ pub fn a_say_line_in_the_world_writes_the_accept_and_tells_each_viewer_test() ->
     )
   assert game_connection_support.written_ids(taken) == [0x01C2]
     as "opcode.0x1c2: the speaker's own line is shown by the accept alone"
-  let tells = chat_tells(taken)
-  assert list.map(tells, fn(told) { told.0 })
-    == [step.Connection(ConnectionId(2)), step.Connection(ConnectionId(3))]
-    as "one tell to each viewer, which the shell sends with no answer"
-  assert line_stays(taken)
-    == [
-      game_connection_support.viewer_stay(2),
-      game_connection_support.viewer_stay(3),
-    ]
-    as "each tell names the stay its viewer's SeenBy named"
-  let assert [#(_, chat_tell.Said(speaker:, line:)), ..] = tells
+  assert chat_tells(taken) == []
+    && game_connection_support.tells_to_players_but_moves(taken) == []
+    as "the speaker tells no viewer's connection: the map's relations name the viewers"
+  let assert [#(connection, stay, chat_tell.Said(speaker:, line:))] =
+    said_to_the_map(taken)
+    as "one tell to the map, which the shell sends with no answer"
+  assert connection == ConnectionId(1)
+    && stay == game_connection_support.own_stay()
+    as "the tell names the speaker's connection and the stay it entered in, which the map checks against its own"
   assert speaker.name == "Ab Cd" && speaker.character_id == 42
   assert line.channel_type == chat_channel.Say && line.channel_id == 0
   assert support.logs(taken) == [] && !support.stops(taken)
 }
 
-pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the_order_of_watched_and_the_line_test() -> Nil {
+pub fn the_speaker_tells_its_map_its_snapshot_and_its_line_in_the_order_it_took_them_whatever_the_order_of_seen_and_the_line_test() -> Nil {
   use <- owned_test.run(10_000)
-  // The line first: the player 2 is no viewer yet, so it gets no line.
+  // The line first: the player 2 is no viewer yet, so the map relays it nothing.
   let #(state, line_first) =
     game_connection_support.read(
       game_connection_support.in_world(),
@@ -171,13 +168,14 @@ pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the
         generation: game_connection_support.viewer_sight(2),
       )),
     )
-  assert peer_tell_kinds(line_first) == []
-    as "a player that does not see the speaker yet is told nothing"
-  assert peer_tell_kinds(appears) == []
+  assert list.length(said_to_the_map(line_first)) == 1
+    && game_connection_support.snapshot_items(line_first) == []
+    as "the line is told to the map whoever sees the speaker: the map's relation decides"
+  assert game_connection_support.tells_to_players_but_moves(appears) == []
     && list.length(game_connection_support.snapshot_items(appears)) == 1
     as "the speaker's connection builds its 0x262 as the map says the player sees it and tells it to the map, not to the viewer"
-  // Watched first: the 0x262 is told in the step before the line, by the same
-  // sender, so the viewer's connection takes them in that order.
+  // Seen first: the 0x262 is told in the step before the line, by the same sender, so the
+  // map takes them in that order and relays them to the viewer in it.
   let #(state, appears) =
     game_connection_support.feed(
       game_connection_support.in_world(),
@@ -193,20 +191,22 @@ pub fn the_viewer_gets_the_speakers_unit_news_before_its_first_line_whatever_the
       state,
       game_connection_support.chat_line_message(4, "Hello"),
     )
-  assert list.append(peer_tell_kinds(appears), peer_tell_kinds(line))
-    == ["chat"]
-    as "the snapshot goes to the map and the line is still told to the viewer by the speaker's connection: their order at the viewer is the map's once the line is relayed by it (test 32)"
+  assert list.length(game_connection_support.snapshot_items(appears)) == 1
+    && said_to_the_map(appears) == []
+    && list.length(said_to_the_map(line)) == 1
+    && game_connection_support.tells_to_players_but_moves(line) == []
+    as "the snapshot and then the line go to the map, from the one sender, so the viewer is relayed them in that order (test 32)"
 }
 
 pub fn a_said_tell_writes_a_0x1c8_with_the_player_in_the_world_test() -> Nil {
   use <- owned_test.run(10_000)
-  let tell = a_said_tell()
+  let said = a_said_line()
   let #(_, taken) =
     game_connection_support.feed(
       game_connection_support.in_world(),
       game_connection_support.for_stay(
         game_connection_support.own_stay(),
-        client_connection.SentByLine(tell),
+        client_connection.SentByLine(said),
       ),
     )
   assert game_connection_support.written_ids(taken) == [0x01C8]
@@ -218,21 +218,12 @@ pub fn a_said_tell_writes_a_0x1c8_with_the_player_in_the_world_test() -> Nil {
     as "chat.cross_faction: the tests' player is faction 166, the speaker 167"
 }
 
-/// A line is told with the stay its viewer's `SeenBy` named, so that a line queued across a
-/// re-entry of the same run, in which the viewer's earlier stay is another stay of the same
+/// A line the map relays is for the stay of the viewer's relation, so that a line queued across
+/// a re-entry of the same run, in which the viewer's earlier stay is another stay of the same
 /// map and incarnation, is dropped at the viewer's connection (`stay_sent`); a whisper's tell
 /// is for the player and not for a stay, and is written as before.
-pub fn a_line_carries_the_viewers_stay_and_one_queued_across_a_same_run_re_entry_is_dropped_test() -> Nil {
+pub fn a_line_queued_across_a_same_run_re_entry_is_dropped_by_the_stay_fence_test() -> Nil {
   use <- owned_test.run(10_000)
-  let #(_, said) =
-    game_connection_support.read(
-      game_connection_support.watched_by(game_connection_support.in_world(), [
-        2,
-      ]),
-      game_connection_support.chat_line_message(4, "Hello"),
-    )
-  assert line_stays(said) == [game_connection_support.viewer_stay(2)]
-    as "the speaker names the stay of the viewer's SeenBy"
   let #(camped, _) = game_connection_support.camped_out()
   let #(again, _) =
     game_connection_support.entered_from(
@@ -245,7 +236,7 @@ pub fn a_line_carries_the_viewers_stay_and_one_queued_across_a_same_run_re_entry
         again,
         game_connection_support.for_stay(
           stay,
-          client_connection.SentByLine(a_said_tell()),
+          client_connection.SentByLine(a_said_line()),
         ),
       )
     game_connection_support.written_ids(taken)
@@ -279,7 +270,7 @@ pub fn a_line_for_the_viewers_stay_that_arrives_during_the_place_save_is_held_an
       state,
       game_connection_support.for_stay(
         game_connection_support.own_stay(),
-        client_connection.SentByLine(a_said_tell()),
+        client_connection.SentByLine(a_said_line()),
       ),
     )
   assert support.asked(saving) != None
@@ -298,18 +289,17 @@ pub fn a_line_for_the_viewers_stay_that_arrives_during_the_place_save_is_held_an
 
 pub fn a_chat_tell_with_no_player_in_the_world_is_dropped_and_the_connection_goes_on_test() -> Nil {
   use <- owned_test.run(10_000)
-  let tell = a_said_tell()
   list.each(
     [
       #(
-        "a Said line sent as a chat tell",
-        OwnEvent(Woken(client_connection.SentByChat(tell))),
+        "a zone line sent as a chat tell",
+        OwnEvent(Woken(client_connection.SentByChat(a_zone_line()))),
       ),
       #(
         "a Said line sent for the stay",
         game_connection_support.for_stay(
           game_connection_support.own_stay(),
-          client_connection.SentByLine(tell),
+          client_connection.SentByLine(a_said_line()),
         ),
       ),
     ],
@@ -1023,9 +1013,8 @@ pub fn with_the_setting_off_a_command_line_is_said_and_nothing_is_asked_test() -
         )
       assert game_connection_support.written_ids(taken) == [0x01C2]
         as "opcode.0x1c2: the speaker's own line"
-      assert list.map(chat_tells(taken), fn(told) { told.0 })
-        == [step.Connection(ConnectionId(2)), step.Connection(ConnectionId(3))]
-        as "the design: with the setting off a `!` line is a Say line, told to each viewer"
+      assert list.length(said_to_the_map(taken)) == 1
+        as "the design: with the setting off a `!` line is a Say line, told to the map"
       assert support.asked(taken) == None as "nothing is asked of the map"
     },
   )
@@ -1045,7 +1034,8 @@ pub fn with_the_setting_on_a_summon_line_is_answered_told_to_no_viewer_and_asks_
     )
   assert game_connection_support.written_ids(taken) == [0x01C2]
     as "opcode.0x1c2: the speaker's own line is answered before the ask"
-  assert chat_tells(taken) == [] as "the design: the line is told to no viewer"
+  assert said_to_the_map(taken) == []
+    as "the design: the line is told to no viewer, the map relays nothing of it"
   let assert Some(ask) = support.asked(taken)
   assert ask.request == game_connection_support.summon_asked(75_048, None)
     as "the design: the connection asks the run of the map that took the player to summon Creature2 75048, with its own id"
@@ -1085,7 +1075,7 @@ pub fn an_unknown_command_and_a_malformed_summon_each_answer_one_system_line_and
         as "opcode.0x1c2 then the one system line"
       assert game_connection_support.system_lines(taken) == [row.1]
         as "the design's texts, on the System channel"
-      assert support.asked(taken) == None && chat_tells(taken) == []
+      assert support.asked(taken) == None && said_to_the_map(taken) == []
       assert goes_on_in_the_world(state)
     },
   )
@@ -1136,7 +1126,7 @@ pub fn a_level_the_map_refused_is_a_system_line_naming_it_and_the_player_goes_on
     == ["not summoned: CreatureLevel 102 has no row"]
     as "the design: one system line, naming the level, and never said aloud"
   assert game_connection_support.written_ids(answered) == [0x01C8]
-  assert chat_tells(answered) == []
+  assert said_to_the_map(answered) == []
   assert goes_on_in_the_world(state)
 }
 

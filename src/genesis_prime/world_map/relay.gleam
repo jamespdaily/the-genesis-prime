@@ -24,10 +24,13 @@
 ////                                         ToldCreature(P, stay, inbound) ─▶ the creature's message
 //// ```
 ////
-//// The table of kinds, one row for each `Payload` and each `Inbound`: which way it goes,
-//// the check on its destination and the check on its source. A destination check is
-//// never sight: an answer or a tell reaches a player in its current stay whether or not
-//// it sees the creature, and a tell reaches a running creature whatever the sender sees.
+//// The table of kinds, one row for each `Payload`, each `Inbound` and each `Landing`: which
+//// way it goes, the check on its destination and the check on its source. A destination check
+//// is never sight: an answer or a tell reaches a player in its current stay whether or not
+//// it sees the creature, and a tell reaches a running creature whatever the sender sees. A
+//// landing is what one player's connection tells another through the map: it reaches the told
+//// player in the stay the tell names whatever the two see of each other. A local chat line
+//// and a unit's news are no landing: the map relays them through a player's relation.
 ////
 //// | Payload | Kind | Destination check | Source check |
 //// |---|---|---|---|
@@ -45,8 +48,14 @@
 //// | `CastViewSet` | what a player's cast holds on the creature | the running creature | the sender is a player of the map in the stay the relay names |
 //// | `CastViewEnds` | a cast holds nothing on the creature any more | the running creature | none |
 //// | `ControlsEnd` | the states a cast landed on the creature end | the running creature | none |
+//// | `HealStrike` | the heal rows of a caster's cast, for the told player's life | the told player's current stay | none |
+//// | `HealAnswer` | the told player's answer to a heal strike, for the caster's round | the told player's current stay | none |
+//// | `ChangeStart` | a change the caster's cast puts on the told player | the told player's current stay | the sender is a player of the map in the stay the tell names |
+//// | `ChangeEnd` | the end of a change the caster's cast put on the told player | the told player's current stay | none |
+//// | `CastWent` | the caster's go has told the told player each of its changes | the told player's current stay | none |
+//// | `AllyEvent` | the events of a blow on the told player that the caster's Proc rows on it wait for | the told player's current stay | none |
 
-import genesis_prime/game/chat_tell.{type Tell as ChatTell}
+import genesis_prime/game/chat_tell.{type Said as ChatSaid}
 import genesis_prime/game/experience.{type Credit}
 import genesis_prime/game/forced_move
 import genesis_prime/game/held_changes.{type PlayerChange}
@@ -83,7 +92,7 @@ pub type Delivered {
   Landed(landing: Landing)
   /// A local chat line (Say, Yell or Emote) of a player the told player sees, for a
   /// viewer whose relation relays.
-  Said(tell: ChatTell)
+  Said(said: ChatSaid)
 }
 
 /// The check on where a relayed payload goes.

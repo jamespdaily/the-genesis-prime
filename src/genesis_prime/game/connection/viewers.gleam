@@ -49,11 +49,11 @@
 ////   `UnseenBy`, and the viewer ends each cast of the unit before its 0x355 on the map's
 ////   `PlayerUnseen`: the viewer's client reads a cast's 0x7fe before the unit's 0x355 only
 ////   for a unit it still shows (`cast.target_node_end`).
-//// - **Chat lines.** A Say, Yell or Emote line another player says arrives as
-////   `SentByLine`, for the stay the map's `SeenBy` named, and is taken by the chat feature
-////   (genesis_prime/game/chat) only in the stay's own turn: a line queued across a re-entry
-////   of the same run is dropped by the stay fence, and one that arrives while an ask is out
-////   waits for its answer.
+//// - **Chat lines.** A Say, Yell or Emote line another player says is told to the map, which
+////   relays it as `SentByLine` for the stay of the viewer's relation, and is taken by the chat
+////   feature (genesis_prime/game/chat) only in the stay's own turn: a line queued across a
+////   re-entry of the same run is dropped by the stay fence, and one that arrives while an ask
+////   is out waits for its answer.
 //// - **Stays.** Every message another process sends for the player's stay in the
 ////   world (the map's notices, a peer's or a creature's news, a creature's threat,
 ////   release and strike) comes in one envelope, `ForStay(stay, ..)`, which names

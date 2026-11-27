@@ -25,8 +25,8 @@ import genesis_prime/world_map/spawn_id.{type SpawnId}
 
 /// News of one unit from its owner, a player's connection or a creature's
 /// process, to the connection of a player who sees it: the owner's unit in the
-/// run of the map both are in, and what happened to it. It travels for the
-/// viewer's stay (`TellPeer`, `ForStay`), which names that run.
+/// run of the map both are in, and what happened to it. The map relays it for the
+/// viewer's stay (`SentByPeer`, `ForStay`), which names that run.
 pub type PeerNews {
   PeerNews(unit_id: Int, news: News)
 }

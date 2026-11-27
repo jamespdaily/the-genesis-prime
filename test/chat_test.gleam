@@ -39,7 +39,7 @@ import genesis_prime/message/chat_zone_named.{ChatZoneNamed}
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/send_whisper.{SendWhisper}
 import genesis_prime/message/whisper_failed.{type WhisperFailed, WhisperFailed}
-import genesis_prime/step.{ConnectionId}
+import genesis_prime/step.{type ConnectionId, ConnectionId}
 import genesis_prime/table/chat_channel as chat_channel_table
 import genesis_prime/table/id.{
   ChatChannelId, Creature2Id, CurrencyTypeId, Item2Id, Quest2Id,
@@ -111,16 +111,14 @@ fn take(
   message message: chat.Message,
   chat chat: Chat,
   body body: BitArray,
-  viewers viewers: List(Int),
 ) -> #(Chat, List(chat.Effect)) {
-  take_with(message:, chat:, body:, viewers:, dev_commands: False)
+  take_with(message:, chat:, body:, dev_commands: False)
 }
 
 fn take_with(
   message message: chat.Message,
   chat chat: Chat,
   body body: BitArray,
-  viewers viewers: List(Int),
   dev_commands dev_commands: Bool,
 ) -> #(Chat, List(chat.Effect)) {
   let assert Ok(taken) =
@@ -128,9 +126,7 @@ fn take_with(
       chat:,
       message:,
       body:,
-      viewers: list.map(viewers, fn(viewer) {
-        #(ConnectionId(viewer), stay.next(stay.none_yet()))
-      }),
+      stay: speaker_stay(),
       realm_name: "Test Realm",
       connection: ConnectionId(1),
       tables: character_tables.shared(),
@@ -145,7 +141,7 @@ fn frames_of(effects: List(chat.Effect)) -> List(Frame) {
     case effect {
       chat.Send(frame:) -> Ok(frame)
       chat.Tell(..)
-      | chat.TellLine(..)
+      | chat.TellSay(..)
       | chat.TellWatched(..)
       | chat.UnknownZone(..)
       | chat.Watch(..)
@@ -165,7 +161,7 @@ fn runs_a_command(effects: List(chat.Effect)) -> Bool {
       chat.RunCommand(..) -> True
       chat.Send(..)
       | chat.Tell(..)
-      | chat.TellLine(..)
+      | chat.TellSay(..)
       | chat.TellWatched(..)
       | chat.UnknownZone(..)
       | chat.Watch(..)
@@ -177,15 +173,15 @@ fn runs_a_command(effects: List(chat.Effect)) -> Bool {
   })
 }
 
-/// The tells of the effects, in order.
+/// The tells between characters of the effects, in order.
 fn tells_of(
   effects: List(chat.Effect),
 ) -> List(#(step.Address, chat_tell.Tell)) {
   list.filter_map(effects, fn(effect) {
     case effect {
       chat.Tell(to:, tell:) -> Ok(#(to, tell))
-      chat.TellLine(to:, tell:, ..) -> Ok(#(step.Connection(to), tell))
       chat.Send(..)
+      | chat.TellSay(..)
       | chat.TellWatched(..)
       | chat.UnknownZone(..)
       | chat.Watch(..)
@@ -198,14 +194,31 @@ fn tells_of(
   })
 }
 
-/// The numbers of the connections a line was told to, in order.
-fn said_to(effects: List(chat.Effect)) -> List(Int) {
-  list.filter_map(tells_of(effects), fn(told) {
-    case told {
-      #(step.Connection(ConnectionId(number)), Said(..)) -> Ok(number)
-      #(_, _) -> Error(Nil)
+/// The lines of local chat the effects tell the speaker's map, in order, each with the
+/// connection and the stay it is told for.
+fn said_to_the_map(
+  effects: List(chat.Effect),
+) -> List(#(ConnectionId, stay.Stay, chat_tell.Said)) {
+  list.filter_map(effects, fn(effect) {
+    case effect {
+      chat.TellSay(connection:, stay:, said:) -> Ok(#(connection, stay, said))
+      chat.Send(..)
+      | chat.Tell(..)
+      | chat.TellWatched(..)
+      | chat.UnknownZone(..)
+      | chat.Watch(..)
+      | chat.Unwatch(..)
+      | chat.JoinGroup(..)
+      | chat.LeaveGroup(..)
+      | chat.Unhandled(..)
+      | chat.RunCommand(..) -> Error(Nil)
     }
   })
+}
+
+/// The stay of the speaker's connection in these tests.
+fn speaker_stay() -> stay.Stay {
+  stay.next(stay.none_yet())
 }
 
 fn only_frame(effects: List(chat.Effect)) -> Frame {
@@ -230,12 +243,12 @@ fn refused(effects: List(chat.Effect)) -> chat_result.ChatResult {
 }
 
 fn nothing_told(effects: List(chat.Effect)) -> Bool {
-  tells_of(effects) == []
+  tells_of(effects) == [] && said_to_the_map(effects) == []
 }
 
 fn reader_of(speaker: chat_tell.Speaker) -> List(chat.Effect) {
   let reader = chat_of(speaker)
-  chat.told(
+  chat.said(
     reader,
     Said(
       speaker: Speaker(..speaker, name: "Zed Other"),
@@ -246,7 +259,7 @@ fn reader_of(speaker: chat_tell.Speaker) -> List(chat.Effect) {
         formats: [],
       ),
     ),
-  ).1
+  )
 }
 
 // ---- the speaker ----
@@ -255,12 +268,7 @@ pub fn an_accepted_say_yell_or_emote_gets_one_0x1c2_with_the_slot_the_name_the_u
   use <- owned_test.run(5000)
   list.each([4, 5, 8], fn(type_id) {
     let #(_, effects) =
-      take(
-        message: chat.LineSent,
-        chat: a_chat(),
-        body: hello(type_id),
-        viewers: [],
-      )
+      take(message: chat.LineSent, chat: a_chat(), body: hello(type_id))
     assert accepted(effects)
       == ChatLineAccepted(
         chat_message_id: 1,
@@ -277,7 +285,7 @@ pub fn an_accepted_say_yell_or_emote_gets_one_0x1c2_with_the_slot_the_name_the_u
 pub fn the_speaker_gets_no_0x1c8_for_its_own_line_test() -> Nil {
   use <- owned_test.run(5000)
   let #(_, effects) =
-    take(message: chat.LineSent, chat: a_chat(), body: hello(4), viewers: [7, 8])
+    take(message: chat.LineSent, chat: a_chat(), body: hello(4))
   assert list.filter(frames_of(effects), fn(frame) {
       frame.message_id == chat_line.message_id
     })
@@ -285,19 +293,16 @@ pub fn the_speaker_gets_no_0x1c8_for_its_own_line_test() -> Nil {
     as "opcode.0x1c2, opcode.0x1c8: the accept shows the line, and a 0x1c8 as well would show it twice"
 }
 
-pub fn each_viewer_is_told_the_line_on_its_own_channel_type_test() -> Nil {
+pub fn the_speaker_tells_its_map_the_line_once_on_its_own_channel_type_test() -> Nil {
   use <- owned_test.run(5000)
   list.each([4, 5, 8], fn(type_id) {
     let #(_, effects) =
-      take(
-        message: chat.LineSent,
-        chat: a_chat(),
-        body: hello(type_id),
-        viewers: [7, 8],
-      )
-    assert list.sort(said_to(effects), int.compare) == [7, 8]
-      as "the speaker's viewers are the players it sees: one tell to each (design C: one sender for each pair)"
-    let assert [#(_, Said(speaker: told, line:)), ..] = tells_of(effects)
+      take(message: chat.LineSent, chat: a_chat(), body: hello(type_id))
+    let assert [#(connection, told_stay, Said(speaker: told, line:))] =
+      said_to_the_map(effects)
+      as "one tell to the map, which relays it to the players that see the speaker (design C: one sender for each pair)"
+    assert connection == ConnectionId(1) && told_stay == speaker_stay()
+      as "the tell names the speaker's connection and its stay, which the map checks"
     assert told == speaker()
     assert line
       == Line(
@@ -307,16 +312,9 @@ pub fn each_viewer_is_told_the_line_on_its_own_channel_type_test() -> Nil {
         formats: [],
       )
       as "the line keeps its channel, text and formats as sent"
+    assert tells_of(effects) == []
+      as "a line of local chat is told to no connection: the map's relation names the viewers"
   })
-}
-
-pub fn a_player_out_of_sight_is_told_nothing_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(_, effects) =
-    take(message: chat.LineSent, chat: a_chat(), body: hello(4), viewers: [])
-  assert said_to(effects) == []
-    as "chat.range: the line reaches the players who see the speaker, and with none it reaches no one"
-  assert nothing_told(effects)
 }
 
 // ---- the viewer ----
@@ -333,8 +331,8 @@ pub fn a_viewer_writes_one_0x1c8_with_every_field_the_design_lists_test() -> Nil
         unit_id: 6,
       ),
     )
-  let #(_, effects) =
-    chat.told(
+  let effects =
+    chat.said(
       viewer,
       Said(
         speaker: speaker(),
@@ -381,8 +379,8 @@ pub fn bcrossfaction_is_1_only_when_the_factions_differ_on_every_channel_test() 
           chat_of(
             Speaker(..speaker(), character_id: 9, faction_id: reader_faction),
           )
-        let #(_, effects) =
-          chat.told(
+        let effects =
+          chat.said(
             reader,
             Said(
               speaker: speaker(),
@@ -420,7 +418,7 @@ pub fn a_viewer_drops_a_line_naming_another_map_or_another_run_of_the_map_test()
       Speaker(..speaker(), incarnation: run + 1),
     ],
     fn(other) {
-      assert chat.told(reader, Said(speaker: other, line:)).1 == []
+      assert chat.said(reader, Said(speaker: other, line:)) == []
         as "a line from another map or run is dropped, as unit news is: the unit id there may name another unit (server choice)"
     },
   )
@@ -443,7 +441,7 @@ fn assert_refused(
   because because: String,
 ) -> Nil {
   let #(after, effects) =
-    take(message: chat.LineSent, chat: a_chat(), body: bytes, viewers: [7])
+    take(message: chat.LineSent, chat: a_chat(), body: bytes)
   assert refused(effects)
     == ChatResult(
       channel_type: type_id,
@@ -469,12 +467,7 @@ pub fn a_line_of_501_units_is_taken_and_502_is_refused_with_result_17_test() -> 
   }
   list.each([499, 500, 501], fn(count) {
     let #(_, effects) =
-      take(
-        message: chat.LineSent,
-        chat: a_chat(),
-        body: long(count),
-        viewers: [],
-      )
+      take(message: chat.LineSent, chat: a_chat(), body: long(count))
     assert accepted(effects).chat_message_id == 3
       as "chat.sent_text_length: the cut at 499 runs once for each pass, so a link or waypoint tag at 498 units sends a text of 500 or 501 units"
   })
@@ -520,11 +513,10 @@ pub fn an_unclosed_type_1_or_2_format_goes_with_end_65535_and_other_ranges_are_c
           formats: [format],
           message_id: 5,
         ),
-        viewers: [7],
       )
     assert accepted(effects).chat_message_id == 5
       as "chat.format_bounds: an unclosed <#> or <*> is sent with end 65535, and a closed type 1 or 2 can have start = end"
-    let assert [#(_, Said(line:, ..))] = tells_of(effects)
+    let assert [#(_, _, Said(line:, ..))] = said_to_the_map(effects)
     assert line.formats == [format]
       as "it is relayed as sent, end 65535 included"
   })
@@ -619,7 +611,6 @@ pub fn a_character_parsechattext_drops_is_refused_and_0xa0_is_taken_test() -> Ni
         formats: [],
         message_id: 2,
       ),
-      viewers: [],
     )
   assert accepted(effects).chat_message_id == 2
     as "vector.0x140402720.lines: ParseChatText keeps 0xa0"
@@ -681,7 +672,6 @@ pub fn a_format_whose_start_is_past_its_end_or_whose_end_is_past_the_text_is_ref
         formats: [guid(0, 5)],
         message_id: 5,
       ),
-      viewers: [],
     )
   assert accepted(effects).chat_message_id == 5
     as "a range that ends at the text's end is a range of it"
@@ -705,7 +695,6 @@ pub fn a_format_range_counts_utf_16_units_not_characters_test() -> Nil {
         formats: [format(3)],
         message_id: 6,
       ),
-      viewers: [],
     )
   assert accepted(effects).chat_message_id == 6
     as "0x140336040: the count and the ranges are in 16-bit units, so a range to 3 is inside a text of 3 units"
@@ -733,11 +722,10 @@ pub fn a_lone_surrogate_is_relayed_as_the_client_sent_it_test() -> Nil {
       message: chat.LineSent,
       chat: a_chat(),
       body: body(type_id: 4, channel_id: 0, text:, formats: [], message_id: 7),
-      viewers: [9],
     )
   assert accepted(effects).chat_message_id == 7
     as "0x1403e0ae0 lets 0xD800 through ParseChatText, so a sound client may send it and the server does not refuse it"
-  let assert [#(_, Said(line:, ..))] = tells_of(effects)
+  let assert [#(_, _, Said(line:, ..))] = said_to_the_map(effects)
   assert line.text == text as "the unit reaches the readers unchanged"
 }
 
@@ -837,12 +825,7 @@ pub fn support_and_instance_are_refused_with_result_3_and_named_as_unhandled_tes
     [#(19, chat_channel.Support), #(32, chat_channel.Instance)],
     fn(channel) {
       let #(_, effects) =
-        take(
-          message: chat.LineSent,
-          chat: a_chat(),
-          body: hello(channel.0),
-          viewers: [7],
-        )
+        take(message: chat.LineSent, chat: a_chat(), body: hello(channel.0))
       assert refused(effects)
         == ChatResult(
           channel_type: channel.0,
@@ -853,7 +836,7 @@ pub fn support_and_instance_are_refused_with_result_3_and_named_as_unhandled_tes
         as "Jim, 2026-11-03: Support and Instance are refused with result 3"
       assert list.contains(effects, chat.Unhandled(channel_type: channel.1))
         as "the channel is logged as unhandled"
-      assert said_to(effects) == [] as "nobody else gets anything"
+      assert said_to_the_map(effects) == [] as "nobody else gets anything"
     },
   )
 }
@@ -870,11 +853,10 @@ pub fn text_and_formats_reach_readers_as_sent_with_no_format_added_and_no_word_r
       message: chat.LineSent,
       chat: a_chat(),
       body: body(type_id: 4, channel_id: 0, text:, formats:, message_id: 1),
-      viewers: [7],
     )
   assert accepted(effects).chat_message_id == 1
     as "0x140c45f50: ParseChatText runs no word filter, so no line is refused for its words"
-  let assert [#(_, Said(line:, ..))] = tells_of(effects)
+  let assert [#(_, _, Said(line:, ..))] = said_to_the_map(effects)
   assert line.text == text
   assert line.formats == formats
     as "0x140c45f50: each reader masks its own filter's words, so the server adds no type 7 format"
@@ -916,7 +898,6 @@ pub fn every_0x1c3_gets_exactly_one_answer_test() -> Nil {
       message: chat.LineSent,
       chat: a_chat(),
       body: body(type_id:, channel_id:, text:, formats: [], message_id:),
-      viewers: [7],
     )
   let answers =
     list.filter(frames_of(effects), fn(frame) {
@@ -952,7 +933,6 @@ fn say_taken(
       formats: [],
       message_id: 1,
     ),
-    viewers: [7, 8],
     dev_commands:,
   ).1
 }
@@ -994,9 +974,9 @@ pub fn with_the_setting_off_a_summon_line_is_a_say_line_and_nothing_is_asked_tes
   let effects = say_taken(text: "!summon 75048", dev_commands: False)
   assert accepted(effects).chat_message_id == 1
     as "opcode.0x1c2: the speaker's own line is shown by the accept"
-  assert said_to(effects) == [7, 8]
-    as "the design: with the setting off a `!` line is a Say line as any other, told to each viewer"
-  let assert [#(_, Said(line:, ..)), ..] = tells_of(effects)
+  assert list.length(said_to_the_map(effects)) == 1
+    as "the design: with the setting off a `!` line is a Say line as any other, told to the map once"
+  let assert [#(_, _, Said(line:, ..)), ..] = said_to_the_map(effects)
   assert line.text == bit_stream.utf16_units("!summon 75048")
     && line.channel_type == chat_channel.Say
   assert !runs_a_command(effects) as "nothing is asked of the map"
@@ -1019,7 +999,7 @@ pub fn with_the_setting_on_a_summon_line_is_answered_told_to_no_viewer_and_asks_
     as "opcode.0x1c2: the same answer as for a said line, so the client shows the line it typed"
   assert command == dev_command.Summon(Creature2Id(75_048), None)
     as "no level was typed, so none is asked for"
-  assert tells_of(effects) == []
+  assert nothing_told(effects)
     as "the design: the line is told to no viewer, so a command is not said aloud"
 }
 
@@ -1028,7 +1008,7 @@ pub fn an_unknown_bang_command_answers_one_system_line_and_is_told_to_no_viewer_
   let effects = say_taken(text: "!teleport 75048", dev_commands: True)
   assert system_line_of(effects) == system_line_with("unknown command")
     as "chat.system_line: a 0x1c8 on channel type 2 with no speaker; the design's text"
-  assert tells_of(effects) == []
+  assert nothing_told(effects)
   let assert [chat.Send(frame:), ..] = effects
   assert accepted([chat.Send(frame:)]).chat_message_id == 1
     as "opcode.0x1c2: answered first, with the line's slot"
@@ -1043,7 +1023,7 @@ pub fn a_summon_with_no_number_or_a_bad_one_answers_its_usage_as_one_system_line
         "!summon takes a Creature2 id and an optional level, as !summon 75048 or !summon 75048 3",
       )
       as "chat.system_line: the design's usage line, as a System line"
-    assert tells_of(effects) == []
+    assert nothing_told(effects)
   })
 }
 
@@ -1103,7 +1083,7 @@ pub fn a_command_line_with_the_setting_on_asks_the_connection_to_run_it_test() -
         as "opcode.0x1c2, then the command last"
       assert accepted([chat.Send(frame:)]).chat_message_id == 1
       assert command == row.1 as row.2
-      assert tells_of(effects) == []
+      assert nothing_told(effects)
         as "the design: the line is told to no viewer, so a command is not said aloud"
     },
   )
@@ -1169,7 +1149,7 @@ pub fn a_summon_with_a_level_that_is_no_whole_number_or_with_extra_words_answers
       let effects = say_taken(text: row.0, dev_commands: True)
       assert system_line_of(effects) == system_line_with(row.1)
         as "chat.system_line: the design's text for the refusal, as a System line"
-      assert tells_of(effects) == []
+      assert nothing_told(effects)
         as "the design: a refused command is not said aloud"
       assert !runs_a_command(effects) as "no summon is asked of the map"
     },
@@ -1201,10 +1181,9 @@ pub fn a_bang_line_on_another_channel_is_a_line_of_that_channel_with_the_setting
               formats: [],
               message_id: 1,
             ),
-            viewers: [7, 8],
             dev_commands: True,
           )
-        assert said_to(effects) == [7, 8]
+        assert list.length(said_to_the_map(effects)) == 1
           as "the design: a command is a line on Say only; a yell or an emote that starts with `!` is said"
         assert list.length(frames_of(effects)) == 1
         assert !runs_a_command(effects)
@@ -1259,7 +1238,6 @@ pub fn every_0x1c3_with_a_bang_line_gets_exactly_one_0x1c2_test() -> Nil {
         formats: [],
         message_id:,
       ),
-      viewers: [7],
       dev_commands:,
     )
   let frames = frames_of(effects)
@@ -1290,7 +1268,6 @@ pub fn a_bang_line_with_chat_message_id_0_is_refused_not_run_as_a_command_test()
         formats: [],
         message_id: 0,
       ),
-      viewers: [7],
       dev_commands: True,
     )
   assert refused(effects)
@@ -1438,7 +1415,7 @@ fn unknown_zones_of(effects: List(chat.Effect)) -> List(Int) {
       chat.UnknownZone(world_zone_id:) -> Ok(world_zone_id)
       chat.Send(..)
       | chat.Tell(..)
-      | chat.TellLine(..)
+      | chat.TellSay(..)
       | chat.TellWatched(..)
       | chat.Watch(..)
       | chat.Unwatch(..)
@@ -1461,7 +1438,6 @@ fn zone_line(chat: Chat, message_id: Int) -> #(Chat, List(chat.Effect)) {
       formats: [],
       message_id:,
     ),
-    viewers: [7],
   )
 }
 
@@ -1566,7 +1542,7 @@ pub fn a_place_zone_that_is_0_or_has_no_row_leaves_the_player_in_no_zone_test() 
   let #(_, line) = zone_line(chat_in_0, 1)
   assert accepted(line).chat_message_id == 1
     as "a zone line of a player in no zone is accepted"
-  assert tells_of(line) == [] as "and reaches no one"
+  assert nothing_told(line) as "and reaches no one"
 }
 
 pub fn a_report_under_the_same_top_zone_writes_nothing_and_keeps_the_group_test() -> Nil {
@@ -1604,7 +1580,7 @@ pub fn a_report_of_zone_0_leaves_the_group_and_names_no_zone_and_a_zone_line_rea
   let #(_, line) = zone_line(chat, 4)
   assert accepted(line).chat_message_id == 4
     as "a zone line from that player is accepted"
-  assert tells_of(line) == [] as "and reaches no one"
+  assert nothing_told(line) as "and reaches no one"
   let #(_, again) = reported(chat, 0)
   assert again == [] as "a second report of 0 writes nothing"
   let #(_, back) = reported(chat, 1411)
@@ -1624,7 +1600,7 @@ pub fn a_report_of_a_zone_with_no_row_is_no_zone_and_is_named_not_refused_test()
     ]
     as "0x140403670: the client accepts a zone with no row and names the channel with an empty name, so the report is no refusal (the coordinator's decision): the player leaves its group, 0x1da gives 0, and the zone is named for one warning"
   let #(_, line) = zone_line(chat, 4)
-  assert accepted(line).chat_message_id == 4 && tells_of(line) == []
+  assert accepted(line).chat_message_id == 4 && nothing_told(line)
     as "a zone line of that player is accepted and reaches no one"
   let #(_, again) = reported(chat, 1132)
   assert again == [chat.UnknownZone(world_zone_id: 1132)]
@@ -1753,7 +1729,6 @@ pub fn a_zone_line_on_channel_1_is_taken_and_one_before_its_0x1bc_or_on_the_worl
         formats: [],
         message_id: 8,
       ),
-      viewers: [],
     ).1
   }
   let refuse = fn(chat, channel_id) { refused(send(chat, channel_id)) }
@@ -1793,7 +1768,7 @@ pub fn the_memberships_one_player_holds_after_entering_changing_zone_camping_and
           list.filter(groups, fn(held) { held != address })
         chat.Send(..)
         | chat.Tell(..)
-        | chat.TellLine(..)
+        | chat.TellSay(..)
         | chat.TellWatched(..)
         | chat.UnknownZone(..)
         | chat.Watch(..)
@@ -1850,7 +1825,7 @@ fn whisper_body(
 }
 
 fn whisper(chat chat: Chat, body body: BitArray) -> #(Chat, List(chat.Effect)) {
-  take(message: chat.WhisperSent, chat:, body:, viewers: [])
+  take(message: chat.WhisperSent, chat:, body:)
 }
 
 /// A whisper "Hi" to the target, with slot 3.
@@ -2025,7 +2000,7 @@ fn drop_unwatch(effects: List(chat.Effect)) -> List(chat.Effect) {
       chat.Unwatch(..) -> False
       chat.Send(..)
       | chat.Tell(..)
-      | chat.TellLine(..)
+      | chat.TellSay(..)
       | chat.TellWatched(..)
       | chat.UnknownZone(..)
       | chat.Watch(..)
@@ -2390,7 +2365,6 @@ pub fn the_formats_the_clients_text_makes_are_taken_test() -> Nil {
           formats: [format],
           message_id: 3,
         ),
-        viewers: [],
       )
     assert accepted(effects).chat_message_id == 3
       as "0x140402720: ParseChatText makes types 1, 2, 4, 5, 6, 9, 10 and 11, so a line with one is taken and relayed"
@@ -2482,7 +2456,7 @@ pub fn every_0x1d4_gets_exactly_one_answer_except_an_empty_whisper_to_a_found_ta
         chat.Watch(..) -> True
         chat.Send(..)
         | chat.Tell(..)
-        | chat.TellLine(..)
+        | chat.TellSay(..)
         | chat.TellWatched(..)
         | chat.UnknownZone(..)
         | chat.Unwatch(..)

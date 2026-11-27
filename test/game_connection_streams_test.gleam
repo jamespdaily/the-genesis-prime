@@ -90,7 +90,7 @@ pub fn an_owner_answers_the_seen_of_a_generation_with_one_snapshot_listing_its_l
   let assert [#(_, _, _, burst)] = snapshots_told(taken:)
   assert list.map(burst, fn(item) { item.unit_id }) == [support.own_unit_id]
     as "it holds the player's own unit"
-  assert support.peer_tells(taken) == []
+  assert support.tells_to_players_but_moves(taken) == []
     as "and the connection tells the viewer's connection nothing itself: the map relays the snapshot"
   // The next move step addresses that viewer with the generation, after the snapshot.
   let #(_, moved) = support.read(state:, bytes: support.a_move(1.5))
@@ -141,7 +141,7 @@ pub fn an_owner_answers_the_seen_of_a_generation_with_one_snapshot_listing_its_l
       taken: finished,
       outcome: support.place_saved(),
     )
-  assert support.peer_tells(saved) == []
+  assert support.tells_to_players_but_moves(saved) == []
     as "a camp's step tells no viewer a removal: the map ends each sight when the leave is taken"
   assert support.ask_request(saved) == support.leave_asked()
     as "and the leave of the map is still asked in that step"

@@ -20,8 +20,8 @@
 
 import ask_support
 import driven_time
-import genesis_prime/client_connection.{AskMap, TellMoved, TellPeer}
-import genesis_prime/game/unit_news.{PeerNews, Removed}
+import genesis_prime/client_connection.{AskMap, TellChat, TellMoved}
+import genesis_prime/game/chat_tell
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{ConnectionId}
@@ -35,7 +35,6 @@ import gleam/otp/static_supervisor
 import gleam/otp/supervision.{Permanent}
 import log_capture
 import login_support
-import map_support
 import open_wait
 import owned_test
 import place_support
@@ -203,13 +202,7 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
       from: logged,
       what: "the error line for a tell that is an ask",
     )
-  server.tell_the_run(
-    run,
-    TellPeer(
-      stay: map_support.stay(count: 1),
-      news: PeerNews(unit_id: 9, news: Removed),
-    ),
-  )
+  server.tell_the_run(run, TellChat(tell: chat_tell.NotHeard(whisper: 1)))
   let assert #("error", _text) =
     open_wait.received(
       from: logged,

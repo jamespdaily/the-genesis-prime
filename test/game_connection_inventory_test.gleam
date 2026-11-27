@@ -545,19 +545,15 @@ pub fn unequipping_the_chest_sends_0x569_then_0x933_then_0x93a_and_tells_each_vi
   assert properties_written(taken: answered)
     == [game_connection_support.without_the_chest()]
     as "opcode.0x93a: the three properties the chest gave, in property order, base and value as worked out"
-  list.each([2, 3], fn(viewer) {
-    let told = game_connection_support.news_told(taken: answered, viewer:)
-    assert list.take(told, 2)
-      == [
-        LookChanged(item_visuals: [
-          game_connection_support.look(slot: 1, display: 0),
-        ]),
-        PropertiesChanged(
-          properties: game_connection_support.without_the_chest(),
-        ),
-      ]
-      as "opcode.0x93a.other_unit: each viewer is told the same look and entries"
-  })
+  let told = game_connection_support.news_broadcast(answered)
+  assert list.take(told, 2)
+    == [
+      LookChanged(item_visuals: [
+        game_connection_support.look(slot: 1, display: 0),
+      ]),
+      PropertiesChanged(properties: game_connection_support.without_the_chest()),
+    ]
+    as "opcode.0x93a.other_unit: each viewer is told the same look and entries"
 }
 
 pub fn equipping_the_chest_back_restores_the_entry_properties_test() -> Nil {
@@ -580,13 +576,11 @@ pub fn health_above_the_new_maximum_is_capped_and_told_test() -> Nil {
     saved_after(state: watched(), message: chest_unequipped())
   assert health_written(taken: answered) == [586]
     as "a player at full health, 736, is capped at the new maximum, 586, by the health path"
-  list.each([2, 3], fn(viewer) {
-    assert list.contains(
-      game_connection_support.news_told(taken: answered, viewer:),
-      unit_news.Health(health: 586, dead: False),
-    )
-      as "each viewer is told the capped health"
-  })
+  assert list.contains(
+    game_connection_support.news_broadcast(answered),
+    unit_news.Health(health: 586, dead: False),
+  )
+    as "each viewer is told the capped health"
 }
 
 /// A 0x182 of the shield from worn slot 15 to inventory slot 0, inside 0x038C.

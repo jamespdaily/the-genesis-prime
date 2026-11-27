@@ -435,7 +435,7 @@ pub fn the_tutorials_viewer_sees_the_player_leave_test() -> Nil {
   let #(state, _) =
     departures_support.yes(state:, spell4_base_id: northern_wilds_spell4_base)
   let #(_, leaving) = departures_support.timer_fires(state:)
-  assert connection_support.news_told(taken: leaving, viewer: 2) == []
+  assert connection_support.news_broadcast(leaving) == []
     as "the player's connection tells the viewer in the tutorial nothing: the unit's 0x355 is the map's PlayerUnseen when it takes the leave"
 }
 

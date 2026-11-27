@@ -211,18 +211,6 @@ fn limits() -> List(Limit) {
     Limit(
       connection_landing.gaps(),
       "Casting",
-      ["inside the audience", "next go"],
-      "a viewer inside the audience whose client held no copy of the player when the caster's go reached it is shown no buff until the caster's next go",
-    ),
-    Limit(
-      connection_landing.gaps(),
-      "Casting",
-      ["took a cast's changes", "told before it came into sight"],
-      "a viewer that comes into sight of the player between its taking a cast's changes and its taking the cast's go is shown the effects told before it came into sight",
-    ),
-    Limit(
-      connection_landing.gaps(),
-      "Casting",
       ["comes back", "kept change"],
       "a caster that comes back into the sight of a player that still holds its kept change is shown no buff on it",
     ),
@@ -244,8 +232,8 @@ fn limits() -> List(Limit) {
     Limit(
       connection_landing.gaps(),
       "Casting",
-      ["sight notice", "dropped"],
-      "a change told before the player's sight notice of its caster is dropped",
+      ["joins again", "kept change", "released_unseen"],
+      "a kept change a caster put on a player stays after the caster joins again under a new stay, as after it left sight, and only the caster's end tell or the removal of its unit takes it off",
     ),
     Limit(
       connection_landing.gaps(),

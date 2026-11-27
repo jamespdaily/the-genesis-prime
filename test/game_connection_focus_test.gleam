@@ -123,7 +123,7 @@ pub fn a_medics_emission_pays_15_focus_at_each_of_its_3_gos_as_0x935_of_stat_1_a
   assert resources.changes_written(first_tick)
     == [focus_changed(unit_id:, to: 955.0 +. tick)]
     as "955 + 5.5: one 0x935 of stat 1"
-  assert game_connection_support.peer_tells(first_tick) == []
+  assert game_connection_support.tells_to_players_but_moves(first_tick) == []
     as "to the player's own client only: a Focus change is told to no viewer (two are watching)"
   assert resources.resource_timers_started(first_tick)
     == [#(class_resource.focus_timer, 500)]
@@ -435,8 +435,8 @@ pub fn a_medics_recharge_sends_the_pool_back_its_focus_and_the_actuators_to_0_as
     == [class_resource.focus_timer]
     as "the pool is full again, so the Focus timer Emission started is cancelled"
   assert list.all(
-    list.flat_map(steps, game_connection_support.peer_tells),
-    fn(tell) { is_cast_news({ tell.1 }.news) },
+    list.flat_map(steps, game_connection_support.news_broadcast),
+    is_cast_news,
   )
-    as "the two viewers watching are told the cast and nothing of the player's resources"
+    as "the map is told the cast to relay to the two viewers watching and nothing of the player's resources"
 }

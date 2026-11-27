@@ -94,7 +94,7 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
       PlayerHealth(unit_id: support.own_unit_id, health: 736, reason_mask: 0),
     ]
     as "735 and 1, to the health's maximum"
-  assert support.news_told(taken:, viewer: 2)
+  assert support.news_broadcast(taken)
     == [
       unit_news.Shield(shield: 450),
       unit_news.Health(health: 736, dead: False),

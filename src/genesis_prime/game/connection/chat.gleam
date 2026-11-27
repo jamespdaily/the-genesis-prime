@@ -7,11 +7,11 @@
 ////   inside 0x038C with the player in the world, and 0xF2 and 0x63A give it the
 ////   WorldZone id the client reports (the first 0xF2 of a stay also writes the
 ////   zone channel's 0x1BC again). The rule turns its effects into writes,
-////   tells (`TellLine`, to a viewer's `Connection` for the viewer's stay; `TellChat`,
-////   to a `ZoneChannel` and to a whisper's `CharacterNamed`), the watch on a whisper's
-////   target and the `JoinGroup` and `LeaveGroup` of the player's groups. What other
-////   connections tell it (`SentByChat`, and `SentByLine` for the stay) is taken by the
-////   chat with the player in the world: a whisper that finds none is answered
+////   tells (`TellSay`, to the player's map, which relays the line to each viewer for the
+////   viewer's stay; `TellChat`, to a `ZoneChannel` and to a whisper's `CharacterNamed`),
+////   the watch on a whisper's target and the `JoinGroup` and `LeaveGroup` of the player's
+////   groups. What other connections tell it (`SentByChat`) and what the map relays
+////   (`SentByLine`, for the stay) is taken by the chat with the player in the world: a whisper that finds none is answered
 ////   `NotHeard`, and any other tell is dropped. The player joins its groups as the entry burst is written
 ////   and leaves them in the step that starts the camp's leave, so a new entry
 ////   joins again (genesis_prime/game/chat has the sequences, the refusals and
@@ -30,7 +30,7 @@
 //// ```
 
 import genesis_prime/client_connection.{
-  type Answer, type Request, AskMapRun, Continue, FromMap, TellChat, TellLine,
+  type Answer, type Request, AskMapRun, Continue, FromMap, TellChat, TellSay,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat
@@ -91,9 +91,7 @@ pub fn chat_message(
       chat: entered.chat,
       message:,
       body: inner.body,
-      viewers: list.map(connection_state.sorted_viewers(entered:), fn(viewer) {
-        #(viewer.0, { viewer.1 }.stay)
-      }),
+      stay: entered.stay,
       realm_name: session.settings.realm_name,
       connection: client_connection.connection(session.link),
       tables: session.settings.tables,
@@ -238,6 +236,16 @@ fn not_summoned_text(reason reason: map.NotSummoned) -> String {
   }
 }
 
+/// What a line of local chat the map relayed does: written by `chat.said` for the player in
+/// the world in the stay the line names.
+pub fn said_sent(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  said said: chat_tell.Said,
+) -> client_connection.Handled(Session) {
+  carry_chat(session:, effects: chat.said(chat: entered.chat, said:))
+}
+
 /// What another player's connection told this one about chat
 /// (genesis_prime/game/chat_tell): taken with the player in the world, and by
 /// `chat.told`. A whisper that finds no player in the world is answered
@@ -260,10 +268,8 @@ pub fn chat_sent(
               request: TellChat(chat_tell.NotHeard(whisper:)),
             )),
           ])
-        chat_tell.Said(..)
-        | chat_tell.ZoneLine(..)
-        | chat_tell.Heard(..)
-        | chat_tell.NotHeard(..) -> Continue(session, [])
+        chat_tell.ZoneLine(..) | chat_tell.Heard(..) | chat_tell.NotHeard(..) ->
+          Continue(session, [])
       }
   }
 }
@@ -304,10 +310,13 @@ pub fn chat_effects(
           OwnEffect(step.Tell(to:, request: TellChat(tell))),
           ..written
         ])
-        chat.TellLine(to:, stay:, tell:) -> #(session, [
+        chat.TellSay(connection:, stay:, said:) -> #(session, [
           OwnEffect(step.Tell(
-            to: step.Connection(to),
-            request: TellLine(stay:, tell:),
+            to: step.Map(
+              map: said.speaker.map,
+              incarnation: said.speaker.incarnation,
+            ),
+            request: TellSay(connection:, stay:, said:),
           )),
           ..written
         ])

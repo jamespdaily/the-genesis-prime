@@ -24,7 +24,9 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{type Wrapper, ClientWrapper}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
-import genesis_prime/game/chat_tell.{type Tell as ChatTell}
+import genesis_prime/game/chat_tell.{
+  type Said as ChatSaid, type Tell as ChatTell,
+}
 import genesis_prime/game/experience.{type Credit}
 import genesis_prime/game/held_changes.{type PlayerChange}
 import genesis_prime/game/move_stamp
@@ -111,12 +113,6 @@ pub type Request {
   /// use's own frames; never asked.
   TellReleased(unit_id: Int)
   /// What a `Tell` effect sends the connection of a player who sees this one
-  /// (genesis_prime/step `Connection`): news of this player's unit, which that
-  /// connection writes as 0x262, 0x638 or 0x355 when its client can take it, for
-  /// that player's stay `stay`, as the map's `SeenBy` named it. Never asked, and
-  /// never told to a map.
-  TellPeer(stay: Stay, news: PeerNews)
-  /// What a `Tell` effect sends the connection of a player who sees this one
   /// (genesis_prime/step `Connection`): a chunk of this player's move, for that
   /// player's stay `stay` and the generation of the relation, which the mover's copy of
   /// its viewers holds (genesis_prime/game/move_stamp). The only message of a player's
@@ -151,18 +147,13 @@ pub type Request {
   /// What a `Tell` effect sends the run of a map: a local chat line of the player, for
   /// the map to relay to each viewer whose relation relays (genesis_prime/world_map/map
   /// `Say`). Never asked.
-  TellSay(connection: ConnectionId, stay: Stay, tell: ChatTell)
+  TellSay(connection: ConnectionId, stay: Stay, said: ChatSaid)
   /// What a `Tell` effect sends the connection of another player, or every
   /// connection of a zone channel, or the connection that holds a character's
   /// name (genesis_prime/step `Connection`, `ZoneChannel`, `CharacterNamed`): a
-  /// chat line or a whisper's reply (genesis_prime/game/chat_tell). Never asked,
+  /// zone line or a whisper's reply (genesis_prime/game/chat_tell). Never asked,
   /// and never told to a map.
   TellChat(tell: ChatTell)
-  /// What a `Tell` effect sends the connection of a player who sees the speaker
-  /// (genesis_prime/step `Connection`): a chat line (`Said`) for that player's stay
-  /// `stay`, as the map's `SeenBy` named it, so that a line queued across a re-entry of
-  /// the same run is dropped at the connection. Never asked, and never told to a map.
-  TellLine(stay: Stay, tell: ChatTell)
   /// What a `Tell` effect sends the run of a map (genesis_prime/step `Map`): the player
   /// of `connection`, in its stay `stay`, tells the creature `unit_id` of life `life`
   /// `payload`, a strike, a move, an answer or an effect of its casts
@@ -229,15 +220,15 @@ pub type StaySent {
   /// (`Gone`). A map's answers (`Joined`, `Left`) come as an ask's outcome,
   /// never as this.
   SentByMap(notice: map.Notice)
-  /// What the connection of another player, or a creature's process, sends it:
-  /// news of the unit it owns (genesis_prime/game/connection).
+  /// What the map relays to the connection of a player that sees a unit: news of the
+  /// unit (genesis_prime/game/connection).
   SentByPeer(news: PeerNews)
   /// What the connection of another player sends it of that player's move, stamped
   /// with the generation of the sight (genesis_prime/game/move_stamp).
   SentByMove(move: move_stamp.Move)
-  /// What the connection of a player this one's player sees tells it: a chat line
-  /// (`Said`) for this stay, written by the chat feature (genesis_prime/game/chat).
-  SentByLine(tell: ChatTell)
+  /// What the map relays to the connection of a player that sees a speaker: a local chat
+  /// line (`Said`) for this stay, written by the chat feature (genesis_prime/game/chat).
+  SentByLine(said: ChatSaid)
   /// What a creature that fights this connection's player sends it: that it
   /// threatens or releases the player, or its strike
   /// (genesis_prime/game/player_life).
@@ -884,12 +875,10 @@ pub fn told_to_the_map(request request: Request) -> Result(map.Message, Nil) {
       Ok(map.PlayerSnapshot(by: connection, stay:, viewer:, generation:, burst:))
     TellLanding(connection:, stay:, to:, to_stay:, landing:) ->
       Ok(map.TellLanding(from: connection, stay:, to:, to_stay:, landing:))
-    TellSay(connection:, stay:, tell:) ->
-      Ok(map.Say(from: connection, stay:, tell:))
-    TellPeer(..)
-    | TellMove(..)
+    TellSay(connection:, stay:, said:) ->
+      Ok(map.Say(from: connection, stay:, said:))
+    TellMove(..)
     | TellChat(..)
-    | TellLine(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -903,9 +892,7 @@ pub fn told_to_the_map(request request: Request) -> Result(map.Message, Nil) {
 /// to a map.
 pub fn told_to_a_connection(request request: Request) -> Result(Message, Nil) {
   case request {
-    TellPeer(stay:, news:) -> Ok(ForStay(stay:, sent: SentByPeer(news:)))
     TellMove(stay:, move:) -> Ok(ForStay(stay:, sent: SentByMove(move:)))
-    TellLine(stay:, tell:) -> Ok(ForStay(stay:, sent: SentByLine(tell:)))
     TellChat(tell:) -> Ok(SentByChat(tell:))
     TellMoved(..)
     | TellReady(..)

@@ -15,7 +15,7 @@ import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
   AskSessions, AskStore, ForStay, FromHandOff, FromMap, FromSessions, FromStore,
-  SentByMap, SentByPeer, SentBySessions, TellChat, TellMoved, TellPeer,
+  SentByMap, SentByPeer, SentBySessions, TellChat, TellMoved,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -1438,31 +1438,6 @@ pub fn news_sent_by_a_peer(
   sent_by_a_peer(news_of(unit_id:, news:))
 }
 
-/// The news a step tells the viewer connection `viewer`, in the order of the step's
-/// effects: what the player's connection tells it directly and what it tells the map to
-/// relay to each viewer (`TellBroadcast`).
-pub fn news_told(
-  taken taken: ConnectionStep(Request),
-  viewer viewer: Int,
-) -> List(News) {
-  list.filter_map(support.effects_of(taken), fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(
-        to: step.Connection(ConnectionId(told)),
-        request: TellPeer(news: PeerNews(news:, ..), ..),
-      ))
-        if told == viewer
-      -> Ok(news)
-      OwnEffect(step.Tell(
-        to: Map(..),
-        request: client_connection.TellBroadcast(news: PeerNews(news:, ..), ..),
-      )) -> Ok(news)
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-        Error(Nil)
-    }
-  })
-}
-
 /// The items of the snapshots a step tells the map, in order: what the player's connection
 /// builds for each viewer the map names, for the map to relay.
 pub fn snapshot_items(taken: ConnectionStep(Request)) -> List(PeerNews) {
@@ -1570,14 +1545,12 @@ pub fn mapped_logging(
     | client_connection.TellVisibilityChanged(..)
     | client_connection.TellLifeChanged(..)
     | client_connection.TellReleased(..)
-    | TellPeer(..)
     | client_connection.TellMove(..)
     | client_connection.TellCreature(..)
     | client_connection.TellBroadcast(..)
     | client_connection.TellSnapshot(..)
     | client_connection.TellLanding(..)
     | client_connection.TellSay(..)
-    | client_connection.TellLine(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
   }
@@ -1706,10 +1679,10 @@ pub fn move_order(taken taken: ConnectionStep(Request)) -> List(String) {
   })
 }
 
-/// Whether a step tells no other player's connection anything: no news of the player's unit
-/// (`TellPeer`) and no move (`TellMove`), the two ways a player's connection tells another.
+/// Whether a step tells no other player's connection anything: no move (`TellMove`) and no
+/// other tell to a connection.
 pub fn tells_no_player(taken taken: ConnectionStep(Request)) -> Bool {
-  peer_tells(taken) == [] && move_tells(taken:) == []
+  tells_to_players_but_moves(taken) == [] && move_tells(taken:) == []
 }
 
 /// The moves a step tells the connections of other players, without the stay.
@@ -1858,22 +1831,20 @@ pub fn news_broadcast(taken: ConnectionStep(Request)) -> List(News) {
   list.map(broadcasts(taken), fn(broadcast) { { broadcast.2 }.news })
 }
 
-/// The tells of a step to the connections of other players: the viewer's
-/// number and the news, in the order of the viewers' numbers.
-pub fn peer_tells(taken: ConnectionStep(Request)) -> List(#(Int, PeerNews)) {
-  list.map(peer_tells_for(taken), fn(tell) { #(tell.0, tell.2) })
-}
-
-/// The same, each with the stay it is told for.
-pub fn peer_tells_for(
+/// The tells of a step to the connections of other players that are no move, with the
+/// connection's number: a player tells another's connection only its move (`TellMove`), and
+/// everything else it has for another player it tells the map.
+pub fn tells_to_players_but_moves(
   taken: ConnectionStep(Request),
-) -> List(#(Int, Stay, PeerNews)) {
+) -> List(#(Int, Request)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.Tell(
-        to: step.Connection(ConnectionId(viewer)),
-        request: TellPeer(stay:, news:),
-      )) -> Ok(#(viewer, stay, news))
+        to: step.Connection(_),
+        request: client_connection.TellMove(..),
+      )) -> Error(Nil)
+      OwnEffect(step.Tell(to: step.Connection(ConnectionId(viewer)), request:)) ->
+        Ok(#(viewer, request))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
@@ -2290,22 +2261,15 @@ pub fn written_around_the_map_tell(
   list.split(written(taken:), before)
 }
 
-/// The news the step tells the viewer connection `viewer` after its tell to the map.
+/// The news the step tells the map to relay, after its first tell to the map.
 pub fn news_told_after_the_map_tell(
   taken taken: ConnectionStep(Request),
-  viewer viewer: Int,
 ) -> List(News) {
   let after =
     support.effects_of(taken)
     |> list.drop_while(fn(effect) { !is_the_map_tell(effect) })
   list.filter_map(after, fn(effect) {
     case effect {
-      OwnEffect(step.Tell(
-        to: step.Connection(ConnectionId(told)),
-        request: TellPeer(news: PeerNews(news:, ..), ..),
-      ))
-        if told == viewer
-      -> Ok(news)
       OwnEffect(step.Tell(
         to: Map(..),
         request: client_connection.TellBroadcast(news: PeerNews(news:, ..), ..),
@@ -2369,8 +2333,7 @@ pub fn medic_with_a_lingering_node_on_beast(
   let state =
     watched_by(state: medic_with_beast_in_world(tables:), viewers: [2])
   let #(state, pressed) = press_paralytic_surge(state:, client_cast_id: 1)
-  let assert [unit_news.CastStarted(start:)] =
-    news_told(taken: pressed, viewer: 2)
+  let assert [unit_news.CastStarted(start:)] = news_broadcast(pressed)
   let assert [#(40, key)] = strikes_told(pressed)
   let #(state, landed) = feed(state:, event: landed(key:))
   #(state, landed, start.cast_id)

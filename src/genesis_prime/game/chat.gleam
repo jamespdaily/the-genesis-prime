@@ -5,12 +5,12 @@
 //// what the client's 0x1c3 and 0x1d4 are answered with, and what a line another
 //// connection told this one (genesis_prime/game/chat_tell) writes; the rule
 //// turns its effects into writes, tells, watches and group joins. No new
-//// process and no change to the map: every send is a tell, so no connection
-//// asks another.
+//// process: every send is a tell, so no connection asks another. A line of local chat
+//// goes through the map (`Say`), which relays it to the players that see the speaker.
 ////
 //// ```
 ////                 say / yell / emote                       zone                                          whisper
-//// speaker conn ─ TellLine each viewer ─▶ viewer conns    ─ Tell ZoneChannel(run, top) ─▶ each member conn   ─ Watch + Tell CharacterNamed(n) ─▶ target conn
+//// speaker conn ─ TellSay ─▶ map ─ Relayed ─▶ viewer conns    ─ Tell ZoneChannel(run, top) ─▶ each member conn   ─ Watch + Tell CharacterNamed(n) ─▶ target conn
 ////  writes 0x1c2 itself                writes 0x1c8      (a pg group each conn joins)   writes 0x1c8          writes 0x1c8, Tells the speaker Heard
 ////                                                                                                         the speaker writes 0x1c2, or 0x1d9 on WatchEnded
 //// ```
@@ -20,7 +20,7 @@
 //// ```
 //// speaker client       speaker conn                       viewer conn                        viewer client
 //// 0x1c3 (t,0) id n  ─▶ checks pass (t = 4, 5 or 8)
-////                      TellLine(each viewer, its stay, Said(line)) ─▶ same stay? write 0x1c8 (t,0) ─▶ shows the line; a bubble on 4 and 5 if it holds the unit
+////                      TellSay(Said(line)) ─▶ map ─▶ each relaying viewer, for its stay: same stay? write 0x1c8 (t,0) ─▶ shows the line; a bubble on 4 and 5 if it holds the unit
 ////                  ◀── 0x1c2 id n, own name, own unit
 //// ```
 ////
@@ -217,7 +217,9 @@ import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/character_name
 import genesis_prime/game/chat_channel.{type ChannelType}
-import genesis_prime/game/chat_tell.{type Line, type Speaker, type Tell, Line}
+import genesis_prime/game/chat_tell.{
+  type Line, type Said, type Speaker, type Tell, Line,
+}
 import genesis_prime/game/dev_command
 import genesis_prime/game/top_zone.{type TopZones}
 import genesis_prime/message/bit_stream
@@ -262,10 +264,11 @@ pub type Effect {
   Send(frame: Frame)
   /// Tell the process at `to` a chat tell (genesis_prime/step `Tell`).
   Tell(to: Address, tell: Tell)
-  /// Tell the connection `to` of a player who sees the speaker a line (`Said`) for that
-  /// player's stay `stay`, so that a line queued across a re-entry of the same run is
-  /// dropped at the connection (genesis_prime/client_connection `TellLine`).
-  TellLine(to: ConnectionId, stay: Stay, tell: Tell)
+  /// Tell the speaker's map, the run its `Said` names, a line of local chat from the player
+  /// of `connection` in its stay `stay`, for the map to relay to each player that sees the
+  /// speaker, for that player's stay, so that a line queued across a re-entry of the same
+  /// run is dropped at the connection (genesis_prime/client_connection `TellSay`).
+  TellSay(connection: ConnectionId, stay: Stay, said: Said)
   /// Tell the process the open watch `watch` found, through that watch
   /// (genesis_prime/step `TellWatched`): a whisper to its target.
   TellWatched(watch: WatchId, tell: Tell)
@@ -465,8 +468,8 @@ fn zone_joined_frame() -> Frame {
 }
 
 /// What one chat message of the client does: its body is decoded and the line or
-/// the whisper is answered, told to its readers or refused. `viewers` are the
-/// connections whose players see this one, each with the stay it is in, `realm_name` the server's own,
+/// the whisper is answered, told to the map or its target, or refused. `stay` is the stay of
+/// the speaker's connection in the world, which a line carries to the map, `realm_name` the server's own,
 /// `tables` the client's ChatChannel rows, and `dev_commands` whether a Say line
 /// that starts with `!` is a development command
 /// (genesis_prime/game/dev_command). A body the client's reader would refuse is
@@ -475,14 +478,15 @@ pub fn take(
   chat chat: Chat,
   message message: Message,
   body body: BitArray,
-  viewers viewers: List(#(ConnectionId, Stay)),
+  stay stay: Stay,
   realm_name realm_name: String,
   connection connection: ConnectionId,
   tables tables: table_store.Tables,
   dev_commands dev_commands: Bool,
 ) -> Result(#(Chat, List(Effect)), Refusal) {
   case message {
-    LineSent -> line_sent(chat:, body:, viewers:, tables:, dev_commands:)
+    LineSent ->
+      line_sent(chat:, body:, connection:, stay:, tables:, dev_commands:)
     WhisperSent -> whisper_sent(chat:, body:, realm_name:, connection:)
   }
 }
@@ -666,7 +670,8 @@ const unclosed_end = 65_535
 fn line_sent(
   chat chat: Chat,
   body body: BitArray,
-  viewers viewers: List(#(ConnectionId, Stay)),
+  connection connection: ConnectionId,
+  stay stay: Stay,
   tables tables: table_store.Tables,
   dev_commands dev_commands: Bool,
 ) -> Result(#(Chat, List(Effect)), Refusal) {
@@ -708,14 +713,13 @@ fn line_sent(
       #(chat, [
         Send(accepted_frame(chat:, chat_message_id: sent.chat_message_id)),
         ..case reach {
-          Say ->
-            list.map(viewers, fn(viewer) {
-              TellLine(
-                to: viewer.0,
-                stay: viewer.1,
-                tell: chat_tell.Said(speaker: chat.speaker, line:),
-              )
-            })
+          Say -> [
+            TellSay(
+              connection:,
+              stay:,
+              said: chat_tell.Said(speaker: chat.speaker, line:),
+            ),
+          ]
           Zone ->
             case chat.zone {
               NoZone -> []
@@ -1076,18 +1080,23 @@ fn line_frame(
   Frame(message_id: chat_line.message_id, body:)
 }
 
+/// What a line of local chat that the map relayed does here, while the player is in the
+/// world: written as 0x1c8 when it is for this player's run.
+pub fn said(chat chat: Chat, said said: Said) -> List(Effect) {
+  let chat_tell.Said(speaker:, line:) = said
+  case is_in_my_run(chat:, speaker:) {
+    True -> [Send(line_frame(chat:, speaker:, line:))]
+    False -> []
+  }
+}
+
 /// What a tell from another connection does here, while the player is in the
-/// world: a line written as 0x1c8 when it is for this player's run, top zone and
+/// world: a zone line written as 0x1c8 when it is for this player's run, top zone and
 /// faction, a whisper written and answered with `Heard`, and a reply to this
 /// player's own whisper written as 0x1c2 or 0x1d9, whose number is then
 /// forgotten. A reply for a number not held is dropped.
 pub fn told(chat chat: Chat, tell tell: Tell) -> #(Chat, List(Effect)) {
   case tell {
-    chat_tell.Said(speaker:, line:) ->
-      case is_in_my_run(chat:, speaker:) {
-        True -> #(chat, [Send(line_frame(chat:, speaker:, line:))])
-        False -> #(chat, [])
-      }
     chat_tell.ZoneLine(speaker:, top_zone_id:, line:) ->
       case
         speaker.character_id != chat.speaker.character_id

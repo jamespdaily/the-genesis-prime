@@ -472,7 +472,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A viewer inside the audience of a cast (the connections its caster told the cast's start) whose client held no copy of the player when the caster's go reached it is shown no buff until the caster's next go, because the caster's 0x7f4 skips a unit the client lacks and the player starts the cast for no viewer inside the audience; a viewer that comes into sight of the player after the player took a cast's changes and before it took the cast's go is shown the effects told before it came into sight, and the player's start of the cast is then dropped; and a caster that comes back into the sight of a player that still holds its kept change is shown no buff on it, since no rule of the caster stands behind the entry (`proc.nodes_left`, `unit_removed`). The entry names the holder as the cast's primary and only target, which is wrong for a cast whose primary target is another unit (a child Barrier's Proxy started on an ally, whose area found others around that ally).",
+      missing: "A caster that comes back into the sight of a player that still holds its kept change is shown no buff on it, since no rule of the caster stands behind the entry (`proc.nodes_left`, `unit_removed`). The entry names the holder as the cast's primary and only target, which is wrong for a cast whose primary target is another unit (a child Barrier's Proxy started on an ally, whose area found others around that ally).",
     ),
     gap.Entry(
       area: "Casting",
@@ -480,7 +480,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A change a caster tells a player before the player has taken its sight notice of that caster is dropped, because the player holds a change only from a caster it sees; the map's notice and the caster's tell come from two senders with no order. A caster that joins again under a new stay, with no unseen notice between, keeps the sources of its earlier stay.",
+      missing: "A kept change (a spell with propertyFlags 0x100) that a caster put on a player stays on the player after the caster joins again under a new stay, as after the caster left sight: only the caster's end tell or the removal of its unit takes it off (`held_changes.released_unseen`); the change's other sources end with the caster's earlier sight.",
     ),
     gap.Entry(
       area: "Casting",

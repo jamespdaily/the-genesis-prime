@@ -7,12 +7,15 @@
 
 import character_support
 import connection_rule_support as support
-import genesis_prime/game/chat_tell.{type Tell as ChatTell}
+import genesis_prime/game/chat_channel
+import genesis_prime/game/chat_tell.{type Said as ChatSaid}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news.{type PeerNews, Appeared, Health, PeerNews}
+import genesis_prime/message/bit_stream
 import genesis_prime/step.{type ServiceStep, ConnectionId, OwnEvent, Told}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State}
+import genesis_prime/world_map/map_id
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/relay
 import genesis_prime/world_map/stay.{type Stay}
@@ -227,13 +230,35 @@ pub fn landing(
   )
 }
 
+/// A Say line of the player of connection `connection`, as that player's chat builds it: the
+/// speaker's unit is the connection's.
+pub fn said_by(connection connection: Int, text text: String) -> ChatSaid {
+  chat_tell.Said(
+    speaker: chat_tell.Speaker(
+      realm_id: 1,
+      character_id: connection,
+      name: "Speaker " <> int.to_string(connection),
+      faction_id: 166,
+      unit_id: unit_of(connection:),
+      map: map_id.MapId(world_id: 1, instance: 0),
+      incarnation: 1,
+    ),
+    line: chat_tell.Line(
+      channel_type: chat_channel.Say,
+      channel_id: 0,
+      text: bit_stream.utf16_units(text),
+      formats: [],
+    ),
+  )
+}
+
 /// A local chat line of the player, as its connection tells the map, at time `at_ms`.
 pub fn say(
   state state: State,
   at_ms at_ms: Int,
   speaker speaker: Int,
   speaker_stay speaker_stay: Stay,
-  tell tell: ChatTell,
+  said said: ChatSaid,
 ) -> #(State, ServiceStep(map.Outgoing)) {
   spawns.feed(
     state:,
@@ -242,7 +267,7 @@ pub fn say(
       Told(message: map.Say(
         from: ConnectionId(speaker),
         stay: speaker_stay,
-        tell:,
+        said:,
       )),
     ),
   )

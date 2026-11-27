@@ -28,7 +28,7 @@ import connection_rule_support as rule_support
 import fixture_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, TellBroadcast, TellPeer,
+  type Answer, type Message, type Request, TellBroadcast,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
@@ -305,14 +305,6 @@ fn absorptions_written(
   })
 }
 
-/// The news the steps tell the viewer connection `viewer`, in order.
-fn news_told(
-  steps steps: List(ConnectionStep(Request)),
-  viewer viewer: Int,
-) -> List(News) {
-  list.flat_map(steps, support.news_told(_, viewer:))
-}
-
 /// The tells of the steps that are not news to a viewer: a change is told and ended with
 /// no answer, so none leaves the connection.
 fn tells_but_news(
@@ -321,7 +313,7 @@ fn tells_but_news(
   list.flat_map(steps, support.tells)
   |> list.filter(fn(told) {
     case told.1 {
-      TellPeer(..) | TellBroadcast(..) -> False
+      TellBroadcast(..) -> False
       _ -> True
     }
   })
@@ -439,9 +431,7 @@ pub fn a_change_a_player_in_sight_tells_is_applied_as_the_players_own_change_of_
     let state = support.watched_by(state: support.in_world(), viewers: [2, 3])
     let #(_, taken) = support.feed(state:, event: tell(starts(hold:)))
     assert seen(steps: [taken]) == written as reason
-    list.each([2, 3], fn(viewer) {
-      assert news_told(steps: [taken], viewer:) == news as reason
-    })
+    assert support.news_broadcast(taken) == news as reason
     assert tells_but_news(steps: [taken]) == []
       as "nothing is asked or answered: no tell but the viewers' news leaves the connection"
   })
@@ -734,7 +724,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
     let #(_, taken) =
       feed_all(state: holding(holds:), events: list.map(ends, tell))
     assert seen(steps: taken) == written as reason
-    assert news_told(steps: taken, viewer: 2) == news as reason
+    assert list.flat_map(taken, support.news_broadcast) == news as reason
     assert tells_but_news(steps: taken) == [] as "an end is answered by nothing"
   })
   // The end of caster 2 left the source of caster 3 held: its sight's end takes it.
@@ -1569,7 +1559,7 @@ pub fn a_player_that_comes_into_sight_lists_the_casts_other_players_hold_on_it_t
     )
   let assert [own_cast, ..] =
     list.flat_map(steps, fn(taken) {
-      support.cast_starts(support.news_told(taken:, viewer: 2))
+      support.cast_starts(support.news_broadcast(taken))
     })
     as "the watcher is told the Gamma Rays cast started"
   let below = own_cast.cast_id - 1000
@@ -1778,12 +1768,7 @@ fn held_casts_started(
 /// How many times the step tells the map a `HeldCastStarted`, and that no viewer is told one
 /// directly.
 fn held_cast_starts_told(taken taken: ConnectionStep(Request)) -> Int {
-  assert list.all(support.peer_tells(taken), fn(tell) {
-    case { tell.1 }.news {
-      HeldCastStarted(..) -> False
-      _ -> True
-    }
-  })
+  assert support.tells_to_players_but_moves(taken) == []
     as "the ally tells no viewer a start itself: the map relays it"
   list.length(held_casts_started(taken:))
 }

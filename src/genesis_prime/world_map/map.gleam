@@ -110,13 +110,15 @@
 ////                                     connection order; none to an awaiting or departed one
 ////   TellLanding(C, T, landing) ─────▶ the kind's checks (`relay.landing_kind_of`); Relayed(stay,
 ////                                     Landed(landing)) ─▶ T
-////   Say(C, line) ───────────────────▶ Relayed(stay, Said(line)) to each Relaying viewer
+////   Say(C, line) ───────────────────▶ Relayed(stay, Said(line)) to each Relaying viewer, in
+////                                     connection order
 ////   the pair leaves sight ──────────▶ UnseenBy(V, g) ─▶ C   and   PlayerUnseen(unit, g) ─▶ V;
 ////                                     the relation is dropped, and a snapshot of g is dropped
 //// ```
 ////
-//// - The map's `landing_told` and `said` relay nothing: a landing and a local chat line are
-////   still told from connection to connection.
+//// - A local chat line is relayed as a broadcast is: to the viewers whose relation relays,
+////   for each viewer's stay, so a line that reaches a viewer after it camped and entered
+////   again is dropped by the stay fence of its connection.
 ////
 //// The map's start, from the map's side, and the creatures a player's sight starts
 //// and stops. A spawn that no player sees has no process and no state, only its unit
@@ -744,7 +746,7 @@
 //// | a creature captive of a released object is not live at the release (dormant, waiting for a restart or failed) | it is not held out and may start during the release time; the player who used the object stands in sight of it, so its captive is normally live |
 
 import genesis_prime/game/appearance
-import genesis_prime/game/chat_tell.{type Tell as ChatTell}
+import genesis_prime/game/chat_tell.{type Said as ChatSaid}
 import genesis_prime/game/hit_radius
 import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/shown
@@ -984,8 +986,10 @@ pub type Message {
   )
   /// A local chat line of the player of connection `from`, in its stay `stay`, for every
   /// viewer whose relation relays. A tell, from a connection. The map relays it as
-  /// `Relayed(viewer's stay, Said(tell))` in connection order (`said`).
-  Say(from: ConnectionId, stay: Stay, tell: ChatTell)
+  /// `Relayed(viewer's stay, Said(said))` in connection order (`line_said`); a line from a
+  /// player in another stay than the tell names is dropped, and one whose speaker names
+  /// another unit than the sender's is dropped with an error line.
+  Say(from: ConnectionId, stay: Stay, said: ChatSaid)
 }
 
 /// Why a join is refused: the data of the one character, which the load's
@@ -1434,8 +1438,8 @@ pub fn step(
       player_broadcast(state:, from:, stay:, news:)
     OwnEvent(Told(message: TellLanding(from:, stay:, to:, to_stay:, landing:))) ->
       landing_told(state:, from:, stay:, to:, to_stay:, landing:)
-    OwnEvent(Told(message: Say(from:, stay:, tell:))) ->
-      said(state:, from:, stay:, tell:)
+    OwnEvent(Told(message: Say(from:, stay:, said:))) ->
+      line_said(state:, from:, stay:, said:)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Asked(message: PlayerSnapshot(..), ..))
     | OwnEvent(Asked(message: PlayerBroadcast(..), ..))
@@ -1711,16 +1715,8 @@ fn player_broadcast(
         True -> #(
           state,
           Effects(
-            list.filter_map(sorted_by_connection(owner.sees), fn(entry) {
-              use viewing <- result.try(dict.get(state.players, entry.0))
-              use relation <- result.try(dict.get(viewing.sees, from))
-              case relation {
-                Relation(state: Relaying, stay: relation_stay, ..)
-                  if viewing.stay == relation_stay
-                -> Ok(news_relayed(to: entry.0, stay: relation_stay, news:))
-                Relation(state: Relaying, ..)
-                | Relation(state: AwaitingSnapshot, ..) -> Error(Nil)
-              }
+            list.map(relaying_viewers(state:, from:, owner:), fn(viewer) {
+              news_relayed(to: viewer.0, stay: viewer.1, news:)
             }),
           ),
         )
@@ -1741,6 +1737,28 @@ fn player_broadcast(
       }
     Ok(_) | Error(Nil) -> #(state, Effects([]))
   }
+}
+
+/// The viewers of the player `from` whose relation with it relays and whose stay is the one
+/// the relation was made in, each with that stay, in connection order: the viewers a news or
+/// a line of the player reaches. A viewer awaiting its snapshot, gone from the relations or
+/// in another stay now is not one.
+fn relaying_viewers(
+  state state: State,
+  from from: ConnectionId,
+  owner owner: Player,
+) -> List(#(ConnectionId, Stay)) {
+  list.filter_map(sorted_by_connection(owner.sees), fn(entry) {
+    use viewing <- result.try(dict.get(state.players, entry.0))
+    use relation <- result.try(dict.get(viewing.sees, from))
+    case relation {
+      Relation(state: Relaying, stay: relation_stay, ..)
+        if viewing.stay == relation_stay
+      -> Ok(#(entry.0, relation_stay))
+      Relation(state: Relaying, ..) | Relation(state: AwaitingSnapshot, ..) ->
+        Error(Nil)
+    }
+  })
 }
 
 /// One player's landing on another: admitted by the kind's destination and source checks
@@ -1777,16 +1795,48 @@ fn landing_told(
   }
 }
 
-/// A local chat line: relayed to each relaying viewer of the speaker, in connection
-/// order, as `Relayed(stay, Said(tell))` for the viewer's stay. This function relays
-/// nothing.
-fn said(
+/// A local chat line of a player: relayed to each relaying viewer of the speaker, in
+/// connection order, as `Relayed(stay, Said(said))` for the viewer's stay, and to no viewer
+/// awaiting its snapshot or gone from the relations. A line from a player not in the map or
+/// in another stay than the tell names is dropped; one whose speaker names another unit
+/// than the sender's is dropped with an error line.
+fn line_said(
   state state: State,
-  from _from: ConnectionId,
-  stay _stay: Stay,
-  tell _tell: ChatTell,
+  from from: ConnectionId,
+  stay stay: Stay,
+  said said: ChatSaid,
 ) -> #(State, ServiceStep(Outgoing)) {
-  #(state, Effects([]))
+  case dict.get(state.players, from) {
+    Ok(owner) if owner.stay == stay ->
+      case said.speaker.unit_id == player_unit.unit_id(unit: owner.unit) {
+        True -> #(
+          state,
+          Effects(
+            list.map(relaying_viewers(state:, from:, owner:), fn(viewer) {
+              OwnEffect(Send(
+                to: Connection(viewer.0),
+                message: Relayed(stay: viewer.1, delivered: relay.Said(said:)),
+              ))
+            }),
+          ),
+        )
+        False -> #(
+          state,
+          Effects([
+            log_error(
+              state:,
+              about: step.About(..step.no_one, connection: Some(from)),
+              text: "the player told a line spoken by unit "
+                <> int.to_string(said.speaker.unit_id)
+                <> ", which is not its unit "
+                <> int.to_string(player_unit.unit_id(unit: owner.unit))
+                <> ", so it is not relayed",
+            ),
+          ]),
+        )
+      }
+    Ok(_) | Error(Nil) -> #(state, Effects([]))
+  }
 }
 
 /// A creature's snapshot of the sight `generation` of the player of connection `by`:

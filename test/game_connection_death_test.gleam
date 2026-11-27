@@ -84,11 +84,6 @@ import planted_table
 /// The tests' player's ghost: 2^20 + 5.
 const ghost_unit_id = 1_048_581
 
-/// The news a step tells viewer `viewer`, in order.
-fn news_told(taken: ConnectionStep(Request), viewer: Int) -> List(News) {
-  game_connection_support.news_told(taken:, viewer:)
-}
-
 pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_sees_its_ghost_the_window_and_control_of_the_ghost_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(_, taken) = game_connection_support.dead_in_world()
@@ -196,7 +191,7 @@ pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_see
     unit_news.Died,
     unit_news.CombatState(in_combat: False),
     unit_news.DeathLogged,
-  ] = news_told(taken, 2)
+  ] = game_connection_support.news_broadcast(taken)
     as "the viewer is told the body's death, 0x89a off and the log line, and no ghost"
   Nil
 }
@@ -302,7 +297,7 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_as_the_clients_frames_tes
       })
     frames
   }
-  let death = written(news_told(died, 2))
+  let death = written(game_connection_support.news_broadcast(died))
   assert cast_support.ids(frames: death)
     == [0x0938, 0x0937, 0x088C, 0x089A, 0x0247]
     as "the shield and the health, then 0x88c, 0x89a and 0x247, in the order told"
@@ -319,7 +314,7 @@ pub fn a_viewer_writes_a_players_death_and_coming_back_as_the_clients_frames_tes
   assert game_connection_support.decoded(death, 0x0247, combat_log.decode)
     == [CombatLog(entry: combat_log_entry.Death(CombatLogDeath(9)))]
     as "opcode.0x247.death: type 22"
-  let back = written(news_told(woke, 2))
+  let back = written(game_connection_support.news_broadcast(woke))
   assert cast_support.ids(frames: back) == [0x0937, 0x0938, 0x088C, 0x0247]
   assert game_connection_support.decoded(back, 0x0937, unit_health.decode)
     == [UnitHealth(unit_id: 9, health: 736, dead: 0)]
@@ -353,7 +348,8 @@ pub fn a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_
     )
   let #(state, pressed) =
     game_connection_support.press_paralytic_surge(state:, client_cast_id: 1)
-  let assert [unit_news.CastStarted(start:)] = news_told(pressed, 2)
+  let assert [unit_news.CastStarted(start:)] =
+    game_connection_support.news_broadcast(pressed)
     as "the viewer is told the cast's start; its round waits on the Beast's answer"
   let assert [#(40, key)] = game_connection_support.strikes_told(pressed)
   let #(state, taken) = game_connection_support.killed(state)
@@ -367,7 +363,7 @@ pub fn a_creatures_killing_strike_on_a_player_mid_cast_ends_the_cast_with_0x7fe_
   )
     as "the client does not end its own casts when it dies: the server's 0x7fe ends the live cast"
   assert list.contains(
-    news_told(taken, 2),
+    game_connection_support.news_broadcast(taken),
     unit_news.CastFinished(cast_id: start.cast_id),
   )
     as "and the viewer told its start is told its finish"
@@ -661,7 +657,7 @@ pub fn wake_here_writes_the_coming_back_in_the_clients_order_where_the_body_lies
         )),
       ),
     ]
-  assert news_told(taken, 2)
+  assert game_connection_support.news_broadcast(taken)
     == [
       unit_news.Health(health: 736, dead: False),
       unit_news.Shield(shield: 450),
@@ -697,7 +693,7 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
   assert game_connection_support.written_ids(chosen)
     == [0x092F, 0x0938, 0x088C, 0x01B3, 0x0355, 0x0636, 0x0247]
     as "the coming back as Wake Here writes it, where the body lies"
-  assert news_told(chosen, 2)
+  assert game_connection_support.news_broadcast(chosen)
     == [
       unit_news.Health(health: 736, dead: False),
       unit_news.Shield(shield: 450),
@@ -1222,7 +1218,7 @@ pub fn an_entry_at_a_saved_health_of_0_starts_no_regeneration_and_saves_0_and_th
       step.OwnEvent(step.TimerFired(step.TimerId(8))),
     )
   assert support.writes(ticked) == []
-    && game_connection_support.peer_tells(ticked) == []
+    && game_connection_support.tells_to_players_but_moves(ticked) == []
     && game_connection_support.news_broadcast(ticked) == []
     as "a health tick that fires anyway writes nothing"
   assert game_connection_support.ask_request(camp_finished(state))
@@ -1253,7 +1249,7 @@ pub fn a_player_that_entered_dead_fights_no_one_a_strike_is_refused_dead_and_a_t
       ),
     )
   assert support.writes(taken) == []
-    && game_connection_support.peer_tells(taken) == []
+    && game_connection_support.tells_to_players_but_moves(taken) == []
     && game_connection_support.news_broadcast(taken) == []
   let assert [
     #(

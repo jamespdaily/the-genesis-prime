@@ -29,6 +29,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/relay
 import genesis_prime/world_map/stay
 import gleam/float
+import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
@@ -962,6 +963,54 @@ pub fn a_players_line_is_relayed_to_its_relaying_viewers_with_their_stay_and_bef
     assert scene.direct_news(scene: done, from: 1, to: 3) == []
       as "C told W nothing itself"
   })
+  // A line queued across a re-entry: V camps and enters again while C's line is on its way.
+  // The map takes the line before V's leave, between its leave and join, or after, and V
+  // takes the relayed line before or after its answer of the join.
+  let outcomes =
+    list.map(
+      scene.orders(scene: camps_and_enters_again(
+        scene: scene.client_sends(
+          scene: two_players(),
+          connection: 1,
+          bytes: line,
+          name: "Say by C",
+        ),
+        connection: 2,
+        x: 0.0,
+      )),
+      scene.settle,
+    )
+  let order_of_v = fn(done: scene.Scene) {
+    scene.order_at(scene: done, receiver: scene.ConnectionProcess(2))
+  }
+  // The line the map relayed for V's first stay: V's order holds the map's mail in the map's
+  // order, and the map relays the second stay's snapshot of C before any line of that stay, so
+  // a line before the second snapshot of C (or with none) is for the first stay.
+  let first_stay_line_after_the_second_join = fn(done: scene.Scene) {
+    let names = order_of_v(done)
+    let second_join = last_position_of(names:, name: "map answers 2: Joined")
+    let snapshots = positions_of(names:, name: "map Relayed 0x262 of 1 to 2")
+    case positions_of(names:, name: "map Relayed line to 2") {
+      [line_at] ->
+        line_at > second_join
+        && case snapshots {
+          [_, second, ..] -> line_at < second
+          _ -> True
+        }
+      _ -> False
+    }
+  }
+  list.each(outcomes, fn(done) {
+    assert lines(done, 2) <= 1 as "the one line is written at most once"
+    assert !first_stay_line_after_the_second_join(done) || lines(done, 2) == 0
+      as "a line relayed for V's first stay that V takes after its second began is dropped by the stay fence"
+    assert scene.direct_news(scene: done, from: 1, to: 2) == []
+      as "C told V nothing itself"
+  })
+  assert list.any(outcomes, first_stay_line_after_the_second_join)
+    as "an order in which V takes the line relayed for its first stay after its second began"
+  assert list.any(outcomes, fn(done) { lines(done, 2) == 1 })
+    as "an order in which V writes the line"
 }
 
 pub fn at_the_ally_a_change_start_then_the_casters_unseen_ends_or_keeps_it_by_its_flag_and_the_unseen_first_refuses_the_start_test() -> Nil {
@@ -1059,28 +1108,51 @@ fn position_of(
   |> result.map(fn(entry) { entry.1 })
 }
 
-/// H camps and enters again while the heal is on its way: its client camps and picks the
+/// The positions of the name in the names.
+fn positions_of(names names: List(String), name name: String) -> List(Int) {
+  list.index_map(names, fn(found, index) { #(found, index) })
+  |> list.filter(fn(entry) { entry.0 == name })
+  |> list.map(fn(entry) { entry.1 })
+}
+
+/// The last position of the name in the names; the names hold it.
+fn last_position_of(names names: List(String), name name: String) -> Int {
+  let assert Ok(position) = list.last(positions_of(names:, name:))
+    as { "the order holds " <> name }
+  position
+}
+
+/// The player of `connection` camps and enters again at x `x`: its client camps and picks the
 /// character again, and its connection asks the map to leave and to join.
-fn h_camps_and_enters_again(healing healing: scene.Scene) -> scene.Scene {
-  healing
+fn camps_and_enters_again(
+  scene scene: scene.Scene,
+  connection connection: Int,
+  x x: Float,
+) -> scene.Scene {
+  scene
   |> scene.client_sends(
-    connection: 1,
+    connection:,
     bytes: connection_support.camp_request_message(True),
-    name: "camp of 1 starts",
+    name: "camp of " <> int.to_string(connection) <> " starts",
   )
   |> scene.client_sends(
-    connection: 1,
+    connection:,
     bytes: connection_support.camp_finished_message(),
-    name: "camp of 1 finishes",
+    name: "camp of " <> int.to_string(connection) <> " finishes",
   )
   |> scene.client_selects(
-    connection: 1,
+    connection:,
     character: scene.character_of(
       class_id: medic,
       level: 1,
-      place: scene.at(x: 20.0),
+      place: scene.at(x:),
     ),
   )
+}
+
+/// H camps and enters again while the heal is on its way.
+fn h_camps_and_enters_again(healing healing: scene.Scene) -> scene.Scene {
+  camps_and_enters_again(scene: healing, connection: 1, x: 20.0)
 }
 
 pub fn a_heal_the_map_accepted_before_its_caster_left_sight_is_applied_and_one_for_a_stay_the_player_left_after_the_map_accepted_it_is_dropped_at_the_connection_test() -> Nil {

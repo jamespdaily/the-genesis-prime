@@ -193,9 +193,7 @@ pub fn a_struck_medic_pressing_energize_sees_the_heal_and_its_shield_rise_and_so
   assert healed == [expected]
     as "the shield rises by the amount, capped at 450: one 0x938 to the Medic"
   let told =
-    list.flat_map(landed, fn(taken) {
-      connection_support.news_told(taken:, viewer: 2)
-    })
+    list.flat_map(landed, fn(taken) { connection_support.news_broadcast(taken) })
   assert list.count(told, fn(news) {
       news == unit_news.Shield(shield: expected)
     })
@@ -336,9 +334,7 @@ pub fn pressing_a_heal_sends_the_go_then_the_new_health_test() -> Nil {
     == [before + 40]
     as "the health rises by 40: one 0x92f to the Medic"
   let told =
-    list.flat_map(landed, fn(taken) {
-      connection_support.news_told(taken:, viewer: 2)
-    })
+    list.flat_map(landed, fn(taken) { connection_support.news_broadcast(taken) })
   assert list.count(told, fn(news) {
       news == unit_news.Health(health: before + 40, dead: False)
     })
@@ -654,10 +650,7 @@ pub fn a_press_at_a_player_the_map_showed_starts_the_cast_on_that_player_test() 
   assert primary_targets(taken: pressed) == [9]
     as "opcode.0x9a: the caster's client takes the primary target from the 0x7fd, which names the other player (the caster is sent no 0x7ff, opcode.0x7ff.after_confirm)"
   assert list.map(
-      connection_support.cast_starts(connection_support.news_told(
-        taken: pressed,
-        viewer: 3,
-      )),
+      connection_support.cast_starts(connection_support.news_broadcast(pressed)),
       fn(started) { started.primary_target_unit_id },
     )
     == [9]
@@ -886,7 +879,7 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
   assert refusals(taken: refused) == [#(1000, 106)]
     as "a Died news: the ally is dead in the picture, so the press is refused 106 (0x1403b2240)"
   assert connection_support.written_ids(refused) == [0x07FC]
-    && connection_support.peer_tells(refused) == []
+    && connection_support.tells_to_players_but_moves(refused) == []
     as "the refusal is the one 0x7fc: no 0x7ff is written and no connection is told"
   let back = news_from_the_ally(state: dead, news: unit_news.CameBack)
   let #(_, started) = pressed_at(state: back, bag_index:, ms: 2000, target: 9)
@@ -920,7 +913,7 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
   assert refusals(taken: keyed) == [#(0, 105)]
     as "a move of the ally that puts it 60 m away: the key down is refused 105, with the client cast id 0 a 0x4db has (opcode.0x4db)"
   assert connection_support.written_ids(keyed) == [0x07FC]
-    && connection_support.peer_tells(keyed) == []
+    && connection_support.tells_to_players_but_moves(keyed) == []
     as "no 0x7ff is written and no connection is told"
   // The other faction: the unit 10 of connection 4 is an Exile (167) to the Dominion Esper
   // (Faction2Relationship 684: level 0, Hostile), and Mind Over Body lacks mechanics flag 4.
@@ -953,7 +946,7 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
   assert refusals(taken: hostile) == [#(4000, 99)]
     as "an ally of the other faction: refused 99 (0x1403ad540)"
   assert connection_support.written_ids(hostile) == [0x07FC]
-    && connection_support.peer_tells(hostile) == []
+    && connection_support.tells_to_players_but_moves(hostile) == []
     as "no 0x7ff is written and no connection is told"
   // The unit leaves sight: nothing of it is held.
   let #(gone, _) =

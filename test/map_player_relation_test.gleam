@@ -328,6 +328,70 @@ pub fn a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and
     as "and the map logs an error that names the unit"
 }
 
+pub fn a_players_line_is_relayed_to_each_relaying_viewer_in_connection_order_for_its_stay_and_to_no_awaiting_or_departed_viewer_and_a_line_of_another_stay_or_unit_is_dropped_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The viewers are as in the news test: 6 and 2 relay, 3 awaits its snapshot, 4 left sight
+  // after it relayed and 5 has joined again.
+  let #(state, sights, at_ms) = owner_and_viewers(viewers: [6, 2, 3, 4, 5])
+  let first_stay = players.stay(count: 1)
+  let snapshotted = fn(state, viewer, at_ms) {
+    players.snapshot(
+      state:,
+      at_ms:,
+      owner: 1,
+      owner_stay: first_stay,
+      viewer:,
+      generation: sight_of_viewer(sights:, viewer:),
+      burst: [players.health(connection: 1, health: 1)],
+    ).0
+  }
+  let state =
+    list.fold([6, 2, 4, 5], #(state, at_ms), fn(so_far, viewer) {
+      #(snapshotted(so_far.0, viewer, so_far.1), so_far.1 + 1)
+    })
+  let #(state, at_ms) = #(state.0, state.1)
+  let #(state, _) = spawns.move(state:, at_ms:, connection: 4, x: spawns.far)
+  let #(state, _) = spawns.leave(state:, at_ms: at_ms + 1, connection: 5)
+  let #(state, _) =
+    spawns.join_in_stay(
+      state:,
+      at_ms: at_ms + 2,
+      connection: 5,
+      stay_count: 2,
+      x: 500.0,
+      alive: True,
+      hidden: set.new(),
+    )
+  let said = fn(speaker_stay, line) {
+    players.say(state:, at_ms: at_ms + 3, speaker: 1, speaker_stay:, said: line).1
+  }
+  let lines =
+    players.relayed(taken: said(
+      first_stay,
+      players.said_by(connection: 1, text: "Hi"),
+    ))
+  assert list.map(lines, fn(line) { #(line.0, line.1) })
+    == [#(2, players.stay(count: 1)), #(6, players.stay(count: 1))]
+    as "the line reaches each relaying viewer in the order of the connections' numbers, for the stay of its relation, and no viewer that awaits its snapshot, left sight or is in another stay"
+  assert list.all(lines, fn(line) {
+    line.2 == relay.Said(said: players.said_by(connection: 1, text: "Hi"))
+  })
+    as "the line is relayed as it was told"
+  assert players.relayed(taken: said(
+      players.stay(count: 2),
+      players.said_by(connection: 1, text: "Hi"),
+    ))
+    == []
+    as "a line of a stay the speaker is not in is not relayed"
+  let taken = said(first_stay, players.said_by(connection: 99, text: "Hi"))
+  assert players.relayed(taken:) == []
+    as "a line whose speaker is another unit than the sender's is not relayed"
+  assert list.any(support.logs_of(step: taken, level: step.LogError), fn(line) {
+    string.contains(line.text, "unit")
+  })
+    as "and the map logs an error that names the unit"
+}
+
 pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_for_no_player_the_joiner_does_not_see_test() -> Nil {
   use <- owned_test.run(5000)
   // Players 1 and 2 see each other, and 3 stands where it sees neither. Player 1 joins a

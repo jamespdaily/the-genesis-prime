@@ -943,10 +943,8 @@ pub fn a_go_to_another_world_leaves_the_map_then_joins_the_new_one_at_the_place_
       assert support.ask_request(leaving)
         == support.leave_asked_from(map: map_of_world_22())
         as "the run of the map that took the player is asked to take it out"
-      list.each([2, 3], fn(viewer) {
-        assert support.news_told(taken: leaving, viewer:) == []
-          as "each viewer is told nothing by the leaving connection: the unit's 0x355 is the map's PlayerUnseen when it takes the leave"
-      })
+      assert support.news_broadcast(leaving) == []
+        as "each viewer is told nothing by the leaving connection: the unit's 0x355 is the map's PlayerUnseen when it takes the leave"
       let effects = rule_support.effects_of(leaving)
       list.each(
         [

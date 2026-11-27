@@ -56,7 +56,7 @@ pub fn a_kill_credit_sends_experience_gained_of_kind_2_test() -> Nil {
     as "0x1ac {5, 0, 0, 2, the creature's unit}"
   assert support.written_ids(taken) == [0x01AC]
     as "nothing else is written: the level stands below 655 experience"
-  assert support.peer_tells(taken) == []
+  assert support.tells_to_players_but_moves(taken) == []
     as "a viewer is told nothing of a gain that is the player's own"
 }
 

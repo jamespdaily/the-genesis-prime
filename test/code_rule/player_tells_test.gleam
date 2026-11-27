@@ -1,14 +1,15 @@
 //// The player tells rule. Expected value is the rule: a player's connection tells another
 //// player's connection nothing itself (genesis_prime/world_map/map `PlayerBroadcast`,
 //// `PlayerSnapshot`, `TellLanding` and `Say`), so a viewer has one sender for what concerns
-//// another player: the map. A `Tell` effect in `src/genesis_prime/game` whose `to:` is a
-//// `step.Connection(...)` address is a breach, reported at its line, unless it tells
-//// `TellMove`, a mover's chunk of its own move to a viewer in its own copy, which only
-//// `sends_the_move_to_the_viewers` of the mover (`genesis_prime/game/connection/movement`) may
-//// build, or `TellChat` of a whisper, a whisper's reply or a zone line (`Whisper`, `Heard`,
-//// `NotHeard`, `ZoneLine`), which go between characters and not between players in sight.
-//// A `TellChat` of a `Said` line is a breach. The rule is shown on planted files, then read
-//// over the real ones.
+//// another player: the map. The types hold most of it: the request has no variant for news,
+//// a landing or a local line to a connection, and a `TellChat` cannot carry a `Said` line
+//// (genesis_prime/game/chat_tell). What the types cannot hold is the address: a `Tell` effect
+//// in `src/genesis_prime/game` whose `to:` is a `step.Connection(...)` address is a breach,
+//// reported at its line, unless it tells `TellMove`, a mover's chunk of its own move to a
+//// viewer in its own copy, which only `sends_the_move_to_the_viewers` of the mover
+//// (`genesis_prime/game/connection/movement`) may build, or `TellChat`, which goes between
+//// characters and not between players in sight (a whisper's reply, `Heard` and `NotHeard`).
+//// The rule is shown on planted files, then read over the real ones.
 
 import code_rule/planted
 import code_rule/source.{type SourceFile}
@@ -37,57 +38,37 @@ fn called_variant(expression expression: glance.Expression) -> String {
   }
 }
 
-/// The arguments of the call an expression is, or none.
-fn arguments_of(
-  expression expression: glance.Expression,
-) -> List(glance.Field(glance.Expression)) {
-  case expression {
-    glance.Call(arguments:, ..) -> arguments
-    _ -> []
-  }
-}
-
-/// What a `Tell` to a connection tells, by the variant of its request: `TellChat` is
-/// `TellChat/Said` when the line it carries is a `Said`.
+/// What a `Tell` to a connection tells, by the variant of its request.
 type Told {
   Told(line: Int, request: String)
 }
 
-/// What the request of a `Tell` is, by its variant: `TellChat` is `TellChat/Said` when the
-/// line it carries is a `Said`, and `""` when the request is no call.
+/// What the request of a `Tell` is, by its variant, and `""` when the request is no call.
 fn request_told(request request: Option(glance.Expression)) -> String {
   case request {
-    Some(expression) ->
-      case called_variant(expression:) {
-        "TellChat" -> chat_told(expression:)
-        other -> other
-      }
+    Some(expression) -> called_variant(expression:)
     None -> ""
   }
 }
 
-/// `TellChat/Said` for a chat tell that carries a `Said`, else `TellChat`.
-fn chat_told(expression expression: glance.Expression) -> String {
-  case
-    syntax.argument(
-      arguments: arguments_of(expression:),
-      label: "tell",
-      position: syntax.FirstArgument,
-    )
-  {
-    Some(line) ->
-      case called_variant(expression: line) {
-        "Said" -> "TellChat/Said"
-        _ -> "TellChat"
-      }
-    None -> "TellChat"
-  }
+/// Whether the call gives a `request:` of its own: the connection rule's `Tell` effect does,
+/// the chat feature's effect of the same name gives a `tell:`.
+fn gives_a_request(call call: syntax.Call) -> Bool {
+  list.any(call.arguments, fn(argument) {
+    case argument {
+      glance.LabelledField(label: "request", ..)
+      | glance.ShorthandField(label: "request", ..) -> True
+      glance.LabelledField(..)
+      | glance.ShorthandField(..)
+      | glance.UnlabelledField(..) -> False
+    }
+  })
 }
 
-/// Whether the call is a `Tell` effect to a `step.Connection(...)` address.
+/// Whether the call is a `Tell` effect with a request to a `step.Connection(...)` address.
 fn tells_a_connection(call call: syntax.Call) -> Bool {
   use <- bool.guard(
-    when: !syntax.is_step_effect(call, name: "Tell"),
+    when: !syntax.is_step_effect(call, name: "Tell") || !gives_a_request(call:),
     return: False,
   )
   case
@@ -121,8 +102,8 @@ fn tells_to_a_connection(file file: SourceFile) -> List(Told) {
 }
 
 /// The lines of the file where a player tells another player's connection something a
-/// viewer must have from the map: every tell to a connection but a move and a whisper's
-/// family of chat tells.
+/// viewer must have from the map: every tell to a connection but a move and a chat tell
+/// between characters.
 fn breaches(file file: SourceFile) -> List(Int) {
   tells_to_a_connection(file:)
   |> list.filter(fn(told) {
@@ -157,22 +138,18 @@ pub fn a_player_tells_another_player_only_through_its_map_test() -> Nil {
   let planted_file =
     planted.file(path: game_directory <> "/connection/state.gleam", lines: [
       "fn news() {",
-      "  OwnEffect(step.Tell(to: step.Connection(viewer.0), request: TellPeer(stay: a, news: b)))",
+      "  OwnEffect(step.Tell(to: step.Connection(viewer.0), request: TellBroadcast(connection: a, stay: b, news: c)))",
       "}",
       "",
       "fn a_heal() {",
       "  OwnEffect(step.Tell(",
       "    to: step.Connection(connection: strike.from),",
-      "    request: TellPlayer(stay: a, tell: b),",
+      "    request: TellLanding(connection: a, stay: b, to: c, to_stay: d, landing: e),",
       "  ))",
       "}",
       "",
       "fn a_line() {",
-      "  OwnEffect(step.Tell(to: step.Connection(to), request: TellLine(stay: a, tell: b)))",
-      "}",
-      "",
-      "fn a_said_chat_tell() {",
-      "  OwnEffect(step.Tell(to: step.Connection(to), request: TellChat(tell: Said(speaker: a, line: b))))",
+      "  OwnEffect(step.Tell(to: step.Connection(to), request: TellSay(connection: a, stay: b, said: c)))",
       "}",
       "",
       "fn a_whisper() {",
@@ -187,9 +164,9 @@ pub fn a_player_tells_another_player_only_through_its_map_test() -> Nil {
       "  OwnEffect(step.Tell(to: step.Connection(v), request: client_connection.TellMove(stay: s, move: m)))",
       "}",
     ])
-  assert breaches(file: planted_file) == [2, 6, 13, 17]
-    as "a tell to a connection of news, a heal, a line or a said chat line is found, and a whisper's reply, a tell to the map and a move are not"
-  assert moves(file: planted_file) == [29]
+  assert breaches(file: planted_file) == [2, 6, 13]
+    as "a tell to a connection of news, a landing or a line is found, and a whisper's reply, a tell to the map and a move are not"
+  assert moves(file: planted_file) == [25]
     as "a move told to a connection is found, and no other tell is"
   let files = source.files(under: game_directory)
   assert list.flat_map(files, fn(file) {
@@ -198,7 +175,7 @@ pub fn a_player_tells_another_player_only_through_its_map_test() -> Nil {
       })
     })
     == []
-    as "no file of the game tells a player's connection anything but a move or a whisper's family of chat tells: the map tells it"
+    as "no file of the game tells a player's connection anything but a move or a chat tell between characters: the map tells it"
   let movers =
     list.flat_map(files, fn(file) {
       list.map(moves(file:), fn(line) { #(file, line) })

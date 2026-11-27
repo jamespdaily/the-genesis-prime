@@ -604,15 +604,12 @@ fn tells_of_the_connection(
 pub fn request_name(request request: client_connection.Request) -> String {
   case request {
     client_connection.TellMoved(..) -> "Moved"
-    client_connection.TellPeer(news:, ..) ->
-      "TellPeer " <> unit_news_name(news: news.news)
     client_connection.TellMove(..) -> "TellMove"
     client_connection.TellBroadcast(news:, ..) ->
       "TellBroadcast " <> unit_news_name(news: news.news)
     client_connection.TellSnapshot(..) -> "TellSnapshot"
     client_connection.TellLanding(..) -> "TellLanding"
     client_connection.TellSay(..) -> "TellSay"
-    client_connection.TellLine(..) -> "TellLine"
     client_connection.TellChat(..) -> "TellChat"
     client_connection.TellReady(..) -> "TellReady"
     client_connection.TellStealthChanged(..) -> "TellStealthChanged"
@@ -666,6 +663,7 @@ fn outgoing_name(message message: map.Outgoing) -> String {
       <> int.to_string(unit_id)
     map.Relayed(delivered: relay.Landed(landing:), ..) ->
       "Relayed " <> landing_name(landing:)
+    map.Relayed(delivered: relay.Said(..), ..) -> "Relayed line"
     map.Relayed(..) -> "Relayed"
     _ -> "another send"
   }
