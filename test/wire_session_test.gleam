@@ -1,21 +1,26 @@
-//// The committed session (`test/wire_recording/2026-11-20-focus-session`)
+//// The committed session (`test/wire_recording/2026-11-27-sheathed-session`)
 //// replayed through the real server tree on a database of its own, with the
 //// recorded seed, times and fixture, and compared byte for byte. Expected
 //// values come from these places.
 //// - The recordings: a live login of the real client through the STS, auth and
-////   game servers, played into the world with a level-5 Medic character
+////   game servers, played into the world with a level-6 Medic character
 ////   (the playing-live skill's `session.sh`, with no person), recorded by the
 ////   server as wire recordings of the bytes, times, seeds and answers. The
 ////   client's own movement messages (0x0637, 0x063A, 0x00D5, 0x063B and
 ////   0x00F2) are in it, and its close at the end is answered by the save of the
 ////   player's place. Its verdict, beside it, checked the client's own report of
-////   that character against its saved row.
+////   that character against its saved row. The sitting began from the
+////   development database as it stood, so this folder differs from the earlier
+////   recording's in the player's 0x262 (it lists stat 15, the sheathed weapon)
+////   and, in fixture.sql, in the character's level (6), zone (651), place,
+////   health and experience, in the other characters' levels, zones and places,
+////   and in its 24 character_action_slot rows.
 //// - The log lines the rules write when the session is replayed: one warning
 ////   for each message the game rule took and did not handle (opcode.0x38c: the
 ////   world messages inside 0x038C are logged under their own id), and one for
 ////   each STS request the STS rule has no handler for (`/Auth/PageVerifiedIps`).
 //// - The rows the store answered: the account `genesis` and its eight
-////   characters, the first of them `Grozim Vroc` (id 13, level 5, class 4 the
+////   characters, the first of them `Grozim Vroc` (id 13, level 6, class 4 the
 ////   Medic, race 13, faction 166), the character the client played (verdict.txt:
 ////   strName = 'Grozim Vroc').
 //// - The character list (0x0117) carries the FILETIME of the answer that made
