@@ -117,6 +117,9 @@ fi
 case "$1" in
   format)
     [ -n "$PLANT_FORMAT_SECONDS" ] && sleep "$PLANT_FORMAT_SECONDS"
+    # PLANT_FORMAT_BURN_SECONDS: uses a CPU for that many whole seconds (a fraction after them is
+    # ignored and only marks the run's process by its command line, as the sleeps' does).
+    [ -n "$PLANT_FORMAT_BURN_SECONDS" ] && bash -c 'n=${0##* }; end=$((SECONDS + ${n%%.*})); while [ $SECONDS -lt $end ]; do :; done' "sleep $PLANT_FORMAT_BURN_SECONDS"
     [ -n "$PLANT_FORMAT_KILLS_PARENT" ] && kill -9 "$PPID"
     if grep -rq PLANTED_FORMAT_ERROR src test dev 2>/dev/null; then
       echo "planted format error"
@@ -435,6 +438,7 @@ class PlantedCheckCase(unittest.TestCase):
             "PLANT_LOG": str(self.log),
             "PLANT_MARKER": str(self.marker),
             "PLANT_REAL_PYTHON": PYTHON,
+            "GENESIS_CHECK_IDLE_SECONDS": "1",
         }
         if not client:
             env["GENESIS_NO_CLIENT"] = "1"
@@ -744,6 +748,43 @@ class HungPartTest(unittest.TestCase):
         run = self.part_and_drop()
         self.assert_stopped_as_hung(run, "format")
         self.assertNotIn("WARNING", run.output, "a hung run is failed, not warned")
+
+    def test_a_part_that_keeps_using_cpu_past_three_times_its_budget_ends_and_passes(self):
+        # Budget 2, so a part with no CPU use would be stopped at 6 s; this one burns CPU for 9.
+        run = shared_run(
+            "burning-part", "fast", PLANT_FORMAT_BURN_SECONDS="9", timeout=40,
+            GENESIS_CHECK_FAST_BUDGET_SECONDS=str(self.BUDGET), GENESIS_CHECK_IDLE_SECONDS="3", GENESIS_CHECK_WALL_CAP_SECONDS="30",
+        )
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(run.output, r"(?m)^check passed")
+        self.assertRegex(run.output, r"check WARNING: over its budget, wall time \d+s, budget %ds" % self.BUDGET)
+        self.assertNotIn("hung", run.output)
+        self.assertNotIn("check FAILED", run.output)
+
+    def test_a_part_that_uses_no_cpu_for_the_idle_window_is_stopped_as_hung(self):
+        # Budget 1: three times it is 3 s, and the idle window is 6 s, so the stop is by the window.
+        run = shared_run(
+            "idle-part", "fast", hang=lambda seconds: dict(PLANT_FORMAT_SECONDS=seconds), timeout=40,
+            GENESIS_CHECK_FAST_BUDGET_SECONDS="1", GENESIS_CHECK_IDLE_SECONDS="6", GENESIS_CHECK_WALL_CAP_SECONDS="30",
+        )
+        self.assert_stopped_as_hung(run, "format", budget=1)
+        wall = int(re.search(r"wall time (\d+)s", run.output).group(1))
+        self.assertGreaterEqual(wall, 6, "the part was stopped before it had been idle for the window")
+
+    def test_a_part_still_running_at_the_wall_cap_is_stopped_as_hung(self):
+        # The part burns CPU until it is stopped; the cap is 8 s, 4 times the budget of 2.
+        run = shared_run(
+            "capped-part", "fast", hang=lambda seconds: dict(PLANT_FORMAT_BURN_SECONDS=seconds), timeout=40,
+            GENESIS_CHECK_FAST_BUDGET_SECONDS=str(self.BUDGET), GENESIS_CHECK_IDLE_SECONDS="3", GENESIS_CHECK_WALL_CAP_SECONDS="8",
+        )
+        output = run.output
+        self.assertNotEqual(run.done.returncode, 0, output)
+        line = failed_line(self, output)
+        self.assertRegex(line, r"^check FAILED: format hung, still running at the wall cap of 8s")
+        self.assertRegex(output, r"(?m)^  format +FAILED +hung")
+        wall = int(re.search(r"wall time (\d+)s", output).group(1))
+        self.assertGreaterEqual(wall, 8, "the part was stopped before the wall cap")
+        self.assertEqual(run.left_running, [], "the planted burn is still running")
 
     def test_the_parts_that_ended_are_not_named_hung(self):
         failed = failed_line(self, self.part_and_drop().output)
