@@ -1,4 +1,6 @@
-# Sourced by ./check and ./setup-check (POSIX sh), from the repository's folder.
+# Sourced by ./check and ./setup-check (POSIX sh), from the repository's folder. Load it in
+# any shell that runs the tests outside them (`gleam test`, dev/repeat_tests.py):
+# `. setup_check/environment.sh`.
 # Reads the machine's settings, $GENESIS_HOME/env.sh (GENESIS_HOME defaults to
 # ~/.genesis-prime) if it exists, then puts the patched OTP's bin
 # ($GENESIS_OTP_DIR, default $GENESIS_HOME/otp-<erlang version in
@@ -27,4 +29,12 @@ if [ "${GENESIS_NO_CLIENT:-}" != 1 ]; then
   GENESIS_TERRAIN_DIR=${GENESIS_TERRAIN_DIR:-$genesis_home/terrain}
   export GENESIS_TERRAIN_DIR
 fi
+# Every VM started from a shell that loaded this file (the test VMs and the development
+# servers) keeps each process's message queue off its heap (+hmqd off_heap): the VM's abort
+# in major_collection after move_msgs_to_heap is a step only a process with an on-heap
+# queue takes. ERL_AFLAGS goes before a command line's own flags, so a VM that names +hmqd
+# itself keeps its own: the release (release/vm.args) and the load-run server set on_heap
+# until the load run decides. A child VM (a peer, a port) inherits it.
+ERL_AFLAGS="+hmqd off_heap${ERL_AFLAGS:+ $ERL_AFLAGS}"
+export ERL_AFLAGS
 unset genesis_home
