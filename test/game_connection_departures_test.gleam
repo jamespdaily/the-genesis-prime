@@ -179,7 +179,7 @@ pub fn a_terminal_use_that_counts_tells_the_map_no_release_test() -> Nil {
     )
   assert list.length(quest_news(taken: answered).0) == 2
     as "opcode.0x361: the use counts the travel and the Northern Wilds choice"
-  assert connection_support.told_the_map(answered) == []
+  assert connection_support.told_the_map_decisions(answered) == []
     as "the map is told no release of the terminal"
   assert departures_support.started_timers(taken: answered)
     == [#(departures.timer, 0)]

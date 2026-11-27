@@ -103,9 +103,14 @@ pub fn a_held_press_of_a_normal_ability_starts_it_with_a_server_cast_id_and_no_0
     as "Spell4.32809, Mind Burst (Spell4Base 19019), the Esper's ability at bag index 2"
   assert started.caster_unit_id == 7 as "cast.hold_answer: the player casts"
   assert started.own_cast == 1 as "opcode.0x7ff.own_cast: the own-cast bit is 1"
-  let assert [CastStarted(..)] = support.tells(effects:)
+  assert list.count(support.tells(effects:), fn(news) {
+      case news {
+        CastStarted(..) -> True
+        _ -> False
+      }
+    })
+    == 1
     as "the map is told the start once, as for a 0x9a cast"
-  Nil
 }
 
 pub fn a_held_press_the_rule_refuses_gets_0x7fc_with_client_cast_id_0_and_no_hold_test() -> Nil {

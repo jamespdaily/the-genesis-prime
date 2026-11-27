@@ -1614,14 +1614,13 @@ pub fn a_player_that_comes_into_sight_lists_the_casts_other_players_hold_on_it_t
     as "the list is cut at 511 entries (opcode.0x262.casts: a 9-bit count)"
 }
 
-/// The cast ids each step tells the viewer connection `viewer` ended (`HeldCastEnded`), a
+/// The cast ids each step tells the map ended (`HeldCastEnded`, for the map to relay), a
 /// list for each step, in order.
 fn held_casts_ended(
   steps steps: List(ConnectionStep(Request)),
-  viewer viewer: Int,
 ) -> List(List(Int)) {
   list.map(steps, fn(taken) {
-    list.filter_map(support.news_told(taken:, viewer:), fn(news) {
+    list.filter_map(support.news_broadcast(taken), fn(news) {
       case news {
         HeldCastEnded(cast_id:) -> Ok(cast_id)
         _ -> Error(Nil)
@@ -1630,13 +1629,13 @@ fn held_casts_ended(
   })
 }
 
-/// Whether the effect is the tell of a `HeldCastEnded` to a viewer.
+/// Whether the effect is the tell of a `HeldCastEnded` to the map.
 fn tells_a_held_cast_ended(
   effect effect: step.Effect(step.ConnectionEffect(Request)),
 ) -> Bool {
   case effect {
     OwnEffect(step.Tell(
-      request: TellPeer(
+      request: client_connection.TellBroadcast(
         news: unit_news.PeerNews(news: HeldCastEnded(..), ..),
         ..,
       ),
@@ -1655,10 +1654,10 @@ type AllyEvent {
 
 /// The Design's end paths of #570 Part 7, and `landing.changed`, `caster_unseen`,
 /// `caster_removed` and `ended_at_death`: when the ledger's last source of a cast leaves,
-/// the ally tells each of its viewers `HeldCastEnded` with the cast id, once per cast, in
-/// cast id order, after what it writes for its own client. The ledger's own ends are tested
-/// above; this tests what the ally then tells.
-pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_the_cast_ended_test() -> Nil {
+/// the ally tells the map `HeldCastEnded` with the cast id, once per cast, in cast id order,
+/// after what it writes for its own client; the map relays it to the viewers that remain. The
+/// ledger's own ends are tested above; this tests what the ally then tells.
+pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_the_map_the_cast_ended_test() -> Nil {
   use <- owned_test.run(10_000)
   let armor_of_three =
     held(caster: 3, source: armor_source(cast_id: 100), change: armor())
@@ -1666,14 +1665,13 @@ pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_
   let assert [armor_hold, pool_hold] =
     armor_and_pool(cast_id: 100, sight: EndsWhenUnseen)
     as "Phantasmal Armor's cast holds its armor and its pool"
-  // What the ally holds, what happens to it, and the casts each step tells connection 2 and
-  // connection 3 ended, a list for each step.
+  // What the ally holds, what happens to it, and the casts each step tells the map ended, a
+  // list for each step.
   let rows = [
     #(
-      "the end tell of the only source tells each viewer the cast ended",
+      "the end tell of the only source tells the map the cast ended",
       [armor_of_three],
       [CasterEnds(armor_of_three)],
-      [[100]],
       [[100]],
     ),
     #(
@@ -1681,27 +1679,23 @@ pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_
       [armor_hold, pool_hold],
       [CasterEnds(armor_hold), CasterEnds(pool_hold)],
       [[], [100]],
-      [[], [100]],
     ),
     #(
-      "the unseen notice of the caster ends an unkept source and tells the viewers that remain, not the caster that left",
+      "the unseen notice of the caster ends an unkept source and tells the map: the viewers that remain are the map's to find, and the caster that left is out of the relation",
       [armor_of_three],
       [MapNotice(Unseen(3))],
       [[100]],
-      [[]],
     ),
     #(
       "the unseen notice of the caster leaves a kept source and tells none",
       [kept_armor_of_three],
       [MapNotice(Unseen(3))],
       [[]],
-      [[]],
     ),
     #(
       "the gone notice of the caster's unit ends a kept source and tells",
       [kept_armor_of_three],
       [MapNotice(UnitGone(3))],
-      [[100]],
       [[100]],
     ),
     #(
@@ -1711,22 +1705,20 @@ pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_
       ]),
       [AllyDies],
       [[100, 200]],
-      [[100, 200]],
     ),
     #(
-      "an ally with no viewer left tells nobody",
+      "an ally with no viewer left still tells the map: it keeps no list of viewers, and the map relays to none",
       [kept_armor_of_three],
       [
         MapNotice(Unseen(3)),
         MapNotice(Unseen(2)),
         CasterEnds(kept_armor_of_three),
       ],
-      [[], [], []],
-      [[], [], []],
+      [[], [], [100]],
     ),
   ]
   list.each(rows, fn(row) {
-    let #(reason, holds, events, to_two, to_three) = row
+    let #(reason, holds, events, told) = row
     let #(_, steps) =
       list.fold(events, #(holding(holds:), []), fn(so_far, event) {
         let #(state, steps) = so_far
@@ -1741,8 +1733,7 @@ pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_
         }
         #(state, list.append(steps, [taken]))
       })
-    assert held_casts_ended(steps:, viewer: 2) == to_two as reason
-    assert held_casts_ended(steps:, viewer: 3) == to_three as reason
+    assert held_casts_ended(steps:) == told as reason
   })
   // The tell comes after every write to the ally's own client, as the cast's 0x7fe of a kept
   // change does.

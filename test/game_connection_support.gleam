@@ -2778,10 +2778,12 @@ pub fn creature_tells(
 
 /// The sequence numbers of the step's tells of a move to the map.
 pub fn moves_told(taken: ConnectionStep(Request)) -> List(Int) {
-  list.map(told_the_map(taken), fn(effect) {
-    let assert OwnEffect(step.Tell(request: TellMoved(seq:, ..), ..)) = effect
-      as "the step tells the map a move"
-    seq
+  list.filter_map(told_the_map(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(request: TellMoved(seq:, ..), ..)) -> Ok(seq)
+      OwnEffect(_) | Watch(..) | step.Log(..) | step.Stop | Unwatch(..) ->
+        Error(Nil)
+    }
   })
 }
 

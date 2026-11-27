@@ -1410,8 +1410,11 @@ pub fn a_tick_on_an_ally_asks_for_it_and_the_0x7f8_lists_what_the_ally_applied_t
           ),
         ]
         as { row.why <> ": one 0x7f8 to the caster naming the ally" }
-      assert ticks_told(effects: closed) == 2
-        as { row.why <> ": and told to each viewer of the cast" }
+      assert ticks_told(effects: closed) == 1
+        as {
+          row.why
+          <> ": and told to the map once, for it to relay to each viewer"
+        }
       assert support.caster_change_starts(effects: closed) == []
         as { row.why <> ": the caster is healed of nothing" }
     },

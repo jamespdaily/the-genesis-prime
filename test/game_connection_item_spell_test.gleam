@@ -225,13 +225,8 @@ pub fn a_consumables_use_shows_its_heal_or_its_buff_and_spends_one_of_the_stack_
       )
         as "the cast is confirmed"
       let assert [CastStarted(start: started), ..] =
-        list.filter_map(connection_support.peer_tells(answered), fn(tell) {
-          case tell.0 == 2 {
-            True -> Ok({ tell.1 }.news)
-            False -> Error(Nil)
-          }
-        })
-        as "the viewer is told the cast's start first"
+        connection_support.news_broadcast(answered)
+        as "the map is told the cast's start first"
       case scene.shows {
         Heals(effect_id:, amount:, item_level:) -> {
           assert started.creature_activate == 0

@@ -1,9 +1,10 @@
 //// What each viewer of a player's cast is written: the caster's connection, the ally's
 //// connection and the viewers run as the pure rules they are, each one's tells carried by
 //// hand to the next. Expected values come from these places.
-//// - The caster C's connection tells the cast's news to the connections that saw C at a send
-////   (the cast's audience) and the change the cast lands on the ally T to T's connection,
-////   which tells it to the viewers of T that C's audience did not hold the cast for
+//// - The caster C's connection tells the cast's news to the map once, for it to relay to
+////   the viewers it sees at that point, and the change the cast lands on the ally T to T's
+////   connection, which tells the map the cast's start for the viewers of T, each of which
+////   writes it only when its own ledger holds the cast in no state
 ////   (`genesis_prime/game/connection/landing`).
 //// - A viewer's client is written a cast's start once, by the first connection that tells
 ////   it (`opcode.0x7ff`: a cast id the client holds restarts that cast), and the cast's end
@@ -21,7 +22,7 @@ import client_tables
 import connection_rule_support as rule_support
 import fixture_tables
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{type Request, SentByPlayer, TellPeer}
+import genesis_prime/client_connection.{type Request, SentByPlayer}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/unit_news.{type News, Appeared, PeerNews}
@@ -132,10 +133,12 @@ fn news_as_seen(news news: News, sender sender: Int) -> News {
   }
 }
 
-/// What a connection told the others in its steps, in order: the connection and the news,
-/// by the unit the sender stands for, and the changes it told a player's connection.
+/// What a connection told the map and the others in its steps, in order: the news it asked
+/// the map to relay (by the unit the sender stands for), the items of a snapshot it gave the
+/// map for one viewer, and the changes it told a player's connection.
 type Told {
-  News(to: Int, news: unit_news.PeerNews)
+  Broadcast(news: unit_news.PeerNews)
+  Snapshot(to: Int, news: unit_news.PeerNews)
   Change(to: Int, change: client_connection.PlayerTell)
 }
 
@@ -144,32 +147,53 @@ fn told_in(
   sender sender: Int,
 ) -> List(Told) {
   list.flat_map(steps, fn(taken) {
-    list.filter_map(rule_support.effects_of(taken), fn(effect) {
+    list.flat_map(rule_support.effects_of(taken), fn(effect) {
       case effect {
         OwnEffect(step.Tell(
-          to: step.Connection(ConnectionId(to)),
-          request: TellPeer(news: PeerNews(news:, ..), ..),
+          request: client_connection.TellBroadcast(
+            news: PeerNews(news:, ..),
+            ..,
+          ),
+          ..,
+        )) -> [
+          Broadcast(news: PeerNews(
+            unit_id: sender,
+            news: news_as_seen(news:, sender:),
+          )),
+        ]
+        OwnEffect(step.Tell(
+          request: client_connection.TellSnapshot(
+            viewer: ConnectionId(to),
+            burst:,
+            ..,
+          ),
+          ..,
         )) ->
-          Ok(News(
-            to:,
-            news: PeerNews(unit_id: sender, news: news_as_seen(news:, sender:)),
-          ))
+          list.map(burst, fn(item) {
+            Snapshot(
+              to:,
+              news: PeerNews(
+                unit_id: sender,
+                news: news_as_seen(news: item.news, sender:),
+              ),
+            )
+          })
         OwnEffect(step.Tell(
           to: step.Connection(ConnectionId(to)),
           request: client_connection.TellPlayer(tell:, ..),
-        )) -> Ok(Change(to:, change: tell))
-        _ -> Error(Nil)
+        )) -> [Change(to:, change: tell)]
+        _ -> []
       }
     })
   })
 }
 
-/// What the ally's connection `ally` tells its viewers when the caster's connection tells it
-/// `change`, and the connection after it.
+/// What the ally's connection `ally` tells the map to relay when the caster's connection
+/// tells it `change`, and the connection after it.
 fn ally_taking(
   ally ally: game_connection.State,
   change change: client_connection.PlayerTell,
-) -> #(game_connection.State, List(#(Int, unit_news.PeerNews))) {
+) -> #(game_connection.State, List(unit_news.PeerNews)) {
   let #(ally, taken) =
     connection_support.feed(
       state: ally,
@@ -182,31 +206,60 @@ fn ally_taking(
     ally,
     list.filter_map(told_in(steps: [taken], sender: ally_unit), fn(told) {
       case told {
-        News(to:, news:) -> Ok(#(to, news))
-        Change(..) -> Error(Nil)
+        Broadcast(news:) -> Ok(news)
+        Snapshot(..) | Change(..) -> Error(Nil)
       }
     }),
   )
 }
 
-/// Everything the caster's steps led to, in the order it was told: the caster's news to the
-/// connections, and, after each change it told the ally's connection `ally`, what that
-/// connection told its own viewers.
+/// Everything the caster's steps led to, in the order the map relays it: the caster's news to
+/// the viewers whose sight of it relays at that point (the early viewer from the start, the
+/// late one from its snapshot), and, after each change it told the ally's connection `ally`,
+/// what that connection told the map for each of its viewers.
 fn deliveries(
   steps steps: List(ConnectionStep(Request)),
   ally ally: game_connection.State,
 ) -> List(#(Int, unit_news.PeerNews)) {
-  list.fold(told_in(steps:, sender: caster_unit), #(ally, []), fn(so_far, told) {
-    let #(ally, delivered) = so_far
-    case told {
-      News(to:, news:) -> #(ally, list.append(delivered, [#(to, news)]))
-      Change(to:, change:) if to == ally_connection -> {
-        let #(ally, from_the_ally) = ally_taking(ally:, change:)
-        #(ally, list.append(delivered, from_the_ally))
+  list.fold(
+    told_in(steps:, sender: caster_unit),
+    #(ally, [], [early_viewer]),
+    fn(so_far, told) {
+      let #(ally, delivered, relaying) = so_far
+      case told {
+        Broadcast(news:) -> #(
+          ally,
+          list.append(
+            delivered,
+            list.map(relaying, fn(viewer) { #(viewer, news) }),
+          ),
+          relaying,
+        )
+        Snapshot(to:, news:) -> #(
+          ally,
+          list.append(delivered, [#(to, news)]),
+          case list.contains(relaying, to) {
+            True -> relaying
+            False -> list.append(relaying, [to])
+          },
+        )
+        Change(to:, change:) if to == ally_connection -> {
+          let #(ally, from_the_ally) = ally_taking(ally:, change:)
+          #(
+            ally,
+            list.append(
+              delivered,
+              list.flat_map(from_the_ally, fn(news) {
+                [#(early_viewer, news), #(late_viewer, news)]
+              }),
+            ),
+            relaying,
+          )
+        }
+        Change(..) -> so_far
       }
-      Change(..) -> so_far
-    }
-  }).1
+    },
+  ).1
 }
 
 /// The cast frames a viewer connection is written for the news told it, in order, after it
@@ -290,7 +343,7 @@ fn seen_after_the_go_by(
 /// written the caster's frames, and one that came into its sight after the go and holds the
 /// cast from the ally is written the ally's start once and its end, and none of the caster's
 /// restriction news for a state it was never written.
-pub fn the_viewers_decisions_give_the_frames_the_audience_gave_for_a_go_a_restriction_and_an_ally_start_test() -> Nil {
+pub fn the_viewers_decisions_give_the_frames_the_caster_wrote_for_a_go_a_restriction_and_an_ally_start_test() -> Nil {
   // deadline: measured under 1 s here with the client's tables read once (about 3 s cold), 30 s for a loaded machine
   use <- owned_test.run(30_000)
   use <- unitest.tag("real_tables")

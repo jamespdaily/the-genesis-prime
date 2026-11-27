@@ -229,7 +229,7 @@ pub fn a_unit_that_leaves_and_returns_is_shown_in_its_new_generation_and_a_move_
 const armor_frames = [0x07FF, 0x07F4, 0x07FF, 0x07F4]
 
 /// Spell4 32823, Phantasmal Armor, is an Esper's at level 6 by SpellLevel row 773, which
-/// the fixture lacks (`game_connection_sight_audience_test` adds it the same way).
+/// the fixture lacks (`game_connection_cast_viewers_test` adds it the same way).
 fn with_the_armor(body body: fn(table_store.Tables) -> Nil) -> Nil {
   fixture_tables.added(
     table: "SpellLevel",

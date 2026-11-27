@@ -35,7 +35,7 @@ import genesis_prime/game/proc
 import genesis_prime/game/shown
 import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{CastStarted, PeerNews}
+import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/game/unit_properties.{Source}
 import genesis_prime/game/world_entry
 import genesis_prime/message/spell_finished
@@ -114,14 +114,14 @@ fn property_values(taken taken: ConnectionStep(Request)) -> List(#(Int, Int)) {
   |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
 }
 
-/// How many times a step tells viewer 2 the start of the cast `start` names.
+/// How many times a step tells the map, for it to relay to the viewers, the start of the cast
+/// `start` names.
 fn told_of(
   taken taken: ConnectionStep(Request),
   start start: spell_started.SpellStarted,
 ) -> Int {
-  list.count(connection_support.peer_tells(taken), fn(tell) {
-    let PeerNews(news:, ..) = tell.1
-    tell.0 == 2 && news == CastStarted(start:)
+  list.count(connection_support.news_broadcast(taken), fn(news) {
+    news == CastStarted(start:)
   })
 }
 
@@ -209,7 +209,7 @@ pub fn a_stalker_pressing_stealth_twice_gets_the_procs_casts_and_empower_for_3_s
       start: start_of(taken: leaving, spell4_id: 79_932),
     )
     == 1
-    as "a second player in sight is told the three procs' casts"
+    as "the map is told the three procs' casts, once each, to relay to a second player in sight"
   // 3 s later the modifiers end and Empower's cast ends.
   let #(_, ended) =
     list.fold(cast_timers(taken: leaving), #(state, []), fn(so_far, timer) {

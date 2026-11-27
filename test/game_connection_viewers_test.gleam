@@ -84,7 +84,6 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
 import genesis_prime/table/id.{ClassId, Spell4EffectsId, Spell4Id}
-import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_path
@@ -2447,14 +2446,7 @@ type Move {
 fn discharge_told_to_a_viewer(
   moves moves: List(Move),
 ) -> #(List(spell_started.SpellStarted), List(unit_news.News)) {
-  discharge_told_on(tables: character_tables.shared(), moves:)
-}
-
-/// `discharge_told_to_a_viewer` on these tables.
-fn discharge_told_on(
-  tables tables: store_tables.Tables,
-  moves moves: List(Move),
-) -> #(List(spell_started.SpellStarted), List(unit_news.News)) {
+  let tables = character_tables.shared()
   let #(state, _, bag_index) =
     game_connection_support.entered_with_server_proxies(
       class_id: 4,
@@ -2752,15 +2744,13 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
   )
 }
 
-/// `opcode.0x262.casts` and `cast.target_node_end`: a viewer is told the later news of the
-/// casts its create listed and of no other. The map's second join of a connection sends each
-/// player it sees a second `SeenBy`, and a viewer that already shows the player drops the
-/// second create, so the second `SeenBy` lists it nothing and joins it to no cast. Discharge's
-/// Power Charge (Spell4 42569) is given a cast time of 1000 ms, so that this child cast of
-/// the first go (410 ms in) waits 1000 ms before its own first go makes its node: a viewer that
-/// comes at 1500 ms is not listed it, and one that comes again at 2600 ms, after the node, is
-/// still not told its end.
-pub fn a_second_join_of_a_viewer_joins_it_to_no_cast_it_was_not_listed_test() -> Nil {
+/// `opcode.0x262.casts` and `cast.target_node_end`: the casts a viewer's ledger holds are those
+/// its create lists, and the map relays it the news of every cast, so what the create lists
+/// decides which news the viewer writes a frame for. Discharge's Power Charge (Spell4 42569)
+/// is given a cast time of 1000 ms, so that this child cast of the first go (410 ms in) waits
+/// 1000 ms before its own first go makes its node: a create at 1500 ms does not list it, and
+/// a create at 2600 ms, after the node, does.
+pub fn a_create_lists_only_the_casts_that_hold_a_node_when_it_is_built_test() -> Nil {
   use <- owned_test.run(60_000)
   use tables <- fixture_tables.changed(table: "Spell4", id: 42_569, with: [
     #("castTime", planted_table.Integer(1000)),
@@ -2768,24 +2758,54 @@ pub fn a_second_join_of_a_viewer_joins_it_to_no_cast_it_was_not_listed_test() ->
   list.each(
     [
       #(
-        "a viewer that comes while the Power Charge waits for its first go is not listed it, so it is told nothing of it",
-        [Comes(1500)],
+        "a viewer that comes while the Power Charge waits for its first go is listed Discharge, the current cast, and not the Power Charge: it holds no node yet",
+        1500,
+        True,
+        False,
       ),
-      #("and a second join after the node does not add the viewer to the cast", [
-        Comes(1500),
-        Comes(2600),
-      ]),
+      #(
+        "a viewer that comes after the node is listed the Power Charge",
+        2600,
+        False,
+        True,
+      ),
     ],
     fn(row) {
-      let #(name, moves) = row
-      let #(started, told) = discharge_told_on(tables:, moves:)
+      let #(name, at_ms, lists_discharge, lists_power_charge) = row
+      let #(state, _, bag_index) =
+        game_connection_support.entered_with_server_proxies(
+          class_id: 4,
+          ability: discharge_base,
+          proxies: server_proxy_support.none(),
+          tables:,
+        )
+      let #(state, steps) =
+        game_connection_support.pressed_until(
+          state: game_connection_support.watched_by(state:, viewers: [2]),
+          bag_index:,
+          client_cast_id: 1,
+          ms: 1000,
+          until_ms: at_ms,
+        )
+      let started =
+        list.flat_map(steps, fn(taken) {
+          game_connection_support.cast_starts(game_connection_support.news_told(
+            taken:,
+            viewer: 2,
+          ))
+        })
       let assert [discharge, ..] = started
       let assert Ok(power_charge) =
         list.find(started, fn(start) { start.spell4_id == 42_569 })
         as "the first go starts a Power Charge"
-      assert list.contains(told, CastFinished(cast_id: discharge.cast_id))
-        as "the viewer was listed Discharge, the current cast, at its first join"
-      assert !told_of(told:, cast_id: power_charge.cast_id) as name
+      let listed =
+        list.map(
+          game_connection_support.created_at(state:, viewer: 3, ms: at_ms).tail.casts,
+          fn(cast) { cast.cast_id },
+        )
+      assert list.contains(listed, discharge.cast_id) == lists_discharge as name
+      assert list.contains(listed, power_charge.cast_id) == lists_power_charge
+        as name
     },
   )
 }

@@ -211,7 +211,7 @@ fn bits_of(x x: Float, y y: Float, z z: Float) -> UnitPositionCommand {
 fn told_the_map(
   steps steps: List(ConnectionStep(Request)),
 ) -> List(step.Effect(step.ConnectionEffect(Request))) {
-  list.flat_map(steps, connection_support.told_the_map)
+  list.flat_map(steps, connection_support.told_the_map_decisions)
 }
 
 fn echo_message(echo_value echo_value: Int) -> BitArray {
