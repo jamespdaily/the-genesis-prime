@@ -81,10 +81,10 @@ pub fn handle(frame frame: Frame) -> Handled {
 
 /// The whole bare frame of the pong that answers a ping: the same number.
 fn pong_of(received: ping.Ping) -> BitArray {
-  let assert Ok(body) =
-    pong.encode(Pong(sequence_number: received.sequence_number))
-    as "a ping's number is 0 to 19, which fits the pong's 8 bits"
-  let assert Ok(bytes) = frame.encode(pong.message_id, body)
-    as "a pong is 7 bytes, far below the size limit"
-  bytes
+  let body =
+    bit_stream.must(
+      Pong(sequence_number: received.sequence_number),
+      pong.encode,
+    )
+  frame.must_encode(message_id: pong.message_id, body:)
 }
