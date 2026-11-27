@@ -215,24 +215,13 @@ pub fn with_integer_stat(
   stat_id stat_id: Int,
   value value: Int,
 ) -> UnitCreatePlayer {
-  let stat = unit_fields.integer_stat(stat_id:, value:)
-  let stats = case
-    list.any(record.tail.stats, fn(held) { held.stat_id == stat_id })
-  {
-    True ->
-      list.map(record.tail.stats, fn(held) {
-        case held.stat_id == stat_id {
-          True -> stat
-          False -> held
-        }
-      })
-    False -> {
-      let #(before, after) =
-        list.split_while(record.tail.stats, fn(held) { held.stat_id < stat_id })
-      list.flatten([before, [stat], after])
-    }
-  }
-  UnitCreatePlayer(..record, tail: UnitCreateTail(..record.tail, stats:))
+  UnitCreatePlayer(
+    ..record,
+    tail: unit_fields.with_stat(
+      tail: record.tail,
+      stat: unit_fields.integer_stat(stat_id:, value:),
+    ),
+  )
 }
 
 /// The player's 0x262 record with the gear of its worn items: `item_visuals`, the worn

@@ -59,9 +59,7 @@ import genesis_prime/message/spell_position.{type SpellPosition, SpellPosition}
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_telegraph_position.{SpellTelegraphPosition}
 import genesis_prime/message/start_movement
-import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
-import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_dialog_open.{UnitDialogOpen}
 import genesis_prime/message/unit_movement
 import genesis_prime/message/unit_position_command
@@ -80,8 +78,6 @@ import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/creature_turn
-import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry.{type MapProcess}
 import genesis_prime/world_map/relay
@@ -3718,6 +3714,15 @@ pub fn an_answer_that_reaches_the_creature_after_its_round_closed_changes_nothin
 fn beast_shown_to_a_second_player(
   before before: fn(MapProcess, Pid, Int) -> Nil,
 ) -> UnitCreateCreature {
+  beast_shown_and_followed(before:, after: fn(_) { Nil }).0
+}
+
+/// The 0x262 that player 2 is sent of the one Battle Beast when it arrives after
+/// `before` has run, with what `after` reads of the messages player 2 is sent next.
+fn beast_shown_and_followed(
+  before before: fn(MapProcess, Pid, Int) -> Nil,
+  after after: fn(Subject(Message)) -> a,
+) -> #(UnitCreateCreature, a) {
   let time = driven_time.new()
   let world =
     world_watch_support.one_beast_timed(
@@ -3751,8 +3756,23 @@ fn beast_shown_to_a_second_player(
       what: "the creature's 0x262 for player 2",
       wanted: world_watch_support.appearance,
     )
+  let followed = after(second)
   world_support.stop(world:)
-  shown
+  #(shown, followed)
+}
+
+/// The news of a unit that the connection is sent next, after what it has read.
+fn next_peer_news(received received: Subject(Message)) -> unit_news.News {
+  world_watch_support.next(
+    received:,
+    what: "the news that follows the creature's 0x262",
+    wanted: fn(message) {
+      case message {
+        ForStay(sent: SentByPeer(PeerNews(news:, ..)), ..) -> Ok(news)
+        _ -> Error(Nil)
+      }
+    },
+  )
 }
 
 fn holds_the_sheathed_stat(unit unit: UnitCreateCreature) -> Bool {
@@ -3762,23 +3782,30 @@ fn holds_the_sheathed_stat(unit unit: UnitCreateCreature) -> Bool {
   )
 }
 
-pub fn a_resting_creatures_create_carries_stat_15_and_a_fighting_creatures_carries_none_test() -> Nil {
+pub fn a_resting_creatures_create_carries_stat_15_and_a_fighting_creatures_carries_it_and_a_combat_flag_of_1_test() -> Nil {
   use <- owned_test.run(10_000)
   let resting = beast_shown_to_a_second_player(before: fn(_, _, _) { Nil })
   assert holds_the_sheathed_stat(unit: resting)
     as "unit.weapon_sheathed: a creature at rest is created sheathed, stat 15 in the integer form"
-  let fighting =
-    beast_shown_to_a_second_player(before: fn(run, pid, unit_id) {
-      struck_from(run:, connection: 1, unit_id:, x: 12.0, damage: 1, cast_id: 1)
-      driven_time.settled(pid)
-    })
-  assert !list.any(fighting.tail.stats, fn(stat) { stat.stat_id == 15 })
-    as "a viewer is sent no 0x89a when a creature comes into sight, so one already fighting is created drawn (a new unit starts drawn, 0x140454a1f): no stat 15"
-  assert list.contains(
-    fighting.tail.stats,
-    unit_fields.integer_stat(stat_id: 10, value: 1),
-  )
-    as "and its level is still there: only the sheathed stat is left out"
+  let #(fighting, next) =
+    beast_shown_and_followed(
+      before: fn(run, pid, unit_id) {
+        struck_from(
+          run:,
+          connection: 1,
+          unit_id:,
+          x: 12.0,
+          damage: 1,
+          cast_id: 1,
+        )
+        driven_time.settled(pid)
+      },
+      after: next_peer_news,
+    )
+  assert holds_the_sheathed_stat(unit: fighting)
+    as "every create carries stat 15, so the weapon is sheathed when the fight ends"
+  assert next == unit_news.CombatState(in_combat: True)
+    as "a 0x89a of 1 follows the create of a creature already in combat, which draws the weapon (unit.weapon_sheathed)"
 }
 
 pub fn a_dead_or_returning_creature_is_created_sheathed_test() -> Nil {
@@ -3807,34 +3834,4 @@ pub fn a_dead_or_returning_creature_is_created_sheathed_test() -> Nil {
     })
   assert holds_the_sheathed_stat(unit: dead)
     as "a corpse is out of combat (a death sends 0x89a 0): created sheathed, stat 15"
-}
-
-pub fn a_turret_create_carries_stat_15_like_any_creature_test() -> Nil {
-  use <- owned_test.run(5000)
-  let turret =
-    spawn.Spawn(
-      ..spawn_support.battle_beast(number: 1, x: 0.0),
-      creature_id: Creature2Id(73_494),
-      unit_type: creature_unit_type.Turret,
-    )
-  let unit =
-    creature_unit.create(
-      spawn: turret,
-      unit_id: 0x1001,
-      health: 52,
-      interrupt_armor: option.None,
-      in_combat: False,
-      server_time_estimate_start: 0,
-    )
-  let assert Ok(bytes) =
-    creature_unit.body(unit, unit_type: creature_unit_type.Turret)
-    as "the turret's 0x262 encodes"
-  let assert Ok(decoded) = unit_create_static.decode(bytes)
-    as "the bytes read as a static unit's 0x262"
-  assert decoded.unit_type == static_unit_type.Turret as "type 13"
-  assert list.contains(
-    decoded.tail.stats,
-    unit_fields.integer_stat(stat_id: 15, value: 1),
-  )
-    as "opcode.0x262.simple: the client reads a type 13 unit's stats as a creature's, so the turret is created sheathed"
 }

@@ -222,7 +222,6 @@ pub fn a_players_and_a_creatures_0x262_claim_no_world_object_test() -> Nil {
     )
   let creature =
     creature_unit.create(
-      in_combat: False,
       spawn: spawn_support.battle_beast(number: 1, x: 0.0),
       unit_id: 2,
       health: 52,

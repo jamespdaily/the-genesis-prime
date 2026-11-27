@@ -890,11 +890,11 @@ const combat_and_stat_rows = [
     union: "unit_stat_change",
     refused_from: 32,
     never: [
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15, 16, 18, 19, 23, 24, 25, 27, 28,
-      29, 30, 31,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 16, 18, 19, 23, 24, 25, 27, 28, 29,
+      30, 31,
     ],
-    open: [0, 11, 17, 26],
-    reason: "union-kinds.md: the client reads stats 0 to 31; 24 of the 28 lacking stats are NEVER by 0x938 (stat 15, sheathed, is set by a 0x262 and changed by the key, not by a 0x938), four wait for their systems or for a question",
+    open: [0, 11, 15, 17, 26],
+    reason: "union-kinds.md: the client reads stats 0 to 31; 23 of the 28 lacking stats are NEVER by 0x938, five wait for their systems or for a question (stat 15, sheathed: what the server sends on the toggle key)",
   ),
   TagRow(
     union: "unit_stat_value",

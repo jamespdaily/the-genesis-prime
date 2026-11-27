@@ -34,8 +34,7 @@ import gleam/result
 /// `opcode.0x938.all_stats`), 12 unread_12 (the fact file's
 /// `opcode.0x938.all_stats`), 13 unread_13 (the fact file's
 /// `opcode.0x938.all_stats`), 14 unread_14 (the fact file's
-/// `opcode.0x938.all_stats`), 15 sheathed (the fact file's
-/// `unit.weapon_sheathed`), 16 unread_16 (the fact file's
+/// `opcode.0x938.all_stats`), 16 unread_16 (the fact file's
 /// `opcode.0x938.all_stats`), 18 unread_18 (the fact file's
 /// `opcode.0x938.all_stats`), 19 float_stat_slot_0x68 (the fact file's
 /// `opcode.0x938.all_stats`), 23 float_stat_0x23c (the fact file's
@@ -55,11 +54,14 @@ import gleam/result
 /// the fact file's `opcode.0x938.all_stats`); 11 (effective_level: what builds
 /// it: mentoring, which is not built; the name MentorLevel is a lead from the
 /// earlier server, not the client's) (layout so far in the fact file's
-/// `opcode.0x938.all_stats`); 17 (cluster: what builds it: unit clusters, which
-/// are not built) (layout so far in the fact file's `opcode.0x938.all_stats`);
-/// 26 (integer stored at unit 0x50: what builds it: nothing is known, the
-/// client does not read its meaning) (layout so far in the fact file's
-/// `opcode.0x938.all_stats`).
+/// `opcode.0x938.all_stats`); 15 (sheathed: what the server sends on the toggle
+/// key (0x177): that it echoes the key to other players as stat 15 is a guess;
+/// the client reads it with ApplyUnitStat case 15 (0x140470650)) (layout so far
+/// in the fact file's `unit.weapon_sheathed`); 17 (cluster: what builds it:
+/// unit clusters, which are not built) (layout so far in the fact file's
+/// `opcode.0x938.all_stats`); 26 (integer stored at unit 0x50: what builds it:
+/// nothing is known, the client does not read its meaning) (layout so far in
+/// the fact file's `opcode.0x938.all_stats`).
 pub type UnitStatChange {
   /// Kind 10, read by `unit_stat_level`. The fact file's `opcode.0x938` names
   /// the kind.

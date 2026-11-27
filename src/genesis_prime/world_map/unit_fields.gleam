@@ -25,7 +25,6 @@ import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
 import genesis_prime/message/unit_stat_float.{UnitStatFloat}
 import genesis_prime/message/unit_stat_integer.{UnitStatInteger}
 import genesis_prime/message/unit_stat_value
-import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -94,22 +93,35 @@ pub fn integer_stat(stat_id stat_id: Int, value value: Int) -> UnitStat {
 /// The client starts every unit drawn, and only a non-zero integer in a 0x262's list
 /// sets it sheathed with no animation; a float reads 0 and no stat leaves it drawn
 /// (`unit.weapon_sheathed`, 0x140458302). The client then draws it on a 0x89A of 1
-/// and sheathes it on a 0x89A of 0. A unit already in combat is created without it,
-/// because a viewer is sent no 0x89A when a unit comes into sight.
+/// and sheathes it on a 0x89A of 0, so a unit already in combat when a viewer first
+/// sees it is created with this stat too and is followed by a 0x89A of 1.
 pub fn sheathed() -> UnitStat {
   integer_stat(stat_id: sheathed_stat, value: 1)
 }
 
-/// The tail with the sheathed stat (`sheathed`) in its stat list, in stat id order,
-/// unless the unit is in combat.
-pub fn with_sheathed(
+/// The tail with `stat` in its stat list: in place of the held stat of its id, or, with
+/// none held, before the first stat of a higher id, so the list stays in stat id order.
+pub fn with_stat(
   tail tail: UnitCreateTail,
-  in_combat in_combat: Bool,
+  stat stat: UnitStat,
 ) -> UnitCreateTail {
-  use <- bool.guard(when: in_combat, return: tail)
-  let #(before, after) =
-    list.split_while(tail.stats, fn(held) { held.stat_id < sheathed_stat })
-  UnitCreateTail(..tail, stats: list.flatten([before, [sheathed()], after]))
+  let stats = case
+    list.any(tail.stats, fn(held) { held.stat_id == stat.stat_id })
+  {
+    True ->
+      list.map(tail.stats, fn(held) {
+        case held.stat_id == stat.stat_id {
+          True -> stat
+          False -> held
+        }
+      })
+    False -> {
+      let #(before, after) =
+        list.split_while(tail.stats, fn(held) { held.stat_id < stat.stat_id })
+      list.flatten([before, [stat], after])
+    }
+  }
+  UnitCreateTail(..tail, stats:)
 }
 
 /// The stat that sets resource slot `slot` (0 to 7) of a new unit: stat slot + 2,

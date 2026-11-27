@@ -124,9 +124,10 @@ pub fn combat_log_frame(unit_id unit_id: Int, died died: Bool) -> Frame {
 /// race, class, gender, title and bone values as the player's own 0x262 has
 /// them (the client draws the ghost's face from the bones when the race and
 /// gender have them), the group id, guild name, guild type and guild ids 0 or
-/// empty, and the player's tail with the ghost's position and rotation and no
-/// stat, since the client reads none of a ghost (`0x140096970`,
-/// `0x140096970.ghost_fields`, `opcode.0x262.ghost`).
+/// empty, and the player's tail with the ghost's position and rotation and the
+/// sheathed stat alone, since the create reader is shared by every unit type
+/// (`0x140096970`, `0x140096970.ghost_fields`, `opcode.0x262.ghost`,
+/// `unit.weapon_sheathed`).
 fn ghost_created_frame(
   entered entered: world_entry.Entered,
   place place: Place,

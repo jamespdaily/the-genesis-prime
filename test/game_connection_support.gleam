@@ -2438,7 +2438,6 @@ pub fn beast_news(
       unit_type: NonPlayer,
       unit: creature_unit.with_casts(
         creature_unit.create(
-          in_combat: False,
           spawn: beast,
           unit_id:,
           health: 52,
@@ -2500,7 +2499,6 @@ pub fn creature_appears(
       spawn_id: SpawnId(unit_id),
       unit_type: NonPlayer,
       unit: creature_unit.create(
-        in_combat: False,
         spawn: target,
         unit_id:,
         health: 52,

@@ -60,14 +60,13 @@ const vendor_flag = 4
 
 /// Message 0x262 for the creature at `spawn` as unit `unit_id` with `health` and its
 /// current Interrupt Armor when it has any above 0, stamped with `server_time_estimate_start`, the map's server time
-/// (`map.server_time`). It carries the sheathed stat (`unit_fields.sheathed`) unless the
-/// creature is `in_combat`.
+/// (`map.server_time`). It carries the sheathed stat (`unit_fields.sheathed`), in a fight
+/// as at rest: a viewer's 0x89A of 1 draws the weapon.
 pub fn create(
   spawn spawn: Spawn,
   unit_id unit_id: Int,
   health health: Int,
   interrupt_armor interrupt_armor: Option(Int),
-  in_combat in_combat: Bool,
   server_time_estimate_start server_time_estimate_start: Int,
 ) -> UnitCreateCreature {
   let Creature2Id(creature_id) = spawn.creature_id
@@ -75,8 +74,8 @@ pub fn create(
     unit_id:,
     creature_id:,
     checklist_index: spawn.checklist_index,
-    tail: unit_fields.with_sheathed(
-      in_combat:,
+    tail: unit_fields.with_stat(
+      stat: unit_fields.sheathed(),
       tail: unit_fields.spawned_tail(
         create_flags: case spawn.vendor {
           True -> vendor_flag

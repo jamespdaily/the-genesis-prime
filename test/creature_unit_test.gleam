@@ -17,6 +17,7 @@ import genesis_prime/world_map/creature_unit_type.{NonPlayer, Turret}
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/unit_fields
+import gleam/list
 import gleam/option
 import message_support
 import owned_test
@@ -55,15 +56,27 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       context: spawn_support.loaded_beast().context,
       checklist_index: 0,
     )
-  // The vector holds no stat 15, which a creature in combat is created without.
-  assert unit_create_creature.encode(creature_unit.create(
-      in_combat: True,
+  // The vector holds no stat 15, which every creature the server creates carries
+  // (`unit.weapon_sheathed`), so the vector is compared with the create less that stat.
+  let created =
+    creature_unit.create(
       spawn: beast,
       unit_id: 0x1001,
       health: 52,
       interrupt_armor: option.None,
       server_time_estimate_start: 0,
-    ))
+    )
+  assert unit_create_creature.encode(
+      UnitCreateCreature(
+        ..created,
+        tail: UnitCreateTail(
+          ..created.tail,
+          stats: list.filter(created.tail.stats, fn(stat) {
+            stat.stat_id != unit_fields.sheathed_stat
+          }),
+        ),
+      ),
+    )
     == Ok(message_support.hex(
       "01 10 00 00 00 be 47 00 00 02 40 03 00 00 a0 08 00 00 00 00 00 00 00 10 02 00 70 60 18 00 5a 8b 18 00 d8 74 88 03 00 00 fe 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 10 5a 84 16 00 00 00 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 00 00 08 00 00 00 00 00 00 00 a0 f8 0c 00 00",
     ))
@@ -80,7 +93,6 @@ pub fn a_turret_creature_is_created_as_unit_type_13_test() -> Nil {
     Spawn(..beast, creature_id: Creature2Id(73_494), unit_type: Turret)
   let unit =
     creature_unit.create(
-      in_combat: False,
       spawn: sim_turret,
       unit_id: 0x1001,
       health: 52,
@@ -103,6 +115,33 @@ pub fn a_turret_creature_is_created_as_unit_type_13_test() -> Nil {
     as "a creature that is no turret's is of type 0 as before"
 }
 
+pub fn a_turret_create_carries_stat_15_like_any_creature_test() -> Nil {
+  use <- owned_test.run(5000)
+  let sim_turret =
+    Spawn(
+      ..spawn_support.battle_beast(number: 1, x: 0.0),
+      creature_id: Creature2Id(73_494),
+      unit_type: Turret,
+    )
+  let unit =
+    creature_unit.create(
+      spawn: sim_turret,
+      unit_id: 0x1001,
+      health: 52,
+      interrupt_armor: option.None,
+      server_time_estimate_start: 0,
+    )
+  let assert Ok(bytes) = creature_unit.body(unit, unit_type: Turret)
+    as "the turret's 0x262 encodes"
+  let assert Ok(decoded) = unit_create_static.decode(bytes)
+    as "the bytes read as a static unit's 0x262"
+  assert list.contains(
+    decoded.tail.stats,
+    unit_fields.integer_stat(stat_id: 15, value: 1),
+  )
+    as "opcode.0x262.simple: the client reads a type 13 unit's stats as a creature's, so the turret is created sheathed"
+}
+
 pub fn a_recorded_health_is_sent_as_stat_0_and_as_base_health_test() -> Nil {
   use <- owned_test.run(5000)
   // `opcode.0x262.creature`: the property list sets property 7, which
@@ -118,7 +157,6 @@ pub fn a_recorded_health_is_sent_as_stat_0_and_as_base_health_test() -> Nil {
     )
   let unit =
     creature_unit.create(
-      in_combat: False,
       spawn: beast,
       unit_id: 0x1001,
       health: 300,
@@ -144,7 +182,6 @@ pub fn a_creatures_current_armor_is_stat_21_of_its_0x262_and_no_armor_adds_no_st
   let beast = spawn_support.battle_beast(number: 1, x: 0.0)
   let create = fn(armor) {
     creature_unit.create(
-      in_combat: False,
       spawn: beast,
       unit_id: 0x1001,
       health: 52,
@@ -173,7 +210,6 @@ pub fn a_vendor_is_created_with_create_flag_4_test() -> Nil {
   let beast = spawn_support.battle_beast(number: 1, x: 0.0)
   let created = fn(spawn) {
     creature_unit.create(
-      in_combat: False,
       spawn:,
       unit_id: 0x1001,
       health: 52,

@@ -808,7 +808,6 @@ fn player_created(unit_id unit_id: Int) -> Frame {
 fn creature_created(unit_id unit_id: Int) -> Frame {
   let assert Ok(body) =
     unit_create_creature.encode(creature_unit.create(
-      in_combat: False,
       spawn: legal_order_support.the_beast(),
       unit_id:,
       health: 52,
