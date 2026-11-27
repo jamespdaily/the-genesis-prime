@@ -465,7 +465,7 @@ pub fn a_crate_of_scattered_supplies_counts_once_and_vanishes_for_everyone_test(
   // objective is done (`QuestObjective.type.32.repeat_use`); the server counts a crate
   // once and takes it out of sight of everyone, so the client is sent 0x361 once and
   // 0x355 to each viewer (opcode.0x361, opcode.0x355; a used quest object vanishing for
-  // everyone is Jim's decision of 2026-11-16).
+  // everyone is the server's choice).
   let time = driven_time.new()
   let started =
     start_with_world_data_on(
@@ -732,7 +732,7 @@ pub fn a_mine_cast_counts_the_exile_objective_test() -> Nil {
   // value 1 or on quest 10524 value 1). Objective 21287 is index 1 of quest 10518
   // (type 5, count 1, flags 3). The client sends nothing at the go, and the server
   // tells it the progress (opcode.0x361: the quest, the objective, the value 1). The
-  // used mine goes out of sight, as any used quest object does (Jim, 2026-11-16): a
+  // used mine goes out of sight, as any used quest object does (the server's choice): a
   // 0x355 for its unit follows (opcode.0x355).
   let #(started, game, mine, have, went, _) = exile_whose_mine_cast_went()
   assert list.filter(went, fn(frame) { frame.message_id == 0x0361 })

@@ -1,7 +1,7 @@
 //// The import of the world database's spawn file (`genesis_prime/import_world_data`)
 //// into the spawn table. Expected values come from these places.
 //// - The planted file (`test/fixture/world_data/spawn.tsv`): the header and rows
-////   29113 to 29139 of Jim's world database, 27 Virtual Battle Beasts of World
+////   29113 to 29139 of the world database, 27 Virtual Battle Beasts of World
 ////   3460 (Creature2 73464, faction 1441, display 26565), none with stats.
 //// - The design of the world spawns (the Design artifact of issue 375, section 1):
 ////   an import upserts on the row id in the file, so a spawn keeps its id when its

@@ -95,7 +95,7 @@
 //// - **The zone the client reports** (0xF2 once, 0x63A on each change) is the most
 ////   specific WorldZone the terrain names, never a parent; the server rolls it up
 ////   to its top zone (`opcode.0xf2`, `opcode.0x63a`, `0x140403670`,
-////   `chat.zone_reach`: Jim, 2026-11-03). Zone 0 means no zone: no group, 0x1da
+////   `chat.zone_reach`, the server's choice). Zone 0 means no zone: no group, 0x1da
 ////   with 0 (`0x14036d040`, `0x140403670`). A zone with no row is
 ////   no zone either, with a warning once for each such zone on a connection: the
 ////   client accepts it, since 0x1da names the channel with an empty name when
@@ -108,14 +108,14 @@
 ////   (`opcode.0x1c2`, `opcode.0x1c8`); a whisper's 0x1c2 names the target.
 //// - **The viewers are the players the speaker sees** (sight, 1024 units): the
 ////   client holds no say range and shows a bubble only over a unit it holds
-////   (`chat.range`; the coordinator, 2026-11-03). Yell and Emote share it (Jim,
-////   2026-11-03).
+////   (`chat.range`, the server's choice). Yell and Emote share it (the server's
+////   choice).
 //// - **0x1c8's fields**: channel type and id as the line's; bGM, bSelf,
 ////   bAutoResponse, presence, premium tier and the unread 16-bit value 0; the
 ////   speaker's realm and character id and name, an empty realm name (the same
 ////   realm); bCrossFaction 1 only when the speaker's and the reader's
 ////   `faction_id` differ, on every channel; the speaker's unit id
-////   (`opcode.0x1c8`, `chat.cross_faction`: Jim, 2026-11-03).
+////   (`opcode.0x1c8`, `chat.cross_faction`, the server's choice).
 //// - **A line has at most 501 UTF-16 units**: a link or waypoint at 498 units adds
 ////   three characters in the same pass as the cut (`chat.sent_text_length`). A
 ////   line with more than 31 formats misframes the client's own message, which no
@@ -180,7 +180,7 @@
 //// | A channel the player does not hold (a wrong id, Zone before its 0x1bc, Guild) | 0x1d3 result 1 (DoesntExist) | `0x140401cb0`, `ChatChannel.flags` |
 //// | A row without flag 4, or type 6 or 34 in a 0x1c3 | 0x1d3 result 3 (NoPermissions) | `ChatChannel.flags` |
 //// | Party (7): the client holds it, but no group exists | 0x1d3 result 8 (NotInGroup) | `lua.ChatSystemLib.ChatChannelResult`; server choice |
-//// | Support (19), Instance (32): the client holds them, the server builds none | 0x1d3 result 3, and a warning naming the channel once per connection | Jim, 2026-11-03 |
+//// | Support (19), Instance (32): the client holds them, the server builds none | 0x1d3 result 3, and a warning naming the channel once per connection | the server's choice |
 //// | Account whisper (bit 1) | 0x1d9 with bit 1 | `opcode.0x1d4` |
 //// | A whisper with an empty text | 0x1d9 when the target is not found; otherwise no answer | `0x140405cb0` |
 ////

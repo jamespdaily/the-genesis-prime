@@ -342,7 +342,7 @@ pub fn a_checklist_target_of_a_done_objective_is_not_used_test() -> Nil {
 pub fn a_use_that_sets_a_new_type_14_bit_releases_the_unit_test() -> Nil {
   use <- owned_test.run(60_000)
   // The unit goes for everyone when its use sets a bit the objective did not hold, as any
-  // used quest object does (Jim, 2026-11-16); a unit whose bit is set counts for nothing
+  // used quest object does (the server's choice); a unit whose bit is set counts for nothing
   // (`0x140611680`) and so releases nothing.
   let tables = character_tables.shared()
   let first =

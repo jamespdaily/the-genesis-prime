@@ -709,7 +709,7 @@ pub fn the_comparison_with_the_old_rule_fails_on_a_planted_difference_test() -> 
   assert differs as "a blow of 1 gives a share of 0.625: rounded 1, truncated 0"
 }
 
-// Damage taken. Jim's decision of 2026-11-08 on #464 fixes the rule: after mitigation
+// Damage taken. The server's choice fixes the rule: after mitigation
 // and crit and before the absorbs and the shield, a blow of damage type t (1 to 3) is
 // amount x DamageTakenMultiplier (159 + t - 1) + DamageTakenOffset (150 + t - 1), never
 // below 0; a blow of any other type is untouched (`UnitProperty2.damage_heal_multipliers`

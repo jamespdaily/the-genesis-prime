@@ -1,0 +1,31 @@
+dev/card.sh "Waiting on Jim") echo eae5e8ae ;;
+dev/card.sh # STATUS is one of: "To do", "In progress", "Waiting on Jim", "Done".
+dev/client_data.sh #   dev/client_data.sh publish          Jim's command, run once at his terminal, and again
+dev/client_data.sh fail "the client data holds other client indexes than this commit expects (${stale[*]:-none listed}): Jim runs 'dev/client_data.sh publish' at his terminal to pack it again"
+dev/genesis_prime/dashboard/access.gleam ////   a page of another site in Jim's browser cannot open the socket.
+dev/step_measure.py """Whether a line is a message Jim typed, not a tool result or a notice."""
+dev/step_measure.py capped at five minutes, and leave out the wait for Jim's next message. Codex runs in
+dev/where_it_stands.py ("Waiting on Jim", issue_lines(open_items, "Waiting on Jim")),
+dev/where_it_stands.py earlier of that window's start and 24 hours ago), then the milestone's open issues on the board (project 2) that are in progress, waiting on Jim. The next-in-order list (the milestone's to-do issues, those with no open blocker
+src/genesis_prime/game/cast/control.gleam ////   stack at the stack's cap (Jim's decision, `Spell4StackGroup.stackCap`). A cast
+src/genesis_prime/game/cast/proc.gleam /// (Jim's decision, `lasting.pushed_off`); a unit the cast holds a node on already is a
+src/genesis_prime/game/connection/casting.gleam // The map keeps a stealthed player out of every creature's ring: Jim's
+src/genesis_prime/world_map/map.gleam /// creature's ring, by Jim's decision, a server choice: a creature does not aggro a
+test/bot_chat_test.gleam HeardLine(channel_type: 4, channel_id: 0, sender: "Jim Dee", text: "a")
+test/bot_chat_test.gleam sender: "Jim Dee",
+test/cast_lasting_test.gleam //// - Jim's decision on stacking (`Spell4StackGroup.stackCap` is the cap) for what a cast at the cap
+test/cast_surge_test.gleam ////   24 and 175 at 0), paid at the press that opens the charge (Jim, 2026-11-15).
+test/cast_surge_test.gleam as "the opening press pays the 25 (Jim, 2026-11-15)"
+test/cast_volatility_test.gleam //// - Jim's decisions of 2026-11-06 (issue 419): one +15 for each Pulse Blast cast, at its
+test/cast_volatility_test.gleam as "an in-combat cast that strikes none still gives 15 (server choice, Jim 2026-11-06)"
+test/experience_test.gleam //// - The amount is the server's choice (Jim, 2026-11-08): `round(XpPerLevel.
+test/game_connection_chat_test.gleam as "Jim, 2026-11-03: the channel is named in a warning"
+test/game_connection_objective_test.gleam // Jim, 2026-11-25: an object a quest counted counts once for the objective, also after a
+test/game_connection_objective_test.gleam // choice (Jim, 2026-11-16: a used quest object vanishes for everyone). Creature2 12919's
+test/game_connection_objective_test.gleam // ids in the term). Jim, 2026-11-25: an object a quest counted counts once for the
+test/game_connection_stealth_test.gleam as "the toggle press that enters stealth tells the run of the player's map once: Jim's decision on issue 483, so no creature aggroes a stealthed player it is not fighting"
+test/game_connection_volatility_test.gleam //// - Jim's decisions of 2026-11-06 (issue 419): the opener gives 15 too, and Volatility
+test/game_connection_volatility_test.gleam as "the opener gives 15 (Jim's decision): 42148's +15 of slot 1 (Spell4Effects 95337, behind 903) comes with the damage spell's last go, when the first strike's threat has put the player in combat, one 0x935 of stat 3 to the player's own client"
+test/game_connection_volatility_test.gleam reason: "two in-combat blasts give 30 (Spell4Effects 95337, +15 each); Electrocute (Spell4 41276: 8 a pulse) pays at three gos, 30 - 8 each, and the 6 left cannot pay the fourth, which ends the channel (Jim's decision; opcode.0x935: one 0x935 of slot 1, stat 3, each)",
+test/message_vector_test.gleam account_name: "Jim",
+test/sitting_bot_test.gleam //// which is the database Jim plays on: a character of another account is

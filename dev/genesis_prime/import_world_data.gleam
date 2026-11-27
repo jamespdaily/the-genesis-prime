@@ -1,4 +1,4 @@
-//// Imports Jim's world database into the content tables (genesis_prime/content):
+//// Imports the world database into the content tables (genesis_prime/content):
 //// one importer for each file, all sharing one reader and one writer. The spawn
 //// importer reads `spawn.tsv`.
 ////

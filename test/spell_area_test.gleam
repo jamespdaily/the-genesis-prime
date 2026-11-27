@@ -252,7 +252,7 @@ pub fn a_spell_with_a_telegraph_is_struck_by_its_hit_shapes_test() -> Nil {
   let kicked = client_kick()
   assert spell_area.inside(spell: kicked, phase: 0)
     == Some(InsideShapes(shapes_at_go_0(spell: kicked)))
-    as "Jim's choice: inside the telegraph, Kick is 7 m and 100 degrees (Spell4.58591.area), capped by the row's range"
+    as "the server's choice: inside the telegraph, Kick is 7 m and 100 degrees (Spell4.58591.area), capped by the row's range"
 }
 
 /// A rectangle of a hit row whose shape is 7, placed 1 m ahead (`TelegraphDamage` 2996 to 2998).

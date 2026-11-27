@@ -13,7 +13,7 @@
 ////   (3 gos).
 //// - `Spell4.innateCost0.timing` (`0x1403b3320`): the client checks one pulse's cost
 ////   before it sends a press, reads a slot as a whole number, and never spends: when to pay
-////   is the server's. Jim's decision of 2026-11-17: a channel whose pulse cannot be paid
+////   is the server's. A server choice: a channel whose pulse cannot be paid
 ////   ends.
 //// - `opcode.0x7fe`: the client reads a 0x7fe alone as a complete end of a cast, as it reads
 ////   the end of a cancel; a 0x7f9 would destroy every target node on the client
@@ -301,7 +301,7 @@ pub fn a_channel_whose_go_cannot_be_paid_ends_as_a_cancel_ends_it_test() -> Nil 
       went: 3,
       ended_at: 2000,
       left: 6.0,
-      reason: "Jim's decision: 30 pays three gos (22, 14, 6) and the 6 left cannot pay the fourth, which ends the channel with a 0x7fe (opcode.0x7fe)",
+      reason: "30 pays three gos (22, 14, 6) and the 6 left cannot pay the fourth, which ends the channel with a 0x7fe (opcode.0x7fe)",
     ),
     Ending(
       name: "2.2",
@@ -922,7 +922,7 @@ pub fn a_focus_channel_pays_15_at_each_of_emissions_3_gos_and_ends_when_the_pool
       20.0,
       each(at: [410], pays: focus_points(15)),
       Some(820),
-      "20 pays the first go and the 5 left cannot pay the second: the channel ends as a cancel ends it (Jim's decision, issue 942), the paid go stays paid",
+      "20 pays the first go and the 5 left cannot pay the second: the channel ends as a cancel ends it (the server's choice), the paid go stays paid",
     ),
   ]
   |> list.each(fn(row) {

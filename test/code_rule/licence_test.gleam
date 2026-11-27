@@ -1,5 +1,5 @@
 //// The licence rule. Expected values are the approved test list on the
-//// licence issue, Jim's change to AGPL-3.0 (#306), and these facts:
+//// licence issue (#306), the change to AGPL-3.0, and these facts:
 ////
 //// - The accepted list for AGPL-3.0 is the permissive licences (Apache-2.0,
 ////   MIT, BSD-2-Clause, BSD-3-Clause, ISC) and the copyleft licences the FSF
@@ -13,7 +13,7 @@
 ////   `build/packages/<name>/`.
 //// - A package that declares no licence there passes only when `declared`
 ////   under `[tools.licences]` names it, with an accepted licence and where it
-////   was checked (Jim's yes, on the shell card: Ranch, built with erlang.mk,
+////   was checked (accepted on the licence issue (#306), on the shell card: Ranch, built with erlang.mk,
 ////   states its ISC licence only in its LICENSE file and on Hex).
 
 import code_rule/licence.{NoLicence, Unaccepted}

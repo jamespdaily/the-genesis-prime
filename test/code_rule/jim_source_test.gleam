@@ -112,26 +112,32 @@ pub fn a_keep_list_row_with_no_such_line_is_a_breach_at_its_row_test() -> Nil {
 pub fn the_keep_list_is_sorted_with_one_row_per_line_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  let a = "/// Jim's a."
-  let b = "/// Jim's b."
-  let file = planted.file("src/planted.gleam", [a, b])
+  let first = "/// Jim's a."
+  let second = "/// Jim's b."
+  let file = planted.file("src/planted.gleam", [first, second])
   list.each(
     [
       #(
-        [Kept("src/planted.gleam", a, 1), Kept("src/planted.gleam", b, 2)],
+        [
+          Kept("src/planted.gleam", first, 1),
+          Kept("src/planted.gleam", second, 2),
+        ],
         [],
         "in order",
       ),
       #(
-        [Kept("src/planted.gleam", b, 1), Kept("src/planted.gleam", a, 2)],
+        [
+          Kept("src/planted.gleam", second, 1),
+          Kept("src/planted.gleam", first, 2),
+        ],
         [2],
         "a row out of order",
       ),
       #(
         [
-          Kept("src/planted.gleam", a, 1),
-          Kept("src/planted.gleam", a, 2),
-          Kept("src/planted.gleam", b, 3),
+          Kept("src/planted.gleam", first, 1),
+          Kept("src/planted.gleam", first, 2),
+          Kept("src/planted.gleam", second, 3),
         ],
         [2],
         "a repeated row",

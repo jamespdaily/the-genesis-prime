@@ -1150,7 +1150,7 @@ pub fn a_stealthed_bot_walking_into_a_daguns_ring_gets_no_aggro_and_pressing_ste
       game_client.InCombat(unit_id: own, in_combat: True),
     )
     && game_client.moves_of(events: walked, unit: dagun) == []
-    as "Jim's decision, a server choice: the stealthed bot stands in no ring, so the Dagun sends no 0x908 at all or 0x89a and does not run"
+    as "the server's choice: the stealthed bot stands in no ring, so the Dagun sends no 0x908 at all or 0x89a and does not run"
   driven_time.advance(time:, ms: stealth_recharge_ms)
   game_client.press_ability(
     game:,
@@ -1468,7 +1468,7 @@ fn creature_walks_home(creature creature: process.Pid) -> Bool {
 
 pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_home_and_waking_in_the_ring_is_aggroed_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
-  // Jim's live report: a creature that killed a player kept attacking the body. A
+  // The recorded sitting: a creature that killed a player kept attacking the body. A
   // creature leashes at the death (0x90a 0, 0x89a (C, 0)) and, standing at its spawn, its
   // home timer fires at once, so a body left in the creature's near set was aggroed
   // again in the same instant. A server choice (the Design of issue 496): a dead unit is

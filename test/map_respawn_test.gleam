@@ -12,11 +12,11 @@
 ////   (migration 0010), of a faction the creature is hostile to; the tests' players are
 ////   Dominion, which the Virtual Defense Dagun (Creature2 73465) is hostile to
 ////   (`Creature2.73465`, `0x1403ad540`). Sight is 1024 units.
-//// - Jim's standing decision on races (issue 1410, 7160581745): where a design removes a
+//// - The server's choice on races: where a design removes a
 ////   race the server takes the result the race-free order gives: a player whose death or
 ////   stealth the map took before the next life starts is not aggroed at the respawn, since
 ////   the ring holds no dead and no stealthed player; a player who wakes in a ring is
-////   aggroed on waking in every order (Jim, 7154704030).
+////   aggroed on waking in every order (the server's choice).
 //// - The used-object release time, 30 s (`used_object_release_ms`), which a spawn waits
 ////   instead of its kind's respawn time when a player's use released its creature.
 
@@ -402,11 +402,11 @@ fn ring_and_told(
 
 pub fn a_death_a_stealth_or_a_wake_decides_the_new_lifes_ring_by_whether_the_map_took_it_before_the_start_test() -> Nil {
   use <- owned_test.run(5000)
-  // Race-free results (Design run A, 4.1; Jim's standing decision): a death or a stealth
+  // Race-free results (Design run A, 4.1; the server's choice): a death or a stealth
   // the map took before the next life starts leaves the player out of its ring, where a
   // corpse timer that fired in the creature first aggroed the body or the stealthed
   // player; one taken after the start is the new life's own to handle, as for any creature
-  // that fights. A player who wakes is aggroed on waking in every order (Jim, 7154704030).
+  // that fights. A player who wakes is aggroed on waking in every order (the server's choice).
   // A spawn that is respawning is told nothing: `PlayerDied`, `Withdrew` and `Approached`
   // go to a live creature only.
   list.each(
