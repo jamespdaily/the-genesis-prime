@@ -44,6 +44,9 @@ RUNNABLE = shutil.which("bash") is not None and shutil.which("python3.13") is no
 GH_STUB = """#!/bin/bash
 echo "$*" >> "$PLANT_DIR/calls"
 """ + NEXT_LINE + """case "$1 $2" in
+  "pr view")
+    echo "{\\"mergeable\\":\\"${PLANT_MERGEABLE-MERGEABLE}\\"}"
+    exit 0 ;;
   "pr checks")
     case "$*" in
       *--json*)
@@ -104,8 +107,10 @@ class Fake:
     again when they run out, or `later`'s answer once the clock has reached its seconds; an item
     that is an exception is raised."""
 
-    def __init__(self, answers: list, later: tuple[float, str] | None = None):
+    def __init__(self, answers: list, later: tuple[float, str] | None = None, mergeable: str = "MERGEABLE"):
         self.answers = answers
+        self.mergeable = mergeable
+        self.mergeable_reads = 0
         self.later = later
         self.now = 0
         self.fetches = 0
@@ -117,6 +122,10 @@ class Fake:
     def sleep(self, seconds: float) -> None:
         self.sleeps += 1
         self.now += seconds
+
+    def fetch_mergeable(self) -> str:
+        self.mergeable_reads += 1
+        return json.dumps({"mergeable": self.mergeable})
 
     def fetch(self) -> str:
         if self.fetches > 10 * DEADLINE // POLL:
@@ -131,7 +140,7 @@ class Fake:
 
 
 def run_wait(fake: Fake, **limits) -> tuple[int, str]:
-    return pr_wait.wait(7, fake.fetch, fake.sleep, fake.clock, **limits)
+    return pr_wait.wait(7, fake.fetch, fake.sleep, fake.clock, fake.fetch_mergeable, **limits)
 
 
 class DecideTest(unittest.TestCase):
@@ -198,6 +207,25 @@ class WaitTest(unittest.TestCase):
         status, message = run_wait(late)
         self.assertEqual(status, 0, message)
         self.assertEqual(late.now, 120)
+
+    def test_a_conflicting_pull_request_with_no_check_ends_at_once_naming_the_conflict(self):
+        fake = Fake([NO_ROWS], mergeable="CONFLICTING")
+        status, message = run_wait(fake)
+        self.assertEqual(status, 1, message)
+        self.assertEqual(message, "pr_wait: pull request 7 conflicts with its base and GitHub runs no check on it")
+        self.assertEqual((fake.fetches, fake.sleeps), (1, 0))
+
+    def test_an_unknown_mergeable_keeps_waiting(self):
+        for mergeable in ("UNKNOWN", "MERGEABLE"):
+            with self.subTest(mergeable):
+                late = Fake([NO_ROWS], later=(120, PASSED), mergeable=mergeable)
+                status, message = run_wait(late)
+                self.assertEqual(status, 0, message)
+                self.assertEqual(late.now, 120)
+                self.assertGreater(late.mergeable_reads, 0)
+                status, message = run_wait(Fake([NO_ROWS], mergeable=mergeable))
+                self.assertEqual(status, 1, message)
+                self.assertEqual(message, f"pr_wait: no check on pull request 7 after {NO_CHECK} s")
 
     def test_one_failed_fetch_then_answers_waits_on(self):
         fake = Fake([pr_wait.CallFailed("gh pr checks ended with status 1"), PENDING, PASSED])
