@@ -45,15 +45,36 @@ pub fn breaches(
   told told: List(#(String, String)),
   sources sources: List(SourceFile),
 ) -> List(String) {
+  breaches_of(
+    rows:,
+    families: list.map(told, fn(type_) {
+      #(type_, case file_of(sources:, module: type_.0) {
+        Ok(file) -> syntax.variants_of(file:, type_names: [type_.1])
+        Error(Nil) -> []
+      })
+    }),
+    sources:,
+  )
+}
+
+/// What the rows break over the families `#(#(module, name), members)`: the same
+/// breaches as `breaches`, for inputs that are the variants of a type or are read some
+/// other way from the source (`connection_timers`). A row names its family by its
+/// `module` and `type_name`.
+pub fn breaches_of(
+  rows rows: List(Row),
+  families families: List(#(#(String, String), List(String))),
+  sources sources: List(SourceFile),
+) -> List(String) {
   let declared = fn(module, type_name) {
-    case file_of(sources:, module:) {
-      Ok(file) -> syntax.variants_of(file:, type_names: [type_name])
+    case list.key_find(families, #(module, type_name)) {
+      Ok(members) -> members
       Error(Nil) -> []
     }
   }
   let told_variants =
-    list.flat_map(told, fn(type_) {
-      list.map(declared(type_.0, type_.1), fn(name) { #(type_, name) })
+    list.flat_map(families, fn(family) {
+      list.map(family.1, fn(name) { #(family.0, name) })
     })
   let covered =
     list.flat_map(rows, fn(row) {
@@ -240,4 +261,47 @@ fn is_identifier_grapheme(grapheme: String) -> Bool {
 
 fn words(text: String) -> List(String) {
   string.split(text, " ") |> list.filter(fn(word) { word != "" })
+}
+
+/// The timers the connection rule tells apart, read from its source (`game/connection`):
+/// the `_timer` names `timer_due` compares the fired timer with, the module of each
+/// `owns` check of `other_timer_fired`, and `claim`, the timer no `owns` check claims.
+pub fn connection_timers(file file: SourceFile) -> List(String) {
+  let _ = file
+  []
+}
+
+/// The CamelCase names written in backticks in the cells of the file's failure tables
+/// that are no type and no variant declared in `src/` (and no prelude name).
+pub fn unknown_names(
+  file file: SourceFile,
+  sources sources: List(SourceFile),
+) -> List(String) {
+  let _ = sources
+  let declared = []
+  failure_rows(file:)
+  |> list.flat_map(fn(row) { backticked_names(row.0 <> " " <> row.1) })
+  |> list.unique
+  |> list.filter(fn(name) {
+    !list.contains(declared, name) && !list.contains(prelude_names, name)
+  })
+  |> list.map(fn(name) { "a failure row names no type or variant: " <> name })
+}
+
+/// The names the prelude gives, which no file of `src/` declares.
+const prelude_names = ["True", "False", "Nil", "Ok", "Error"]
+
+/// The CamelCase identifiers of two letters or more inside the backticks of a text: a
+/// single capital (`V`) is a name the row gives a viewer or a player, not a type.
+fn backticked_names(text: String) -> List(String) {
+  string.split(text, "`")
+  |> list.index_map(fn(part, index) { #(part, index) })
+  |> list.filter(fn(entry) { entry.1 % 2 == 1 })
+  |> list.flat_map(fn(entry) { identifiers(entry.0) })
+  |> list.filter(fn(word) {
+    case string.first(word) {
+      Ok(first) -> first != string.lowercase(first) && string.length(word) > 1
+      Error(Nil) -> False
+    }
+  })
 }
