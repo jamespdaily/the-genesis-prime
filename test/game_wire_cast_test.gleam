@@ -3651,10 +3651,12 @@ pub fn a_player_that_arrives_beside_an_ally_after_its_esper_walked_away_shows_th
 /// lists Spell4Effects 62024 on the Medic with the time it has left (`opcode.0x7f4`), the Esper
 /// never created for it (`cast.unknown_caster`); when the test's clock passes the row's 10 000
 /// ms it reads one 0x811 naming the Medic for that cast, and no 0x7fe of it (`opcode.0x811`).
-/// The Medic's frames to the third are one sender's, so the 0x7ff comes before the 0x7f4 and
-/// the Medic's move after the go, and after the end, bounds the read of the third's client;
-/// the Esper's move, from the sender of the went, bounds the Medic's connection having
-/// handled the went. No pong bounds a tell, which comes from another sender than the pong.
+/// The cast's start and go reach the third's connection through the map's relay, from another
+/// sender than the Medic's connection that tells its moves, so a move of the Medic does not
+/// bound them: the third's client is read until it holds the Medic's move and the cast's start
+/// and go, and later until it holds the Medic's move and the 0x811. The Esper's move, from the
+/// sender of the went, bounds the Medic's connection having handled the went. No pong bounds a
+/// tell, which comes from another sender than the pong.
 pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_armor_buff_when_it_lands_and_until_it_ends_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
@@ -3760,10 +3762,6 @@ pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_
       stepped_to(frames, esper, 33.0)
     })
   walk_to(game: second, z: 3.25, clock: 1)
-  let #(third_read, third_have) =
-    game_client.read_until(game: third, have: third_have, found: fn(frames) {
-      stepped_to(frames, medic, 3.25)
-    })
   let pressed_start = fn(frames) {
     list.filter(
       connection_support.decoded(
@@ -3774,6 +3772,12 @@ pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_
       fn(start) { start.cast_id == pressed_id },
     )
   }
+  let #(third_read, third_have) =
+    game_client.read_until(game: third, have: third_have, found: fn(frames) {
+      stepped_to(frames, medic, 3.25)
+      && pressed_start(frames) != []
+      && list.any(gos_in(frames:), fn(go) { go.cast_id == pressed_id })
+    })
   let assert [started_cast] = pressed_start(third_read)
     as "the third's client is told the pressed cast once, by the Medic"
   assert started_cast.caster_unit_id == esper
@@ -3826,7 +3830,7 @@ pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_
   driven_time.advance(time:, ms: 10_000)
   let #(_, _) =
     game_client.read_until(game: second, have: second_have, found: fn(frames) {
-      absorptions_in(frames:, unit: medic) == [0]
+      list.last(absorptions_in(frames:, unit: medic)) == Ok(0)
     })
   walk_to(game: second, z: 3.0, clock: 2)
   let #(until_end, _) =
@@ -3837,6 +3841,10 @@ pub fn a_player_beside_an_ally_who_never_sees_its_esper_is_shown_the_phantasmal_
           _ -> False
         }
       })
+      && list.contains(
+        game_client.targets_removed_in(frames:),
+        #(pressed_id, [medic]),
+      )
     })
   assert list.count(
       game_client.targets_removed_in(frames: until_end),
@@ -3869,6 +3877,23 @@ type RunesRound {
     caster_ended: List(Frame),
     ally_ended: List(Frame),
   )
+}
+
+/// The frames in `read` and those `game` reads on, with the bytes left, until `found` holds of
+/// them all. A frame another connection's tell leads to the player's client through the map
+/// is not ordered against a pong, so a test that waits for one reads for the frame itself.
+fn read_on_until(
+  game game: game_client.Game,
+  have have: BitArray,
+  read read: List(Frame),
+  found found: fn(List(Frame)) -> Bool,
+) -> #(List(Frame), BitArray) {
+  use <- bool.guard(found(read), #(read, have))
+  let #(more, rest) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      found(list.append(read, frames))
+    })
+  #(list.append(read, more), rest)
 }
 
 /// The primary target of each 0x7ff of the child 78708 among `frames`, in the order read.
@@ -3946,6 +3971,19 @@ fn runes_pressed_with_an_ally(
     game_client.read_until_pong(game: first, have: first_have, number: 1)
   let #(ally_read, second_have) =
     game_client.read_until_pong(game: second, have: second_have, number: 1)
+  let #(ally_read, second_have) = case ally_hears {
+    True ->
+      read_on_until(
+        game: second,
+        have: second_have,
+        read: ally_read,
+        found: fn(frames) {
+          list.contains(runes_child_targets(frames:), ally)
+          && absorptions_in(frames:, unit: ally) != []
+        },
+      )
+    False -> #(ally_read, second_have)
+  }
   assert list.contains(runes_child_targets(frames: ally_read), ally)
     == ally_hears
     as "opcode.0x7ff: the Medic's client reads the child cast with itself as its primary target exactly when it stands in the area"
@@ -3973,8 +4011,20 @@ fn runes_pressed_with_an_ally(
   driven_time.advance(time:, ms: 10_000)
   let #(caster_ended, _) =
     game_client.read_until_pong(game: first, have: first_have, number: 2)
-  let #(ally_ended, _) =
+  let #(ally_ended, second_have) =
     game_client.read_until_pong(game: second, have: second_have, number: 2)
+  let #(ally_ended, _) = case ally_hears {
+    True ->
+      read_on_until(
+        game: second,
+        have: second_have,
+        read: ally_ended,
+        found: fn(frames) {
+          list.last(absorptions_in(frames:, unit: ally)) == Ok(0)
+        },
+      )
+    False -> #(ally_ended, second_have)
+  }
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)
@@ -3995,13 +4045,14 @@ fn runes_pressed_with_an_ally(
 /// on the Medic in it, the caster's client reads the child's 0x7ff naming that Medic as its
 /// primary target, the Medic's client reads the absorb of the row 206315 and its end, and the
 /// caster reads its own absorb. The Medic outside the area is started no child, so its client
-/// reads no absorb and no 0x7ff, and the caster reads one child 0x7ff, its own. The caster's
+/// reads no absorb and no 0x7ff naming it, and the caster reads one child 0x7ff, its own. The caster's
 /// frames and the Medic's come from two connections; the test reads the caster's up to its pong
-/// and then the Medic's up to its pong, which relies on one contract of
-/// `game_client.read_until_pong`: what the caster's connection told the Medic's before the
-/// caster's pong is held before the Medic's pong. It holds here because the round closes at
-/// once, the children start inline, the tell to the Medic is sent in the press input, and the
-/// 10 000 ms end goes through `driven_time.advance`, whose barrier runs after each timer.
+/// and the Medic's up to its pong, and a Medic in the area is then read on until its client
+/// holds the child's start and the absorb (and after the end, the absorb's end): the cast's
+/// news reaches the Medic's connection through the map, which no pong orders. A Medic outside
+/// the area has nothing to wait for, so its read stops at the pong, and it reads no absorb and
+/// no child cast on itself (the child on the caster reaches it as a viewer of the caster, when
+/// the map's relay has come).
 pub fn a_spellslinger_pressing_runes_of_protection_gives_the_ally_in_range_the_absorb_and_the_caster_reads_the_child_cast_on_the_ally_on_the_whole_server_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
@@ -4023,8 +4074,8 @@ pub fn a_spellslinger_pressing_runes_of_protection_gives_the_ally_in_range_the_a
     == [far.amount]
     as "the caster reads its own absorb"
   assert absorptions_in(frames: far.ally_ended, unit: far.ally) == []
-    && runes_child_targets(frames: far.ally_ended) == []
-    as "the Medic outside the area reads no absorb and no child"
+    && !list.contains(runes_child_targets(frames: far.ally_ended), far.ally)
+    as "the Medic outside the area reads no absorb and no child cast on itself; the child on the caster may reach it, as a viewer of the caster"
 }
 
 /// What a Medic's press of Barrier, with another Medic standing `metres` metres ahead of it
