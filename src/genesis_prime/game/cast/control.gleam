@@ -1,163 +1,43 @@
 //// The lasting modifiers, restrictions and crowd control a cast starts, and the cooldowns it arms.
+//// Each row of the phase whose gate against the caster passes is listed in the target info of
+//// each unit its targetFlags aim at; a row with a life gives the cast's node there its life.
 ////
-//// - **A go's lasting effects** (genesis_prime/game/lasting): each Fluff (17), Scale (18),
-////   ItemVisualSwap (76), RavelSignal (81) and SpellForceRemove (80) effect of the phase whose gate against the
-////   caster passes is listed in the target info of each unit its targetFlags aim at, with
-////   the effect's delay, a result bit, the instance count 1 and the lifetime 0 the client
-////   works out itself; a unit the round did not strike gets an info of its own
-////   (`opcode.0x7f4.target_info`, `opcode.0x7f4.effect_time`). A Fluff, Scale,
-////   ItemVisualSwap or RavelSignal effect gives the unit a node of the cast that lives as long as its
-////   longest effect, kept on the live cast; a type 80 effect takes the matching nodes of the caster's casts off the
-////   unit, oldest cast first, each written 0x811 (`opcode.0x811`); and a cast that
-////   gives a unit a node it holds none on takes off the caster's oldest casts of its
-////   stack at the stack's cap (`Spell4StackGroup.stackCap`; taking them off is the
-////   server's choice). A cast pushed off a creature while its node holds crowd-control
-////   states ends them there (`creature_controls_ended`), since the client ends a state
-////   only with a 0x880 (`cc_state.end`).
-//// - **A go's property modifiers** (genesis_prime/game/unit_properties): each type 11
-////   and type 145 effect of the phase that has a life (a durationTime, or flags bit 2) and
-////   whose gate against the caster passes is listed on the caster like a Fluff effect, gives the
-////   caster's node its life, and starts at the go plus its delay and ends after its
-////   duration, as `CasterChangeStarts` and `CasterChangeEnds` for the connection to apply to the
-////   player's properties. A modifier ends on a timer of its own and not with the node's
-////   time (a node can outlive it, or end before it when the spell takes the larger of
-////   delay and duration); taking the cast's node off the caster ends its modifiers and
-////   cancels their timers; the caster's death ends every modifier of its casts but the
-////   standing spells', and every one still pending but theirs; a later go of the cast arms each again from that go; the player
-////   leaving ends none, since the connection's properties go with its player. These
-////   are the server's choices: the client works out no property.
-//// - **A go's property modifiers on creatures** (type 11 rows whose targetFlags name a
-////   unit other than the caster, a `StruckChange`; 3, 5 and 7 also change the caster, in
-////   a row of their own, and a unit the flag names twice takes it once): each is aimed
-////   at the creatures the go hit, and at the primary target when the flag's bit 2 names it, in the life and at the
-////   time the go struck them (`HitCreature`), listed on each like a Fluff effect and
-////   giving its node the row's life. The cast owns the time and the creature the values:
-////   the rule tells the creature `TargetChangeStarts` at the go plus the row's delay, in
-////   the go's own step when there is none, and keeps what it started in `on_units`.
-////   It has no end timer of its own: it ends, as `TargetChangeEnds` told once, when the
-////   cast's node on that creature ends by time, is taken off by a type 80 removal or a
-////   push off by the stack rule, when the creature leaves the caster's sight, when the
-////   cast's persistence stops holding, when the caster dies (but for the standing spells'
-////   casts) and when the player leaves; a start still waiting for its delay is cancelled
-////   with it and told nothing. A later go of the cast on the same creature starts it
-////   again from that go. Casters' modifiers on one creature do not stack.
-//// - **A go's changes on another player** (an absorb, an Interrupt Armor row, or a type 11
-////   row aimed at the primary target, that the press named a player in the caster's sight
-////   for, or that a child a Proxy aimed at the primary target started on that player
-////   carries, and a type 11 row aimed at the area (`StruckChange`) for each other player the
-////   round hit that the caster sees, the allies a friendly area selected, all with no delay and
-////   a lifetime): each is listed on that player like a Fluff
-////   effect, gives its node the row's
-////   life, and is told to the player's connection at the go as `OtherPlayerChangeStarts`
-////   (genesis_prime/game/held_changes `PlayerChangeStarts`; an absorb's pool is worked out
-////   at the go from the caster as for the caster's own). The player applies it as its own
-////   cast's change of that kind is applied. The cast keeps it in `on_units` with the address
-////   it told, and tells it ended, as `OtherPlayerChangeEnds`, once, on every path the
-////   creature's modifier ends by (`ended_where`), and also on a timer of its own after the
-////   row's duration (`PlayerChangeEnd`), since a spell whose Spell4 propertyFlags hold
-////   0x100 outlives its caster's sight: the node is dropped when the caster loses sight of
-////   the player, the change stays, and its timer ends it, told from the go's address. A
-////   later cast of the same stack group that no node of an earlier cast holds a change for
-////   ends that cast's change first (`kept_pushed_off`). After its changes the go tells the
-////   player's connection one `OtherPlayerCastWent` for the cast (`modifiers_armed`), so the
-////   player starts the cast for its viewers that hold it in no state. A Proc row the player holds is told the same way, as a change that
-////   applies nothing, and the caster keeps its entry for that player until the change ends.
-//// - **A press at oneself** puts a type 11 row aimed at the primary target on the caster
-////   (`caster_rows`), a change of its own ended as any caster modifier is: Phantasmal Armor's
-////   five modifier rows (Spell4Effects 130474 and 203798 to 203801). The same row of a child
-////   a Proxy started on the caster or on a struck unit has no press target and is not put on
-////   the caster.
-//// - **A go's throws of creatures** (type 3 rows whose targetFlags name a unit other than
-////   the caster, a `StruckMove`, genesis_prime/game/forced_move; 3, 5 and 7 also move
-////   the caster): each is aimed at the creatures the go
-////   hit, in the life and at the time the go struck them. The rule tells
-////   `ForcedMoveStarts` at the go's own step when the row has no delay, and else arms a
-////   `ForcedMoveStart` timer for the go plus the row's delay; the end of the cast's node
-////   on that creature cancels a timer still waiting (`ended_where`), as it cancels a
-////   modifier's start. The connection carries `ForcedMoveStarts` out
-////   (genesis_prime/game/connection/casting): it draws the throw's two fractions from its
-////   seed then, so a delayed throw draws at its own time, and tells the creature. A
-////   connection that is gone has no timers, so nothing is thrown.
-//// - **A go's despawns of creatures** (type 97 rows whose targetFlags name a unit other than
-////   the caster, a `Despawn`; `Spell4Effects.effectType.97`): each is aimed at the creatures
-////   the go hit, in the life and at the time the go struck them. The rule tells each
-////   `CreatureDespawns` in the go's own step, with the row's delay and the go's time, and
-////   arms no timer: the creature owns the delay (`despawns_told`).
-//// - **A go's unit states on creatures** (type 15 rows whose targetFlags name a unit other
-////   than the caster, a `UnitState`; `Spell4Effects.effectType.15`): each is aimed at the
-////   creatures the go hit, in the life and at the time the go struck them. The rule tells
-////   each creature one `CreatureHoldsUnitStates` in the go's own step, with the creature's
-////   rows in row order and the go's time, and arms no timer: the creature owns the end of
-////   each state (`unit_states_told`).
-//// - **A go's disguises** (genesis_prime/game/look): each type 112 effect of the phase
-////   that has a life and whose gate against the caster passes is a modifier row whose change is a
-////   `Look`, so it is listed, started, ended, cancelled with the node and ended at death
-////   by the modifiers' rules above, as `CasterChangeStarts` and `CasterChangeEnds`; the
-////   connection turns them into the player's 0x933 and its viewers' `LookChanged`
-////   (genesis_prime/game/connection/look). The rule keeps no look: two disguises on one
-////   slot, the base and what shows are the look's.
-//// - **A go's Interrupt Armor** (`Spell4Effects.effectType.52`): each ModifyInterruptArmor
-////   row of the phase that reaches the caster (genesis_prime/game/spell_plan
-////   `PropertyModifier.armor`) is a property modifier of property 44, the armor's maximum,
-////   and goes through every rule of the property modifiers above: the same listing, node
-////   life, start, timer, end and removal. The player's armor follows its maximum
-////   (genesis_prime/game/player_life `armor_followed`), so the rule asks nothing more of
-////   the connection for it. The client has no case for the effect, so the armor and its
-////   maximum are the server's (`Spell4Effects.effectType.52`,
-////   `opcode.0x938.interrupt_armor`).
-//// - **A go's absorbs** (`Spell4Effects.effectType.29`): each Absorption effect of the phase
-////   that reaches the caster, has a lifetime (a durationTime, or flags bit 2), is not
-////   periodic and whose gate against the caster passes is listed in the caster's target
-////   info like a Fluff effect, gives the caster's node its life, and starts a pool on
-////   the caster, as a heal and a property modifier do, from the amount worked out at
-////   the go from the caster's stats as they stood before the go's own effects
-////   (genesis_prime/game/damage). The plan reads a type 29 row as a property modifier row
-////   whose change is an `AbsorbChange` (genesis_prime/game/spell_plan), so it goes
-////   through the same listing, node life, timers, end and removal. The sequence of one go:
-////
-////   ```
-////   go ─▶ 0x7f4 lists the row on the caster
-////      ─▶ no delay: CasterChangeStarts(source, Absorb(amount, mask)) in the go's step, after its 0x7f4
-////         delay:    a ModifierStart timer of the delay
-////      ─▶ ModifierEnd timer at delay + duration, none for flags bit 2
-////   ModifierStart fires ─▶ CasterChangeStarts(source, Absorb(amount, mask))
-////   ModifierEnd fires   ─▶ CasterChangeEnds(source)
-////   ```
-////
-////   A pool ends on a timer of its own, as a property modifier does, and the connection
-////   ends it by source (genesis_prime/game/connection/absorption), where a pool the
-////   hit rule used up is already gone and the end writes nothing: the cast keeps its
-////   node's time when its pool is spent (a server choice). Taking the cast's node off
-////   the caster ends the pool of each row and cancels its timers; the caster's death
-////   ends every pool of its casts and cancels the pending ones, after the life dropped
-////   them; the player leaving ends none, since the life goes with its `Entered`; a later go
-////   of the cast arms each pool again from that go, which refills a pool still held.
-//// - **A go's forced moves** (`Spell4Effects.effectType.3.player`): each type 3 effect of
-////   the phase aimed at the caster whose gate against the caster passes is listed in the
-////   caster's target info with its delay, and nothing more: the caster's client works out
-////   the destination, moves its own unit and reports the move in its next 0x637, which
-////   the movement rule takes as any other. A forced move gives no node a life, starts no
-////   timer and changes no property.
-//// - **A go's cooldown effects** (`Spell4Effects.effectType.73`,
-////   genesis_prime/game/cooldown): the spell's own cooldown and a stage's ability
-////   cooldown start before the go's effects apply, as in the client (`0x14053e5a0`), so
-////   a type 73 effect of the phase aimed at the caster whose gate passes already sees
-////   them. It is listed in the caster's target info with its delay, and it changes the
-////   running cooldowns it picks at the go plus its delay: in the go's step with no
-////   delay, on a timer with one. An effect whose lifetime (delay plus duration, the
-////   larger of the two for a spell with the record flag 0x10000000, never ending with
-////   flags bit 2) ends after its start is also kept for the cooldowns that start later
-////   and dropped on a timer at the end of its lifetime; any other acts once
-////   (`0x14046b7f0`, `opcode.0x7f4.effect_time`). Every such effect gives the caster's
-////   node its lifetime, so the 0x7fe, which destroys the effects still pending
-////   (`opcode.0x7fe`), waits for them; when the node's end and a pending start are due
-////   in the same millisecond the end applies the start first. Taking the cast's node
-////   off the caster, the caster's death and its leaving drop the kept effects and
-////   cancel their timers, pending starts included, and a later go of the cast keeps
-////   each again from that go; the cooldowns an effect changed stay changed. The global cooldown is never changed (`0x14046b920`) and the server sends
-////   no 0x804, which would undo the change. After a change a press held for a cooldown's
-////   end and the hold's repeat wait for the new end, a timer of 0 ms when it ended: the
-////   server's choice. Group cooldowns are not kept.
+//// - A go's lasting effects (genesis_prime/game/lasting): Fluff (17), Scale (18), ItemVisualSwap
+////   (76), RavelSignal (81) and SpellForceRemove (80) listed on each struck unit, removals written
+////   0x811 (`opcode.0x7f4.target_info`, `opcode.0x811`).
+//// - A cast giving a unit a node it holds none on pushes the caster's oldest casts of its stack
+////   off at the cap, the server's choice (`Spell4StackGroup.stackCap`); pushed off a creature, its
+////   crowd-control states there end, which the client ends only with a 0x880 (`cc_state.end`).
+//// - A go's property modifiers (genesis_prime/game/unit_properties): type 11 and 145 rows with a
+////   life, listed on the caster, started and ended on its own timers as `CasterChangeStarts` and
+////   `CasterChangeEnds`.
+//// - A go's modifiers on creatures (`StruckChange`): `TargetChangeStarts` on each creature the go
+////   hit, kept in `on_units`, told ended once as `TargetChangeEnds` when the node ends; one
+////   caster's per creature, they do not stack.
+//// - A go's changes on another player (genesis_prime/game/held_changes): absorb, armor and
+////   `StruckChange` rows and a Proc row that applies nothing, told as `OtherPlayerChangeStarts`,
+////   ended once as `OtherPlayerChangeEnds` with the node or on a `PlayerChangeEnd` timer (Spell4
+////   propertyFlags 0x100), then one `OtherPlayerCastWent`.
+//// - A press at oneself puts a type 11 row aimed at the primary target on the caster
+////   (`caster_rows`; Spell4Effects 130474 and 203798 to 203801).
+//// - A go's throws of creatures (`StruckMove`, genesis_prime/game/forced_move): `ForcedMoveStarts`
+////   in the go's step with no delay, else a `ForcedMoveStart` timer.
+//// - A go's despawns (`Spell4Effects.effectType.97`): one `CreatureDespawns` per creature the go
+////   hit, in the go's step with the row's delay; the creature owns the delay (`despawns_told`).
+//// - A go's unit states: one `CreatureHoldsUnitStates` per creature the go hit, rows in row order;
+////   the creature owns each state's end (`Spell4Effects.effectType.15`, `unit_states_told`).
+//// - A go's disguises (genesis_prime/game/look): a type 112 row is a modifier whose change is a
+////   `Look`, turned into the player's 0x933 and its viewers' `LookChanged`.
+//// - A go's Interrupt Armor (`Spell4Effects.effectType.52`): a property modifier of property 44
+////   (`PropertyModifier.armor`); the client has no case for it (`opcode.0x938.interrupt_armor`).
+//// - A go's absorbs (`Spell4Effects.effectType.29`): an `AbsorbChange` starts a pool on the caster
+////   from its stats as they stood before the go (genesis_prime/game/damage).
+//// - A go's forced moves of the caster (`Spell4Effects.effectType.3.player`): listed with their
+////   delay; the caster's client moves its own unit and reports the move in its next 0x637.
+//// - A go's cooldown effects (`Spell4Effects.effectType.73`, genesis_prime/game/cooldown): they
+////   start after the spell's own cooldowns (`0x14053e5a0`), act once or are kept to their lifetime
+////   (`0x14046b7f0`, `opcode.0x7f4.effect_time`), each giving the node its lifetime
+////   (`opcode.0x7fe`); the global cooldown never changes (`0x14046b920`), and no 0x804 is sent.
 
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
