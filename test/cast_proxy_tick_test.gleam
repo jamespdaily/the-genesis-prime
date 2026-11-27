@@ -1908,6 +1908,8 @@ pub fn restrictors_field_over_the_clients_rows_asks_eight_times_and_each_child_c
   // `table_rows -- Spell4Effects 131274 200476 -- Spell4 38287 77118`).
   let #(caster, pressed, snare) =
     restrictor_over(tables: client_tables.shared())
+  let assert lasts.For(duration_ms: snare_duration_ms) = snare.row.lasts
+    as "the Snare row times out: no flags bit 2"
   assert snare.effect_id == Spell4EffectsId(200_476)
     && snare.row.state == crowd_control_state.Snare
     && snare.row.lasts == lasts.For(duration_ms: 2000)
@@ -1928,9 +1930,7 @@ pub fn restrictors_field_over_the_clients_rows_asks_eight_times_and_each_child_c
               row: snare.row,
               throw: None,
             ),
-            ends_at_ms: at_ms
-              + snare.row.delay_ms
-              + lasts.duration_ms(snare.row.lasts),
+            ends_at_ms: at_ms + snare.row.delay_ms + snare_duration_ms,
             interrupted: None,
           ),
         ],

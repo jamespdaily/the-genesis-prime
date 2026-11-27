@@ -264,7 +264,11 @@ fn armored(
 fn held(state state: State, tell tell: Tell, now_ms now_ms: Int) -> Landing {
   let #(state, held) =
     list.map_fold(over: tell.controls, from: state, with: fn(state, told) {
-      let hold_ms = told.row.delay_ms + lasts.duration_ms(told.row.lasts)
+      let hold_ms = case told.row.lasts {
+        lasts.For(duration_ms:) -> told.row.delay_ms + duration_ms
+        lasts.UntilRemoved ->
+          panic as "the plan drops a control row that lasts until removed (spell_plan.control_of)"
+      }
       let control =
         Control(
           number: state.next_number,

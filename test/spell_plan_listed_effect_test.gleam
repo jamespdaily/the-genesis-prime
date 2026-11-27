@@ -50,7 +50,7 @@ import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/set
 import gleam/string
 import owned_test
@@ -482,7 +482,7 @@ pub fn an_item_visual_swap_row_aimed_at_the_primary_target_keeps_its_delay_and_d
         row: row.row,
         longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
       )
-      == 10_333
+      == Some(10_333)
       as "the lifetime is the delay plus the duration, 333 + 10000: Spell4 26567 has propertyFlags 0, no 0x2000"
   })
 }
@@ -510,7 +510,7 @@ pub fn the_six_delayed_item_visual_swap_rows_of_48373_are_each_a_lasting_row_end
           row: row.row,
           longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
         )
-        == 9000
+        == Some(9000)
         as "each of the six ends 9000 ms after the go: Spell4 48373 has propertyFlags 1, no 0x2000"
     },
   )

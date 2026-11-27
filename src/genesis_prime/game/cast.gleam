@@ -6096,8 +6096,6 @@ fn cooldown_row_armed(
 ) -> #(State, List(Effect)) {
   let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
   let #(cast, cancels) = cast_state.cancel_source_timers(cast:, source:)
-  let lifetime_ms =
-    lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
   let #(cast, starting) = case row.row.delay_ms > 0 {
     True -> {
       let #(cast, _, start) =
@@ -6111,8 +6109,10 @@ fn cooldown_row_armed(
     False ->
       cooldown_applied(cast:, source:, modifier: row.modifier, kept:, now_ms:)
   }
-  let #(cast, ending) = case kept && !lasts.is_until_removed(row.row.lasts) {
-    True -> {
+  let lifetime =
+    lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
+  let #(cast, ending) = case kept, lifetime {
+    True, Some(lifetime_ms) -> {
       let #(cast, _, start) =
         cast_state.armed(
           cast:,
@@ -6121,7 +6121,7 @@ fn cooldown_row_armed(
         )
       #(cast, [start])
     }
-    False -> #(cast, [])
+    True, None | False, _ -> #(cast, [])
   }
   #(cast, list.flatten([cancels, starting, ending]))
 }

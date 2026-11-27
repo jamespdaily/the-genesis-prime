@@ -64,13 +64,25 @@ pub fn a_row_that_lasts_until_removed_reads_so_whatever_its_duration_and_one_wit
       duration_time: 5000,
     )
   }
-  assert spell_plan.lasting_row_of(effect: row(2)).lasts == lasts.UntilRemoved
-    as "flags bit 2 with durationTime 5000 lasts until removed, as lasting.life_of reads it"
-  assert spell_plan.lasting_row_of(effect: row(0)).lasts
-    == lasts.For(duration_ms: 5000)
-    as "flags 0 with durationTime 5000 lasts 5000 ms"
-  assert crowd_control_lasts_of(flags: 2) == lasts.UntilRemoved
-    as "a CCStateSet row of flags bit 2 and durationTime 5000 lasts until removed"
-  assert crowd_control_lasts_of(flags: 0) == lasts.For(duration_ms: 5000)
-    as "a CCStateSet row of flags 0 and durationTime 5000 lasts 5000 ms"
+  list.each(
+    [
+      #(
+        2,
+        lasts.UntilRemoved,
+        "flags bit 2 with durationTime 5000 lasts until removed, as lasting.life_of reads it",
+      ),
+      #(
+        0,
+        lasts.For(duration_ms: 5000),
+        "flags 0 with durationTime 5000 lasts 5000 ms",
+      ),
+    ],
+    fn(scene) {
+      let #(flags, expected, reason) = scene
+      assert spell_plan.lasting_row_of(effect: row(flags)).lasts == expected
+        as reason
+      assert crowd_control_lasts_of(flags:) == expected
+        as "a CCStateSet row of the same flags and durationTime 5000 reads the same"
+    },
+  )
 }

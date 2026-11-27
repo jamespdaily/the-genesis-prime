@@ -25,14 +25,6 @@ pub fn of_row(
   For(duration_ms:)
 }
 
-/// The durationTime a row that times out holds; 0 for one that lasts until removed.
-pub fn duration_ms(lasts lasts: Lasts) -> Int {
-  case lasts {
-    UntilRemoved -> 0
-    For(duration_ms:) -> duration_ms
-  }
-}
-
 /// Whether the row lasts until removed.
 pub fn is_until_removed(lasts lasts: Lasts) -> Bool {
   case lasts {

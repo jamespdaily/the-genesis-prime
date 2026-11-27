@@ -144,7 +144,10 @@ pub type LastingRow {
 /// property modifier or disguise with none is no time to be changed for, and no go
 /// applies it.
 pub fn has_life(row row: LastingRow) -> Bool {
-  lasts.is_until_removed(row.lasts) || lasts.duration_ms(row.lasts) > 0
+  case row.lasts {
+    lasts.UntilRemoved -> True
+    lasts.For(duration_ms:) -> duration_ms > 0
+  }
 }
 
 /// The life of a node from the effects a go lists for its unit: each effect's
@@ -164,7 +167,10 @@ pub fn life_of(
   )
   let longest =
     list.fold(effects, 0, fn(longest, row) {
-      int.max(longest, lifetime_of(row:, longer_of_delay_and_duration:))
+      case lifetime_of(row:, longer_of_delay_and_duration:) {
+        Some(lifetime_ms) -> int.max(longest, lifetime_ms)
+        None -> longest
+      }
     })
   use <- bool.guard(when: longest <= 0, return: NoLife)
   EndsAt(ms: go_ms + longest)
@@ -181,14 +187,15 @@ pub fn time_left_ms(end_ms end_ms: Int, now_ms now_ms: Int) -> Int {
 }
 
 /// One effect's lifetime from the go: its delay plus durationTime, or the larger of
-/// the two (`opcode.0x7f4.effect_time`).
+/// the two (`opcode.0x7f4.effect_time`); `None` for a row that lasts until removed.
 pub fn lifetime_of(
   row row: LastingRow,
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
-) -> Int {
-  case longer_of_delay_and_duration {
-    True -> int.max(row.delay_ms, lasts.duration_ms(row.lasts))
-    False -> row.delay_ms + lasts.duration_ms(row.lasts)
+) -> Option(Int) {
+  case row.lasts, longer_of_delay_and_duration {
+    lasts.UntilRemoved, _ -> None
+    lasts.For(duration_ms:), True -> Some(int.max(row.delay_ms, duration_ms))
+    lasts.For(duration_ms:), False -> Some(row.delay_ms + duration_ms)
   }
 }
 
@@ -219,9 +226,10 @@ pub fn given(
     Some(node) ->
       list.filter(node.effects, fn(effect) {
         let row = row_of(effect:)
-        lasts.is_until_removed(row.lasts)
-        || node.armed_ms + lifetime_of(row:, longer_of_delay_and_duration:)
-        > go_ms
+        case lifetime_of(row:, longer_of_delay_and_duration:) {
+          None -> True
+          Some(lifetime_ms) -> node.armed_ms + lifetime_ms > go_ms
+        }
       })
     None -> []
   }

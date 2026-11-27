@@ -679,9 +679,10 @@ pub fn cooldown_kept(
   row row: spell_plan.CooldownModifier,
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
 ) -> Bool {
-  lasts.is_until_removed(row.row.lasts)
-  || lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
-  > row.row.delay_ms
+  case lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:) {
+    None -> True
+    Some(lifetime_ms) -> lifetime_ms > row.row.delay_ms
+  }
 }
 
 /// The crowd-control states the units of a go took, each with its unit, in the order
