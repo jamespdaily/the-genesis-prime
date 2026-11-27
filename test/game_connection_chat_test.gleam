@@ -53,6 +53,7 @@ import genesis_prime/world_map/spawn_source.{RunOnly}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/list
 import gleam/option.{None, Some}
+import gleam/string
 import map_spawn_support
 import map_support
 import message_support
@@ -1088,6 +1089,22 @@ pub fn an_unknown_command_and_a_malformed_summon_each_answer_one_system_line_and
       assert goes_on_in_the_world(state)
     },
   )
+}
+
+pub fn a_longest_line_of_digits_gets_a_system_answer_that_encodes_whole_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `is_a_line` allows 501 UTF-16 units (`0x140402720`); `!level ` takes 7 and
+  // the other 494 are the number the answer repeats.
+  let digits = "9" <> string.repeat("0", 493)
+  let #(_, taken) =
+    game_connection_support.read(
+      game_connection_support.in_world_with_dev_commands(),
+      game_connection_support.chat_line_message(4, "!level " <> digits),
+    )
+  let assert [answer] = game_connection_support.system_lines(taken)
+    as "one system line answers the refused level"
+  assert string.contains(answer, digits)
+    as "the answer names all 494 digits of the level and fits the 32,767-unit field"
 }
 
 pub fn a_summon_line_with_a_level_asks_the_map_for_that_level_test() -> Nil {

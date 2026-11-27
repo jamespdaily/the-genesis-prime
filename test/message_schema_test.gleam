@@ -1091,17 +1091,15 @@ pub fn a_schema_message_with_gaps_generates_a_gaps_function_with_exactly_those_e
   })
 }
 
-/// The kind of one field of one message of the schema.
+/// The kind of one field of one message or record of the schema.
 fn field_kind(
   schema schema: message_schema.Schema,
-  message message_name: String,
+  message owner: String,
   field field_name: String,
 ) -> Result(message_schema.Kind, Nil) {
-  use message <- result.try(
-    list.find(schema.messages, fn(message) { message.name == message_name }),
-  )
+  use fields <- result.try(message_schema.fields_of(schema:, owner:))
   use field <- result.map(
-    list.find(message.fields, fn(field) { field.name == field_name }),
+    list.find(fields, fn(field) { field.name == field_name }),
   )
   field.kind
 }
@@ -1113,9 +1111,13 @@ pub fn a_value_the_client_sends_and_the_server_writes_back_has_one_width_both_wa
   let assert Ok(schema) = message_schema.parse(text)
     as "the schema file is a schema"
   // A value the client sent is written back at the width it was read with, so
-  // the server's `bit_stream.must` of it cannot fail on length (#1463's trace).
+  // the server's `bit_stream.must` of it cannot fail on length: the server
+  // writes back the value it decoded, at the same field.
   let pairs = [
     #("send_chat_line", "text", "chat_line", "text"),
+    #("send_chat_line", "formats", "chat_line", "formats"),
+    #("send_whisper", "text", "chat_line", "text"),
+    #("send_whisper", "formats", "chat_line", "formats"),
     #("send_whisper", "target_name", "whisper_failed", "target_name"),
     #("rename_character", "name", "rename_character_result", "name"),
     #("action_set_save", "amp_ids", "action_set_amps", "amp_ids"),

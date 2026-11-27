@@ -769,7 +769,9 @@ fn command_line(
 /// `text` and no speaker: no realm, character, name or unit, no GM mark, no
 /// format and no cross-faction colour, so the line shows the channel's name and
 /// then the text (`opcode.0x1c8`, `chat.system_line`). A server choice for the
-/// development commands' answers.
+/// development commands' answers. The text is a fixed sentence with numbers and
+/// names from a `!` line of at most 501 units (`is_a_line`) or from the
+/// client's tables, far under the 32,767 units the text field holds.
 pub fn system_line_frame(text text: String) -> Frame {
   let body =
     bit_stream.must(

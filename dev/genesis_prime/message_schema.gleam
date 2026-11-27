@@ -1154,6 +1154,19 @@ pub fn describe(error: SchemaError) -> String {
   }
 }
 
+/// The fields of the message or, failing that, the record of this name.
+pub fn fields_of(
+  schema schema: Schema,
+  owner owner: String,
+) -> Result(List(Field), Nil) {
+  case list.find(schema.messages, fn(message) { message.name == owner }) {
+    Ok(message) -> Ok(message.fields)
+    Error(Nil) ->
+      list.find(schema.records, fn(record) { record.name == owner })
+      |> result.map(fn(record) { record.fields })
+  }
+}
+
 /// The fields the generated type of a message or record holds: every field but
 /// a constant, which the encoder writes and the decoder checks.
 pub fn held(fields: List(Field)) -> List(Field) {
