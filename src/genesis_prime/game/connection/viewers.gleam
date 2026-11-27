@@ -103,7 +103,7 @@
 ////     viewers `Removed` and nothing about stealth, and the next stay starts unstealthed.
 ////   - A `Stealth` news for a unit the viewer does not show, or no longer shows, is
 ////     dropped and writes nothing.
-//// - **A player's look** is the cast rule's too (genesis_prime/game/look): the owner's
+//// - **A player's look** is the cast rule's too (genesis_prime/shared/look): the owner's
 ////   connection writes 0x933 to its own client and tells each viewer `LookChanged`, which
 ////   the viewer writes as 0x933 for a unit it shows and drops otherwise. A viewer that
 ////   first sees the owner mid-disguise gets its 0x262 with the disguised slots' visuals
@@ -185,16 +185,13 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/class_resource
 import genesis_prime/game/client_casts
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/connection/life as connection_life
 import genesis_prime/game/connection/state.{type Session} as connection_state
-import genesis_prime/game/faction_level
 import genesis_prime/game/held_changes
-import genesis_prime/game/hit_radius
 import genesis_prime/game/move_stamp
 import genesis_prime/game/movement
 import genesis_prime/game/player_address
@@ -226,20 +223,23 @@ import genesis_prime/message/unit_position_command.{
 import genesis_prime/message/unit_stat.{type UnitStat}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/faction_level
+import genesis_prime/shared/hit_radius
+import genesis_prime/shared/unit_fields
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionId, type Effect, type Now,
 }
 import genesis_prime/table/creature2_display_info
 import genesis_prime/table/id.{Creature2DisplayInfoId, Creature2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/static_object
-import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int

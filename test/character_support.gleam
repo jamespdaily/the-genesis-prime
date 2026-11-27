@@ -8,7 +8,6 @@
 import ask_support
 import driven_time
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{Novice, Veteran}
@@ -22,6 +21,7 @@ import genesis_prime/message/item_place
 import genesis_prime/message/item_split.{ItemSplit}
 import genesis_prime/message/rename_character_result.{type RenameCharacterResult}
 import genesis_prime/server
+import genesis_prime/shared/appearance
 import genesis_prime/store.{
   type AccountId, type NewCharacter, type NewItem, AccountId, NewItem,
 }

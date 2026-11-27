@@ -1,5 +1,5 @@
 //// A character's body visuals from its stored look, and the bone count a race
-//// and sex have (`genesis_prime/game/appearance`). Expected values come from
+//// and sex have (`genesis_prime/shared/appearance`). Expected values come from
 //// these places.
 //// - The client's rule: PickCustomizationDisplays 0x140031c90 and the emulator
 ////   vector vector.0x140031c90 (the most label-value pairs win, the earliest
@@ -16,8 +16,8 @@
 import character_tables
 import client_tables
 import fixture_tables
-import genesis_prime/game/appearance
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
+import genesis_prime/shared/appearance
 import genesis_prime/store.{LookEntry}
 import genesis_prime/table/character_customization.{
   type CharacterCustomization, CharacterCustomization,

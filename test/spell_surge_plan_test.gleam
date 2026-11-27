@@ -1,5 +1,5 @@
 //// What Spell Surge changes in the plans and the table load
-//// (`genesis_prime/game/spell_plan`, `genesis_prime/game/spell_surge`). Expected values
+//// (`genesis_prime/shared/spell_plan`, `genesis_prime/game/spell_surge`). Expected values
 //// come from the client's code and rows, each named at its assertion:
 //// - `Spell4.spell4IdMechanicAlternateSpell` (`gleam run -m genesis_prime/table_rows --
 ////   Spell4 43468 34718 34355 76002 34719`): Quick Draw 43468 names 76002 and Charged Shot
@@ -16,9 +16,9 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/ability_book
-import genesis_prime/game/loadout
-import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/spell_surge
+import genesis_prime/shared/loadout
+import genesis_prime/shared/spell_plan.{type Spell}
 import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/int

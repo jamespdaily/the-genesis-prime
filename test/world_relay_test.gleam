@@ -17,13 +17,13 @@ import game_connection_support
 import genesis_prime/client_connection.{
   type Message, ForStay, SentByKill, SentByPeer, SentByTarget,
 }
-import genesis_prime/game/spell_plan
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell.{
   type Answered, Answered, Key, Landed, Refused,
 }
 import genesis_prime/game/unit_news.{PeerNews}
 import genesis_prime/service
+import genesis_prime/shared/spell_plan
 import genesis_prime/step.{ConnectionId, Woken}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/map

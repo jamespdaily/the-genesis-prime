@@ -2,13 +2,13 @@
 //// Each row of the phase whose gate against the caster passes is listed in the target info of
 //// each unit its targetFlags aim at; a row with a life gives the cast's node there its life.
 ////
-//// - A go's lasting effects (genesis_prime/game/lasting): Fluff (17), Scale (18), ItemVisualSwap
+//// - A go's lasting effects (genesis_prime/shared/lasting): Fluff (17), Scale (18), ItemVisualSwap
 ////   (76), RavelSignal (81) and SpellForceRemove (80) listed on each struck unit, removals written
 ////   0x811 (`opcode.0x7f4.target_info`, `opcode.0x811`).
 //// - A cast giving a unit a node it holds none on pushes the caster's oldest casts of its stack
 ////   off at the cap, the server's choice (`Spell4StackGroup.stackCap`); pushed off a creature, its
 ////   crowd-control states there end, which the client ends only with a 0x880 (`cc_state.end`).
-//// - A go's property modifiers (genesis_prime/game/unit_properties): type 11 and 145 rows with a
+//// - A go's property modifiers (genesis_prime/shared/unit_properties): type 11 and 145 rows with a
 ////   life, listed on the caster, started and ended on its own timers as `CasterChangeStarts` and
 ////   `CasterChangeEnds`.
 //// - A go's modifiers on creatures (`StruckChange`): `TargetChangeStarts` on each creature the go
@@ -20,21 +20,21 @@
 ////   propertyFlags 0x100), then one `OtherPlayerCastWent`.
 //// - A press at oneself puts a type 11 row aimed at the primary target on the caster
 ////   (`caster_rows`; Spell4Effects 130474 and 203798 to 203801).
-//// - A go's throws of creatures (`StruckMove`, genesis_prime/game/forced_move): `ForcedMoveStarts`
+//// - A go's throws of creatures (`StruckMove`, genesis_prime/shared/forced_move): `ForcedMoveStarts`
 ////   in the go's step with no delay, else a `ForcedMoveStart` timer.
 //// - A go's despawns (`Spell4Effects.effectType.97`): one `CreatureDespawns` per creature the go
 ////   hit, in the go's step with the row's delay; the creature owns the delay (`despawns_told`).
 //// - A go's unit states: one `CreatureHoldsUnitStates` per creature the go hit, rows in row order;
 ////   the creature owns each state's end (`Spell4Effects.effectType.15`, `unit_states_told`).
-//// - A go's disguises (genesis_prime/game/look): a type 112 row is a modifier whose change is a
+//// - A go's disguises (genesis_prime/shared/look): a type 112 row is a modifier whose change is a
 ////   `Look`, turned into the player's 0x933 and its viewers' `LookChanged`.
 //// - A go's Interrupt Armor (`Spell4Effects.effectType.52`): a property modifier of property 44
 ////   (`PropertyModifier.armor`); the client has no case for it (`opcode.0x938.interrupt_armor`).
 //// - A go's absorbs (`Spell4Effects.effectType.29`): an `AbsorbChange` starts a pool on the caster
-////   from its stats as they stood before the go (genesis_prime/game/damage).
+////   from its stats as they stood before the go (genesis_prime/shared/damage).
 //// - A go's forced moves of the caster (`Spell4Effects.effectType.3.player`): listed with their
 ////   delay; the caster's client moves its own unit and reports the move in its next 0x637.
-//// - A go's cooldown effects (`Spell4Effects.effectType.73`, genesis_prime/game/cooldown): they
+//// - A go's cooldown effects (`Spell4Effects.effectType.73`, genesis_prime/shared/cooldown): they
 ////   start after the spell's own cooldowns (`0x14053e5a0`), act once or are kept to their lifetime
 ////   (`0x14046b7f0`, `opcode.0x7f4.effect_time`), each giving the node its lifetime
 ////   (`opcode.0x7fe`); the global cooldown never changes (`0x14046b920`), and no 0x804 is sent.
@@ -55,22 +55,22 @@ import genesis_prime/game/cast/state.{
   StartHeld, State, StateEnd, TargetChangeStarts, TargetModifierStart, Tick,
   WindowEnd,
 } as cast_state
-import genesis_prime/game/crowd_control
-import genesis_prime/game/damage
-import genesis_prime/game/forced_move
 import genesis_prime/game/held_changes
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
 import genesis_prime/game/player_address.{type PlayerAddress}
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/damage
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{type Spell}
+import genesis_prime/shared/unit_properties
 import genesis_prime/table/id.{type Spell4EffectsId}
 import gleam/bool
 import gleam/dict

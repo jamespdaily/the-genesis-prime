@@ -1,5 +1,5 @@
 //// What the plan makes of a client column's values over the client's whole tables
-//// (`genesis_prime/game/column_reading`): each value a row holds is read, or names a
+//// (`genesis_prime/shared/column_reading`): each value a row holds is read, or names a
 //// question the fact file records, and none is left unexplained. Each test reads the
 //// client's files and passes only where they are on the machine.
 //// - The stat modifier's parameters: `table_rows -- Spell4Effects effectType=11`
@@ -9,9 +9,9 @@
 
 import client_tables
 import coverage_support
-import genesis_prime/game/column_reading
-import genesis_prime/game/damage
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/column_reading
+import genesis_prime/shared/damage
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import gleam/int
 import gleam/list

@@ -26,13 +26,13 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting
 import genesis_prime/game/gear
-import genesis_prime/game/spell_plan
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/innate_index_set.{InnateIndexSet}
+import genesis_prime/shared/spell_plan
 import genesis_prime/step.{LogWarning}
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/id.{ClassId}

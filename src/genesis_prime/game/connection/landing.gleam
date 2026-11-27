@@ -82,7 +82,7 @@
 ////   (genesis_prime/game/client_casts). T keeps no per-viewer record, so every viewer is told.
 //// - **A source told again goes to the player's own function again**: an absorb pool is
 ////   refilled, a property modifier already held changes nothing
-////   (genesis_prime/game/unit_properties `apply`).
+////   (genesis_prime/shared/unit_properties `apply`).
 //// - **A held change ends at its holder's death**, as the player's own casts' changes do
 ////   (`cast.died`); the client has no path that ends a buff on a unit's death, so the
 ////   death is the server's choice.
@@ -103,9 +103,9 @@ import genesis_prime/game/player_life
 import genesis_prime/game/proc
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/gap
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/world_map/relay
 import gleam/bool

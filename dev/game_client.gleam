@@ -16,7 +16,6 @@ import frame_reader
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/area.{Point}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/message/ability_hold
 import genesis_prime/message/ability_tiers
@@ -84,6 +83,7 @@ import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_target
 import genesis_prime/message/unit_threat
 import genesis_prime/message/world_message.{WorldMessage}
+import genesis_prime/shared/area.{Point}
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/store as table_store

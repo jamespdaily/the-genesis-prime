@@ -1,11 +1,11 @@
-//// The decode of effect type 79 (genesis_prime/game/effect_kind). Expected values and
+//// The decode of effect type 79 (genesis_prime/shared/effect_kind). Expected values and
 //// their sources:
 //// - `Spell4Effects.effectType.79` (fairly sure): SpellEffectImmunity; `dataBits00` is the
 ////   effect type made immune (8 is Damage), the enum at `0x140c34140`; spell 85474's
 ////   row 224666 is one. The client has no class for it and reads nothing, so the server
 ////   does not read it either and the coverage measure counts it unhandled.
 
-import genesis_prime/game/effect_kind.{Damage, Immunity}
+import genesis_prime/shared/effect_kind.{Damage, Immunity}
 import gleam/list
 import owned_test
 

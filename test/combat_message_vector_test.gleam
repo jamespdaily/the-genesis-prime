@@ -99,8 +99,8 @@ import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_stealth.{UnitStealth}
 import genesis_prime/message/unit_target.{UnitTarget}
 import genesis_prime/message/unit_threat.{UnitThreat}
+import genesis_prime/shared/unit_fields
 import genesis_prime/world_map/static_object
-import genesis_prime/world_map/unit_fields
 import gleam/bit_array
 import gleam/int
 import gleam/list

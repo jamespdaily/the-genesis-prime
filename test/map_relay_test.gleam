@@ -9,7 +9,7 @@
 //// - The relay table (`genesis_prime/world_map/relay`): a relay is delivered to a player in
 ////   the stay it names, whatever the player sees, and only from a creature that runs under
 ////   the life it names.
-//// - Sight (`genesis_prime/world_map/sight`): 1024 units, 3D, inclusive.
+//// - Sight (`genesis_prime/shared/sight`): 1024 units, 3D, inclusive.
 
 import connection_rule_support as support
 import genesis_prime/game/experience.{Credit}

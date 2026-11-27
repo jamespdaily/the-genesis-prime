@@ -28,12 +28,12 @@ import fixture_tables
 import genesis_prime/content/refusal.{RowId}
 import genesis_prime/game/arrival_objective
 import genesis_prime/game/click_objective
-import genesis_prime/game/faction_level
 import genesis_prime/game/held_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/objective
 import genesis_prime/game/place_objective
 import genesis_prime/game/target_group
+import genesis_prime/shared/faction_level
 import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}

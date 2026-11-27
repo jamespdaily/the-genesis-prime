@@ -14,8 +14,8 @@
 ////   73707) and 41795 (the hologram 73619).
 
 import character_tables
-import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/world_entry
+import genesis_prime/shared/prerequisite.{type Prerequisite}
 import genesis_prime/table/id.{PrerequisiteId}
 import genesis_prime/world_map/map
 import gleam/dict

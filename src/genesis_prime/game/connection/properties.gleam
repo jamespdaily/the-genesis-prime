@@ -1,5 +1,5 @@
 //// The player's properties on the game connection (genesis_prime/game/connection):
-//// its rule (genesis_prime/game/unit_properties) is kept in the player's `Entered`
+//// its rule (genesis_prime/shared/unit_properties) is kept in the player's `Entered`
 //// beside its life and its cast, and this module turns what the cast rule decides
 //// into the rule's inputs and carries out what changed.
 ////
@@ -50,11 +50,11 @@ import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/life_effect
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session} as connection_state
-import genesis_prime/game/item_property
 import genesis_prime/game/player_life
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
+import genesis_prime/shared/item_property
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/table/id.{type UnitProperty2Id}
 import gleam/list

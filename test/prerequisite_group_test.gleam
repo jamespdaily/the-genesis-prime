@@ -1,4 +1,4 @@
-//// Prerequisite type 129, under a spell of a spell group (`genesis_prime/game/prerequisite`).
+//// Prerequisite type 129, under a spell of a spell group (`genesis_prime/shared/prerequisite`).
 //// Expected values come from these places:
 //// - `Prerequisite.prerequisiteTypeId.129` (`0x1404a2b5a`): the first unit is a
 ////   target of a live cast whose Spell4 is in the spell group the objectId names;
@@ -7,8 +7,8 @@
 //// - Spell4GroupList 845: group 313's 11 spells (Spell4 1488, 1490, 1495, 38730,
 ////   39857, 40838, 40862, 72921, 75093, 75179 and 77132).
 
-import genesis_prime/game/lasting
-import genesis_prime/game/prerequisite.{type Subject, Fails, Passes, Subject}
+import genesis_prime/shared/lasting
+import genesis_prime/shared/prerequisite.{type Subject, Fails, Passes, Subject}
 import genesis_prime/table/id.{Spell4Id}
 import gleam/list
 import gleam/option.{None}

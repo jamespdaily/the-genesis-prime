@@ -57,7 +57,6 @@
 
 import genesis_prime/game/chat_tell.{type Said as ChatSaid}
 import genesis_prime/game/experience.{type Credit}
-import genesis_prime/game/forced_move
 import genesis_prime/game/held_changes.{type PlayerChange}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
@@ -66,8 +65,9 @@ import genesis_prime/game/strike_tell.{
 }
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{type PeerNews}
-import genesis_prime/game/unit_properties
-import genesis_prime/game/unit_state
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/unit_properties
+import genesis_prime/shared/unit_state
 
 /// What a creature tells one player through the map.
 pub type Payload {

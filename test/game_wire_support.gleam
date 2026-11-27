@@ -37,6 +37,7 @@ import genesis_prime/message/unit_destroyed
 import genesis_prime/readiness
 import genesis_prime/server
 import genesis_prime/service
+import genesis_prime/shared/unit_fields
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_registry
@@ -44,7 +45,6 @@ import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn
-import genesis_prime/world_map/unit_fields
 import gleam/erlang/process
 import gleam/float
 import gleam/function

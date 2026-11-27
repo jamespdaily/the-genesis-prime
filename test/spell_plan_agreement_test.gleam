@@ -1,5 +1,5 @@
 //// The plan and the coverage measure take one decision about each effect row
-//// (`genesis_prime/game/spell_plan` `read_row`); this plans every Spell4 row of the client's
+//// (`genesis_prime/shared/spell_plan` `read_row`); this plans every Spell4 row of the client's
 //// tables alone and checks that decision against the plan, which guards the one way the
 //// two can still drift: a refusal added to the plan's load outside `read_row`.
 ////
@@ -21,9 +21,9 @@
 ////   each of its rows is counted by its own columns.
 
 import client_tables
-import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/spell_plan.{
   type PlanError, type RowReading, type Spell, Applied, Held, LeftOut,
   ReadByActivation, ReadByArea,
 }

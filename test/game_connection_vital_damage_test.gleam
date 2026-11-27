@@ -19,8 +19,8 @@ import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/hit.{Worked}
 import genesis_prime/game/strike_tell
+import genesis_prime/shared/hit.{Worked}
 import genesis_prime/step.{type ConnectionStep, OwnEffect}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/relay

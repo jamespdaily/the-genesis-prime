@@ -507,13 +507,16 @@ pub fn is_step_effect(call call: Call, name name: String) -> Bool {
 }
 
 /// The creature's modules: every file of the world map's folder whose name starts with
-/// `creature`.
+/// `creature`, and every file of the shared folder, which the map's creatures share with
+/// the connections.
 pub fn creature_modules() -> List(SourceFile) {
   let directory = "src/genesis_prime/world_map"
-  source.files(under: directory)
-  |> list.filter(fn(file) {
-    string.starts_with(file.path, directory <> "/creature")
-  })
+  list.append(
+    list.filter(source.files(under: directory), fn(file) {
+      string.starts_with(file.path, directory <> "/creature")
+    }),
+    source.files(under: "src/genesis_prime/shared"),
+  )
 }
 
 /// Every call and capture in the module's functions, in the order

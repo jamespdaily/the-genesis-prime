@@ -6,12 +6,12 @@
 
 import client_tables
 import genesis_prime/game/activate
-import genesis_prime/game/item_property
 import genesis_prime/game/objective
 import genesis_prime/game/objective_action
-import genesis_prime/game/spell_plan
 import genesis_prime/game/target_group
+import genesis_prime/shared/item_property
 import genesis_prime/shared/quest_row
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Faction2Id}
 import genesis_prime/table/loader/store.{type Tables}

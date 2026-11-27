@@ -8,15 +8,15 @@
 import cast_support as support
 import fixture_tables
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/area
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/hit
-import genesis_prime/game/spell_plan.{type Plans, type Spell}
 import genesis_prime/game/strike_tell
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed
+import genesis_prime/shared/area
+import genesis_prime/shared/hit
+import genesis_prime/shared/spell_plan.{type Plans, type Spell}
 import genesis_prime/step
 import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store

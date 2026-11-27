@@ -46,7 +46,7 @@
 ////   no ordering.
 //// - **dataBits03 of a DisguiseOutfit row** is 1 on both ExoSuit rows and on 17
 ////   others, and no client code reads a type 112 row, so the plan reads it as nothing
-////   (genesis_prime/game/spell_plan `disguise_of`).
+////   (genesis_prime/shared/spell_plan `disguise_of`).
 ////
 //// What happens at each failure point:
 ////
@@ -58,17 +58,17 @@
 //// | The caster dies | the cast rule's `CasterChangeEnds` ends each disguise of its casts, each reported | | |
 //// | The caster leaves | `Entered` goes with its look; the next entry starts from the base | | |
 
-import genesis_prime/game/unit_properties
-import genesis_prime/game/worn_visual.{type WornVisual}
 import genesis_prime/gap
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
+import genesis_prime/shared/unit_properties
+import genesis_prime/shared/worn_visual.{type WornVisual}
 import gleam/bool
 import gleam/int
 import gleam/list
 
 /// A DisguiseOutfit row's look change: what it shows, one slot and display for a
 /// dataBits02 row and one for a dataBits01 row, in the order the row gives them. A shown
-/// item is a worn item's (genesis_prime/game/worn_visual): the ItemSlot id of its
+/// item is a worn item's (genesis_prime/shared/worn_visual): the ItemSlot id of its
 /// display's item type and the display.
 pub type Disguise {
   Disguise(shown: List(WornVisual))

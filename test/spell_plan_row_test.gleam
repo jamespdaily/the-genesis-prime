@@ -1,9 +1,9 @@
-//// What the plan makes of one effect row (`genesis_prime/game/spell_plan` `read_row`), the
+//// What the plan makes of one effect row (`genesis_prime/shared/spell_plan` `read_row`), the
 //// decision its lists and the coverage measure are both made from. Expected values come
 //// from these places.
 //// - `cast.condition_gate` (`genesis_prime/game/cast`): a row behind a target apply
 ////   prerequisite is applied by no go.
-//// - `genesis_prime/game/ticking`: a `TickingHeal` with a tickTime and a life of at least
+//// - `genesis_prime/shared/ticking`: a `TickingHeal` with a tickTime and a life of at least
 ////   one tick is applied, each tick its own 0x7f8 (`Spell4Effects.effectType.118`).
 //// - `proc_read`: a Proc of a kind other than 217, 218, 44 and 0 is in no list and the load
 ////   goes on (`Spell4Effects.effectType.14`).
@@ -16,7 +16,7 @@
 import client_tables
 import fixture_tables
 import genesis_prime/coverage/effect_row
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/spell_plan.{
   Applied, Held, LeftOut, ProcOfAnotherKind, ProxyNamesNoSpell, ReadByActivation,
   ReadByArea, ReadProc, ReadProxy,
 }

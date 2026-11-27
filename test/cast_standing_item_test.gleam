@@ -21,13 +21,13 @@ import fixture_tables
 import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
-import genesis_prime/game/prerequisite
 import genesis_prime/game/proc as event_proc
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/unit_news.{CastStarted}
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{type Spell}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import gleam/dict
 import gleam/list

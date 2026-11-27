@@ -16,10 +16,8 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/state.{Settings} as connection_state
-import genesis_prime/game/lasting
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{NoHolder}
@@ -28,6 +26,8 @@ import genesis_prime/message/character_list
 import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
 }
+import genesis_prime/shared/lasting
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   type ConnectionEvent, type Event, type Outcome, CancelTimer, EndedBeforeAnswer,
   LogError, LogWarning, Map, NoAnswerInTime, NotRunning, OtherSocketFailure,

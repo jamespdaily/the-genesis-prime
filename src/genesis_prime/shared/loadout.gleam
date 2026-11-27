@@ -8,7 +8,7 @@
 ////      its items ─▶ item_property ─▶ the gear's properties, each piece's bag index
 ////      its items ─▶ worn_visual ─▶ what is drawn on the wearer
 //// SpellLevel (class, level 1, no prerequisite) ─▶ Spell4 ─▶ Spell4Base ids
-//// Class (the first innate slot) ─▶ the innate (genesis_prime/game/innate)
+//// Class (the first innate slot) ─▶ the innate (genesis_prime/shared/innate)
 //// both, once, when the tables load ─▶ Loadouts ─▶ of(class, faction)
 //// ```
 ////
@@ -26,7 +26,7 @@
 ////   GetSlot 0x140418a50): the chest 0, legs 1, shoulder 3, feet 4, hands 5 and
 ////   the shield 15.
 //// - **The visuals** are the items drawn on the wearer, by slot: one per armor
-////   piece and the weapon (genesis_prime/game/worn_visual); the shield has none.
+////   piece and the weapon (genesis_prime/shared/worn_visual); the shield has none.
 //// - **The abilities** are the class's SpellLevel rows of level 1 with no
 ////   prerequisite, in id order, each as the Spell4Base id of its Spell4 row
 ////   (`SpellLevel.spell4Id`). They are the action bar's.
@@ -34,7 +34,7 @@
 ////   prerequisite, by level then id, each with the level that gives it
 ////   (`SpellLevel.spell4Id.no_prerequisite`); genesis_prime/game/ability_book
 ////   holds the ones a level has reached. The innate's base is in none of them.
-//// - **The innate** is the class's first innate slot (genesis_prime/game/innate). The
+//// - **The innate** is the class's first innate slot (genesis_prime/shared/innate). The
 ////   ability bag holds its active spell's Spell4Base after the abilities, at the index
 ////   the abilities number (3): the innate button finds the spell by its base in the bag
 ////   (`lua.ActionBarFrame.ActionBarInnate`, `0x14077dfa0`), and it is in no action set
@@ -47,12 +47,12 @@
 ////   connection reads a player's gear from the items it holds (genesis_prime/game/gear),
 ////   and the set is what character creation saves there.
 
-import genesis_prime/game/innate.{type Innate}
-import genesis_prime/game/item_property.{
+import genesis_prime/shared/innate.{type Innate}
+import genesis_prime/shared/item_property.{
   type ItemProperties, type ItemPropertyError,
 }
-import genesis_prime/game/level
-import genesis_prime/game/worn_visual.{type WornVisual, type WornVisualError}
+import genesis_prime/shared/level
+import genesis_prime/shared/worn_visual.{type WornVisual, type WornVisualError}
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/creature_level
 import genesis_prime/table/id.{
@@ -177,7 +177,7 @@ type LoadoutError {
   NoAbilities(class_id: Int)
   /// A SpellLevel row names a Spell4 row the table lacks.
   NoSpell(spell_level_id: Int, spell4_id: Int)
-  /// A class's innate cannot be held (genesis_prime/game/innate).
+  /// A class's innate cannot be held (genesis_prime/shared/innate).
   InnateFailed(error: innate.InnateError)
 }
 

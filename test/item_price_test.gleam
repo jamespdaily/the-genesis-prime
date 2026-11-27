@@ -17,8 +17,8 @@ import client_tables
 import fixture_tables
 import genesis_prime/content/refusal.{Refusal, RowName}
 import genesis_prime/game/item_price
-import genesis_prime/game/item_property
 import genesis_prime/game/vendor.{ItemRow, VendorRow}
+import genesis_prime/shared/item_property
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/item2
 import gleam/list

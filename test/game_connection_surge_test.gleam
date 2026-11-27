@@ -34,7 +34,6 @@ import genesis_prime/game/ability_book
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/loadout
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers
 import genesis_prime/message/action_set
@@ -48,6 +47,7 @@ import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed
 import genesis_prime/message/spell_threshold_opened
 import genesis_prime/message/unit_float_stat_changed
+import genesis_prime/shared/loadout
 import genesis_prime/step.{type ConnectionStep, OwnEvent}
 import genesis_prime/table/id.{ClassId}
 import gleam/list

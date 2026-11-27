@@ -11,10 +11,8 @@
 //// - Telekinetic Strike: bag index 0, a cast time of 1250 ms (`Spell4.32893`).
 
 import cast_support as support
-import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{Deflected, GoAsked, Hit} as cast_state
-import genesis_prime/game/hit.{type Description, Description}
 import genesis_prime/game/start_place
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
@@ -28,6 +26,8 @@ import genesis_prime/message/spell_go
 import genesis_prime/message/spell_miss.{SpellMiss}
 import genesis_prime/message/spell_missed
 import genesis_prime/message/spell_started
+import genesis_prime/shared/area.{Point, Pose}
+import genesis_prime/shared/hit.{type Description, Description}
 import genesis_prime/table/id.{Spell4Id}
 import gleam/dict
 import gleam/list

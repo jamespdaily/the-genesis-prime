@@ -1,5 +1,5 @@
 //// The amount of an Absorption row for a player that casts it on itself
-//// (`genesis_prime/game/damage` `absorption_formula_of`, `amount_on_caster`). Expected
+//// (`genesis_prime/shared/damage` `absorption_formula_of`, `amount_on_caster`). Expected
 //// values come from these places.
 //// - `Spell4Effects.effectType.29`: the amount is dataBits00 (a float multiplier) x
 ////   (dataBits01, a flat float amount, plus the flat parameters) plus the stat part, as
@@ -18,7 +18,7 @@
 //// round(128.4878 + 35.2363) = round(163.724) = 164.
 
 import attacker_support
-import genesis_prime/game/damage.{Attacker, OnCaster}
+import genesis_prime/shared/damage.{Attacker, OnCaster}
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}
 import owned_test
 import spell_tables

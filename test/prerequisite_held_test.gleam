@@ -1,4 +1,4 @@
-//// Prerequisite types 50 and 59 (`genesis_prime/game/prerequisite`): what the casts of
+//// Prerequisite types 50 and 59 (`genesis_prime/shared/prerequisite`): what the casts of
 //// the unit hold on it. Expected values come from these places:
 //// - `Prerequisite.prerequisiteTypeId.50`: the unit is under the Spell4 in the value
 ////   cast by the check's second unit; comparison 1 passes when such a cast holds a
@@ -12,7 +12,7 @@
 ////   over the casts whose caster is the check's second unit; with no second unit
 ////   comparison 2 passes and every other fails; a second unit 0 counts 0.
 
-import genesis_prime/game/prerequisite.{Fails, Passes}
+import genesis_prime/shared/prerequisite.{Fails, Passes}
 import genesis_prime/table/prerequisite as prerequisite_table
 import gleam/list
 import gleam/option.{None, Some}

@@ -42,13 +42,14 @@
 ////   words 0x6c and 0x148 that make the client pick no spell, the target row's
 ////   crowd-control and fight-state conditions and the unit word 0xc4 that bit 5 reads.
 
-import genesis_prime/game/effect_kind
-import genesis_prime/game/item_property
-import genesis_prime/game/prerequisite.{type Prerequisite}
-import genesis_prime/game/spell_plan.{type Limits, type Spell, Limits}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/item_property
+import genesis_prime/shared/prerequisite.{type Prerequisite}
+import genesis_prime/shared/spell_plan.{type Limits, type Spell, Limits}
 import genesis_prime/table/creature2
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
@@ -61,7 +62,6 @@ import genesis_prime/table/spell4
 import genesis_prime/table/spell4_base
 import genesis_prime/table/spell4_conditions
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -747,7 +747,7 @@ pub type Target {
     /// the cast's target conditions refuse (Spell4CCConditions `ccStateMask`).
     held: List(CrowdControlState),
     /// The unit states the creature holds as the player's picture shows them, by number
-    /// (genesis_prime/game/unit_state), which a hostile or beneficial press is refused for.
+    /// (genesis_prime/shared/unit_state), which a hostile or beneficial press is refused for.
     unit_states: List(Int),
     withheld: Option(Withheld),
   )

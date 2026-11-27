@@ -35,10 +35,7 @@ import character_tables
 import client_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/gear
-import genesis_prime/game/item_property
-import genesis_prime/game/item_stat_kind
 import genesis_prime/game/limited_action_set
-import genesis_prime/game/loadout
 import genesis_prime/game/random_stat
 import genesis_prime/game/world_entry
 import genesis_prime/message/ability_tier.{AbilityTier}
@@ -49,10 +46,13 @@ import genesis_prime/message/float32
 import genesis_prime/message/item_added
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
+import genesis_prime/shared/item_property
+import genesis_prime/shared/item_stat_kind
+import genesis_prime/shared/loadout
+import genesis_prime/shared/unit_fields
 import genesis_prime/store.{type Character, HeldItem}
 import genesis_prime/table/character_creation
 import genesis_prime/table/id.{ClassId, Item2Id, Spell4BaseId}
-import genesis_prime/world_map/unit_fields
 import gleam/float
 import gleam/int
 import gleam/list

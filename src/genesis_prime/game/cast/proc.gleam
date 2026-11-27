@@ -203,17 +203,17 @@ import genesis_prime/game/cast/state.{
   TargetModifierStart, Tick, TickStrike, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/cooldown
-import genesis_prime/game/hit
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
 import genesis_prime/game/proc
-import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
+import genesis_prime/shared/cooldown
+import genesis_prime/shared/hit
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan.{type Spell}
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type TimerId, LogDebug}
 import genesis_prime/table/id.{type Spell4Id, Spell4Id}
 import gleam/bool

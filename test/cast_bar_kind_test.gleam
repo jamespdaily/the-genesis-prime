@@ -1,9 +1,9 @@
-//// The decode of a Spell4Base castBarType number (genesis_prime/game/cast_bar_kind).
+//// The decode of a Spell4Base castBarType number (genesis_prime/shared/cast_bar_kind).
 //// Expected values and their sources:
 //// - `Spell4Base.castBarType`: the client reads the number as zero or not (SpellShowsCastBar
 ////   `0x1407a1820`, IsUnitCastBarShown `0x140469530`, ApplySpellGo `0x14053e5a0`).
 
-import genesis_prime/game/cast_bar_kind.{Bar, NoBar}
+import genesis_prime/shared/cast_bar_kind.{Bar, NoBar}
 import gleam/list
 import owned_test
 

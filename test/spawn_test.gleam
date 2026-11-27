@@ -31,14 +31,15 @@ import character_tables
 import client_tables
 import fixture_tables
 import genesis_prime/content/refusal.{Refusal}
-import genesis_prime/game/area
-import genesis_prime/game/faction_level
-import genesis_prime/game/hit.{Blow, Worked}
-import genesis_prime/game/prerequisite
 import genesis_prime/game/start_place
-import genesis_prime/game/telegraph_entries
-import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
+import genesis_prime/shared/area
+import genesis_prime/shared/faction_level
+import genesis_prime/shared/hit.{Blow, Worked}
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/telegraph_entries
+import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_properties
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
   Creature2Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
@@ -55,7 +56,6 @@ import genesis_prime/world_map/spawn.{
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
-import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/float
 import gleam/int

@@ -1,8 +1,8 @@
-//// Many-point runs for the tests of a creature's path (`genesis_prime/world_map/creature_path`),
+//// Many-point runs for the tests of a creature's path (`genesis_prime/shared/creature_path`),
 //// built from plain x, y, z points in the test map's world.
 
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/world_map/creature_path
+import genesis_prime/shared/creature_path
 import gleam/int
 import gleam/list
 import place_support

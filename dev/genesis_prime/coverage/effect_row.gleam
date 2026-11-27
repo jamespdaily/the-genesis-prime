@@ -10,7 +10,7 @@
 
 import genesis_prime/game/activate
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import gleam/dict.{type Dict}

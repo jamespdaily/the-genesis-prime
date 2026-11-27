@@ -27,11 +27,11 @@ import cast_support as support
 import class_resource_support
 import genesis_prime/coverage/gaps
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
-import genesis_prime/game/class_resource
-import genesis_prime/game/effect_kind
 import genesis_prime/game/held_changes
-import genesis_prime/game/spell_plan.{type Spell, Spell}
 import genesis_prime/message/spell_started
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/spell_plan.{type Spell, Spell}
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/dict

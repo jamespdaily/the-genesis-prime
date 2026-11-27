@@ -2,7 +2,7 @@
 //// random stat group each kind-2 entry of the item's ItemStat takes
 //// (`opcode.0x111.shared_item_random_stats`). The item's maker writes it
 //// (`genesis_prime/game/random_stat`); the item's properties read it
-//// (`genesis_prime/game/item_property`).
+//// (`genesis_prime/shared/item_property`).
 ////
 //// ```
 //// bits 56..63   version (1)

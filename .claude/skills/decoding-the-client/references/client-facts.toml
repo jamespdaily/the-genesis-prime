@@ -7315,7 +7315,7 @@ grade = "fairly sure"
 gap = "How retail's server turned the caster's weapon into the value for 6 (Weapon) and 9 (Weapon DPS) is not in the client."
 
 ["Spell4Effects.effectType.8.formula_gap"]
-statement = "4,655 of the 29,445 Damage rows (type 8) are not struck by the area load (genesis_prime/game/spell_area damage_row_of, and the coverage measure's phase check). Each by its first reason: 136 aim by a targetFlags other than 1, 2, 4 or 6; 2,853 more hold a tickTime; 1,661 more name a parameter type with a value that a hit on a target does not read; 5 more hold a phaseFlags of 0. The types not read, by the rows that name each: 7 (the target's maximum health) on 1,418, 6 (Weapon) on 278, 9 (Weapon DPS) on 135, 8 on 88, 18 on 43, 15 on 23, 14 on 13, 17 on 3, 21 on 3, 16 on 1 and 19 on 1."
+statement = "4,655 of the 29,445 Damage rows (type 8) are not struck by the area load (genesis_prime/shared/spell_area damage_row_of, and the coverage measure's phase check). Each by its first reason: 136 aim by a targetFlags other than 1, 2, 4 or 6; 2,853 more hold a tickTime; 1,661 more name a parameter type with a value that a hit on a target does not read; 5 more hold a phaseFlags of 0. The types not read, by the rows that name each: 7 (the target's maximum health) on 1,418, 6 (Weapon) on 278, 9 (Weapon DPS) on 135, 8 on 88, 18 on 43, 15 on 23, 14 on 13, 17 on 3, 21 on 3, 16 on 1 and 19 on 1."
 proof = "`gleam run -m genesis_prime/table_rows -- Spell4Effects effectType=8` counted by a scratch script with damage.gleam's is_read (types 0 to 5 and 10 to 13) and spell_plan's aims; the total matches the coverage measure's type 8 count."
 grade = "fairly sure"
 gap = "Counted from the table, with the server's own load rules; the types that read a unit's vitals or the caster's weapon, type 18 and the ticking rows are not yet built."
@@ -13632,7 +13632,7 @@ gap = "Read from the saved C. What the item's own flag word bit 0x20 and the ite
 
 ["0x14040d160.sell_cleared"]
 statement = "BuildItemPrices clears an item's sell price (amounts 0, currency types 15) when the item's joined flags lack 0x20 or its Item2Family is 24 (Quest Item), provided a sell amount is nonzero in a currency below 15 (or 15 with a nonzero exchange part). So an item whose Item2Type, Item2Category and Item2Family flags hold no 0x20, or a quest item, has no sell price and CheckItemSellable refuses it with 23. Of the 72,106 Item2 rows, 56,437 pass this rule and 15,669 do not."
-proof = "Saved C 0x14040d160.c (8eb22adb6de47956) lines 57-73: (*(byte*)(rec+0x154) & 0x20) == 0 || *(int*)(rec+0x140) == 0x18, then the amount and currency tests on p[0x16]/p[0x18] and p[0x1c]/p[0x1e], then p[0x16] = 0, p[0x18] = 0xf, p[0x1c] = 0, p[0x1e] = 0xf. rec+0x140 is the Item2Family id (BuildItemPrices record, ids at +0x148/+0x140/+0x144). Count: table_rows dumps of Item2, Item2Type, Item2Category, Item2Family; joined = type|category|family flags, or 0x10004 for Item2 flags 0x4000 (as genesis_prime/game/item_property joins them); sellable when joined & 0x20 and family != 24."
+proof = "Saved C 0x14040d160.c (8eb22adb6de47956) lines 57-73: (*(byte*)(rec+0x154) & 0x20) == 0 || *(int*)(rec+0x140) == 0x18, then the amount and currency tests on p[0x16]/p[0x18] and p[0x1c]/p[0x1e], then p[0x16] = 0, p[0x18] = 0xf, p[0x1c] = 0, p[0x1e] = 0xf. rec+0x140 is the Item2Family id (BuildItemPrices record, ids at +0x148/+0x140/+0x144). Count: table_rows dumps of Item2, Item2Type, Item2Category, Item2Family; joined = type|category|family flags, or 0x10004 for Item2 flags 0x4000 (as genesis_prime/shared/item_property joins them); sellable when joined & 0x20 and family != 24."
 grade = "fairly sure"
 gap = "Read from the saved C. The count assumes the proxy rule of item_property for Item2 flags 0x4000."
 
@@ -16457,7 +16457,7 @@ gap = "The pet's 18-bit value has no reader in the five functions that touch the
 
 ["unit_create_tail.field_20"]
 statement = "The 18-bit value in 0x262's third tagged entry (tag 1) is the unit's creature-set id, which TargetGroup type 9 tests; 1,110 distinct ids, reached by 13 type-8 and 27 type-16 quest objectives. 0 is in no set. The 1-bit value of the first tagged entry for tag 0 is never read."
-proof = "Records opcode.0x262.unit_fields (tag 0's bit never read; third entry 0x108 tag, 0x110 the 18-bit value) and TargetGroup.type.9 (unit 0x140; counts). Our tail sends first_tag 0 (constant) with field_14 0 and third_tag 1 with field_20 0 (src/genesis_prime/world_map/unit_fields.gleam lines 146 and 150)."
+proof = "Records opcode.0x262.unit_fields (tag 0's bit never read; third entry 0x108 tag, 0x110 the 18-bit value) and TargetGroup.type.9 (unit 0x140; counts). Our tail sends first_tag 0 (constant) with field_14 0 and third_tag 1 with field_20 0 (src/genesis_prime/shared/unit_fields.gleam lines 146 and 150)."
 grade = "fairly sure"
 gap = "Which creature carries which set id is in neither the client nor the world database; a retail 0x262 capture of a creature that a type-9 group names would settle it."
 
@@ -16563,7 +16563,7 @@ grade = "fairly sure"
 gap = "Not run."
 
 ["opcode.0x247.falling_damage"]
-statement = "Combat log type 8 (CombatLogFallingDamage) of message 0x247. Body after the 6-bit type: unitCaster (32), nDamageAmount (32); no cast data. The client shows: CombatLog_FallingDamage ('$1n suffers $2n Falling Damage', text 452967). Server: LATER: falling damage is not handled (game/unit_properties.gleam)."
+statement = "Combat log type 8 (CombatLogFallingDamage) of message 0x247. Body after the 6-bit type: unitCaster (32), nDamageAmount (32); no cast data. The client shows: CombatLog_FallingDamage ('$1n suffers $2n Falling Damage', text 452967). Server: LATER: falling damage is not handled (shared/unit_properties.gleam)."
 proof = "Reader table 0x140c1e870 entry 8 = 0x14007a040 (saved C 8eb22adb6de47956). HandleCombatLog 0x1403c3190.c (df371531eea3daad) case 8: filter 0x1403c2ee0, then raiser 0x14060d630 ('CombatLogFallingDamage' with the named fields). Line keys from UI/CombatLog/CombatLog.lua's handler."
 grade = "fairly sure"
 gap = "Not run."
@@ -16605,7 +16605,7 @@ grade = "fairly sure"
 gap = "The 3-bit value and the four 32-bit amounts are named only by analogy with type 3; the entry names come from 0x14060e4e0's strings in order."
 
 ["opcode.0x247.vital_modifier"]
-statement = "Combat log type 16 (CombatLogVitalModifier) of message 0x247. Body after the 6-bit type: nAmount (a float), eVitalType (5), bShowCombatLog (1), then the cast data (caster unit id 32, target unit id 32, Spell4 id 18, combat result 4). The client shows: CombatLog_GainVital / CombatLog_LoseVital, only when bShowCombatLog is 1. Server: NEEDED-NOW (guess): spell resource gains (VitalModifier, game/spell_plan.gleam) are built and only this type logs them; whether retail set bShowCombatLog for them is not in the client."
+statement = "Combat log type 16 (CombatLogVitalModifier) of message 0x247. Body after the 6-bit type: nAmount (a float), eVitalType (5), bShowCombatLog (1), then the cast data (caster unit id 32, target unit id 32, Spell4 id 18, combat result 4). The client shows: CombatLog_GainVital / CombatLog_LoseVital, only when bShowCombatLog is 1. Server: NEEDED-NOW (guess): spell resource gains (VitalModifier, shared/spell_plan.gleam) are built and only this type logs them; whether retail set bShowCombatLog for them is not in the client."
 proof = "Reader table 0x140c1e870 entry 16 = 0x14009f820 (saved C 49fd5a78aaad3411). HandleCombatLog 0x1403c3190.c (df371531eea3daad) case 16: filter 0x1403c2ee0, then raiser 0x14060f170 ('CombatLogVitalModifier' with the named fields). Line keys from UI/CombatLog/CombatLog.lua's handler."
 grade = "fairly sure"
 gap = "Retail's use of bShowCombatLog: a recording of a resource gain would settle it."

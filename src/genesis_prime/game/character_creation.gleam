@@ -13,18 +13,18 @@
 //// A request that passes gives the character to make: its gender, race, class
 //// and faction are the row's, and its place is its start's
 //// (genesis_prime/game/start_place) and its level is the one its xp gives
-//// (genesis_prime/game/level). Every refusal is the result 4, "due to an error"
+//// (genesis_prime/shared/level). Every refusal is the result 4, "due to an error"
 //// (lua.Character.OnCreateCharacterFailed), in one place (`result_of`). A request
 //// the real client would not send is no player's mistake, so the caller logs
 //// each refusal.
 
-import genesis_prime/game/appearance
-import genesis_prime/game/item_property
-import genesis_prime/game/level
-import genesis_prime/game/loadout
 import genesis_prime/game/start_place
 import genesis_prime/message/create_character.{type CreateCharacter}
 import genesis_prime/message/create_result.{type CreateResult}
+import genesis_prime/shared/appearance
+import genesis_prime/shared/item_property
+import genesis_prime/shared/level
+import genesis_prime/shared/loadout
 import genesis_prime/store.{
   type LookEntry, type NewCharacter, type NewItem, NewCharacter, NewItem,
 }
@@ -77,7 +77,7 @@ pub type Refusal {
   /// (genesis_prime/game/start_place).
   NoStartPlace(creation_id: Int, start: Int, faction_id: Int, race_id: Int)
   /// The row's xp is no level of the client's XpPerLevel table
-  /// (genesis_prime/game/level).
+  /// (genesis_prime/shared/level).
   NoLevelForExperience(creation_id: Int, experience: Int)
 }
 

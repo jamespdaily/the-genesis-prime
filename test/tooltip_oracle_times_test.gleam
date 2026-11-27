@@ -37,8 +37,8 @@
 import cast_support as support
 import fixture_tables
 import genesis_prime/game/cast/state.{type State} as cast_state
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{type Spell}
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{type Spell}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects}

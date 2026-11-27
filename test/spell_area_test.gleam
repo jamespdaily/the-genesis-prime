@@ -1,4 +1,4 @@
-//// What the client's tables say a spell strikes (`genesis_prime/game/spell_area`),
+//// What the client's tables say a spell strikes (`genesis_prime/shared/spell_area`),
 //// on the client's own rows (`spell_tables.fixture_areas`). Expected values come from
 //// these places.
 //// - Kick's rows: `Spell4.58591.area` (area row 640: 5 units, 0 to 8 m, 180 degrees;
@@ -19,26 +19,26 @@ import area_tables
 import client_shape_rows
 import client_tables
 import fixture_tables
-import genesis_prime/game/area.{
+import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/area.{
   type Inside, type Placement, type Row, Box, Circle, Cone, InsideRow,
   InsideShapes, Placement, Rectangle, Row,
 }
-import genesis_prime/game/crowd_control
-import genesis_prime/game/damage
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_area.{
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/damage
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_area.{
   AimNotRead, FormulaNotRead, MultiplierNotFinite, Once, Periodic, PlacedApart,
   SelectionNeedsHealth, SelectionNotBuilt, ShapeNotBuilt, TargetingNotBuilt,
   TelegraphNotOnCaster, TelegraphOnStruckUnits, TickingNoTick,
   TickingUntilRemoved, ValidTargetsNotBuilt,
 }
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan
-import genesis_prime/game/spend.{EqualTo}
-import genesis_prime/game/target_mechanic
-import genesis_prime/game/telegraph_window
-import genesis_prime/game/ticking
-import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/spend.{EqualTo}
+import genesis_prime/shared/target_mechanic
+import genesis_prime/shared/telegraph_window
+import genesis_prime/shared/ticking
 import genesis_prime/table/id.{
   Spell4AoeTargetConstraintsId, Spell4BaseId, Spell4EffectsId, Spell4Id,
   TelegraphDamageId,

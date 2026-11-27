@@ -16,8 +16,8 @@ import genesis_prime/message/spell_targets_removed.{type SpellTargetsRemoved}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
+import genesis_prime/shared/creature_path.{type Path}
 import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
-import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/creature_turn.{type Face}
 import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/world_map/generation.{type Generation}
@@ -170,7 +170,7 @@ pub type News {
     instance_id: Int,
   )
   /// The unit holds the unit state `state`, as the `number` its creature gave this hold
-  /// (genesis_prime/game/unit_state): no frame, since the client reads no row of the type;
+  /// (genesis_prime/shared/unit_state): no frame, since the client reads no row of the type;
   /// the viewer's connection keeps it in its picture of the unit, so a press that the state
   /// refuses is refused at the viewer's side too (genesis_prime/game/shown `unit_states`).
   UnitStateHeld(state: Int, number: Int)
@@ -180,7 +180,7 @@ pub type News {
   /// client holds them: 0x93a (opcode.0x93a), written when the viewer's client shows
   /// the unit. A player's connection sends it for a property a lasting modifier of
   /// its own spell changed, and a creature's process for a property a modifier of a
-  /// player's spell changed on it (genesis_prime/game/unit_properties).
+  /// player's spell changed on it (genesis_prime/shared/unit_properties).
   PropertiesChanged(properties: List(UnitProperty))
   /// The unit entered or left stealth: 0x8f5 (opcode.0x8f5), then 0x247 of type 24
   /// (opcode.0x247.type24), written when the viewer's client shows the unit. Only a
@@ -191,7 +191,7 @@ pub type News {
   /// Some of the unit's item visuals changed, the slots whose shown display moved with
   /// what shows now: 0x933 (opcode.0x933), written when the viewer's client shows the
   /// unit and dropped otherwise. Only a player's connection sends it, for its own unit
-  /// (genesis_prime/game/look); a viewer that first sees the unit gets the current
+  /// (genesis_prime/shared/look); a viewer that first sees the unit gets the current
   /// visuals in its 0x262 instead.
   LookChanged(item_visuals: List(ItemVisual))
   /// The last source of the cast `cast_id` that the player holds from another player's

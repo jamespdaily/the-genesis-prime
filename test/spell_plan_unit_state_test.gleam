@@ -1,5 +1,5 @@
-//// The unit states of the plan (`genesis_prime/game/spell_plan` `UnitState`,
-//// `genesis_prime/game/effect_kind`). Expected values come from these places:
+//// The unit states of the plan (`genesis_prime/shared/spell_plan` `UnitState`,
+//// `genesis_prime/shared/effect_kind`). Expected values come from these places:
 //// - `Spell4Effects.effectType.15`: the columns of the client's rows (`table_rows --
 ////   Spell4Effects effectType=15`): 64365 (Spell4 32683 "Stun/Immune - 8 seconds", state 6,
 ////   targetFlags 2, durationTime 8500, phaseFlags 1), 204411 (Spell4 48565, state 6,
@@ -18,12 +18,12 @@
 
 import fixture_tables
 import genesis_prime/game/activate.{Planned}
-import genesis_prime/game/effect_kind
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan.{Always}
-import genesis_prime/game/spend
-import genesis_prime/game/unit_state
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan.{Always}
+import genesis_prime/shared/spend
+import genesis_prime/shared/unit_state
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
 import genesis_prime/table/spell4_effects
 import gleam/list

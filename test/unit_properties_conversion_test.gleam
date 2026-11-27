@@ -1,4 +1,4 @@
-//// The property conversions of a player's properties (`genesis_prime/game/unit_properties`
+//// The property conversions of a player's properties (`genesis_prime/shared/unit_properties`
 //// `Conversion`). Expected values come from these places:
 //// - `Spell4Effects.effectType.145`: property dataBits01 gains dataBits02 times property
 ////   dataBits00 while the effect lasts, and the client works out no property, so the
@@ -18,11 +18,11 @@
 ////   (`table_rows -- UnitProperty2 7 42 47 60`).
 
 import cast_support
-import genesis_prime/game/unit_properties.{
-  type Properties, Change, Changed, Conversion,
-}
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/unit_properties.{
+  type Properties, Change, Changed, Conversion,
+}
 import genesis_prime/table/id.{UnitProperty2Id}
 import gleam/float
 import gleam/list

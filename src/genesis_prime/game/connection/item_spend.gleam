@@ -42,11 +42,11 @@ import genesis_prime/game/connection/state.{
 } as connection_state
 import genesis_prime/game/inventory
 import genesis_prime/game/item_charge
-import genesis_prime/game/item_property
 import genesis_prime/game/movement
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/cast_result
+import genesis_prime/shared/item_property
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome,
 }

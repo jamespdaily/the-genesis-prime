@@ -1,4 +1,4 @@
-//// A faction's level toward another (`genesis_prime/game/faction_level`), as the client
+//// A faction's level toward another (`genesis_prime/shared/faction_level`), as the client
 //// works it out: GetFactionLevelTo `0x140787760` over the lineage `0x140717560`, and
 //// Hostile as 0 to 2 (`0x140787830`). Expected levels name the client's
 //// Faction2Relationship rows. Faction2: 166 (Dominion) and 167 (Exile) have parent 165,
@@ -6,7 +6,7 @@
 
 import character_tables
 import fixture_tables
-import genesis_prime/game/faction_level.{Friendly, Hostile, Neutral}
+import genesis_prime/shared/faction_level.{Friendly, Hostile, Neutral}
 import gleam/list
 import owned_test
 import planted_table.{Integer}

@@ -1,10 +1,10 @@
 //// Prerequisite rows for tests that check a prerequisite
-//// (`genesis_prime/game/prerequisite`), built as the client's table holds them.
+//// (`genesis_prime/shared/prerequisite`), built as the client's table holds them.
 
 import fixture_tables
-import genesis_prime/game/area.{type Pose, Point, Pose}
-import genesis_prime/game/lasting
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/area.{type Pose, Point, Pose}
+import genesis_prime/shared/lasting
+import genesis_prime/shared/prerequisite.{
   type Checker, type FirstUnit, type Player, type Prerequisite, type Subject,
   Checker, Player, Subject,
 }

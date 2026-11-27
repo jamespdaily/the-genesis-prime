@@ -1,4 +1,4 @@
-//// The rules of a cast's lasting effects (`genesis_prime/game/lasting`): a node's
+//// The rules of a cast's lasting effects (`genesis_prime/shared/lasting`): a node's
 //// life, what a type 80 row takes off, and what a new cast at its stack cap pushes
 //// off. Expected values come from these places:
 //// - `opcode.0x7f4.effect_time`: an effect's lifetime is its delay plus its
@@ -15,11 +15,11 @@
 ////   unit, and a new one at the cap takes the oldest off; a cap of 0 keeps one per
 ////   spell.
 
-import genesis_prime/game/lasting.{
+import genesis_prime/shared/lasting.{
   type Hold, Base, EndsAt, Group, Hold, LastingRow, NoLife, Node, NodeOff, Spell,
   Stack, StackOff, UntilRemoved,
 }
-import genesis_prime/game/lasts
+import genesis_prime/shared/lasts
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/int
 import gleam/list

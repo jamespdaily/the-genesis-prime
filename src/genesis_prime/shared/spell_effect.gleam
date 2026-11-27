@@ -1,6 +1,6 @@
 //// The envelope every effect row of a planned spell carries, whatever it does: which row it
 //// is, the phases it applies in and the points-spent tag that chooses it, around the
-//// kind-specific payload that `genesis_prime/game/spell_plan` defines.
+//// kind-specific payload that `genesis_prime/shared/spell_plan` defines.
 ////
 //// - **One list, ranked.** A planned spell holds its effect rows in one list, sorted by the
 ////   rank of their kinds and, within a kind, in row order, which is the order the cast's
@@ -8,15 +8,15 @@
 ////   (`cast/control.lasting_applied`).
 //// - **Phases and tags are read here once**: a row applies in phase n when bit n of its
 ////   `phase_flags` is set (every bit for -1) and its tag holds for the points the cast spent
-////   (`genesis_prime/game/spend.applies`).
+////   (`genesis_prime/shared/spend.applies`).
 //// - **A channel's pulse k is phase k** (`opcode.0x7f4.phase`). The client compares a row's
 ////   phase only for a channel whose spellChannelFlags has bit 1; in any other channel a
 ////   row of phaseFlags 1 and no tickTime names every pulse, which
-////   `genesis_prime/game/spell_plan` `effects_by_spell` writes as -1
+////   `genesis_prime/shared/spell_plan` `effects_by_spell` writes as -1
 ////   (`Spell4Effects.phaseFlags.channel`), and a mask keeps bit k for pulse k (`gaps`).
 
-import genesis_prime/game/spend
 import genesis_prime/gap
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{type Spell4EffectsId}
 import gleam/int
 import gleam/list
@@ -53,7 +53,7 @@ pub fn names_phase(phase_flags phase_flags: Int, phase phase: Int) -> Bool {
 
 /// Whether a row with these phase flags and this tag applies in phase `phase`: the flags name
 /// the phase (`names_phase`) and the tag holds for the points the cast spent
-/// (genesis_prime/game/spend `applies`).
+/// (genesis_prime/shared/spend `applies`).
 pub fn applies_in_phase(
   phase_flags phase_flags: Int,
   tag tag: spend.Tag,

@@ -1,4 +1,4 @@
-//// The class innate in a loadout (`genesis_prime/game/loadout`), on the client's
+//// The class innate in a loadout (`genesis_prime/shared/loadout`), on the client's
 //// tables. Expected values come from these places.
 //// - `lua.ActionBarFrame.ActionBarInnate`: the innate button finds the class's
 ////   slot-0 active spell by its Spell4Base in the ability bag (`0x14077dfa0`), so
@@ -13,8 +13,8 @@
 
 import client_tables
 import genesis_prime/game/ability_book
-import genesis_prime/game/innate.{Passive}
-import genesis_prime/game/loadout
+import genesis_prime/shared/innate.{Passive}
+import genesis_prime/shared/loadout
 import genesis_prime/table/id.{ClassId, Spell4BaseId, Spell4Id}
 import gleam/int
 import gleam/list

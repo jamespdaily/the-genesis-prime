@@ -1,5 +1,5 @@
 //// The player's class resource on the game connection
-//// (genesis_prime/game/connection): its rule (genesis_prime/game/class_resource)
+//// (genesis_prime/game/connection): its rule (genesis_prime/shared/class_resource)
 //// is kept in the player's `Entered` beside its life, and this module turns what
 //// reaches the connection into the rule's inputs and carries out its effects.
 ////
@@ -24,11 +24,11 @@
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/class_resource
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/player_life
 import genesis_prime/game/world_entry
+import genesis_prime/shared/class_resource
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type TimerId, CancelTimer, OwnEffect,
   StartTimer,

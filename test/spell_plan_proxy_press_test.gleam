@@ -1,5 +1,5 @@
 //// How the plan loads a RapidTap or ChargeRelease ability whose thresholdTime is 0
-//// (`genesis_prime/game/spell_plan`). Expected values come from these places.
+//// (`genesis_prime/shared/spell_plan`). Expected values come from these places.
 //// - ResolveProxyByCasterApply `0x1403d3520`: the press walks the ability's effects in
 ////   row order, skips every row that is not a Proxy or whose caster apply prerequisite is
 ////   0 (`0x1403d35c3`), and takes the dataBits00 spell of the first whose caster apply
@@ -22,7 +22,7 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/spell_plan.{type PlanError, type Spell}
+import genesis_prime/shared/spell_plan.{type PlanError, type Spell}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store
 import gleam/int

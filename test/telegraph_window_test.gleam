@@ -1,5 +1,5 @@
 //// When the client draws a TelegraphDamage row of a cast
-//// (`genesis_prime/game/telegraph_window`), on the client's committed rows. Expected values come
+//// (`genesis_prime/shared/telegraph_window`), on the client's committed rows. Expected values come
 //// from these places.
 //// - `TelegraphDamage.telegraphTimeStartMs`: a row appears once the cast is `telegraphTimeStartMs`
 ////   old and goes once it is `telegraphTimeEndMs` old (0: no end), counted from the 0x7ff;
@@ -14,7 +14,7 @@
 ////   4,600; 47033 1,500, 2,500, 2,750 and 3,200; 39943 500, 1,500, 1,600, 1,650 and 1,700.
 
 import fixture_tables
-import genesis_prime/game/telegraph_window
+import genesis_prime/shared/telegraph_window
 import genesis_prime/table/id.{TelegraphDamageId}
 import genesis_prime/table/telegraph_damage
 import gleam/int

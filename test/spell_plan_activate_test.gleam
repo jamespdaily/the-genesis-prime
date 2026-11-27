@@ -10,16 +10,16 @@ import genesis_prime/coverage/effect_row
 import genesis_prime/game/activate.{CannotBePlanned, NoSpell4Row, Planned}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_plan.{AliveOrDead, CannotBeDead, MustBeDead}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan.{AliveOrDead, CannotBeDead, MustBeDead}
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Spell4ConditionsId, Spell4EffectsId, Spell4Id}

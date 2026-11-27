@@ -12,9 +12,9 @@
 ////   ones `ability_book_test` lists; Class `spell4IdInnateAbilityActive00` gives the innate.
 
 import ability_book_support as support
-import genesis_prime/game/loadout
 import genesis_prime/message/action_set
 import genesis_prime/message/action_shortcut.{ActionShortcut}
+import genesis_prime/shared/loadout
 import gleam/list
 import owned_test
 import world_entry_support

@@ -60,7 +60,7 @@
 //// - **A strike carries the gates of its rows** (`Gate`): each row of the strike, damage,
 ////   crowd control or go, whose target apply prerequisite reads the struck creature's own
 ////   state, with the prerequisite as parsed. The creature checks them against its own state
-////   when the strike arrives (genesis_prime/game/prerequisite `of_creature`), before the hit
+////   when the strike arrives (genesis_prime/shared/prerequisite `of_creature`), before the hit
 ////   rule, and answers the effect ids it passed (`gates_passed`) with `Landed`, `Immune` and
 ////   `Deflected`, so a deflect still checks its gates: a blow or state of a row that did
 ////   not pass is not dealt or taken, so it is in neither `descriptions` nor `controls`. A
@@ -79,14 +79,14 @@
 ////   creature it puts on a fight finds it, ordered with the moves its connection
 ////   tells (genesis_prime/world_map/creature_fight).
 
-import genesis_prime/game/crowd_control
-import genesis_prime/game/effect_kind
-import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
-import genesis_prime/game/hit.{type Description, type Offence, type Rolls}
-import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/proc
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/hit.{type Description, type Offence, type Rolls}
+import genesis_prime/shared/prerequisite.{type Prerequisite}
 import genesis_prime/step.{type Address, type ConnectionId}
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import genesis_prime/world_map/stay.{type Stay}
@@ -104,7 +104,7 @@ pub type Key {
 
 /// What a strike of a cast is for: a go of the phase `phase`, or the tick `tick` of the
 /// periodic damage row `effect_id` in the schedule its `go`th go on the unit started
-/// (genesis_prime/game/ticking): a later go starts the schedule again, and a round of
+/// (genesis_prime/shared/ticking): a later go starts the schedule again, and a round of
 /// the earlier schedule may still be open with the same tick number.
 pub type Occasion {
   AtGo(phase: Int)
@@ -157,7 +157,7 @@ pub type Interrupted {
 }
 
 /// One CCStateSet effect a strike puts on the unit: its Spell4Effects id, the instance
-/// id the caster gave it for the go, and its row (genesis_prime/game/crowd_control
+/// id the caster gave it for the go, and its row (genesis_prime/shared/crowd_control
 /// `Row`: the state, the delay before and the duration of the effect in milliseconds,
 /// and the Interrupt Armor it removes). The cast id is the strike's key's. The creature
 /// holds the state from the tell until the delay and duration have passed and sends the
@@ -178,7 +178,7 @@ pub type ControlTell {
 pub type Striker {
   /// A player: its unit, the place it struck from and the move sequence number of
   /// that place (genesis_prime/game/connection), its hit radius (its race's Race row,
-  /// genesis_prime/game/hit_radius) and its rolls, from its connection's seed.
+  /// genesis_prime/shared/hit_radius) and its rolls, from its connection's seed.
   PlayerStriker(
     unit_id: Int,
     place: Place,
@@ -229,7 +229,7 @@ pub type Refusal {
 
 /// What a creature answers a strike with.
 pub type Outcome {
-  /// The blows landed: a description for each (genesis_prime/game/hit), and the
+  /// The blows landed: a description for each (genesis_prime/shared/hit), and the
   /// states the unit took of the strike's `controls` (a unit that takes none
   /// answers `[]`), and the interrupt armor the strike took off it (`armor_removed`, 0
   /// when none), which the striker's connection shows as a ModifyInterruptArmor line.

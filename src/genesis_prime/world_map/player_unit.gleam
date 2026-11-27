@@ -36,7 +36,7 @@
 ////   The character's own `place` field is never read: a unit holds the
 ////   character for its other values, and its place only as the unit's own.
 //// - **Body:** the item visuals the character list sends
-////   (genesis_prime/game/appearance), and the stored bone values
+////   (genesis_prime/shared/appearance), and the stored bone values
 ////   (opcode.0x262.player_fields). The client draws armor and a weapon only from item
 ////   visuals, on the player's own client and every other's, which are sent the same
 ////   0x262 (`opcode.0x262.worn_visuals`).
@@ -45,8 +45,6 @@
 //// - Every other field 0 or empty, each by its record
 ////   (opcode.0x262.player_fields, opcode.0x262.unit_fields).
 
-import genesis_prime/game/class_resource.{type Resource}
-import genesis_prime/game/loadout.{type Loadout}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{type ItemVisual}
@@ -62,9 +60,11 @@ import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/class_resource.{type Resource}
+import genesis_prime/shared/loadout.{type Loadout}
+import genesis_prime/shared/unit_fields
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/id.{type RaceId, type UnitProperty2Id}
-import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}

@@ -1,4 +1,4 @@
-//// The plan's rows behind a target apply prerequisite (`genesis_prime/game/spell_plan`
+//// The plan's rows behind a target apply prerequisite (`genesis_prime/shared/spell_plan`
 //// `Condition`). Expected values come from these places.
 //// - The client's rows (`table_rows -- Spell4Effects 144869 105266 182739 55576 91018 111129`
 ////   and `-- Prerequisite 13148 18863 20868 15912 11311 903 20271`), kept in the fixture:
@@ -24,8 +24,8 @@
 ////   client's own type 80 remove 173068 (Spell4 41193, target apply 650) is one.
 
 import fixture_tables
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{
   type Condition, type Spell, GatedOnCasterAndTarget, GatedOnTarget,
 }
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}

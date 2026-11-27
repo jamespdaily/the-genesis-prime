@@ -24,12 +24,12 @@ import fixture_tables
 import genesis_prime/game/item_use.{
   Declined, NotSentByClient, UnreadPrerequisite,
 }
-import genesis_prime/game/prerequisite
 import genesis_prime/message/cast_result.{
   ItemCharges, ItemObjectiveComplete, ItemQuestRequirementsNotMet,
   ItemTooHighLevel, SpellPreRequisites,
 }
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
+import genesis_prime/shared/prerequisite
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/id.{type Spell4Id, Item2Id, Spell4Id}

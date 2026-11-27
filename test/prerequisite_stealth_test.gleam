@@ -1,4 +1,4 @@
-//// Prerequisite type 116, the unit's stealth (`genesis_prime/game/prerequisite`).
+//// Prerequisite type 116, the unit's stealth (`genesis_prime/shared/prerequisite`).
 //// Expected values come from these places:
 //// - `Prerequisite.prerequisiteTypeId.116` (`0x1404a2609`): the check reads the first
 ////   unit's stealth state; comparison 1 passes when it is above 1 (stealthed), 2 when it
@@ -13,7 +13,7 @@
 ////   a creature's side, gives `NotRead(116)`.
 
 import client_tables
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/prerequisite.{
   type Verdict, Fails, NotRead, Passes, Subject,
 }
 import genesis_prime/table/id.{PrerequisiteId}

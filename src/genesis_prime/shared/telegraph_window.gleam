@@ -26,8 +26,8 @@
 ////   (`TelegraphDamage.telegraphDamageFlags.0x2000`), so `timed_from_a_go` names it for the
 ////   caller to refuse.
 
-import genesis_prime/game/spell_effect
-import genesis_prime/game/telegraph_entries
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/telegraph_entries
 import genesis_prime/table/telegraph_damage.{type TelegraphDamage}
 import gleam/list
 import gleam/option.{type Option, None, Some}

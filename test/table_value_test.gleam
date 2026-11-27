@@ -22,12 +22,12 @@ import ask_support
 import character_tables
 import fixture_tables
 import fresh_node
-import genesis_prime/game/appearance
 import genesis_prime/game/character_state
-import genesis_prime/game/rating
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan
-import genesis_prime/game/top_zone
+import genesis_prime/shared/appearance
+import genesis_prime/shared/rating
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/top_zone
 import genesis_prime/table/class
 import genesis_prime/table/creature2
 import genesis_prime/table/creature2_outfit_info

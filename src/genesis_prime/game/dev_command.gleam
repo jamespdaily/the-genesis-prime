@@ -46,10 +46,10 @@
 ////   mistyped command is not said aloud to the players who see the speaker.
 
 import genesis_prime/game/currency
-import genesis_prime/game/item_property
-import genesis_prime/game/level
 import genesis_prime/game/start_place
 import genesis_prime/gap
+import genesis_prime/shared/item_property
+import genesis_prime/shared/level
 import genesis_prime/table/currency_type
 import genesis_prime/table/id.{
   type Creature2Id, type CurrencyTypeId, type Item2Id, type Quest2Id,

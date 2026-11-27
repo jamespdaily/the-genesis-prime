@@ -74,8 +74,8 @@ import genesis_prime/game/start_place.{type Facing, type Place}
 import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/random
+import genesis_prime/shared/creature_path.{type Circle, type Path}
 import genesis_prime/table/spell4_effects
-import genesis_prime/world_map/creature_path.{type Circle, type Path}
 import gleam/bool
 import gleam/float
 import gleam/int
@@ -420,7 +420,7 @@ fn toward_reference(
 
 /// The way the creature faces at its end: toward the reference unit for flag 4, else
 /// along its move for flag 8, a yaw of `atan2(-dx, -dz)` as the client's facing is read
-/// (genesis_prime/game/area).
+/// (genesis_prime/shared/area).
 fn turn_of(
   move move: Move,
   from from: Place,

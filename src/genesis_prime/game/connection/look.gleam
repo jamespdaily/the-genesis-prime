@@ -1,5 +1,5 @@
 //// The player's look on the game connection (genesis_prime/game/connection): its rule
-//// (genesis_prime/game/look) is kept in the player's `Entered` beside its properties,
+//// (genesis_prime/shared/look) is kept in the player's `Entered` beside its properties,
 //// and this module turns what the cast rule decides into the rule's inputs and carries
 //// out the slots that changed. No new process: the connection that owns the player
 //// speaks for its unit to each viewer, as it does for stealth and properties.
@@ -56,11 +56,11 @@
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/state.{type Session} as connection_state
-import genesis_prime/game/look
 import genesis_prime/game/unit_news
-import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_visual.{type ItemVisual}
+import genesis_prime/shared/look
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type ConnectionEffect, type Effect}
 import gleam/option.{None, Some}
 

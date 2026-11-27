@@ -26,7 +26,6 @@
 
 import character_tables
 import genesis_prime/game/experience.{GainSent, LevelRose, Progress}
-import genesis_prime/game/prerequisite
 import genesis_prime/game/quest
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/quest_turn_in
@@ -35,6 +34,7 @@ import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/message/item_added
 import genesis_prime/message/quest_state.{QuestState}
+import genesis_prime/shared/prerequisite
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{
   type QuestRow, CompletedRow, HeldItem, NewStack, Placed, StackGrowth,

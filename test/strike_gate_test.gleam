@@ -33,32 +33,32 @@
 
 import cast_support as support
 import fixture_tables
-import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast/state.{type Caster, GoAsked} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/crowd_control
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
-import genesis_prime/game/hit.{Rolls}
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/player_state
-import genesis_prime/game/prerequisite.{NonPlayer}
-import genesis_prime/game/spell_area.{
-  type DamageEffect, type TickingDamage, Once, TickingDamage,
-}
-import genesis_prime/game/spell_plan.{
-  type Condition, type CrowdControl, AimsAtArea, AimsAtPrimaryTarget,
-  GatedOnTarget,
-}
-import genesis_prime/game/spend
 import genesis_prime/game/start_place
 import genesis_prime/game/strike.{
   type Effect, type Selection, type State, Aimed, Selection,
 }
 import genesis_prime/game/strike_tell.{Answered, Landed, Refused}
-import genesis_prime/game/ticking
+import genesis_prime/shared/area.{type Pose}
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/hit.{Rolls}
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite.{NonPlayer}
+import genesis_prime/shared/spell_area.{
+  type DamageEffect, type TickingDamage, Once, TickingDamage,
+}
+import genesis_prime/shared/spell_plan.{
+  type Condition, type CrowdControl, AimsAtArea, AimsAtPrimaryTarget,
+  GatedOnTarget,
+}
+import genesis_prime/shared/spend
+import genesis_prime/shared/ticking
 import genesis_prime/step.{ConnectionId, LogDebug, Now}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4_effects

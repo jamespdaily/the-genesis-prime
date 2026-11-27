@@ -1,7 +1,7 @@
 //// A rating turned into a chance, as the client does for every rating: the
 //// critical hit chance and severity, the deflect chance, the strikethrough, the
 //// critical deflect, the glance chance and amount and the mitigation of a unit.
-//// The hit rule (genesis_prime/game/hit) reads them.
+//// The hit rule (genesis_prime/shared/hit) reads them.
 ////
 //// ```
 //// GameFormula 1230, 1231, 1232, 1234, 1235, 1236, 1245, 1271 ─▶ Formulas, once, when the tables load
@@ -19,7 +19,7 @@
 ////   glance chance 1245 and glance amount 1271 (`0x140453b60.callers`) and
 ////   mitigation 1234, never below 0 (`0x140464240`).
 //// - **A player's bases** are the player's own properties
-////   (genesis_prime/game/unit_properties): BaseCritChance (102),
+////   (genesis_prime/shared/unit_properties): BaseCritChance (102),
 ////   CriticalHitSeverityMultiplier (127) and BaseAvoidReduceChance (104), which the
 ////   callers hand to `to_fraction` as `base`; a Novice's ratings for each are 0
 ////   (`player.level1_gear_properties`).

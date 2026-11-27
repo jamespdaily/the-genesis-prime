@@ -27,7 +27,6 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
 import genesis_prime/game/start_place
@@ -50,6 +49,7 @@ import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
+import genesis_prime/shared/effect_kind
 import genesis_prime/step.{
   type ConnectionStep, ConnectionId, OwnEvent, TimerFired,
 }

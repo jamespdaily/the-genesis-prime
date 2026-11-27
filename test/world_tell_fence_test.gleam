@@ -21,7 +21,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{Answered, Landed}
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{CreatureAppeared, PeerNews}
-import genesis_prime/game/unit_state
+import genesis_prime/shared/unit_state
 import genesis_prime/step.{ConnectionId, RingMember}
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature

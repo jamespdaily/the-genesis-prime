@@ -3,12 +3,12 @@
 //// plans. Each test reads the client's files and passes only where they are on the machine.
 
 import client_tables
-import genesis_prime/game/area
 import genesis_prime/game/objective_kind
-import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log
 import genesis_prime/game/shortcut_spell.{Aimed, CannotBePlanned, Planned}
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/area
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{Spell4Id, Spell4TargetMechanicsId}
 import genesis_prime/table/loader/store.{type Tables}
 import genesis_prime/table/quest2

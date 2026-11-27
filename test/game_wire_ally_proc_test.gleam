@@ -14,11 +14,11 @@ import game_wire_support.{
   unit_of, walk_to, world_with_a_dagun_on,
 }
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/loadout
 import genesis_prime/game/player_life
-import genesis_prime/game/rating
 import genesis_prime/message/spell_started
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
+import genesis_prime/shared/loadout
+import genesis_prime/shared/rating
 import genesis_prime/table/id.{ClassId}
 import gleam/list
 import gleam/option.{Some}

@@ -1,5 +1,5 @@
-//// The NpcExecutionDelay rows of the plan (`genesis_prime/game/spell_plan` `Delay`,
-//// `genesis_prime/game/effect_kind`). Expected values come from these places:
+//// The NpcExecutionDelay rows of the plan (`genesis_prime/shared/spell_plan` `Delay`,
+//// `genesis_prime/shared/effect_kind`). Expected values come from these places:
 //// - `Spell4Effects.effectType.35`: the columns of the client's rows (`table_rows --
 ////   Spell4Effects effectType=35`, 3288 rows): 131968 (Spell4 55317, targetFlags 1, delayTime
 ////   0, durationTime 1000, phaseFlags 0xffff0002, which names go 1 of the spell's two gos);
@@ -9,9 +9,9 @@
 //// - `Spell4Effects.phaseFlags`: bit n is phase n; a row of 0 is selected by no phase.
 
 import fixture_tables
-import genesis_prime/game/effect_kind
-import genesis_prime/game/spell_plan.{Delay}
-import genesis_prime/game/spend
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/spell_plan.{Delay}
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/spell4_effects
 import gleam/option.{None}

@@ -78,7 +78,7 @@
 ////   and before 0x61. A Novice character holds its armor pieces and shield, each
 ////   at the bag index of its slot, and the weapon in slot 16 (location 0), as
 ////   its creation saved them.
-//// - **The loadout** (genesis_prime/game/loadout) is sent after the held items:
+//// - **The loadout** (genesis_prime/shared/loadout) is sent after the held items:
 ////   one ability item per level-1 spell and the class's innate (0x111 at
 ////   location 4, bag index from 0: the abilities, then the innate's Spell4Base
 ////   at index 3; abilities are not saved, so their guid is `loadout.item_guid`,
@@ -94,7 +94,7 @@
 ////   `opcode.0x262.worn_visuals`). The unit's 0x262 also carries the gear's
 ////   health, shield and properties (`player_unit.create`), and the player's own
 ////   carries its class resource's slot at its start and the slot's maximum
-////   (`player_unit.with_resource`, genesis_prime/game/class_resource), which the
+////   (`player_unit.with_resource`, genesis_prime/shared/class_resource), which the
 ////   player then holds.
 //// - **The innate's passive and the worn items' equip spells** are never cast by the client,
 ////   so the entry's last effect starts them (`StartStanding`, genesis_prime/game/cast
@@ -144,13 +144,11 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/ability_book
 import genesis_prime/game/ability_book_frame
 import genesis_prime/game/ability_points
-import genesis_prime/game/amp_spec
 import genesis_prime/game/camp
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_state
 import genesis_prime/game/chat
 import genesis_prime/game/chat_tell
-import genesis_prime/game/class_resource
 import genesis_prime/game/client_casts
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/departures
@@ -158,24 +156,18 @@ import genesis_prime/game/experience
 import genesis_prime/game/gear.{type Gear}
 import genesis_prime/game/held_changes
 import genesis_prime/game/inventory
-import genesis_prime/game/item_property
 import genesis_prime/game/limited_action_set
-import genesis_prime/game/loadout.{type Loadout}
-import genesis_prime/game/look
 import genesis_prime/game/move_stamp
 import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/player_address
 import genesis_prime/game/player_life
-import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/reward_property
 import genesis_prime/game/shown
-import genesis_prime/game/spell_tier
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/tutorial
-import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor
 import genesis_prime/game/visibility
 import genesis_prime/gap
@@ -192,6 +184,15 @@ import genesis_prime/message/quest_spell_shortcut.{QuestSpellShortcut}
 import genesis_prime/message/reward_properties
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
+import genesis_prime/shared/amp_spec
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/item_property
+import genesis_prime/shared/loadout.{type Loadout}
+import genesis_prime/shared/look
+import genesis_prime/shared/prerequisite.{type Prerequisite}
+import genesis_prime/shared/spell_tier
+import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type ConnectionId, type Now}
 import genesis_prime/store.{
   type AccountId, type Character, type CharacterId, CharacterId,
@@ -206,7 +207,6 @@ import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn_id.{type LoadedSpawns, SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
-import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -444,12 +444,12 @@ pub type Entered {
     readiness: Readiness,
     life: player_life.Life,
     /// The player's properties, each with its base and value
-    /// (genesis_prime/game/unit_properties): the connection owns them beside the life
+    /// (genesis_prime/shared/unit_properties): the connection owns them beside the life
     /// and the cast, applies a modifier of its own spell to them, and hands the
     /// strike, the damage, the defence and the regeneration the values they read.
     properties: unit_properties.Properties,
     /// The player's look, its item visuals and the disguises of its own spells held over
-    /// them (genesis_prime/game/look): the connection owns it beside the properties.
+    /// them (genesis_prime/shared/look): the connection owns it beside the properties.
     look: look.Look,
     /// The changes other players' casts hold on the player, by caster
     /// (genesis_prime/game/held_changes): empty at each entry, and gone with the entry at

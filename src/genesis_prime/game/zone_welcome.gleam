@@ -43,9 +43,9 @@
 
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowId}
-import genesis_prime/game/top_zone
 import genesis_prime/message/bit_stream
 import genesis_prime/message/server_tutorial.{ServerTutorial}
+import genesis_prime/shared/top_zone
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/tutorial
 import genesis_prime/table/world_zone

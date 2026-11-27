@@ -26,13 +26,13 @@ import genesis_prime/message/float32
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/unit_fields
 import genesis_prime/step.{
   type ConnectionStep, ConnectionId, LogError, OwnEvent, PeerClosed, TimerFired,
   TimerId,
 }
 import genesis_prime/store.{ForMove, HealthRefused}
 import genesis_prime/world_map/map.{SeenBy}
-import genesis_prime/world_map/unit_fields
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}

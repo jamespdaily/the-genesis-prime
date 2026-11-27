@@ -32,18 +32,18 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/persist as cast_persist
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/class_resource
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite.{type Prerequisite}
-import genesis_prime/game/spell_plan.{
-  type Spell, Always, KeepsStealth, Spell, StealthRow,
-}
-import genesis_prime/game/spend
-import genesis_prime/game/ticking.{Schedule, Ticks}
 import genesis_prime/game/unit_news.{CastFinished}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_failed
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite.{type Prerequisite}
+import genesis_prime/shared/spell_plan.{
+  type Spell, Always, KeepsStealth, Spell, StealthRow,
+}
+import genesis_prime/shared/spend
+import genesis_prime/shared/ticking.{Schedule, Ticks}
 import genesis_prime/step.{type TimerId, LogDebug}
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,

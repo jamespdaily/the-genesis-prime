@@ -1,4 +1,4 @@
-//// The trees of the class innates in the plans (`genesis_prime/game/spell_plan`),
+//// The trees of the class innates in the plans (`genesis_prime/shared/spell_plan`),
 //// on the client's tables. Expected values come from these places.
 //// - `Class.spell4IdInnateAbilityActive00` and `Passive00`: the six slot-0
 ////   actives (Spell4Base 30828, 31779, 38012, 46615, 30075, 31213) and the three
@@ -11,7 +11,7 @@
 ////   60724, 60868; Spellslinger 47273, 47439, 78307.
 
 import client_tables
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{Spell4BaseId}
 import gleam/int
 import gleam/list

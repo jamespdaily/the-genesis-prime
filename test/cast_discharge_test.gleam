@@ -13,9 +13,9 @@
 import cast_support as support
 import client_tables
 import genesis_prime/game/cast/state.{type Effect} as cast_state
-import genesis_prime/game/class_resource
-import genesis_prime/game/spell_plan.{type Plans, Spell}
 import genesis_prime/message/spell_effect_info.{type SpellEffectInfo}
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/spell_plan.{type Plans, Spell}
 import genesis_prime/table/id.{Spell4BaseId}
 import gleam/list
 import owned_test

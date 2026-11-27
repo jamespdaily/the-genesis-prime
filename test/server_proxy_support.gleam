@@ -3,8 +3,8 @@
 //// base.
 
 import character_tables
-import genesis_prime/game/server_proxy.{type ServerProxies}
-import genesis_prime/game/spell_plan.{type Plans}
+import genesis_prime/shared/server_proxy.{type ServerProxies}
+import genesis_prime/shared/spell_plan.{type Plans}
 import gleam/dict
 
 /// A set with no Proxy in it: the rows of an empty table select to it.

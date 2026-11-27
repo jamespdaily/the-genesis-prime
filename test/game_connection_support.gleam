@@ -23,13 +23,9 @@ import genesis_prime/game/ability_book
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{type Settings, Settings}
-import genesis_prime/game/effect_kind
-import genesis_prime/game/hit.{type Offence, Blow, Offence, Worked}
 import genesis_prime/game/limited_action_set
-import genesis_prime/game/loadout
 import genesis_prime/game/move_stamp
 import genesis_prime/game/objective
-import genesis_prime/game/server_proxy
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news.{
@@ -89,6 +85,10 @@ import genesis_prime/message/vendor_buyback.{VendorBuyback}
 import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/vendor_sale.{VendorSale}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/hit.{type Offence, Blow, Offence, Worked}
+import genesis_prime/shared/loadout
+import genesis_prime/shared/server_proxy
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionId, type ConnectionStep, type Event,
   type Outcome, type TimerId, CallerId, CancelTimer, ConnectionId,
@@ -3178,7 +3178,7 @@ pub fn entered_with_spell_trees(
 }
 
 /// The same with the server's Proxies planted into the abilities' trees
-/// (genesis_prime/game/server_proxy) and these tables.
+/// (genesis_prime/shared/server_proxy) and these tables.
 pub fn entered_with_server_proxies(
   class_id class_id: Int,
   ability ability: Int,

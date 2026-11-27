@@ -17,14 +17,9 @@ import game_connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/cipher
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state as connection_state
-import genesis_prime/game/hit
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
 import genesis_prime/game/world_entry
 import genesis_prime/message/float32
@@ -32,6 +27,11 @@ import genesis_prime/message/unit_float_stat_changed.{
   type UnitFloatStatChanged, UnitFloatStatChanged,
 }
 import genesis_prime/random
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/hit
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan
 import genesis_prime/step.{type ConnectionStep, Now, OwnEvent, TimerFired}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId}

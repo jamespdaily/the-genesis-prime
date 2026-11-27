@@ -1,4 +1,4 @@
-//// The cast rule's cooldown effects (`genesis_prime/game/cast`, `genesis_prime/game/cooldown`):
+//// The cast rule's cooldown effects (`genesis_prime/game/cast`, `genesis_prime/shared/cooldown`):
 //// a ModifySpellCooldown row (`Spell4Effects.effectType.73`) of a go changes the
 //// server's cooldowns as the client changes its own. Expected values come from these
 //// places:
@@ -39,13 +39,13 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/cooldown.{
+import genesis_prime/shared/cooldown.{
   type Operation, AddMs, Base, Modifier, NoLonger, SetMs,
 }
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_plan.{type Plans, type Spell, Always}
-import genesis_prime/game/spend
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan.{type Plans, type Spell, Always}
+import genesis_prime/shared/spend
 import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/int

@@ -26,7 +26,6 @@
 import genesis_prime/client_connection.{type Answer, Continue, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/character_state
-import genesis_prime/game/class_resource
 import genesis_prime/game/connection/item_expiry as connection_item_expiry
 import genesis_prime/game/connection/look as connection_look
 import genesis_prime/game/connection/objective as connection_objective
@@ -40,10 +39,11 @@ import genesis_prime/game/gear
 import genesis_prime/game/inventory
 import genesis_prime/game/movement
 import genesis_prime/game/reward_property
-import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome,
 }

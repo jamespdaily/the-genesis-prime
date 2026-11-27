@@ -1,12 +1,12 @@
 //// The decode of a Spell4TargetMechanics row's `targetType` into one kind
-//// (genesis_prime/game/target_mechanic). Expected values and their sources:
+//// (genesis_prime/shared/target_mechanic). Expected values and their sources:
 //// - The client's picker `0x14055bdc0` (`Spell4TargetMechanics.targetType`, fairly sure)
 ////   takes the caster for kinds 0, 2, 6 and 7 and a target for 1, 3, 5 and 8; kind 4 is
 ////   placed on the ground (`CastAbilityBagSpell` sends 0x9b for it). The client names none.
 //// - The client's table: all 61 rows are of kinds 0 to 8 (read from the extracted table).
 
 import client_tables
-import genesis_prime/game/target_mechanic.{Caster, Ground, Targeted, Unread}
+import genesis_prime/shared/target_mechanic.{Caster, Ground, Targeted, Unread}
 import genesis_prime/table/spell4_target_mechanics
 import gleam/list
 import owned_test

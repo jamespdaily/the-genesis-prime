@@ -309,7 +309,7 @@ pub type AbilityTierRow {
 
 /// One AMP held in an action set: the set (0 to 3) and the EldanAugmentation id (the 16 bits
 /// of the AMP lists of messages 0x00B1 and 0x01A3, `opcode.0x1a3`). Which AMPs a level, a class
-/// and the power allow is the ability builder's rule (genesis_prime/game/amp_spec).
+/// and the power allow is the ability builder's rule (genesis_prime/shared/amp_spec).
 pub type AmpRow {
   AmpRow(action_set: Int, eldan_augmentation_id: Int)
 }
@@ -390,7 +390,7 @@ pub type NewItem {
 /// names: the row gives the gender (its sex), race, class and faction, its
 /// start the place (genesis_prime/game/start_place) and its experience, which
 /// the character is stored with and which makes its level
-/// (genesis_prime/game/level). `starting_items` are the items the
+/// (genesis_prime/shared/level). `starting_items` are the items the
 /// character holds from its first entry, stored with the character, and
 /// `starting_credits` the credits it holds from its first entry (a row of
 /// character_currency when above 0).

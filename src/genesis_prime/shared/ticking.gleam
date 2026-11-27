@@ -1,5 +1,5 @@
 //// When a periodic row's ticks land, worked out once from its row when the tables
-//// load (genesis_prime/game/spell_area for damage, genesis_prime/game/spell_plan for
+//// load (genesis_prime/shared/spell_area for damage, genesis_prime/shared/spell_plan for
 //// heals). The cast rule (genesis_prime/game/cast) arms one tick at a time from it.
 ////
 //// - **The client has no tick timer** (`spell.tick_timing`): it reads tickTime only
@@ -16,9 +16,9 @@
 ////   (`open_schedule_of`) has no count, and `ending_with_node` cuts it at the go to the end
 ////   of the node when the node has one, an aura's (`life_under_aura`, `0x1407180c0`).
 
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
 import genesis_prime/gap
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
 import gleam/bool
 import gleam/int
 import gleam/option.{type Option, None, Some}

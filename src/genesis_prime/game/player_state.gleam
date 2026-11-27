@@ -24,12 +24,12 @@
 //// - **The PvP flag** is bit 0 of the 0x262's flags (`IsUnitPvpFlagged`, `0x1403b48b0`) and the
 ////   group id the 0x262's; a change of either while the player is in sight reaches no viewer.
 
-import genesis_prime/game/faction_level.{type Disposition}
 import genesis_prime/game/held_state.{type HeldState}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/unit_properties
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{type UnitProperty}
+import genesis_prime/shared/faction_level.{type Disposition}
+import genesis_prime/shared/unit_properties
 import gleam/float
 import gleam/int
 import gleam/list

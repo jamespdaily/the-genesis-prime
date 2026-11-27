@@ -25,8 +25,8 @@
 //// - **Any other condition** is open: the measure has no evidence that it cannot
 ////   pass at level 1.
 
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Proxy}
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Proxy}
 import genesis_prime/table/eldan_augmentation
 import genesis_prime/table/id.{LevelUpUnlockId}
 import genesis_prime/table/level_up_unlock

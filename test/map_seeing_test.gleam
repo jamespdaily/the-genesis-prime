@@ -20,6 +20,7 @@
 
 import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/shared/sight
 import genesis_prime/step.{
   type ServiceStep, Asked, CallerId, ConnectionId, LogError, OwnEvent, Started,
   Told, WatchEnded, WatchId,
@@ -28,7 +29,6 @@ import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{
   type State, Join, Joined, Leave, Moved, Noticed, SeenBy, UnseenBy,
 }
-import genesis_prime/world_map/sight
 import genesis_prime/world_map/stay
 import gleam/int
 import gleam/list

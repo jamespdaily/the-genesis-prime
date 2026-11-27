@@ -26,13 +26,13 @@
 import cast_support as support
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type State} as cast_state
-import genesis_prime/game/forced_move
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Spell, Always}
-import genesis_prime/game/spend
-import genesis_prime/game/unit_properties.{Change}
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Spell, Always}
+import genesis_prime/shared/spend
+import genesis_prime/shared/unit_properties.{Change}
 import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
 import gleam/dict
 import gleam/list

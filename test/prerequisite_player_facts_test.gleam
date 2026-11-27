@@ -17,14 +17,14 @@
 
 import character_tables
 import genesis_prime/game/connection/prerequisite_player
-import genesis_prime/game/loadout
 import genesis_prime/game/movement
 import genesis_prime/game/world_entry
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
+import genesis_prime/shared/loadout
+import genesis_prime/shared/unit_fields
 import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{Item2Id, Spell4BaseId}
-import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None}
 import owned_test

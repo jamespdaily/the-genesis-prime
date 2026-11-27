@@ -29,12 +29,12 @@ import genesis_prime/content/refusal.{RowId}
 import genesis_prime/game/activate
 import genesis_prime/game/arrival_objective
 import genesis_prime/game/click_objective
-import genesis_prime/game/effect_kind
-import genesis_prime/game/faction_level
 import genesis_prime/game/objective
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/faction_level
 import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
 import genesis_prime/table/loader/store as table_store

@@ -4,7 +4,7 @@
 ////
 //// - **A cell** is a square of 256 units on x and z (height is not part of the
 ////   cell). A spawn is in the one cell its x and z fall in. It is a server's
-////   choice: the scan covers the sight circle (genesis_prime/world_map/sight)
+////   choice: the scan covers the sight circle (genesis_prime/shared/sight)
 ////   whatever the size, and the size barely changes how many spawns it reads.
 //// - **`near`** lists the spawns of every cell whose nearest point to a place is
 ////   within a range, the candidates of an exact sight check; a spawn in no

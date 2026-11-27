@@ -20,10 +20,8 @@ import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/loadout
 import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_result
 import genesis_prime/message/float32
@@ -31,6 +29,8 @@ import genesis_prime/message/spell_go
 import genesis_prime/message/unit_float_stat_changed.{
   type UnitFloatStatChanged, UnitFloatStatChanged,
 }
+import genesis_prime/shared/class_resource
+import genesis_prime/shared/loadout
 import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
 import genesis_prime/table/id.{ClassId, Spell4BaseId}
 import genesis_prime/table/loader/store as store_tables

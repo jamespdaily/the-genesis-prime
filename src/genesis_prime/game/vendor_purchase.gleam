@@ -88,7 +88,6 @@ import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_expiry
-import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/game/random_stat
 import genesis_prime/game/shown.{type Picture}
@@ -101,6 +100,7 @@ import genesis_prime/game/world_entry.{type Buyback, Buyback}
 import genesis_prime/gap
 import genesis_prime/message/vendor_buyback
 import genesis_prime/message/vendor_purchase as vendor_purchase_message
+import genesis_prime/shared/item_property
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
   type SessionEpoch, ItemsNotSaved, SaveRefused,

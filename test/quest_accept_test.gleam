@@ -31,13 +31,13 @@
 
 import character_tables
 import fixture_tables
-import genesis_prime/game/prerequisite.{Factions, Player}
 import genesis_prime/game/quest.{
   type Asker, type Taken, type Verdict, Acceptable, Asker, NotRead, Refused,
 }
 import genesis_prime/game/quest_log
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/message/quest_retry.{QuestRetry}
+import genesis_prime/shared/prerequisite.{Factions, Player}
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{
   type HeldItem, type QuestRow, Accepted, ActiveQuest, ActiveRow, HeldItem,

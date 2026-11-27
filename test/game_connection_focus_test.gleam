@@ -18,7 +18,6 @@ import character_tables
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news
@@ -32,6 +31,7 @@ import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/message/unit_stat_float.{UnitStatFloat}
 import genesis_prime/message/unit_stat_value
+import genesis_prime/shared/class_resource
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store.{type HeldItem, Character, HeldItem}
 import genesis_prime/table/id.{ClassId, Item2Id}

@@ -28,7 +28,7 @@
 ////   load gives it no moment. The play database held no such row when the column was added.
 
 import genesis_prime/game/deadline_timer.{type DeadlineTimer}
-import genesis_prime/game/item_property
+import genesis_prime/shared/item_property
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/id.{type Item2Id}
 import genesis_prime/table/loader/store as table_store

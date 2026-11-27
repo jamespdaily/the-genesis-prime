@@ -1,4 +1,4 @@
-//// Prerequisite type 64, the first unit's resource slot (`genesis_prime/game/prerequisite`).
+//// Prerequisite type 64, the first unit's resource slot (`genesis_prime/shared/prerequisite`).
 //// Expected values come from these places:
 //// - `Prerequisite.prerequisiteTypeId.64` (`0x1404a24ad`): the objectId is the unit's
 ////   resource slot by number (0 to 10; 11 or more reads 0.0), compared as a float
@@ -13,7 +13,7 @@
 //// - The server's choice (the prerequisite module's doc): a creature's side holds no
 ////   resource slots, which gives `NotRead(64)`.
 
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/prerequisite.{
   type Subject, Fails, NotRead, Passes, Subject,
 }
 import gleam/dict

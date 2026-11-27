@@ -13,8 +13,6 @@
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/ability_book
 import genesis_prime/game/inventory
-import genesis_prime/game/loadout.{type Loadout}
-import genesis_prime/game/spell_plan
 import genesis_prime/message/ability_tier.{AbilityTier}
 import genesis_prime/message/ability_tiers.{AbilityTiers}
 import genesis_prime/message/action_set
@@ -22,6 +20,8 @@ import genesis_prime/message/action_set_amps.{ActionSetAmps}
 import genesis_prime/message/action_set_saved.{ActionSetSaved}
 import genesis_prime/message/action_shortcut.{ActionShortcut}
 import genesis_prime/message/bit_stream
+import genesis_prime/shared/loadout.{type Loadout}
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{type EldanAugmentationId, type Spell4BaseId}
 import gleam/list
 import gleam/option.{type Option, None, Some}

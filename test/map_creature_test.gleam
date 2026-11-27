@@ -10,7 +10,7 @@
 ////   its spawn restarts after the respawn time under a new unit id if a player
 ////   sees it then, and is dormant otherwise; a start that fails leaves the spawn
 ////   empty for the run.
-//// - Sight (`genesis_prime/world_map/sight`): 1024 units, 3D, inclusive.
+//// - Sight (`genesis_prime/shared/sight`): 1024 units, 3D, inclusive.
 //// - Unit ids: never 0 (a 0x262 with unit id 0 becomes the controlled unit,
 ////   0x1403d9760), never given to two units at once, and below 2^20 (the cast id is
 ////   built from the unit id, issue 274's design, section 3); a unit id is reused

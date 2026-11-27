@@ -29,9 +29,9 @@ import genesis_prime/game/unit_news.{Absorption}
 import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
+import genesis_prime/shared/unit_fields
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/world_map/relay
-import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None}
 import owned_test

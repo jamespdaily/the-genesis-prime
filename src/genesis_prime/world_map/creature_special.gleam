@@ -48,9 +48,9 @@
 //// - **`order_index` is not null and unique for a creature**: it orders the list `chosen`
 ////   walks (genesis_prime/world_map/creature_fight).
 
-import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
 import genesis_prime/gap
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store

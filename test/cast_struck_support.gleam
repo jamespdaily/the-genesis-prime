@@ -6,9 +6,9 @@
 import cast_support as support
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/spell_plan.{type Spell, AimsAtArea, AimsAtCaster}
-import genesis_prime/game/spend
 import genesis_prime/game/strike.{Aimed, Selection}
+import genesis_prime/shared/spell_plan.{type Spell, AimsAtArea, AimsAtCaster}
+import genesis_prime/shared/spend
 import genesis_prime/step.{Now}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/dict

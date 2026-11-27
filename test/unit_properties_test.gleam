@@ -1,4 +1,4 @@
-//// A player's properties (`genesis_prime/game/unit_properties`). Expected values come
+//// A player's properties (`genesis_prime/shared/unit_properties`). Expected values come
 //// from these places:
 //// - `Spell4Effects.effectType.11.change`: a modifier changes x to
 ////   x * dataBits02 + dataBits03 (+ dataBits04 * level); Sprint 1921 (1.0, 0.5) and
@@ -14,9 +14,9 @@
 
 import cast_support
 import fixture_tables
-import genesis_prime/game/unit_properties.{type Properties, Change, Changed}
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/unit_properties.{type Properties, Change, Changed}
 import genesis_prime/table/id.{UnitProperty2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/unit_property2

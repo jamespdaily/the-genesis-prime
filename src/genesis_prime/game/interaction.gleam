@@ -64,8 +64,6 @@
 ////   and a debug line after, so a client that repeats a click is not a flood.
 
 import genesis_prime/client_connection.{type Undecoded}
-import genesis_prime/game/area
-import genesis_prime/game/hit_radius
 import genesis_prime/game/shown.{
   type Picture, type PlayerFaction, ShownCreature, ShownObject, ShownPlayer,
 }
@@ -75,12 +73,14 @@ import genesis_prime/game/vendor.{type Vendor, type Vendors}
 import genesis_prime/gap
 import genesis_prime/message/dialog_responses_shown
 import genesis_prime/message/interaction_request
+import genesis_prime/shared/area
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/hit_radius
 import genesis_prime/step.{type LogLevel, LogDebug, LogWarning}
 import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/id.{type Creature2Id, type RaceId, Faction2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{type Hostile}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/spawn
 import gleam/bool
 import gleam/dict

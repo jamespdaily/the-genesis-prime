@@ -68,7 +68,7 @@
 ////   from its CreatureLevel rows and its archetype, difficulty and tier multipliers
 ////   (`0x1404585c0`, `Creature2.73464.crit_deflect_glance`,
 ////   `Creature2.73464.mitigation`) through the rating formulas
-////   (genesis_prime/game/rating). It also holds whom the creature fights on sight (a
+////   (genesis_prime/shared/rating). It also holds whom the creature fights on sight (a
 ////   faction level of 0 to 2 toward each player faction), its own attack, from its
 ////   kind's spell, the alternates it strikes with after it in turn, from the kind's other
 ////   auto-attacks, and its specials, each a spell of its kind's list with its gos and hold
@@ -78,26 +78,29 @@
 ////   (genesis_prime/world_map/creature_attack `formulas`).
 
 import genesis_prime/content/refusal.{type Refusal}
-import genesis_prime/game/area
-import genesis_prime/game/crowd_control
-import genesis_prime/game/damage
-import genesis_prime/game/faction_level
-import genesis_prime/game/hit
-import genesis_prime/game/hit_radius
 import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
-import genesis_prime/game/prerequisite.{type Prerequisite}
-import genesis_prime/game/rating.{type Formulas}
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{type PlanError, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
-import genesis_prime/game/telegraph_entries
-import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
+import genesis_prime/shared/area
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/damage
+import genesis_prime/shared/faction_level
+import genesis_prime/shared/hit
+import genesis_prime/shared/hit_radius
+import genesis_prime/shared/prerequisite.{type Prerequisite}
+import genesis_prime/shared/rating.{type Formulas}
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{type PlanError, type Spell}
+import genesis_prime/shared/telegraph_entries
+import genesis_prime/shared/unit_fields.{
+  type HealthSource, ClientDefault, Recorded,
+}
+import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/creature2_arche_type
 import genesis_prime/table/creature2_difficulty
@@ -143,9 +146,6 @@ import genesis_prime/world_map/spawn_id.{
 }
 import genesis_prime/world_map/spawn_source.{type Summoned, Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject}
-import genesis_prime/world_map/unit_fields.{
-  type HealthSource, ClientDefault, Recorded,
-}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -219,7 +219,7 @@ pub type Spawn {
     /// What the creature brings to a fight.
     combat: Combat,
     /// The base of each UnitProperty2 id for the creature at `level`, which its
-    /// properties start from at each life (genesis_prime/game/unit_properties
+    /// properties start from at each life (genesis_prime/shared/unit_properties
     /// `of_creature`).
     bases: List(#(UnitProperty2Id, Float)),
     /// What working `combat` out again from changed properties needs besides them
@@ -528,7 +528,7 @@ pub type SpawnError {
   InNoWorld(world_id: Int)
   /// A started spawn or a sent object names a visibility prerequisite the
   /// Prerequisite table has no row for, or one that does not load
-  /// (genesis_prime/game/prerequisite `load`).
+  /// (genesis_prime/shared/prerequisite `load`).
   NoVisibilityRow(
     creature_id: Creature2Id,
     prerequisite_id: PrerequisiteId,
@@ -541,13 +541,13 @@ pub type SpawnError {
     unevaluated: creature_attack.Unevaluated,
   )
   /// The creature's attack spell has a cast time and its area cannot be read from the
-  /// tables (genesis_prime/game/spell_area `area_of_spell`).
+  /// tables (genesis_prime/shared/spell_area `area_of_spell`).
   AttackAreaNotRead(creature_id: Creature2Id, error: spell_area.AreaError)
   /// The creature's attack spell has a cast time and no area row, so a charge would have
   /// nothing to strike.
   ChargeHasNoArea(creature_id: Creature2Id, spell4_id: Int)
   /// A special of the creature's kind could not be planned for its gos and hold
-  /// (genesis_prime/game/spell_plan `spell_alone`); the special's own check refuses such a
+  /// (genesis_prime/shared/spell_plan `spell_alone`); the special's own check refuses such a
   /// row at the load, so this is the plan failing for a spell it read before.
   SpecialNotPlanned(creature_id: Creature2Id, spell4_id: Int, error: PlanError)
 }
@@ -575,7 +575,7 @@ type Checked {
 /// each of the 77,794 rows: each creature's override of Base Health, the display
 /// ids of each display group, the first display and the first outfit of each
 /// group, the ids of the outfits that have a Creature2OutfitInfo row, the
-/// factions' levels (genesis_prime/game/faction_level), each
+/// factions' levels (genesis_prime/shared/faction_level), each
 /// UnitProperty2 row's default and flags, the states that stop a creature's run and the
 /// plan of each spell the kinds list as a special.
 /// Creature2OutfitInfo is a table only the content load reads, so the checks of a

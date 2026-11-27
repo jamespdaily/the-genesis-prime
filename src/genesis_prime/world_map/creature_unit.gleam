@@ -35,7 +35,6 @@
 ////   (opcode.0x262.unit_fields), the tail as every spawned unit's
 ////   (`unit_fields.spawned_tail`).
 
-import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/bit_stream.{type EncodeError}
 import genesis_prime/message/static_unit_type
 import genesis_prime/message/unit_create_cast.{type UnitCreateCast}
@@ -44,13 +43,14 @@ import genesis_prime/message/unit_create_creature.{
 }
 import genesis_prime/message/unit_create_static.{UnitCreateStatic}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
+import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_unit_type.{
   type CreatureUnitType, NonPlayer, Turret,
 }
 import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn.{type Spawn}
-import genesis_prime/world_map/unit_fields
 import gleam/option.{type Option, Some}
 import gleam/result
 

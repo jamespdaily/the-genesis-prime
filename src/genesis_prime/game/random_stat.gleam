@@ -1,7 +1,7 @@
 //// The roll of an item with random stats: which row of each of its random stat groups
 //// the item's entries take. The server rolls once, when it makes the item (a purchase or a
 //// quest reward), and keeps the result as the item's random-stat word
-//// (`genesis_prime/game/random_stat_word`); the client never rolls and never sends the word
+//// (`genesis_prime/shared/random_stat_word`); the client never rolls and never sends the word
 //// back (`opcode.0x111.shared_item_random_stats`).
 ////
 //// ```
@@ -27,7 +27,7 @@
 //// - A row the client's builder refuses (0x95) is no candidate, since a word naming it
 ////   makes the client drop every instance property of the item (0x70): a shield property on
 ////   an item that is no shield, a property that is no item property, or one off the
-////   item's slot (`genesis_prime/game/item_property.takes_property`).
+////   item's slot (`genesis_prime/shared/item_property.takes_property`).
 //// - An item with a group named more times than it has candidates gets no roll (word 0),
 ////   which the client reads as no data: Item2 37685 is a weapon whose ItemStat names the
 ////   shield group.
@@ -37,11 +37,11 @@
 //// - A proxy item (Item2.flags 0x4000) gets no roll: the client takes its stats from the
 ////   Item2 row GameFormula 1214 names, which has no ItemStat (`0x1404445d0.proxy`).
 
-import genesis_prime/game/item_property
-import genesis_prime/game/item_stat_kind
-import genesis_prime/game/random_stat_word
 import genesis_prime/gap
 import genesis_prime/random
+import genesis_prime/shared/item_property
+import genesis_prime/shared/item_stat_kind
+import genesis_prime/shared/random_stat_word
 import genesis_prime/store.{type NewStack}
 import genesis_prime/table/id.{type ItemRandomStatGroupId, Item2Id}
 import genesis_prime/table/item2

@@ -1,4 +1,4 @@
-//// A unit's hit radius (`genesis_prime/game/hit_radius`), on the client's own rows.
+//// A unit's hit radius (`genesis_prime/shared/hit_radius`), on the client's own rows.
 //// Expected values come from these places.
 //// - A creature's: Creature2DisplayInfo 26120 (the Scrab Striker's display, creature
 ////   24054), hitRadius 2.8 (f32 0x40333333), and 26565 (the Virtual Battle Beast's,
@@ -6,7 +6,7 @@
 ////   `table_rows Creature2DisplayInfo 26120 26565`).
 
 import client_tables
-import genesis_prime/game/hit_radius
+import genesis_prime/shared/hit_radius
 import genesis_prime/table/creature2_display_info
 import genesis_prime/table/id.{Creature2DisplayInfoId}
 import owned_test

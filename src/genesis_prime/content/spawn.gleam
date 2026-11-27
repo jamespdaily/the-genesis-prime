@@ -36,7 +36,7 @@
 ////   the tree starts; nothing queries the table during play.
 
 import genesis_prime/content/sql
-import genesis_prime/game/prerequisite.{type Prerequisite}
+import genesis_prime/shared/prerequisite.{type Prerequisite}
 import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, type SummonChecks, type WorldSpawns, Row,

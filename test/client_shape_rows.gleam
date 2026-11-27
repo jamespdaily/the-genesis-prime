@@ -7,7 +7,7 @@
 //// - 2920: shape 3, a cross of two boxes 2.5 wide and 18 long.
 //// - 4664: shape 6, params 1, 17 and 2 placed 4 ahead: the unhalved box.
 
-import genesis_prime/game/area.{type Placement, Box, Cone, Placement}
+import genesis_prime/shared/area.{type Placement, Box, Cone, Placement}
 
 /// The ids of the rows `placements_of` knows.
 pub const row_ids = [3852, 3029, 6957, 2920, 4664]

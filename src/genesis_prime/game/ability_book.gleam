@@ -11,7 +11,7 @@
 ////
 //// - **The bag** is the level-1 abilities in bar order, the innate at the index the
 ////   abilities number (3), then the later abilities whose level is at or below the character's, by
-////   level then SpellLevel id (genesis_prime/game/loadout). The client's own check of whether an
+////   level then SpellLevel id (genesis_prime/shared/loadout). The client's own check of whether an
 ////   ability is available asks the same rows against the unit's level (`0x1403bb040`).
 //// - **A rise grants** the later abilities above the old level and at or below the new one,
 ////   in the bag's order, so the bag at a level is the bag at a lower level followed by what
@@ -23,8 +23,8 @@
 ////   `spell_plan.unplanned` lists them, and `give_unplanned_abilities` in
 ////   genesis_prime/table/loader/derivation holds the one switch that leaves them out.
 
-import genesis_prime/game/loadout.{type Loadout}
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/loadout.{type Loadout}
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
 import gleam/list

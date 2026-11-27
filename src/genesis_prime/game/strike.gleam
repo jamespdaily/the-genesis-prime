@@ -47,7 +47,7 @@
 //// ```
 ////
 //// - **Selection** reads the picture of the units the client shows
-////   (genesis_prime/game/shown) and the spell's area (genesis_prime/game/spell_area): the
+////   (genesis_prime/game/shown) and the spell's area (genesis_prime/shared/spell_area): the
 ////   phase's centre is the caster's place and facing, or, for a child cast on a struck
 ////   unit (Crush's 42297), that unit's shown place, and for a child cast on an ally
 ////   (Warden's 36660) the ally's place with no facing (`shown.strike_centre_of`); the primary target is added for an
@@ -55,7 +55,7 @@
 ////   unit has an empty round, which waits behind the cast's earlier rounds like any.
 ////   A cast that spent points above its base cost (`GoAsked.spent`) strikes with the
 ////   damage effects its points choose and selects the units those effects aim at
-////   (genesis_prime/game/spend).
+////   (genesis_prime/shared/spend).
 //// - **The units of a periodic Proxy aimed at the area** are found at each tick, over the
 ////   picture as it is then, by the same area selection as a go's (`area_selection`): the hit
 ////   shape and the area row around the pose the cast started at, or the pose the target
@@ -66,7 +66,7 @@
 //// - **Crowd-control states** of the phase (`Selection.controls`) are told to each unit
 ////   their aim names, with the damage or alone: a phase with a stun and no damage still
 ////   tells its units and waits for their answers. Each state gets an instance id from
-////   the caster's own count of the states it told (genesis_prime/game/crowd_control
+////   the caster's own count of the states it told (genesis_prime/shared/crowd_control
 ////   `instance_id`), and the creature that takes the state answers with it, so the
 ////   go lists only the states that landed (genesis_prime/world_map/creature_control).
 //// - **Gated rows** (`Selection.gates`, from `spell_plan.struck_gates_in_phase`): a row of
@@ -116,7 +116,7 @@
 ////   (genesis_prime/game/strike_tell `Occasion`). A go's round holds a place for each
 ////   selected unit, filled in the order of the selection whatever order the answers
 ////   arrive in; the go lists them in that order. A tick's round holds its one unit.
-//// - **A periodic damage row** (genesis_prime/game/spell_area `TickingDamage`) is told
+//// - **A periodic damage row** (genesis_prime/shared/spell_area `TickingDamage`) is told
 ////   with the go to the units its aim names, as a crowd-control state is, and a unit it
 ////   reaches is struck even when the phase has no other damage: a deflected unit gets
 ////   no ticks, so the go needs its answer. The hit that lands carries the rows
@@ -150,30 +150,30 @@
 ////   watcher's connection is told the news and the cast's 0x7f4 by two senders, which
 ////   no order holds; the live sitting checks it.
 
-import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
   type GoAsked, type ProxyTickAsked, type Struck, type TickAsked,
 } as cast_state
-import genesis_prime/game/crowd_control
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
-import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
-import genesis_prime/game/hit
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
-import genesis_prime/game/prerequisite
-import genesis_prime/game/rating.{type Formulas}
 import genesis_prime/game/shown.{type Picture, type PlayerFaction}
-import genesis_prime/game/spell_area.{type Areas}
-import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{
   type Answered, type PlayerAnswered, type Tell,
 }
 import genesis_prime/game/unit_news.{type News}
-import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/gap
+import genesis_prime/shared/area.{type Pose}
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/hit
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/rating.{type Formulas}
+import genesis_prime/shared/spell_area.{type Areas}
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, TimerId,
 }
@@ -193,7 +193,7 @@ import gleam/result
 pub const strike_timer = TimerId(3)
 
 /// The seed bytes a strike takes for each selected unit: 4 for each of the three
-/// rolls (genesis_prime/game/hit `rolls_of`).
+/// rolls (genesis_prime/shared/hit `rolls_of`).
 const bytes_per_unit = hit.roll_bytes
 
 /// The caster as a selection and a strike take it: who it is, where it stands and
@@ -294,7 +294,7 @@ pub type Effect {
 /// The rounds of a player's strikes that are open, in the order they began, the
 /// monotonic time the strike timer is set to, the health news held for units of
 /// open rounds, and how many crowd-control states the player has told, which the
-/// instance ids are made from (genesis_prime/game/crowd_control `instance_id`).
+/// instance ids are made from (genesis_prime/shared/crowd_control `instance_id`).
 pub opaque type State {
   State(
     rounds: List(Round),
@@ -1357,7 +1357,7 @@ pub fn begin_tick(
 /// units that pass its gates and its aim names (`reached`: the primary target, the units
 /// the area selected, or both: a primary target outside the area is told only by a row
 /// aimed at it), each with the next instance id of the caster's own count
-/// (genesis_prime/game/crowd_control `instance_id`, `controls_told`), the delay,
+/// (genesis_prime/shared/crowd_control `instance_id`, `controls_told`), the delay,
 /// duration and armor of its row, the state, and for a row that throws its creature
 /// (`CrowdControl.move`) the throw: the move, the draws of the 8 seed bytes the row and
 /// the unit own (`throw_slot`) and the striker's place and hit radius as they are now. A

@@ -1,5 +1,5 @@
 //// The four prerequisite columns of a Spell4 row in the plan
-//// (`genesis_prime/game/spell_plan` `CasterCast`, `target_cast`, `caster_persistence`,
+//// (`genesis_prime/shared/spell_plan` `CasterCast`, `target_cast`, `caster_persistence`,
 //// `target_persistence`). The client's tables are read for the spells the trace
 //// reached; what the plan refuses is tested on rows in memory, since each planted load
 //// puts 4 MiB of terms into the run. Expected values come from these places:
@@ -19,8 +19,8 @@
 ////   fails the load.
 
 import client_tables
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{
   CastGate, NoCasterCast, NoRow, RequirementWaiver,
 }
 import genesis_prime/table/id

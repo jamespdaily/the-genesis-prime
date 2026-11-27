@@ -1,4 +1,4 @@
-//// The class resource rule (`genesis_prime/game/class_resource`): each class's
+//// The class resource rule (`genesis_prime/shared/class_resource`): each class's
 //// resource held, paid, refilled over time, stopped by death and set to its start
 //// by coming back, and the content rows it is selected from. Expected values come
 //// from these places, never from the rule:
@@ -34,7 +34,7 @@ import database_support
 import fixture_tables
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
-import genesis_prime/game/class_resource.{
+import genesis_prime/shared/class_resource.{
   type Effect, type Resource, type Resources, CancelTimer, Changed, Gain,
   Payment, Resource, Row, StartTimer,
 }

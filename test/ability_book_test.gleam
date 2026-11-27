@@ -15,7 +15,7 @@ import ability_book_support as support
 import client_tables
 import fixture_tables
 import genesis_prime/game/ability_book
-import genesis_prime/game/loadout
+import genesis_prime/shared/loadout
 import genesis_prime/table/id.{type Spell4BaseId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4

@@ -1,5 +1,5 @@
 //// The spells the AMPs of a playable class put on a player who holds them, as roots of the plans
-//// (`genesis_prime/game/amp_spec` `roots`, `genesis_prime/game/spell_plan` `amp_plans`).
+//// (`genesis_prime/shared/amp_spec` `roots`, `genesis_prime/shared/spell_plan` `amp_plans`).
 //// Expected values come from these places.
 //// - `EldanAugmentation.spell4IdAugment`: AMP 863 (class 5) names 59436, 770 names 56845, 220
 ////   (class 7) names 57379; the class 0 AMP 20 names 59052; the class 16 AMPs 1 to 12 name
@@ -16,12 +16,12 @@
 import cast_support as support
 import client_tables
 import fixture_tables
-import genesis_prime/game/amp_spec
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/amp_spec
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{EldanAugmentationId, Spell4Id}
 import genesis_prime/table/loader/server_table
 import genesis_prime/table/loader/store as table_store

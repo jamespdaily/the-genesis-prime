@@ -22,10 +22,10 @@
 ////   creature's activate cast (genesis_prime/game/activate).
 
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/item_property
 import genesis_prime/game/objective_kind
-import genesis_prime/game/spell_plan.{type Spell}
-import genesis_prime/game/target_mechanic
+import genesis_prime/shared/item_property
+import genesis_prime/shared/spell_plan.{type Spell}
+import genesis_prime/shared/target_mechanic
 import genesis_prime/table/id.{Spell4ConditionsId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_objective

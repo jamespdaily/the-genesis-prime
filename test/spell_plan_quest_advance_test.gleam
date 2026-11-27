@@ -1,5 +1,5 @@
-//// The QuestAdvanceObjective rows of the plan (`genesis_prime/game/spell_plan` `QuestAdvance`,
-//// `genesis_prime/game/effect_kind`). Expected values come from these places:
+//// The QuestAdvanceObjective rows of the plan (`genesis_prime/shared/spell_plan` `QuestAdvance`,
+//// `genesis_prime/shared/effect_kind`). Expected values come from these places:
 //// - `Spell4Effects.effectType.42`: dataBits00 is a Quest2 id, dataBits01 the objective's
 ////   index and dataBits02 the amount (`table_rows -- Spell4Effects effectType=42`, 251 rows);
 ////   the client reads no other column of the type, so a row that holds one is left out by name.
@@ -15,12 +15,12 @@
 //// - `Spell4Effects.phaseFlags`: bit n is phase n.
 
 import cast_support
-import genesis_prime/game/effect_kind
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/spell_plan.{
   AimsAtCaster, AimsAtPrimaryTarget, Always, Applied, GatedOnCaster, LeftOut,
   QuestAdvance, QuestAdvanceEffect,
 }
-import genesis_prime/game/spend
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/spell4_effects
 import gleam/list

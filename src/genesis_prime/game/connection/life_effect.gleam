@@ -9,10 +9,10 @@ import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/movement as connection_movement
 import genesis_prime/game/connection/state.{type Session} as connection_state
-import genesis_prime/game/hit_radius
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/world_entry
+import genesis_prime/shared/hit_radius
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, CancelTimer, OwnEffect,
   StartTimer,

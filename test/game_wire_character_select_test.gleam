@@ -71,10 +71,10 @@ import genesis_prime/message/start_movement
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/server
+import genesis_prime/shared/unit_fields
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
-import genesis_prime/world_map/unit_fields
 import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process

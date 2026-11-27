@@ -25,9 +25,9 @@ import database_support
 import fixture_tables
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
-import genesis_prime/game/area
-import genesis_prime/game/spell_area
 import genesis_prime/game/strike_tell
+import genesis_prime/shared/area
+import genesis_prime/shared/spell_area
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind

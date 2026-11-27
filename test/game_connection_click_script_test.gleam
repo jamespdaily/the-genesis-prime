@@ -23,9 +23,9 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
-import genesis_prime/game/faction_level
 import genesis_prime/game/objective
 import genesis_prime/message/cast_activate.{CastActivate}
+import genesis_prime/shared/faction_level
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/world_map/spawn

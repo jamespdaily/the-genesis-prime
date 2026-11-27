@@ -1,5 +1,5 @@
 //// What a character of each class holds on entering the world, from the client's
-//// rows (`genesis_prime/game/loadout`, `genesis_prime/game/item_property`),
+//// rows (`genesis_prime/shared/loadout`, `genesis_prime/shared/item_property`),
 //// read as the shared tables (`fixture_tables`). A test that needs another row
 //// edits the client's row (`changed`, `added`, `without` below) and loads the
 //// rows. Expected values come from these places.
@@ -46,9 +46,9 @@
 
 import fixture_tables
 import genesis_prime/game/gear
-import genesis_prime/game/item_property.{Shield}
-import genesis_prime/game/loadout.{type Loadout, Equipped}
-import genesis_prime/game/worn_visual
+import genesis_prime/shared/item_property.{Shield}
+import genesis_prime/shared/loadout.{type Loadout, Equipped}
+import genesis_prime/shared/worn_visual
 import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{
   ClassId, Item2Id, ItemDisplayId, ItemSlotId, Spell4BaseId,

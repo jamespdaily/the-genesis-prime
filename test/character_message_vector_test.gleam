@@ -57,7 +57,7 @@ import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/world_map/unit_fields
+import genesis_prime/shared/unit_fields
 import gleam/int
 import gleam/list
 import message_support

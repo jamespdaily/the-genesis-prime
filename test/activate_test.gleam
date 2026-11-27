@@ -9,8 +9,8 @@ import genesis_prime/game/activate.{
   ActivateEffect, CannotBePlanned, Column, Creature, NoActivateSpell, Picked,
   Planned, Unread,
 }
-import genesis_prime/game/prerequisite.{Fails, NotRead, Passes}
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/prerequisite.{Fails, NotRead, Passes}
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
 import genesis_prime/table/loader/store

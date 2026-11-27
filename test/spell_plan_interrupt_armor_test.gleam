@@ -1,5 +1,5 @@
-//// The Interrupt Armor rows of the plan (`genesis_prime/game/spell_plan`
-//// `PropertyModifier.armor`, `genesis_prime/game/effect_kind`). Expected values come
+//// The Interrupt Armor rows of the plan (`genesis_prime/shared/spell_plan`
+//// `PropertyModifier.armor`, `genesis_prime/shared/effect_kind`). Expected values come
 //// from these places.
 //// - `Spell4Effects.effectType.52`: a ModifyInterruptArmor row adds dataBits00 points to
 ////   the unit it lands on for durationTime; dataBits01 1 or 0 says whether the points
@@ -26,13 +26,13 @@
 import cast_support
 import client_tables
 import genesis_prime/coverage/effect_row
-import genesis_prime/game/effect_kind
-import genesis_prime/game/lasting.{LastingRow}
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting.{LastingRow}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan.{
   AimsAtCaster, AimsAtPrimaryTarget, Always, GatedOnCaster, InterruptArmor,
 }
-import genesis_prime/game/spend
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell4_effects.{type Spell4Effects, Spell4Effects}

@@ -1,13 +1,13 @@
 //// What a step of the game connection tells the player's own client of its class
 //// resource and Focus, and which of the rule's timers it starts and cancels: the 0x935s
-//// a step writes, decoded, and the timers `genesis_prime/game/class_resource` owns.
+//// a step writes, decoded, and the timers `genesis_prime/shared/class_resource` owns.
 
 import connection_rule_support as support
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/class_resource
 import genesis_prime/message/unit_float_stat_changed.{type UnitFloatStatChanged}
+import genesis_prime/shared/class_resource
 import genesis_prime/step.{
   type ConnectionStep, type TimerId, CancelTimer, OwnEffect, StartTimer, Unwatch,
   Watch,

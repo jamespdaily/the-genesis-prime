@@ -63,7 +63,7 @@
 ////   override, the World type's +30 and the match and PvP level caps change the
 ////   level an item reads; the callers give the character's own level.
 //// - **A random stat entry** (kind 2) names an ItemRandomStatGroup, and the
-////   item's random-stat word (`genesis_prime/game/random_stat_word`) says which
+////   item's random-stat word (`genesis_prime/shared/random_stat_word`) says which
 ////   row of it the entry takes, in table order: that row's property is the
 ////   entry's, with the entry's own share of the budget (0x14040e6d0). A word
 ////   with no data gives the entry nothing. A word with data whose choice is 0 or
@@ -73,11 +73,12 @@
 ////   entry (a property crafting picks) gives nothing, and no client row mixes
 ////   it with a kind-2 entry.
 
-import genesis_prime/game/item_stat_kind
-import genesis_prime/game/random_stat_word
-import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/float32
+import genesis_prime/shared/item_stat_kind
+import genesis_prime/shared/random_stat_word
+import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_properties
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{
   type ItemRandomStatGroupId, type UnitProperty2Id, GameFormulaId,
@@ -98,7 +99,6 @@ import genesis_prime/table/item_stat
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
 import genesis_prime/table/unit_property2
-import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float
@@ -142,7 +142,7 @@ pub type Gap {
   /// 1214's item (FillItemInfo 0x1404445d0).
   ProxyItem
   /// A budget entry on a ResourceMax property. The player's class resource sets
-  /// that base (`genesis_prime/game/class_resource`), so the server follows no branch
+  /// that base (`genesis_prime/shared/class_resource`), so the server follows no branch
   /// for it.
   ResourceMaximum
   /// A supportPowerPercentage beyond -1 to 1, which no client row holds.
@@ -1096,7 +1096,7 @@ const resource_slots = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
 /// Whether a property is the maximum of one of the client's resource slots 0 to 10
 /// (`unit_fields.resource_max_property`), whose base the player's class resource sets
-/// (`genesis_prime/game/class_resource`).
+/// (`genesis_prime/shared/class_resource`).
 fn is_resource_maximum(property_id property_id: Int) -> Bool {
   list.any(resource_slots, fn(slot) {
     unit_fields.resource_max_property(slot:) == property_id

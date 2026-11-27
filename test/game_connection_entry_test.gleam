@@ -45,6 +45,7 @@ import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/message/unit_stat_float.{UnitStatFloat}
 import genesis_prime/message/unit_stat_value
+import genesis_prime/shared/unit_fields
 import genesis_prime/step.{
   CancelTimer, ConnectionId, EndedBeforeAnswer, LogError, LogInfo, LogWarning,
   Map, NoAnswerInTime, NotRunning, OwnEffect, OwnEvent, Sessions, StartTimer,
@@ -57,7 +58,6 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/world_map/map.{Join}
-import genesis_prime/world_map/unit_fields
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set

@@ -25,12 +25,12 @@ import genesis_prime/game/cast/state.{
 } as cast_state
 import genesis_prime/game/quest_advance.{Advance}
 import genesis_prime/game/shortcut_spell
-import genesis_prime/game/spell_plan.{type Spell}
-import genesis_prime/game/spend
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_go
+import genesis_prime/shared/spell_plan.{type Spell}
+import genesis_prime/shared/spend
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/spawn_id.{SpawnId}

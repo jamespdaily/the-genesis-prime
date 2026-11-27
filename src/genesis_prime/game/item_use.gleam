@@ -38,18 +38,18 @@
 //// The objective check of a castMethod 3 quest item, whose unit the client reads from the
 //// quest record's word 0x18, is not made.
 
-import genesis_prime/game/item_property
-import genesis_prime/game/prerequisite
 import genesis_prime/game/shortcut_spell
-import genesis_prime/game/target_mechanic
 import genesis_prime/gap
 import genesis_prime/message/cast_result.{
   type CastResult, ItemCharges, ItemObjectiveComplete,
   ItemQuestRequirementsNotMet, ItemTooHighLevel, SpellPreRequisites,
 }
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
+import genesis_prime/shared/item_property
+import genesis_prime/shared/prerequisite
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/quest_view.{type QuestView}
+import genesis_prime/shared/target_mechanic
 import genesis_prime/table/id.{
   type Item2Id, type Spell4Id, ItemSpecialId, Spell4Id,
 }

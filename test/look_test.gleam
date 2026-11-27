@@ -1,4 +1,4 @@
-//// A player's look (`genesis_prime/game/look`). Expected values come from these places:
+//// A player's look (`genesis_prime/shared/look`). Expected values come from these places:
 //// - `opcode.0x262.worn_visuals`: a worn item's visual is its slot, its display, colour
 ////   set 0 and dye 0; the Engineer of faction 166's Novice set is chest 3842 in slot 1
 ////   and the weapon 3409 in slot 20 (`Item2.novice_visuals`).
@@ -13,9 +13,9 @@
 
 import cast_support
 import game_connection_support
-import genesis_prime/game/look.{Disguise}
-import genesis_prime/game/worn_visual.{WornVisual}
 import genesis_prime/message/item_visual.{ItemVisual}
+import genesis_prime/shared/look.{Disguise}
+import genesis_prime/shared/worn_visual.{WornVisual}
 import genesis_prime/table/id.{ItemDisplayId, ItemSlotId}
 import owned_test
 

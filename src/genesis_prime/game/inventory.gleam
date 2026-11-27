@@ -127,7 +127,6 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/equip_requirement.{type Wearer}
 import genesis_prime/game/item_expiry
 import genesis_prime/game/item_flags
-import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/float32
@@ -145,6 +144,7 @@ import genesis_prime/message/item_removed.{ItemRemoved}
 import genesis_prime/message/item_split
 import genesis_prime/message/items_swapped.{ItemsSwapped}
 import genesis_prime/message/shared_item.{SharedItem}
+import genesis_prime/shared/item_property
 import genesis_prime/step.{type LogLevel, LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemMove,

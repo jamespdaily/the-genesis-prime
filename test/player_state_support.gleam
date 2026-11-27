@@ -1,9 +1,9 @@
 //// What a press judges of another player, for the tests: a live player in sight at the
 //// defaults below, changed by record update.
 
-import genesis_prime/game/faction_level
 import genesis_prime/game/player_state.{type PlayerState, PlayerState}
 import genesis_prime/game/start_place
+import genesis_prime/shared/faction_level
 import gleam/dict.{type Dict}
 import gleam/list
 import gleam/option.{None, Some}

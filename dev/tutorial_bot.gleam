@@ -31,7 +31,7 @@ import genesis_prime/message/quest_state
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_create_static
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
-import genesis_prime/world_map/sight
+import genesis_prime/shared/sight
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/float

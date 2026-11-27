@@ -1,5 +1,5 @@
 //// The faction conditions of the prerequisite rule
-//// (`genesis_prime/game/prerequisite`): types 4, 243 and 250. Expected values come
+//// (`genesis_prime/shared/prerequisite`): types 4, 243 and 250. Expected values come
 //// from these places, each named at its assertion:
 //// - `Prerequisite.prerequisiteTypeId.243`: the client's check of type 243 always
 ////   fails, whatever the unit, comparison, objectId and value
@@ -23,17 +23,17 @@ import cast_support as support
 import character_support
 import character_tables
 import client_tables
-import genesis_prime/game/area.{Point, Pose}
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/connection/casting
-import genesis_prime/game/prerequisite.{
-  type Prerequisite, type Subject, type Verdict, Factions, Fails, NotRead,
-  Passes, Subject,
-}
-import genesis_prime/game/spell_plan.{type Plans, CastGate, Spell}
 import genesis_prime/game/world_entry
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
+import genesis_prime/shared/area.{Point, Pose}
+import genesis_prime/shared/prerequisite.{
+  type Prerequisite, type Subject, type Verdict, Factions, Fails, NotRead,
+  Passes, Subject,
+}
+import genesis_prime/shared/spell_plan.{type Plans, CastGate, Spell}
 import genesis_prime/table/id.{PrerequisiteId}
 import gleam/list
 import gleam/option.{None, Some}

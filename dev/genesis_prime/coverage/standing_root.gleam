@@ -17,8 +17,8 @@
 ////   with "unlocks a class ability, not built" and counts among the AMP line's left-out spells.
 
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_effects
 import gleam/dict

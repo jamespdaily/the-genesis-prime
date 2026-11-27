@@ -12,7 +12,7 @@
 //// - Unit ids (check 10, `0x140561c30`, the map's unit id rule): one id space for
 ////   players, creatures and objects, never 0, never given to two units, below
 ////   2^20.
-//// - Sight (`genesis_prime/world_map/sight`): 1024 units, 3D, inclusive.
+//// - Sight (`genesis_prime/shared/sight`): 1024 units, 3D, inclusive.
 //// - Server time (the map's clock rule): milliseconds since the map started, so
 ////   a join at 6000 of a map started at 5000 stamps 1000.
 

@@ -119,10 +119,6 @@ import genesis_prime/connection/registry
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/game_number as content_game_number
 import genesis_prime/content/spawn as content_spawn
-import genesis_prime/game/crowd_control
-import genesis_prime/game/hit
-import genesis_prime/game/hit_radius
-import genesis_prime/game/lasts
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news
@@ -141,18 +137,22 @@ import genesis_prime/message/crowd_control_state
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/service/shell as service_shell
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/hit
+import genesis_prime/shared/hit_radius
+import genesis_prime/shared/lasts
+import genesis_prime/shared/sight
 import genesis_prime/step.{type ConnectionId, ConnectionId}
 import genesis_prime/step/runtime
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, Creature2Id, RaceId}
 import genesis_prime/world_map/creature_kind.{Kind, Kinds}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/relay
-import genesis_prime/world_map/sight
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/stay.{type Stay}

@@ -5,14 +5,14 @@
 import client_tables
 import database_support
 import fixture_tables
-import genesis_prime/game/amp_spec
-import genesis_prime/game/area
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/held_tier
-import genesis_prime/game/server_proxy
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan
-import genesis_prime/game/spell_tier
+import genesis_prime/shared/amp_spec
+import genesis_prime/shared/area
+import genesis_prime/shared/server_proxy
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/spell_tier
 import genesis_prime/table/cc_state_additional_data
 import genesis_prime/table/class
 import genesis_prime/table/eldan_augmentation
@@ -1307,7 +1307,7 @@ pub fn volatility_row() -> server_proxy.Row {
 }
 
 /// The server's Proxies of the seed row, selected over the client's rows
-/// (genesis_prime/game/server_proxy), built once. The value holds the planned spell
+/// (genesis_prime/shared/server_proxy), built once. The value holds the planned spell
 /// and no table, so a connection made with other tables can plant it.
 pub fn server_proxies() -> server_proxy.ServerProxies {
   database_support.once("spell_tables_server_proxies", fn() {

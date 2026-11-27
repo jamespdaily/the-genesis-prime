@@ -1,4 +1,4 @@
-//// The passed-in value in a formula (`genesis_prime/game/damage`). Expected values come from
+//// The passed-in value in a formula (`genesis_prime/shared/damage`). Expected values come from
 //// these places.
 //// - Spell4Effects 69917 (Basic Medishot: Instant Healing, Spell4 34985): a Heal row with
 ////   dataBits00 1.0, dataBits01 0 and parameter 18 with the value 200.0; its text 271179
@@ -12,7 +12,7 @@
 
 import attacker_support
 import fixture_tables
-import genesis_prime/game/damage.{
+import genesis_prime/shared/damage.{
   type OnCaster, Attacker, Formula, OnCaster, Parameter, Unread, Vitals,
 }
 import genesis_prime/table/id.{Spell4EffectsId}

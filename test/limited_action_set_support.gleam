@@ -9,12 +9,12 @@ import fixture_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/ability_book
 import genesis_prime/game/ability_points
-import genesis_prime/game/amp_spec
 import genesis_prime/game/limited_action_set.{type Effect, Log, Send}
-import genesis_prime/game/spell_tier
 import genesis_prime/message/action_set.{type ActionSet}
 import genesis_prime/message/action_set_amps
 import genesis_prime/message/action_set_saved
+import genesis_prime/shared/amp_spec
+import genesis_prime/shared/spell_tier
 import genesis_prime/step.{type LogLevel}
 import genesis_prime/store
 import genesis_prime/table/id.{type Spell4BaseId, ClassId}

@@ -14,7 +14,7 @@
 ////   with ID 1 to the level: 0 up to level 9, one more per level from 10, 41 at 50. The
 ////   client never adds the column up; this sum is the server's.
 //// - **The points to spend** are the total less the points the held tiers cost
-////   (genesis_prime/game/spell_tier `spent`, over the tiers the builder's Save (0x00B1) bought:
+////   (genesis_prime/shared/spell_tier `spent`, over the tiers the builder's Save (0x00B1) bought:
 ////   genesis_prime/game/limited_action_set). A tier button enables on the points to spend, and
 ////   the Abilities button alerts while they are above 0.
 //// - **The tiers are saved** with the place (genesis_prime/game/limited_action_set `rows`),

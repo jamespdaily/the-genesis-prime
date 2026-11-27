@@ -1,4 +1,4 @@
-//// A rating turned into a chance (`genesis_prime/game/rating`). Expected values come
+//// A rating turned into a chance (`genesis_prime/shared/rating`). Expected values come
 //// from these places.
 //// - RatingToPercent emulated by the decode on GameFormula 1231 at level 1: rating 0,
 ////   100 and 300 give 0, 0.125 and 0.374993; at level 8 with base 0.05 rating 50
@@ -12,7 +12,7 @@
 ////   and the severity default is 1.5 (`0x140463e80`).
 
 import client_tables
-import genesis_prime/game/rating.{Formula}
+import genesis_prime/shared/rating.{Formula}
 import gleam/float
 import owned_test
 import unitest

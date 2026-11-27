@@ -2,10 +2,10 @@
 //// (so a test of the unit's place, body or level reads no table) and the unit of
 //// a character with the loadout the tables give its class and faction.
 
-import genesis_prime/game/item_property.{ItemProperties}
-import genesis_prime/game/loadout.{type Loadout, Loadout}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/item_visual.{type ItemVisual}
+import genesis_prime/shared/item_property.{ItemProperties}
+import genesis_prime/shared/loadout.{type Loadout, Loadout}
 import genesis_prime/store.{type Character}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store as table_store

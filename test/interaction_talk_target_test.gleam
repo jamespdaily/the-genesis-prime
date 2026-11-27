@@ -36,13 +36,13 @@ import genesis_prime/game/shown
 import genesis_prime/game/start_place
 import genesis_prime/game/target_group
 import genesis_prime/message/interaction_request.{InteractionRequest}
+import genesis_prime/shared/creature_path
 import genesis_prime/step.{LogWarning}
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/creature2
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/option

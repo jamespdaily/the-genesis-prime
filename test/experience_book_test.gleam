@@ -25,9 +25,9 @@ import genesis_prime/client_connection.{FromMap, FromStore}
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_plan
 import genesis_prime/message/cast_result.{SpellUnknown}
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan
 import genesis_prime/step
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId, Spell4BaseId}

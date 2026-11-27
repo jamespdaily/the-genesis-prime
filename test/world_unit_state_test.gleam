@@ -5,7 +5,7 @@
 ////   state 6, targetFlags 2, durationTime 8500, delay 0, phaseFlags 1
 ////   (`table_rows -- Spell4Effects 64365`). It is planted on the spell tree the plan tests
 ////   build on, as the despawn rows are; no client row starts that spell on a unit a go struck.
-//// - What state 6 does is the reading table in `genesis_prime/game/unit_state` (a guess from
+//// - What state 6 does is the reading table in `genesis_prime/shared/unit_state` (a guess from
 ////   spell names): a hostile press at a creature that shows it is refused with 306, a beneficial
 ////   one is not, a strike with blows is answered `Immune`, and the end is the go's time plus the
 ////   row's delay and duration, kept by the creature.
@@ -30,11 +30,9 @@ import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
 
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Landed}
 import genesis_prime/game/unit_news.{type PeerNews, PeerNews}
-import genesis_prime/game/unit_state
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
@@ -43,6 +41,8 @@ import genesis_prime/message/combat_result
 import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_state
 import genesis_prime/step.{OwnEvent}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{Spell4EffectsId}

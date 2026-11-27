@@ -12,9 +12,6 @@
 import cast_support as support
 import fixture_tables
 import genesis_prime/game/cast/frame as cast_frame
-import genesis_prime/game/lasting.{LastingRow, LifeOnly, Listed, Node}
-import genesis_prime/game/lasts
-import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/unit_casts.{
   type CastView, type HeldEffect, CastView, HeldEffect, UntilRemoved, ViewTarget,
@@ -25,6 +22,9 @@ import genesis_prime/message/spell_target_info.{type SpellTargetInfo}
 import genesis_prime/message/unit_create_cast.{
   type UnitCreateCast, UnitCreateCast,
 }
+import genesis_prime/shared/lasting.{LastingRow, LifeOnly, Listed, Node}
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4_effects
 import gleam/int

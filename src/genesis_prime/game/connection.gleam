@@ -150,7 +150,6 @@ import genesis_prime/connection/hello
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_select
 import genesis_prime/game/chat
-import genesis_prime/game/class_resource
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
 import genesis_prime/game/connection/departures as connection_departures
@@ -187,6 +186,7 @@ import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/departures
 import genesis_prime/game/hello_reply
 import genesis_prime/game/movement
+import genesis_prime/game/objective
 import genesis_prime/game/player_life
 import genesis_prime/game/routing
 import genesis_prime/game/strike
@@ -198,6 +198,7 @@ import genesis_prime/message/create_character
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/game_hello_reply
 import genesis_prime/message/world_message
+import genesis_prime/shared/class_resource
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionEvent, type ConnectionInput,
   type ConnectionRule, type ConnectionStep, type Effect, type Event, type Now,
@@ -801,6 +802,11 @@ fn world_carried(
                     now:,
                     entered:,
                     inner: whole,
+                    use_targets: objective.use_targets(
+                      log: entered.quests,
+                      tables: session.settings.tables,
+                      scripts: session.settings.script_rows,
+                    ),
                   )
                 Ok(routing.ItemUse) ->
                   connection_casting.item_use_message(

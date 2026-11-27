@@ -1,5 +1,5 @@
-//// The despawns of the plan (`genesis_prime/game/spell_plan` `Despawn`,
-//// `genesis_prime/game/effect_kind`). Expected values come from these places:
+//// The despawns of the plan (`genesis_prime/shared/spell_plan` `Despawn`,
+//// `genesis_prime/shared/effect_kind`). Expected values come from these places:
 //// - `Spell4Effects.effectType.97`: the columns of the client's rows (`table_rows --
 ////   Spell4Effects effectType=97`): 56028 (Spell4 30600, targetFlags 2, delayTime 4000,
 ////   phaseFlags 1), 87795 (Spell4 39854, targetFlags 6, delay 60000), 115345 (Spell4 48292,
@@ -16,10 +16,10 @@
 ////   state, which each struck creature checks.
 
 import fixture_tables
-import genesis_prime/game/effect_kind
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{Always}
-import genesis_prime/game/spend
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{Always}
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
 import genesis_prime/table/spell4_effects
 import gleam/list

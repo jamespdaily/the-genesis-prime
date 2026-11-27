@@ -1,5 +1,5 @@
 //// The positions a creature special's 0x7ff carries so the client draws its telegraph rows
-//// (`genesis_prime/game/telegraph_entries`), on the client's committed rows. Expected values
+//// (`genesis_prime/shared/telegraph_entries`), on the client's committed rows. Expected values
 //// come from these places.
 //// - `CreateCastTelegraphs` `0x140546e60` and its placement branches: a row with neither
 ////   TelegraphDamage flag 0x4000 nor 0x1000 is placed by the client (no entry); 0x1000 alone
@@ -18,11 +18,11 @@
 import client_tables
 import fixture_tables
 import genesis_prime/game/start_place.{type Place, Facing}
-import genesis_prime/game/telegraph_entries.{type Opening, type Placed, Placed}
 import genesis_prime/message/float32
 import genesis_prime/message/spell_initial_position.{SpellInitialPosition}
 import genesis_prime/message/spell_position.{SpellPosition}
 import genesis_prime/message/spell_telegraph_position.{SpellTelegraphPosition}
+import genesis_prime/shared/telegraph_entries.{type Opening, type Placed, Placed}
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4_telegraph

@@ -19,14 +19,16 @@
 //// level host      imports data platform shared link character unit map host messages of
 //// level root      imports data platform shared link character unit map host root messages of
 ////
-//// Enforced levels: data platform
+//// Enforced levels: data platform shared
 ////
 //// - data: client tables, content tables and readers of world data, and the
 ////   vocabulary a table row decodes into.
 //// - platform: the process model (step, service, store, hand-off, wire
 ////   recording), the ids that name a process, and the connection modules
 ////   the STS, auth and game listeners share.
-//// - shared: pure vocabulary and rules read by more than one level.
+//// - shared: pure vocabulary and rules read by more than one level. Its
+////   modules live in `genesis_prime/shared/` and no module outside that folder
+////   has this level (`shared_folder_breaches`).
 //// - link, character, unit, map: the game connection, one character's rows,
 ////   the body in a map run, and the relations between units.
 //// - host: the level of the rule that composes the levels. No module has it.
@@ -78,7 +80,7 @@ pub const list_path = "test/code_rule/levels.txt"
 
 /// The levels whose imports are checked. Every other level is read from the
 /// table but its imports are not checked.
-pub const enforced: List(Level) = [Data, Platform]
+pub const enforced: List(Level) = [Data, Platform, Shared]
 
 /// What one level may import: the levels whose modules it may import, and the
 /// levels whose message modules it may import.
@@ -447,4 +449,50 @@ fn may_import(from from: Level, to to: Level, module module: String) -> Bool {
     list.contains(message_levels(from), to)
     && list.contains(contract(to), module)
   }
+}
+
+/// The folder every shared module lives in.
+pub const shared_folder = "genesis_prime/shared/"
+
+/// A breach for each row at level shared whose module is outside the shared
+/// folder (at the row's line of the table), and for each file inside the
+/// shared folder whose row names another level (at the file's first line).
+pub fn shared_folder_breaches(
+  files files: List(SourceFile),
+  rows rows: List(Row),
+) -> List(Breach) {
+  let misplaced =
+    list.filter_map(rows, fn(row) {
+      case
+        row.level == Shared && !string.starts_with(row.module, shared_folder)
+      {
+        True ->
+          Ok(Breach(
+            path: list_path,
+            line: row.line,
+            rule: row.module
+              <> " is a shared row for a module outside "
+              <> shared_folder,
+          ))
+        False -> Error(Nil)
+      }
+    })
+  let stray =
+    list.filter_map(files, fn(file) {
+      let module = module_of(file)
+      case string.starts_with(module, shared_folder), level_of(rows:, module:) {
+        True, Ok(found) if found != Shared ->
+          Ok(Breach(
+            path: file.path,
+            line: 1,
+            rule: module
+              <> " is under "
+              <> shared_folder
+              <> " and its row says "
+              <> name(found),
+          ))
+        _, _ -> Error(Nil)
+      }
+    })
+  list.append(misplaced, stray)
 }

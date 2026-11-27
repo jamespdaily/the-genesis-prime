@@ -7,8 +7,8 @@
 ////
 //// ```
 //// caster (genesis_prime/game/strike)                  struck unit's owner
-////   blows from the effects' formulas (genesis_prime/game/damage)
-////   crit and strikethrough (genesis_prime/game/rating)
+////   blows from the effects' formulas (genesis_prime/shared/damage)
+////   crit and strikethrough (genesis_prime/shared/rating)
 ////   rolls from the connection's seed ───────────────▶ apply(target vitals, absorbs, offence, defence, rolls)
 ////                                                      deflect roll < deflect chance - strikethrough ─▶ Deflected
 ////                                                      each blow: ByTarget ─▶ finish with the vitals as the fold holds them
@@ -22,7 +22,7 @@
 //// ```
 ////
 //// - **A blow that waits for its target** is one whose formula names a target kind
-////   (genesis_prime/game/damage `Partial`). The sequence of one such blow, for a go or a
+////   (genesis_prime/shared/damage `Partial`). The sequence of one such blow, for a go or a
 ////   tick:
 ////
 ////   ```
@@ -91,8 +91,6 @@
 //// - **One roll triple for each strike.** A strike with several blows rolls once, so
 ////   a deflect misses all, a critical hit multiplies all and a glance reduces all.
 
-import genesis_prime/game/damage
-import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/combat_result.{Critical, Hit}
 import genesis_prime/message/damage_type
@@ -100,6 +98,8 @@ import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription, SpellDamageDescription,
 }
 import genesis_prime/random
+import genesis_prime/shared/damage
+import genesis_prime/shared/unit_properties
 import gleam/float
 import gleam/int
 import gleam/list
@@ -120,7 +120,7 @@ pub type Blow {
 
 /// A blow's damage before any critical hit: a whole number the caster worked out
 /// (`Worked`), or a formula whose target kinds the struck unit's owner finishes with
-/// its vitals when the blow lands (`ByTarget`, genesis_prime/game/damage `Partial`).
+/// its vitals when the blow lands (`ByTarget`, genesis_prime/shared/damage `Partial`).
 pub type Amount {
   Worked(Int)
   ByTarget(damage.Partial)

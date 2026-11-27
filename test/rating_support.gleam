@@ -1,8 +1,8 @@
-//// The rating formulas of the hit rule (`genesis_prime/game/rating`), as the
+//// The rating formulas of the hit rule (`genesis_prime/shared/rating`), as the
 //// committed fixture's tables build them.
 
 import fixture_tables
-import genesis_prime/game/rating.{type Formulas}
+import genesis_prime/shared/rating.{type Formulas}
 
 /// The formulas the hit rule reads.
 pub fn formulas() -> Formulas {

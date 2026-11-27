@@ -31,7 +31,7 @@
 ////   opcode.0x117.character_unread). The creation id arrays are empty: the
 ////   client then offers the CharacterCreation rows its own `enabled` column
 ////   sets (0x140021bb0). An entry holds each field of the character's row,
-////   its body visuals from its look (genesis_prime/game/appearance) and its
+////   its body visuals from its look (genesis_prime/shared/appearance) and its
 ////   bone values as sent. Its worn visuals and costume are empty or 0: the
 ////   client never builds worn visuals from a creation row, and gear is the
 ////   inventory's (0x14004adb0, 0x140027380).
@@ -98,7 +98,6 @@
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}
-import genesis_prime/game/appearance
 import genesis_prime/game/character_creation
 import genesis_prime/game/reward_property
 import genesis_prime/game/start_place
@@ -126,6 +125,7 @@ import genesis_prime/message/premium_tier.{PremiumTier}
 import genesis_prime/message/rename_character.{type RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result.{type RenameResult}
+import genesis_prime/shared/appearance
 import genesis_prime/store.{
   type AccountId, type Character, type CharacterId, CharacterId, NameStands,
   NeedsRename,

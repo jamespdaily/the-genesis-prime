@@ -1,11 +1,11 @@
 //// What the client's tables say a spell strikes, for each spell of each class's
 //// level-1 ability trees: the area row, the hit shapes of its telegraphs and the
 //// damage effects of each phase with who each aims at. Built once when the tables
-//// load, beside the ability trees (genesis_prime/game/spell_plan); the strike rule
+//// load, beside the ability trees (genesis_prime/shared/spell_plan); the strike rule
 //// (genesis_prime/game/strike) reads it and decides nothing from the tables itself.
 ////
 //// ```
-//// plans (genesis_prime/game/spell_plan) ─▶ every Spell4 of every tree
+//// plans (genesis_prime/shared/spell_plan) ─▶ every Spell4 of every tree
 ////   Spell4 ─▶ spell4AoeTargetConstraintsId ─▶ Spell4AoeTargetConstraints (the area row)
 ////                                              Spell4Base ─▶ spell4ValidTargetsId ─▶ Spell4ValidTargets
 ////   Spell4Telegraph rows of the spell ─▶ TelegraphDamage ─▶ the hit shapes
@@ -39,7 +39,7 @@
 ////   telegraph row (42297) is read by its area row's range and arc alone. Kick is a
 ////   cone from 1 to 7 m over 100 degrees (`Spell4.58591.area`).
 //// - **The points a cast spent.** A damage effect keeps its row's tag
-////   (`Spell4Effects.emmComparison`, genesis_prime/game/spend), and `phase` keeps
+////   (`Spell4Effects.emmComparison`, genesis_prime/shared/spend), and `phase` keeps
 ////   only the effects and Proxies whose tag holds for the points the cast spent above
 ////   its base cost, then works out `selects_area`, `strikes_primary_target` and
 ////   `ticks_on_area` from what is left. A cast with no spend keeps every effect.
@@ -53,7 +53,7 @@
 ////   and makes the phase select the area: the strike selects the other Friendly players inside
 ////   it (`shown.ally_candidates`) and tells each the row.
 //// - **A periodic damage row** (a tickTime) strikes the units of its go once for each
-////   tick of its schedule (genesis_prime/game/ticking), each tick its own 0x7f8 from the
+////   tick of its schedule (genesis_prime/shared/ticking), each tick its own 0x7f8 from the
 ////   server: the go selects with it as with any row, and `PhaseStrike.ticking` holds it
 ////   apart from the rows that strike once. A row that lasts until removed (flags bit 2)
 ////   is left out by the load (`TickingUntilRemoved`), and `checker` refuses a spell that holds
@@ -106,7 +106,7 @@
 ////   its primary target. Nullifier 58868 (row 2789, flags 1 with 0x1000) is `FixedAtCaster`;
 ////   its phase holds no damage row and selects no area, so its anchor moves no strike.
 //// - **Who the primary target is** follows from how the spell is started
-////   (genesis_prime/game/spell_plan `Start`): the caster for a press, a Proxy on the caster and
+////   (genesis_prime/shared/spell_plan `Start`): the caster for a press, a Proxy on the caster and
 ////   a proc aimed at its holder (`AtHolder`), the struck unit for a Proxy on each struck unit,
 ////   the ally for a Proxy on each ally,
 ////   and another unit for a proc aimed at one (`AtOtherUnit`, which falls back to the holder
@@ -116,7 +116,7 @@
 ////   spell's row on the target only when the spell is cast at the caster, since the press names
 ////   the caster and reads no other target (`targeting_given`, `target_mechanic.takes_caster`).
 //// - **Which spells** are read: the spells of each ability's tree and of each of its tiers
-////   (genesis_prime/game/spell_plan `tier_plans`), its threshold stages (Spell4Thresholds) included,
+////   (genesis_prime/shared/spell_plan `tier_plans`), its threshold stages (Spell4Thresholds) included,
 ////   a Proxy behind a target prerequisite excepted, since it is never started. A spell
 ////   with no area row selects nobody.
 //// - **What fails the load:** a row the tree names that the tables lack; a
@@ -136,13 +136,13 @@
 ////   a box that has a width or a length: the box's height, p4, is never tested; for a
 ////   creature 8 with such a box alone); a damage effect
 ////   (type 8) aimed by a flag value not read; a formula that reads a parameter the
-////   player's value does not (genesis_prime/game/damage `unread`: the weapon kinds 6
+////   player's value does not (genesis_prime/shared/damage `unread`: the weapon kinds 6
 ////   and 9, the passed-in value 18, and any kind above 26; the vital kinds are read,
 ////   the target's finished when the blow lands); and a phase that
 ////   selects units from a spell with no area row; a creature's drawn hit row timed from a go
 ////   (flag 0x2000: `TelegraphTimedFromAGo`).
 //// - **Each go of a creature's cast** is struck with the hit rows its phase names that the client
-////   is drawing at the go's time (`hit_shapes_by_go`, genesis_prime/game/telegraph_window).
+////   is drawing at the go's time (`hit_shapes_by_go`, genesis_prime/shared/telegraph_window).
 //// - **Each go of a player's cast** is struck with the hit rows its phase names, for a cast whose
 ////   phase the client compares with a row's (`spell_plan.compares_telegraph_phase`), and with
 ////   every hit row otherwise (`SpellArea.inside_by_go`). This is a server guess: the client
@@ -151,22 +151,22 @@
 ////   read, since it would strike nobody at the later gos of a spell that is not phased, such as
 ////   Discharge 58832 at its second and third pulse.
 
-import genesis_prime/game/area.{
+import genesis_prime/gap
+import genesis_prime/shared/area.{
   type Anchor, type Inside, type Placement, type Row, Box, Circle, Cone,
   FixedAtCaster, FixedAtTarget, FollowsCaster, FollowsTarget, Furthest,
   InsideRow, InsideShapes, MissingMostHealth, Nearest, Placement, Random,
   Rectangle, Row,
 }
-import genesis_prime/game/damage.{type Formula}
-import genesis_prime/game/effect_kind
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{type Aim, type Spell, type Start}
-import genesis_prime/game/spend
-import genesis_prime/game/target_mechanic
-import genesis_prime/game/telegraph_entries
-import genesis_prime/game/telegraph_window
-import genesis_prime/game/ticking
-import genesis_prime/gap
+import genesis_prime/shared/damage.{type Formula}
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{type Aim, type Spell, type Start}
+import genesis_prime/shared/spend
+import genesis_prime/shared/target_mechanic
+import genesis_prime/shared/telegraph_entries
+import genesis_prime/shared/telegraph_window
+import genesis_prime/shared/ticking
 import genesis_prime/table/id.{
   type Spell4EffectsId, type Spell4Id, Spell4AoeTargetConstraintsId,
   Spell4EffectsId, TelegraphDamageId,
@@ -198,7 +198,7 @@ pub type Reading {
 
 /// A damage effect of a spell: its row, damage type and delay, the phases it fires
 /// in, who it aims at, the formula its value is worked out by and the tag that
-/// chooses it by the points the cast spent (genesis_prime/game/spend).
+/// chooses it by the points the cast spent (genesis_prime/shared/spend).
 pub type DamageEffect {
   DamageEffect(
     effect_id: Spell4EffectsId,
@@ -259,7 +259,7 @@ pub type PhaseStrike {
     gates: List(spell_plan.StruckGate),
     /// Whether the phase selects units from the area: a damage effect (periodic or
     /// not), a crowd-control state or a property change of struck units aimed at the area, a
-    /// Proxy that starts its spell on each struck unit (genesis_prime/game/spell_plan
+    /// Proxy that starts its spell on each struck unit (genesis_prime/shared/spell_plan
     /// `OnEachStruck`), or, in an area that finds the caster's allies, an instant heal aimed at
     /// the area (`heals`).
     selects_area: Bool,
@@ -382,7 +382,7 @@ pub type AreaError {
   /// ends: the load leaves the row out, `checker` refuses its spell and the coverage measure
   /// counts it as not read.
   TickingUntilRemoved(spell4_id: Int, effect_id: Int)
-  /// A periodic damage effect lives shorter than one tick (genesis_prime/game/ticking
+  /// A periodic damage effect lives shorter than one tick (genesis_prime/shared/ticking
   /// `NoTick`).
   TickingNoTick(spell4_id: Int, effect_id: Int, tick_ms: Int, duration_ms: Int)
   /// A damage effect's multiplier (`dataBits00`, read as 32 bits) is an infinity or a
@@ -561,7 +561,7 @@ pub fn derivation() -> table_store.Derivation {
 /// Builds every spell's area from the loaded tables, or why one cannot be built;
 /// the derivation's body, and the function a test of a refused row runs on planted
 /// tables. The ability trees, their tiers and the AMP spells must already be derived
-/// (genesis_prime/game/spell_plan `plans`, `tier_plans` and `amp_plans`).
+/// (genesis_prime/shared/spell_plan `plans`, `tier_plans` and `amp_plans`).
 pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
   let started =
     list.append(
@@ -592,7 +592,7 @@ pub fn build(tables tables: table_store.Tables) -> Result(Areas, AreaError) {
   })
 }
 
-/// What a later ability's spells must pass to be planned (genesis_prime/game/spell_plan
+/// What a later ability's spells must pass to be planned (genesis_prime/shared/spell_plan
 /// `Checker`): the area of each is built as `build` builds it and no damage row lasts until
 /// removed, and an error of what the rule does not build leaves the ability out of the
 /// plans, so no ability holds a spell the load of the areas would refuse.
@@ -648,7 +648,7 @@ fn plan_error_of(
 /// The spell, the stage spells a RapidTap or ChargeRelease ability casts and every
 /// spell the Proxies of any of them start, below them, each with how it is started. A Proxy
 /// behind a prerequisite may start its child, so the child is read: one behind a target
-/// prerequisite starts it on a unit that passes (genesis_prime/game/spell_plan
+/// prerequisite starts it on a unit that passes (genesis_prime/shared/spell_plan
 /// `GatedOnCasterAndTarget`).
 fn spells_of_tree(spell: Spell) -> List(#(Spell, Start)) {
   spell_plan.tree_started(spell:, started: fn(_) { True })
@@ -1380,8 +1380,8 @@ fn damage_effects_of(
 /// One damage row (effect type 8) of the spell `spell4_id` as a damage effect, or the error
 /// that refuses it: its dataBits00 must be a finite 32-bit float, its targetFlags one the
 /// rule aims by (1 to 7), its formula must read only the parameter types a player's
-/// value reads (genesis_prime/game/damage `unread`). A row with a tickTime is periodic,
-/// with the schedule of its ticks (genesis_prime/game/ticking `schedule_of`), read before
+/// value reads (genesis_prime/shared/damage `unread`). A row with a tickTime is periodic,
+/// with the schedule of its ticks (genesis_prime/shared/ticking `schedule_of`), read before
 /// its apply gates so that an until-removed row is left out whatever its gates are. Every
 /// refusal but `TickingUntilRemoved` fails the area load, and `TickingUntilRemoved`
 /// leaves the row out. The area load and the coverage measure both read a row through it.
@@ -1453,7 +1453,7 @@ pub fn damage_row_of(
 }
 
 /// What the spell's phase strikes with the effects a cast that spent `spent` points
-/// chooses (genesis_prime/game/spend `applies`); the flags are worked out from the
+/// chooses (genesis_prime/shared/spend `applies`); the flags are worked out from the
 /// effects, crowd-control states, property changes, throws, despawns and unit states of
 /// struck units and Proxies that are left.
 fn phase_of(
@@ -1723,7 +1723,7 @@ pub fn area_of_spell(
 
 /// How a creature's cast of the spell counts a unit as inside its area at each go, in go order,
 /// for a cast whose gos fall `go_times_ms` after its start. A go strikes with the hit rows
-/// (`hit_shapes_of`) that the client is drawing at the go's time (genesis_prime/game/telegraph_window)
+/// (`hit_shapes_of`) that the client is drawing at the go's time (genesis_prime/shared/telegraph_window)
 /// and, for a cast whose phase the client compares with a row's (`spell_plan.compares_telegraph_phase`),
 /// whose phaseFlags name the go (bit n is go n): the shapes of those rows, or `None` when the
 /// spell has hit rows and the go has none, so it strikes nobody. A hit twin (flag 0x40) is

@@ -8,6 +8,7 @@
 //// files, then read over the real ones.
 
 import code_rule/planted
+import code_rule/repository
 import code_rule/source.{type SourceFile}
 import code_rule/syntax
 import glance
@@ -24,6 +25,8 @@ const mover = "src/genesis_prime/game/connection/movement.gleam"
 const unit_news = "src/genesis_prime/game/unit_news.gleam"
 
 const world_map_directory = "src/genesis_prime/world_map"
+
+const shared_directory = "src/genesis_prime/shared"
 
 const move_modules = [
   "genesis_prime/game/move_stamp", "genesis_prime/message/relayed_movement",
@@ -133,11 +136,16 @@ pub fn the_map_and_the_relay_hold_no_move_and_a_move_is_told_only_by_the_mover_t
     |> list.map(fn(file) { file.path })
   assert builders == [mover]
     as "the mover is the one file that builds a move's request"
-  assert list.flat_map(source.files(under: world_map_directory), fn(file) {
-      list.map(imports_a_move(file:), fn(module) { file.path <> " " <> module })
-    })
+  assert list.flat_map(
+      repository.sources(under: [world_map_directory, shared_directory]),
+      fn(file) {
+        list.map(imports_a_move(file:), fn(module) {
+          file.path <> " " <> module
+        })
+      },
+    )
     == []
-    as "no file of the world map imports a move"
+    as "no file of the world map or the shared folder imports a move"
   let planted_news =
     planted.file(path: unit_news, lines: [
       "pub type News {",

@@ -1,5 +1,5 @@
 //// The spend of a spell with an innate cost EMM id, as the plan holds it
-//// (`genesis_prime/game/spell_plan`). Expected values come from the client's rows,
+//// (`genesis_prime/shared/spell_plan`). Expected values come from the client's rows,
 //// which the fact file records and `table_rows` prints, each named at its
 //// assertion:
 //// - `Spell4.32809`: Mind Burst's cost is type 6 of 1 with innateCostEMMId0 4, so it
@@ -11,8 +11,8 @@
 //// - `Spell4CastResult.vital_cost` and `0x1403b3320`: the result of each cost type.
 
 import fixture_tables
-import genesis_prime/game/spell_plan.{type Plans, type Spell}
-import genesis_prime/game/spend.{AtLeast, EqualTo}
+import genesis_prime/shared/spell_plan.{type Plans, type Spell}
+import genesis_prime/shared/spend.{AtLeast, EqualTo}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import genesis_prime/table/loader/store
 import gleam/list

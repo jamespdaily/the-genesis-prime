@@ -28,9 +28,9 @@ import content_support
 import database_support
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/place_objective
-import genesis_prime/game/rating
 import genesis_prime/game/vendor
 import genesis_prime/import_world_data
+import genesis_prime/shared/rating
 import genesis_prime/table/quest_objective
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/spawn

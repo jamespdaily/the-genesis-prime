@@ -28,16 +28,11 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/held_changes
-import genesis_prime/game/hit
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
 import genesis_prime/game/player_address.{PlayerAddress}
 import genesis_prime/game/proc
 import genesis_prime/game/shown
-import genesis_prime/game/spell_plan
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news.{CastStarted}
-import genesis_prime/game/unit_properties.{Source}
 import genesis_prime/game/world_entry
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
@@ -45,6 +40,11 @@ import genesis_prime/message/spell_started
 import genesis_prime/message/unit_combat_state.{UnitCombatState}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/random
+import genesis_prime/shared/hit
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_properties.{Source}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId,
   LogWarning, Now, OwnEvent,

@@ -13,6 +13,7 @@
 //// planted file, then read over the real ones.
 
 import code_rule/planted
+import code_rule/repository
 import code_rule/source.{type SourceFile}
 import code_rule/syntax
 import glance
@@ -23,6 +24,8 @@ import owned_test
 import unitest
 
 const game_directory = "src/genesis_prime/game"
+
+const shared_directory = "src/genesis_prime/shared"
 
 const viewers_module = "src/genesis_prime/game/connection/viewers.gleam"
 
@@ -208,7 +211,7 @@ pub fn the_owners_copy_of_its_viewers_is_written_only_by_the_maps_two_notices_an
         <> "/connection/viewers.gleam:18 a_stray_call calls the writer",
     ]
     as "a write, a read and a call of the writer outside the allowed functions are found, and the writer, its callers and another field are not"
-  let files = source.files(under: game_directory)
+  let files = repository.sources(under: [game_directory, shared_directory])
   assert list.flat_map(files, fn(file) { breaches(file:) }) == []
     as "the copy is written only through viewers_changed, which only the two notices call, and read only by the mover's sorted_viewers, the five readers of an address and the viewers' own notices"
   let touching = list.flat_map(files, fn(file) { touching_functions(file:) })

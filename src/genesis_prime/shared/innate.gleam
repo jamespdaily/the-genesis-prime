@@ -6,8 +6,8 @@
 ////
 //// ```
 //// Class (spell4IdInnateAbilityActive00, Passive00, prerequisiteIdInnateAbility00) ─▶ Spell4 ─▶ Spell4Base
-//// all classes, on demand ─▶ held(tables) ─▶ the loadout (genesis_prime/game/loadout) and the plans
-////                                           (genesis_prime/game/spell_plan) read each class's innate
+//// all classes, on demand ─▶ held(tables) ─▶ the loadout (genesis_prime/shared/loadout) and the plans
+////                                           (genesis_prime/shared/spell_plan) read each class's innate
 //// ```
 ////
 //// - **Slot 0 only.** The client takes a class's innate slots in order and stops at the

@@ -1,4 +1,4 @@
-//// The prerequisite evaluator (`genesis_prime/game/prerequisite`): a Prerequisite
+//// The prerequisite evaluator (`genesis_prime/shared/prerequisite`): a Prerequisite
 //// row read as the client reads it, and checked against a subject: the live casts
 //// it is a target of, whether it is in combat, its vitals and its rolls. Expected
 //// values come from these places:
@@ -20,8 +20,8 @@
 ////   (percentage of the maximum, in 32-bit floats; 0 of 0 is not a number, which
 ////   is equal and nothing else) and `.73` (the current value cut toward zero).
 
-import genesis_prime/game/lasting
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/lasting
+import genesis_prime/shared/prerequisite.{
   type Subject, AtLeast, AtMost, Equal, Fails, Greater, Less, NeverRelation,
   NotEqual, NotRead, Passes, Subject, Vital,
 }

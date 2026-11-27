@@ -1,5 +1,5 @@
 //// The abilities a class gains above level 1 and the plans of them
-//// (`genesis_prime/game/spell_plan` `unplanned`, `refusal_of`; `genesis_prime/game/loadout`).
+//// (`genesis_prime/shared/spell_plan` `unplanned`, `refusal_of`; `genesis_prime/shared/loadout`).
 //// Expected values come from these places.
 //// - `SpellLevel.spell4Id.no_prerequisite`: each of the six classes has 27 rows with no
 ////   prerequisite, 3 at level 1 and 24 above it, 162 in all, none naming a class's innate
@@ -14,18 +14,18 @@
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/area
-import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/held_tier
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
-import genesis_prime/game/loadout
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{type PlanError}
-import genesis_prime/game/spell_tier
-import genesis_prime/game/target_mechanic
+import genesis_prime/shared/area
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/loadout
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{type PlanError}
+import genesis_prime/shared/spell_tier
+import genesis_prime/shared/target_mechanic
 import genesis_prime/table/id.{
   type Spell4BaseId, type Spell4Id, ClassId, Spell4BaseId, Spell4EffectsId,
   Spell4Id, TelegraphDamageId,

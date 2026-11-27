@@ -1,6 +1,6 @@
 //// The numbers of a healer's Focus, as pure functions: what a Focus cost needs to be held,
 //// the share of the pool recovered and what each tick adds. The pool itself, its timer and
-//// its payments are the class resource's (genesis_prime/game/class_resource, slot -1).
+//// its payments are the class resource's (genesis_prime/shared/class_resource, slot -1).
 ////
 //// ```
 //// GameFormula 88, 1237, 1243, 1267 ─▶ Formulas, once, when the tables load
@@ -26,9 +26,9 @@
 //// - **The level** is the player's one level, where the client reads its +0x3c word and
 ////   falls back to +0x38 (`FUN_140462af0`, `FUN_1404602f0`).
 
-import genesis_prime/game/rating.{type Formula, Formula}
-import genesis_prime/game/unit_properties.{type Properties}
 import genesis_prime/message/float32
+import genesis_prime/shared/rating.{type Formula, Formula}
+import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/store as table_store

@@ -37,8 +37,8 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_stealth
+import genesis_prime/shared/unit_fields
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/unit_fields
 import gleam/bool
 import gleam/dict
 import gleam/dynamic/decode

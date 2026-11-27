@@ -19,12 +19,13 @@ import genesis_prime/content/terrain as content_terrain
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
-import genesis_prime/game/area
-import genesis_prime/game/hit.{Blow, Defence, Offence, Worked}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
-import genesis_prime/game/telegraph_entries
 import genesis_prime/game/vendor
+import genesis_prime/shared/area
+import genesis_prime/shared/hit.{Blow, Defence, Offence, Worked}
+import genesis_prime/shared/telegraph_entries
+import genesis_prime/shared/unit_fields
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type UnitProperty2Id, Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
@@ -42,7 +43,6 @@ import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
 import genesis_prime/world_map/spawn_id.{type SpawnId, LoadedSpawns, SpawnId}
 import genesis_prime/world_map/spawn_source.{Summoned}
 import genesis_prime/world_map/static_object.{type StaticObject, StaticObject}
-import genesis_prime/world_map/unit_fields
 import gleam/dict
 import gleam/int
 import gleam/list

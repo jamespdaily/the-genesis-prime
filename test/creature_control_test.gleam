@@ -1,6 +1,6 @@
 //// What a creature's held crowd-control states say about its movement
 //// (`genesis_prime/world_map/creature_control` `stops_moving`, the mask
-//// `genesis_prime/game/crowd_control` `stopping_mask` works out of the client's
+//// `genesis_prime/shared/crowd_control` `stopping_mask` works out of the client's
 //// CCStates table). Expected values come from the client's CCStates rows, read with
 //// `table_rows -- CCStates`: the states whose `flags` hold the value 2 are 0 Stun
 //// (30), 1 Sleep (30), 2 Root (195), 7 Hold (87), 8 Knockdown (30), 12 Disable (95),
@@ -12,13 +12,13 @@
 
 import crowd_control_support
 import fixture_tables
-import genesis_prime/game/crowd_control
-import genesis_prime/game/hit.{Offence}
 import genesis_prime/game/strike_tell.{type ControlTell, Key, Strike}
 import genesis_prime/game/unit_news
 import genesis_prime/message/crowd_control_state.{
   type CrowdControlState, Fear, Polymorph, Root, Snare, Stun, Tether,
 }
+import genesis_prime/shared/crowd_control
+import genesis_prime/shared/hit.{Offence}
 import genesis_prime/step
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_life

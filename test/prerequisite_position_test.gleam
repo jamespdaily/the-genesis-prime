@@ -1,5 +1,5 @@
 //// Prerequisite type 108, where the check's second unit stands around the first unit's facing
-//// (`genesis_prime/game/prerequisite`). Expected values come from these places:
+//// (`genesis_prime/shared/prerequisite`). Expected values come from these places:
 //// - `PrerequisitePositional` 0x14049d940 (`Prerequisite.prerequisiteTypeId.108`, saved C
 ////   6ba38d868f75acff), whose arithmetic is in 32-bit floats in the client's order. The
 ////   numbers below were worked out outside the code under test, by a script that repeats
@@ -24,8 +24,8 @@
 ////   like any unit.
 
 import client_tables
-import genesis_prime/game/area.{type Pose}
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/area.{type Pose}
+import genesis_prime/shared/prerequisite.{
   type Subject, type Verdict, Fails, NoSecondUnit, NotPlaced, NotRead, Passes,
   PlaceOnly, Placed, Subject,
 }

@@ -18,10 +18,10 @@
 import cast_support as support
 import genesis_prime/game/cast/state.{type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/prerequisite
-import genesis_prime/game/spell_plan.{type Spell, Always}
-import genesis_prime/game/spend
 import genesis_prime/message/spell_go
+import genesis_prime/shared/prerequisite
+import genesis_prime/shared/spell_plan.{type Spell, Always}
+import genesis_prime/shared/spend
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/dict
 import gleam/list

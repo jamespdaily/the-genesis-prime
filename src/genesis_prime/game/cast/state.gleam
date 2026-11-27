@@ -13,34 +13,17 @@
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/activate
-import genesis_prime/game/area
-import genesis_prime/game/class_resource.{type Payment, type Resources}
-import genesis_prime/game/cooldown
-import genesis_prime/game/damage
-import genesis_prime/game/effect_kind
-import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
-import genesis_prime/game/hit
-import genesis_prime/game/lasting
-import genesis_prime/game/lasts
-import genesis_prime/game/look
 import genesis_prime/game/player_address.{type PlayerAddress}
 import genesis_prime/game/player_state.{type PlayerState}
-import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
 import genesis_prime/game/quest_advance
 import genesis_prime/game/shortcut_spell
-import genesis_prime/game/spell_area
-import genesis_prime/game/spell_effect
-import genesis_prime/game/spell_plan.{type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
-import genesis_prime/game/ticking
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{type News}
-import genesis_prime/game/unit_properties
-import genesis_prime/game/unit_state
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
@@ -48,7 +31,24 @@ import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription,
 }
+import genesis_prime/shared/area
+import genesis_prime/shared/class_resource.{type Payment, type Resources}
+import genesis_prime/shared/cooldown
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/hit
+import genesis_prime/shared/lasting
+import genesis_prime/shared/lasts
+import genesis_prime/shared/look
+import genesis_prime/shared/prerequisite
 import genesis_prime/shared/quest_view.{type QuestView}
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_effect
+import genesis_prime/shared/spell_plan.{type Proxy, type Spell}
+import genesis_prime/shared/ticking
+import genesis_prime/shared/unit_properties
+import genesis_prime/shared/unit_state
 import genesis_prime/step.{type LogLevel, type TimerId, TimerId}
 import genesis_prime/table/id.{
   type Item2Id, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
@@ -89,7 +89,7 @@ pub type Caster {
     /// Where the player stands now.
     place: Place,
     /// The abilities the player holds, as Spell4Base ids in bag order
-    /// (genesis_prime/game/loadout).
+    /// (genesis_prime/shared/loadout).
     abilities: List(Spell4BaseId),
     /// The ability book as the client holds it once its 0x1a0 is read: the bag, then the
     /// alternate each bag ability names (`spell_plan.book`). A swap under Spell Surge needs
@@ -118,7 +118,7 @@ pub type Caster {
     /// Whether the player is dead (genesis_prime/game/player_life), which the
     /// client checks a press against (`cast.dead_player`).
     dead: Bool,
-    /// The player's class resource (genesis_prime/game/class_resource), which a
+    /// The player's class resource (genesis_prime/shared/class_resource), which a
     /// press's costs and requirements are checked against and paid from, and whose
     /// slots are the vitals 5 to 11 of a prerequisite.
     resources: Resources,
@@ -132,10 +132,10 @@ pub type Caster {
     /// the type 4 and 250 prerequisites read.
     factions: prerequisite.Factions,
     /// What a damage or heal formula reads of the player: its level and its Assault
-    /// and Support Rating (genesis_prime/game/damage).
+    /// and Support Rating (genesis_prime/shared/damage).
     stats: damage.Attacker,
     /// The player's health and shield with their maxima, which a heal's formula reads
-    /// (genesis_prime/game/damage `value_on_caster`).
+    /// (genesis_prime/shared/damage `value_on_caster`).
     vitals: damage.Vitals,
     /// The two heal multipliers and the shield conversion a heal of the player's own
     /// vital reads of it, with which the go works out the amount and overheal it tells
@@ -161,7 +161,7 @@ pub type Caster {
 pub type CasterChange {
   /// A property modifier (a UnitPropertyModifier or UnitPropertyConversion effect) or an
   /// absorb pool (an Absorption effect): the connection applies it to the player's
-  /// properties (genesis_prime/game/unit_properties `apply`) or gives the player's life
+  /// properties (genesis_prime/shared/unit_properties `apply`) or gives the player's life
   /// a pool of `amount` that takes the damage types of `mask` (bit 1 Physical, 2 Tech, 4
   /// Magic) before its shield and health (genesis_prime/game/player_life
   /// `absorb_started`). A pool's amount is worked out at the go from the caster's stats,
@@ -171,7 +171,7 @@ pub type CasterChange {
   HeldChange(change: held_changes.Change)
   /// A disguise (a DisguiseOutfit effect): the connection starts it on the player's look,
   /// writes the slots that changed to the player's client and tells its viewers
-  /// (genesis_prime/game/look `start`). It ends with the modifiers' own end,
+  /// (genesis_prime/shared/look `start`). It ends with the modifiers' own end,
   /// `CasterChangeEnds`.
   Look(disguise: look.Disguise)
   /// A heal (a Heal or HealShields effect): the connection raises the player's `vital`
@@ -207,17 +207,17 @@ pub type Effect {
   /// effect's own result.
   FindProxyTickUnits(asked: ProxyTickAsked)
   /// A cast's costs are taken from the caster's class resource, at its first go, or
-  /// at the accept of a spell that goes at once (genesis_prime/game/class_resource
+  /// at the accept of a spell that goes at once (genesis_prime/shared/class_resource
   /// `pay`).
   Pay(payments: List(Payment))
   /// A go's resource gains are given to the caster's class resource
-  /// (genesis_prime/game/class_resource `gain`). `fired` says the cast belongs to a proc's
+  /// (genesis_prime/shared/class_resource `gain`). `fired` says the cast belongs to a proc's
   /// result (`Live.fired`), so the move of the resource raises no event
   /// (`ResourceMoved.fired`).
   Gain(gains: List(class_resource.Gain), fired: Bool)
   /// A change of the caster's spell on the caster itself starts: the connection applies a
   /// property modifier to the player's properties and tells its client and its viewers
-  /// the entries that changed (genesis_prime/game/unit_properties `apply`), and raises
+  /// the entries that changed (genesis_prime/shared/unit_properties `apply`), and raises
   /// the health or shield for a heal (genesis_prime/game/player_life `healed`) and gives
   /// the life an absorb pool for an `Absorb` (genesis_prime/game/player_life `absorb_started`).
   CasterChangeStarts(source: unit_properties.Source, change: CasterChange)
@@ -360,9 +360,9 @@ pub type PressedAt {
 /// the cast's primary target, which a child cast on a struck unit holds as that
 /// unit and any other cast as its caster, and the points the cast spent above its
 /// base cost, which choose the effects the go strikes with
-/// (genesis_prime/game/spend); none for a cast that spends no more than its cost; and the
+/// (genesis_prime/shared/spend); none for a cast that spends no more than its cost; and the
 /// pose the cast started at, which a row the client holds at the start is struck at
-/// (genesis_prime/game/area `centre_of`), and whether the cast is fired (`Live.fired`), so a go
+/// (genesis_prime/shared/area `centre_of`), and whether the cast is fired (`Live.fired`), so a go
 /// answered after the client ended the cast is muted as its cast was.
 pub type GoAsked {
   GoAsked(
@@ -657,7 +657,7 @@ pub type Due {
   /// level `level`.
   ChargeLevel(spell4_id: Int, level: Int)
   /// Tick `tick` of the periodic row `effect_id` of the cast `cast_id` on the unit
-  /// `unit_id` lands (genesis_prime/game/ticking `tick_at_ms`); only the next tick of a
+  /// `unit_id` lands (genesis_prime/shared/ticking `tick_at_ms`); only the next tick of a
   /// row on a unit is armed.
   Tick(cast_id: Int, effect_id: Spell4EffectsId, unit_id: Int, tick: Int)
 }
@@ -1201,7 +1201,7 @@ pub type State {
     /// monotonic clock can be negative, so 0 never means none.
     global_cooldown_ends_ms: Option(Int),
     /// The running cooldowns of the caster's spells and the cooldown effects kept for
-    /// the ones that start later (genesis_prime/game/cooldown). The global cooldown is
+    /// the ones that start later (genesis_prime/shared/cooldown). The global cooldown is
     /// the field above: no cooldown effect changes it.
     cooldowns: cooldown.Book,
     casts: Dict(Int, Live),
@@ -1253,7 +1253,7 @@ pub type State {
     /// cast's node (`cast_proc.effects_ended`), whichever comes first.
     restrictions: Dict(unit_properties.Source, HeldRestriction),
     /// How many such states the caster has told, which their instance ids are made from
-    /// (genesis_prime/game/crowd_control `instance_id`).
+    /// (genesis_prime/shared/crowd_control `instance_id`).
     restrictions_told: Int,
     /// The highest client cast id of the item presses the caster's state took, once one
     /// has been. The client's id of a cast is its counter's next value, which rises with
@@ -1426,7 +1426,7 @@ pub type AimedPress {
     in_cast_group: fn(Int, Int) -> Bool,
     held: List(CrowdControlState),
     /// The unit states the target creature is shown to hold, by number
-    /// (genesis_prime/game/unit_state).
+    /// (genesis_prime/shared/unit_state).
     unit_states: List(Int),
   )
 }
@@ -1499,7 +1499,7 @@ pub type Fact {
 }
 
 /// The slot of the Stalker's class resource, suit power: 3 of the class's eight slots
-/// (genesis_prime/game/class_resource, `LocalizedEnum.CRB_StalkerResource`).
+/// (genesis_prime/shared/class_resource, `LocalizedEnum.CRB_StalkerResource`).
 pub const suit_power_slot = 3
 
 /// Spell4CastResult 58, Caster_MustBeDead: a living caster's press of a spell
@@ -1535,7 +1535,7 @@ pub type CostRefusal {
   Unpaid(result: Int)
   /// The cost is in a vital the server does not hold.
   Unheld(result: Int)
-  /// The cost's EMM id is one the server does not read (genesis_prime/game/spend).
+  /// The cost's EMM id is one the server does not read (genesis_prime/shared/spend).
   UnreadSpend(result: Int, emm_id: Int)
 }
 
@@ -1892,7 +1892,7 @@ pub type Restricting {
 
 /// A heal a go applies: its row, the vital it restores, its delay, the formula's `amount`
 /// worked out at the go from the caster as it stood before the go's own effects
-/// (genesis_prime/game/damage `amount_on_caster`), which the change carries, and the
+/// (genesis_prime/shared/damage `amount_on_caster`), which the change carries, and the
 /// `split` of it the go tells the client: the amount after the heal multipliers and the
 /// shield conversion, and the part the vitals had no room for
 /// (genesis_prime/game/heal_split).

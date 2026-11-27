@@ -2,7 +2,7 @@
 //// map tells the players about each other: the notices of sight, the owner's snapshot and
 //// news relayed through a relation, a landing delivered by its kind's checks. Every
 //// player stands on the x axis of Warfare Woods and sees every other within
-//// `genesis_prime/world_map/sight.range`; a player of connection `n` joins as the `n`th
+//// `genesis_prime/shared/sight.range`; a player of connection `n` joins as the `n`th
 //// unit when the tests join in the order of their numbers.
 
 import character_support

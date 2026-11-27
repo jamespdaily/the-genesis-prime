@@ -142,7 +142,7 @@
 //// - **The chase** is a straight path of kind 4 at the creature's run speed
 ////   (`movement_command.kind_4`, `0x1405b45e0`), planned again only when the target is
 ////   beyond reach of the current path's end, and clipped at the leash circle
-////   (genesis_prime/world_map/creature_path).
+////   (genesis_prime/shared/creature_path).
 //// - **A path that ends in standing is replaced.** A new path that is no distance
 ////   to run (the leash in the instant a chase began, a target that doubled back
 ////   onto the creature, a death) is sent as 0x638 of kind 2 at the creature's place with its
@@ -165,9 +165,9 @@
 ////   in the order they began (`game/strike.gleam` `close_ready`).
 //// - **The charge's area** is the attack spell's damage telegraph, in the order of its area
 ////   row: nearest or furthest first, or Random by the round's cast id as the seed
-////   (genesis_prime/game/spell_area `area_of_spell`, genesis_prime/game/area `select_ordered`),
+////   (genesis_prime/shared/spell_area `area_of_spell`, genesis_prime/shared/area `select_ordered`),
 ////   centred where the picture is (`Charged.anchor`). A row with TelegraphDamage flag 0x4000 or
-////   0x1000 is drawn only from the positions the 0x7ff carries (genesis_prime/game/telegraph_entries),
+////   0x1000 is drawn only from the positions the 0x7ff carries (genesis_prime/shared/telegraph_entries),
 ////   made at the cast's start and kept in the round (`Round.start`), where it stays whatever
 ////   moves: its hit is centred on the pose the cast started at, the creature's
 ////   (`FixedAtCaster`) or the cast target's (`FixedAtTarget`), and a viewer that arrives
@@ -394,26 +394,26 @@
 //// | a chase starts | the turn goes out before the path | `a_chase_sends_the_turn_before_the_path_test` |
 //// | a viewer arrives in flight | it is sent the rest of the path from where the creature is now | `an_arriving_viewer_mid_flight_is_sent_the_rest_of_the_path_test` |
 
-import genesis_prime/game/area.{type Inside, type Row}
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/forced_move
-import genesis_prime/game/hit.{type Offence}
 import genesis_prime/game/start_place.{type Facing, type Place}
 import genesis_prime/game/strike_tell.{
   type Answered, type Fight as Told, type Key, Attacks, CreatureStriker,
   Released, Threatened,
 }
-import genesis_prime/game/telegraph_entries
 import genesis_prime/game/unit_news.{type News}
 import genesis_prime/gap
+import genesis_prime/shared/area.{type Inside, type Row}
+import genesis_prime/shared/creature_path.{
+  type Path, Circle, Running, Standing, Timed,
+}
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/hit.{type Offence}
+import genesis_prime/shared/telegraph_entries
 import genesis_prime/step.{type Address, type ConnectionId, type RingMember}
 import genesis_prime/table/id.{type Spell4Id}
 import genesis_prime/world_map/creature_life.{
   type Attack, type Special, Charged, Instant,
-}
-import genesis_prime/world_map/creature_path.{
-  type Path, Circle, Running, Standing, Timed,
 }
 import genesis_prime/world_map/creature_turn.{type Face, Fixed}
 import genesis_prime/world_map/game_number.{type GameNumbers}
@@ -436,7 +436,7 @@ import gleam/set.{type Set}
 /// (genesis_prime/world_map/creature_control); and the ids of the guard's live casts
 /// (`creature_guard.live_casts`), which its casts take no id of (`cast_state.mint`). An opened
 /// creature (genesis_prime/world_map/creature_guard `opened`) is stopped in all three.
-/// - `still`: it holds a state that stops its run (genesis_prime/game/crowd_control
+/// - `still`: it holds a state that stops its run (genesis_prime/shared/crowd_control
 ///   `stopping_mask`), so `chase` starts no path, `leash` starts no walk and a state that
 ///   takes hold stands it where it is.
 /// - `attack_refused`: it holds a state its attack spell's caster conditions mask, or a
@@ -594,7 +594,7 @@ pub type Stage {
 
 /// The newest place the creature knows a connection's player at, with the move
 /// sequence number and the stay it came with, and the hit radius of the player's race
-/// (genesis_prime/game/hit_radius), which a charge's rectangle counts the player by.
+/// (genesis_prime/shared/hit_radius), which a charge's rectangle counts the player by.
 pub type Sighting {
   Sighting(unit_id: Int, place: Place, seq: Int, stay: Stay, hit_radius: Float)
 }
@@ -639,7 +639,7 @@ pub type Hold {
   Hold(ends: Int, until_ms: Int)
 }
 
-/// A throw the creature is in (genesis_prime/game/forced_move): the generation of its
+/// A throw the creature is in (genesis_prime/shared/forced_move): the generation of its
 /// `FlightEnds` timer and the monotonic time the path's last point is reached.
 pub type Flight {
   Flight(ends: Int, until_ms: Int)
@@ -706,7 +706,7 @@ pub type Input {
   /// with its home timer; `ControlEnded` starts them when a state holds the creature).
   SpeedChanged
   /// creature: a ForcedMove effect of a player's cast reaches the creature
-  /// (genesis_prime/game/forced_move `Throw`): the move the row asks for, the two
+  /// (genesis_prime/shared/forced_move `Throw`): the move the row asks for, the two
   /// fractions the caster's connection drew, and the unit it is measured from. A creature
   /// that is walking home, or does not run, takes no throw. Else it takes the path the move
   /// builds from where it is, the viewers are sent it, and `FlightEnds` ends the flight.
@@ -2261,8 +2261,8 @@ fn due_in(
 
 /// A go of the open charge is due (`CastEnds` of the round's generation, C alive and Fighting).
 /// The go joins the round's entries in go order (`GoRound`). A go that strikes selects the
-/// fighters on the threat list inside the shapes of its own strike (`game/spell_area`,
-/// `game/area` select) and tells each to take the blows that name the go (`strikes_sent`); a go
+/// fighters on the threat list inside the shapes of its own strike (`shared/spell_area`,
+/// `shared/area` select) and tells each to take the blows that name the go (`strikes_sent`); a go
 /// with no strike, or whose strike finds no one inside, or no centre (`centre_of`: a row on a
 /// target that is no longer a viewer), is an empty entry, complete at once. The `CastEnds` of
 /// the next go is armed, of a new generation, for what is left of its due time; after the last

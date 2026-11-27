@@ -17,7 +17,6 @@ import connection_rule_support as support
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/game/class_resource
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_news
@@ -26,6 +25,7 @@ import genesis_prime/message/spell_failed
 import genesis_prime/message/unit_float_stat_changed.{
   type UnitFloatStatChanged, UnitFloatStatChanged,
 }
+import genesis_prime/shared/class_resource
 import genesis_prime/step.{
   type ConnectionStep, type TimerId, CancelTimer, OwnEffect, OwnEvent,
   StartTimer, TimerFired,

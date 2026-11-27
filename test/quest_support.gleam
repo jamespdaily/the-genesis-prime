@@ -12,10 +12,10 @@
 import character_tables
 import fixture_tables
 import genesis_prime/game/objective.{type SpawnedUnit, SpawnedUnit}
-import genesis_prime/game/prerequisite
 import genesis_prime/game/quest.{type Asker, Asker}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/target_group
+import genesis_prime/shared/prerequisite
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/store.{

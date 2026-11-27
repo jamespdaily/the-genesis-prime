@@ -30,10 +30,10 @@ import cast_support as support
 import client_tables
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
-import genesis_prime/game/damage
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
+import genesis_prime/shared/damage
 import genesis_prime/table/id.{Spell4BaseId}
 import gleam/int
 import gleam/list

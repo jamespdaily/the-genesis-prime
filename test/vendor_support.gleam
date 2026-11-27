@@ -13,10 +13,10 @@ import genesis_prime/game/vendor.{type Vendors, ItemRow, VendorRow}
 import genesis_prime/game/vendor_sale
 import genesis_prime/game/vendor_trade.{type Effect, Log, Refuse, Send}
 import genesis_prime/game/world_entry
+import genesis_prime/shared/creature_path
 import genesis_prime/store.{type HeldItem, HeldItem}
 import genesis_prime/table/id
 import genesis_prime/world_map/creature_life.{Hostile}
-import genesis_prime/world_map/creature_path
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list

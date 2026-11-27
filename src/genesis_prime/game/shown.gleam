@@ -8,7 +8,7 @@
 //// its Health and Died news ─▶ alive changed (a player's: and its health)        its 0x355 ─▶ the unit is no longer shown
 //// its CombatState news     ─▶ in combat changed
 //// candidates(picture, faction, caster, now) ─▶ the alive foes at place_at(path, now), as geometry's
-////                                              candidates (genesis_prime/game/area)
+////                                              candidates (genesis_prime/shared/area)
 //// ally_candidates(picture, caster)          ─▶ the alive Friendly players with a place and the health
 ////                                              each misses, as candidates
 //// ```
@@ -26,7 +26,7 @@
 ////   so an object is alive, never in combat, and Hostile to the players its faction is
 ////   (`hostile_to`, filled when the object is shown).
 //// - **A running creature** is where its last path puts it at the time of the go
-////   (genesis_prime/world_map/creature_path `place_at`), by the same function the
+////   (genesis_prime/shared/creature_path `place_at`), by the same function the
 ////   creature reads its own place with.
 //// - **A creature's pose** (`pose_of`) is that place's ground point with the yaw its client
 ////   shows: the yaw of its 0x262 or of the path that turned it, or what its `CreatureFaces` news
@@ -48,22 +48,24 @@
 //// - **A creature's life** is the number of the map's watch it was started under,
 ////   which is part of its address (genesis_prime/step `Creature`).
 
-import genesis_prime/game/area.{type Candidate, type Point, type Pose, Candidate}
-import genesis_prime/game/faction_level
 import genesis_prime/game/held_state.{type HeldState}
 import genesis_prime/game/player_state.{type PlayerState, PlayerState}
-import genesis_prime/game/prerequisite.{
-  type FirstUnit, NonPlayer, OtherPlayer, TheChecker,
-}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group.{type Unit, Unit}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/unit_property.{type UnitProperty}
+import genesis_prime/shared/area.{
+  type Candidate, type Point, type Pose, Candidate,
+}
+import genesis_prime/shared/creature_path.{type Path}
+import genesis_prime/shared/faction_level
+import genesis_prime/shared/prerequisite.{
+  type FirstUnit, NonPlayer, OtherPlayer, TheChecker,
+}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Creature2Id, Faction2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
-import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/creature_turn.{type Face}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{type SpawnId}
@@ -158,7 +160,7 @@ pub type Shown {
   )
 }
 
-/// A unit state a shown creature holds (genesis_prime/game/unit_state), with the `number`
+/// A unit state a shown creature holds (genesis_prime/shared/unit_state), with the `number`
 /// its creature gave the hold, which the news that ends it names.
 pub type HeldUnitState {
   HeldUnitState(state: Int, number: Int)

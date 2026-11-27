@@ -1,4 +1,4 @@
-//// The value of a damage effect for a player (`genesis_prime/game/damage`), on the
+//// The value of a damage effect for a player (`genesis_prime/shared/damage`), on the
 //// raw columns of the client's Spell4Effects rows (`table_rows -- Spell4Effects
 //// spellId=<id>`). Expected values come from these places.
 //// - At level 1 with rating 0 the stat part is 0 and the value is level x the type 10
@@ -28,13 +28,13 @@
 
 import attacker_support
 import fixture_tables
-import genesis_prime/game/damage.{
+import genesis_prime/message/float32
+import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/damage.{
   Attacker, Attributes, Formula, Known, OfTarget, OnCaster, Parameter, Unread,
   Vitals,
 }
-import genesis_prime/game/unit_properties
-import genesis_prime/message/float32
-import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/unit_properties
 import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
 import genesis_prime/table/spell4_effects
 import gleam/float

@@ -10,23 +10,23 @@ import genesis_prime/client_connection.{
   type Message, ForStay, SentByMap, SentByPeer,
 }
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/forced_move
-import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
-import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{Key, Strike}
 import genesis_prime/game/unit_news.{
   type PeerNews, CreatureAppeared, CreatureMoved, PeerNews,
 }
-import genesis_prime/game/unit_properties.{Change}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/service
 import genesis_prime/service/shell
+import genesis_prime/shared/creature_path.{type Path}
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/hit.{Blow, Offence, Rolls, Worked}
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_properties.{Change}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{type Character}
 import genesis_prime/table/id.{UnitProperty2Id}
 import genesis_prime/world_map/creature
-import genesis_prime/world_map/creature_path.{type Path}
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}

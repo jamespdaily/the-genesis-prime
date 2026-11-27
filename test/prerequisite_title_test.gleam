@@ -1,4 +1,4 @@
-//// Prerequisite type 288 (`genesis_prime/game/prerequisite`): whether the client's own set
+//// Prerequisite type 288 (`genesis_prime/shared/prerequisite`): whether the client's own set
 //// of owned titles holds a title. Expected values come from these places:
 //// - `Prerequisite.prerequisiteTypeId.288` (0x1404a1830): a first unit of unit type 0x14
 ////   or 0x17 (a player) is looked up in the client's one title set, comparison 1 passes
@@ -9,7 +9,7 @@
 //// - Prerequisite 43305 (`table_rows -- Prerequisite 43305`): the table's one condition of
 ////   the type, comparison 2 on title 400, value 0.
 
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/prerequisite.{
   type Verdict, Fails, NonPlayer, NotRead, OtherPlayer, Passes, TheChecker,
   UnknownUnit,
 }

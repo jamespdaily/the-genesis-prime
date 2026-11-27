@@ -31,13 +31,13 @@
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/activate
-import genesis_prime/game/effect_kind
-import genesis_prime/game/faction_level
 import genesis_prime/game/objective
 import genesis_prime/game/objective_action
 import genesis_prime/game/objective_row
 import genesis_prime/game/quest
 import genesis_prime/gap
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/faction_level
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Quest2Id}
 import genesis_prime/table/loader/store as table_store

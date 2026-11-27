@@ -1,4 +1,4 @@
-//// The instance id of a crowd-control effect (`genesis_prime/game/crowd_control`).
+//// The instance id of a crowd-control effect (`genesis_prime/shared/crowd_control`).
 //// Expected values come from `cc_state.instance_id`: the client finds the effect a 0x87f
 //// waits for by instance id alone among every effect held on the unit, from any caster,
 //// and 0 matches the first effect found, so an id is non-zero and no two effects on a
@@ -7,8 +7,8 @@
 
 import fixture_tables
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/crowd_control
 import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/crowd_control
 import genesis_prime/table/cc_states
 import genesis_prime/table/loader/store
 import genesis_prime/table/spell4_cc_conditions

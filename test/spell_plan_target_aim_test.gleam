@@ -19,7 +19,7 @@
 ////   of the caster is clear.
 
 import client_tables
-import genesis_prime/game/spell_plan.{
+import genesis_prime/shared/spell_plan.{
   type TargetAim, type TargetRows, CombatAllowed, FacesAnywhere, FacesWithin,
   Limits, MustBeInCombat, OutOfCombatOnly, PetBits, TargetAim, TargetRows,
 }

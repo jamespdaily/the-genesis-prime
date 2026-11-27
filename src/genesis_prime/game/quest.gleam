@@ -52,7 +52,6 @@
 import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/game/equip_requirement
 import genesis_prime/game/interaction
-import genesis_prime/game/prerequisite
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/gap
@@ -63,6 +62,7 @@ import genesis_prime/message/quest_ignore
 import genesis_prime/message/quest_mention
 import genesis_prime/message/quest_retry
 import genesis_prime/message/quest_track
+import genesis_prime/shared/prerequisite
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{type LogLevel}

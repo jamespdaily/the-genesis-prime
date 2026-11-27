@@ -1,5 +1,5 @@
 //// Prerequisite type 130, carrying a cast of a spell group by the second unit
-//// (`genesis_prime/game/prerequisite`). Expected values come from these places:
+//// (`genesis_prime/shared/prerequisite`). Expected values come from these places:
 //// - `Prerequisite.prerequisiteTypeId.130` (0x140469a70): the first unit carries a cast
 ////   whose caster is the second unit and whose Spell4 is in the spell group the objectId
 ////   names; comparison 1 passes when one is found, 2 when none is, any other fails; the
@@ -10,8 +10,8 @@
 //// - Spell4GroupList 464 is the group of Cripple's first hit, the one Prerequisite 13148
 ////   asks the caster's own cast of.
 
-import genesis_prime/game/lasting
-import genesis_prime/game/prerequisite.{
+import genesis_prime/shared/lasting
+import genesis_prime/shared/prerequisite.{
   type Subject, Fails, NotRead, Passes, Subject,
 }
 import genesis_prime/table/id.{Spell4Id}
