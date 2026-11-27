@@ -91,7 +91,11 @@ pub fn a_variant_with_no_order_row_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   assert breaches([])
-    == ["no row for Kind.Alpha", "no row for Kind.Beta", "no row for Kind.Gamma"]
+    == [
+      "no row for Kind.Alpha",
+      "no row for Kind.Beta",
+      "no row for Kind.Gamma",
+    ]
     as "a told type with no rows has a breach for each of its variants"
   assert breaches([
       row(["Alpha"], Order("thing_order_test.alpha_comes_first_test")),
@@ -146,7 +150,7 @@ pub fn an_order_or_owner_row_whose_test_is_missing_or_private_is_a_breach_test()
     as "a public test that exists passes"
 }
 
-pub fn an_order_row_whose_test_never_takes_its_variant_of_its_type_is_a_breach_test() -> Nil {
+pub fn an_order_row_whose_test_never_names_its_variant_is_a_breach_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   assert breaches([

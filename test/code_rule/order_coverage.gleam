@@ -8,8 +8,13 @@
 //// - Every variant of a told type is in exactly one row, and a row names only variants
 ////   of its type (the type is the second source; Design run A, section 6).
 //// - An `Order` or `Owner` row names a public `_test` function that exists.
-//// - An `Order` row's test, or a module its file imports, names the variant: the weakest
-////   check, a name and not behaviour.
+//// - An `Order` row's test takes each variant as the constructor of its type: the test
+////   function, or a function of the tests it reaches by name (its own module's, a
+////   module's imported unqualified or qualified as imported, alias included), writes the
+////   variant in an expression, qualified by its module as that module is imported or
+////   imported unqualified from it. A name written in a pattern, a string or a comment, in
+////   the code under test, or another module's variant of the same name, is not taken. The
+////   weakest check that reads code: a constructor written, not behaviour.
 //// - An `Independent` row gives a reason of at least three words.
 ////
 //// The failure tables of a module's doc comment are read by `failure_breaches`: a row
@@ -18,8 +23,12 @@
 import code_rule/source.{type SourceFile}
 import code_rule/syntax
 import glance
+import gleam/bool
+import gleam/dict
 import gleam/list
+import gleam/option.{Some}
 import gleam/result
+import gleam/set
 import gleam/string
 
 /// How a variant is covered: by a test of the orders it arrives in, by the test of the
@@ -48,13 +57,23 @@ pub fn breaches(
   breaches_of(
     rows:,
     families: list.map(told, fn(type_) {
-      #(type_, case file_of(sources:, module: type_.0) {
-        Ok(file) -> syntax.variants_of(file:, type_names: [type_.1])
-        Error(Nil) -> []
-      })
+      #(type_, variants_in(sources:, module: type_.0, type_name: type_.1))
     }),
     sources:,
   )
+}
+
+/// The variants of the type of the module among the sources, in declaration order; none
+/// for a module or a type the sources lack.
+pub fn variants_in(
+  sources sources: List(SourceFile),
+  module module: String,
+  type_name type_name: String,
+) -> List(String) {
+  case file_of(sources:, module:) {
+    Ok(file) -> syntax.variants_of(file:, type_names: [type_name])
+    Error(Nil) -> []
+  }
 }
 
 /// What the rows break over the families `#(#(module, name), members)`: the same
@@ -80,28 +99,71 @@ pub fn breaches_of(
     list.flat_map(rows, fn(row) {
       list.map(row.variants, fn(name) { #(#(row.module, row.type_name), name) })
     })
+  let reached = reached_by_test(rows:, sources:)
   list.flatten([
     list.filter(told_variants, fn(entry) { !list.contains(covered, entry) })
-      |> list.map(fn(entry) { "no row for " <> entry.1 }),
+      |> list.map(fn(entry) { "no row for " <> written(entry) }),
     list.flat_map(rows, fn(row) {
       list.filter(row.variants, fn(name) {
         !list.contains(declared(row.module, row.type_name), name)
       })
-      |> list.map(fn(name) { "a row for no variant: " <> name })
+      |> list.map(fn(name) {
+        "a row for no variant: "
+        <> written(#(#(row.module, row.type_name), name))
+      })
     }),
     list.unique(covered)
       |> list.filter(fn(entry) {
         list.count(covered, fn(other) { other == entry }) > 1
       })
-      |> list.map(fn(entry) { "in two rows: " <> entry.1 }),
-    list.flat_map(rows, fn(row) { cover_breaches(row:, sources:) }),
+      |> list.map(fn(entry) { "in two rows: " <> written(entry) }),
+    list.flat_map(rows, fn(row) { cover_breaches(row:, sources:, reached:) }),
   ])
+}
+
+/// The code each `Order` row's test reaches, by the test's name.
+fn reached_by_test(
+  rows rows: List(Row),
+  sources sources: List(SourceFile),
+) -> dict.Dict(String, List(glance.Module)) {
+  let index =
+    dict.from_list(
+      list.filter_map(sources, fn(file) {
+        case string.starts_with(file.path, "test/") {
+          True -> Ok(#(syntax.module_name(file.path), file))
+          False -> Error(Nil)
+        }
+      }),
+    )
+  list.filter_map(rows, fn(row) {
+    case row.cover {
+      Order(test_name:) ->
+        result.map(public_test(sources:, test_name:), fn(file) {
+          #(
+            test_name,
+            code_reached(
+              index:,
+              module: syntax.module_name(file.path),
+              function: function_of(test_name),
+            ),
+          )
+        })
+      Owner(..) | Independent(..) -> Error(Nil)
+    }
+  })
+  |> dict.from_list
+}
+
+/// An entry `#(#(module, type name), variant)` as `Type.Variant`.
+fn written(entry: #(#(String, String), String)) -> String {
+  entry.0.1 <> "." <> entry.1
 }
 
 /// What one row's cover breaks.
 fn cover_breaches(
   row row: Row,
   sources sources: List(SourceFile),
+  reached reached: dict.Dict(String, List(glance.Module)),
 ) -> List(String) {
   case row.cover {
     Independent(reason:) ->
@@ -120,15 +182,153 @@ fn cover_breaches(
     Order(test_name:) ->
       case public_test(sources:, test_name:) {
         Error(Nil) -> ["the test is missing or private: " <> test_name]
-        Ok(file) -> {
-          let texts = texts_naming(file:, sources:)
-          list.filter(row.variants, fn(name) { !named(texts:, name:) })
+        Ok(_) -> {
+          let code = result.unwrap(dict.get(reached, test_name), [])
+          list.filter(row.variants, fn(name) { !takes(code:, row:, name:) })
           |> list.map(fn(name) {
-            "the test never names " <> name <> ": " <> test_name
+            "the test never takes "
+            <> written(#(#(row.module, row.type_name), name))
+            <> ": "
+            <> test_name
           })
         }
       }
   }
+}
+
+/// Whether the code writes the variant `name` of the row's module as a constructor.
+fn takes(
+  code code: List(glance.Module),
+  row row: Row,
+  name name: String,
+) -> Bool {
+  list.any(code, fn(module) {
+    syntax.references_to(module:, from: [row.module], named: [name]) != []
+  })
+}
+
+/// The function a test name `module.function` or `function` names.
+fn function_of(test_name: String) -> String {
+  case string.split_once(test_name, ".") {
+    Ok(#(_, function)) -> function
+    Error(Nil) -> test_name
+  }
+}
+
+/// The modules of the tests among the sources, each cut to the functions the function of the module
+/// reaches: by a bare name of its own module, by a name imported unqualified, or qualified
+/// by the module's name as imported (alias included), through any number of modules.
+fn code_reached(
+  index index: dict.Dict(String, SourceFile),
+  module module: String,
+  function function: String,
+) -> List(glance.Module) {
+  let reached =
+    reach(index:, pending: [#(module, function)], seen: set.new())
+    |> set.to_list
+    |> list.group(fn(entry) { entry.0 })
+  list.filter_map(dict.to_list(reached), fn(entry) {
+    use file <- result.try(dict.get(index, entry.0))
+    let parsed = syntax.parse(file)
+    let functions = list.map(entry.1, fn(each) { each.1 })
+    Ok(
+      glance.Module(
+        ..parsed,
+        functions: list.filter(parsed.functions, fn(each) {
+          list.contains(functions, each.definition.name)
+        }),
+      ),
+    )
+  })
+}
+
+/// The `#(module, function)` entries reached from the pending ones.
+fn reach(
+  index index: dict.Dict(String, SourceFile),
+  pending pending: List(#(String, String)),
+  seen seen: set.Set(#(String, String)),
+) -> set.Set(#(String, String)) {
+  case pending {
+    [] -> seen
+    [entry, ..rest] ->
+      case expand(index:, seen:, entry:) {
+        Ok(found) ->
+          reach(
+            index:,
+            pending: list.append(rest, found),
+            seen: set.insert(seen, entry),
+          )
+        Error(Nil) -> reach(index:, pending: rest, seen:)
+      }
+  }
+}
+
+/// The entries the function of the entry mentions; none when it is seen, in no test
+/// module or no function of its module.
+fn expand(
+  index index: dict.Dict(String, SourceFile),
+  seen seen: set.Set(#(String, String)),
+  entry entry: #(String, String),
+) -> Result(List(#(String, String)), Nil) {
+  use <- bool.guard(when: set.contains(seen, entry), return: Error(Nil))
+  let #(module, name) = entry
+  use file <- result.try(dict.get(index, module))
+  let parsed = syntax.parse(file)
+  let only = cut_to(module: parsed, function: name)
+  case only.functions {
+    [] -> Error(Nil)
+    _ -> Ok(mentioned(name: module, module: parsed, only:))
+  }
+}
+
+/// The module with only the function of that name.
+fn cut_to(
+  module module: glance.Module,
+  function name: String,
+) -> glance.Module {
+  glance.Module(
+    ..module,
+    functions: list.filter(module.functions, fn(each) {
+      each.definition.name == name
+    }),
+  )
+}
+
+/// The `#(module, function)` a name imported unqualified, under its alias if it has one,
+/// stands for.
+fn imported_unqualified(
+  module module: glance.Module,
+  name name: String,
+) -> Result(#(String, String), Nil) {
+  list.find_map(module.imports, fn(import_) {
+    list.find_map(import_.definition.unqualified_values, fn(value) {
+      case option.unwrap(value.alias, value.name) == name {
+        True -> Ok(#(import_.definition.module, value.name))
+        False -> Error(Nil)
+      }
+    })
+  })
+}
+
+/// The `#(module, function)` entries the references of `only`, a cut of `module`, name.
+fn mentioned(
+  name own: String,
+  module module: glance.Module,
+  only only: glance.Module,
+) -> List(#(String, String)) {
+  list.filter_map(syntax.references(only), fn(reference) {
+    case reference {
+      syntax.Unqualified(name:, ..) ->
+        result.or(imported_unqualified(module:, name:), Ok(#(own, name)))
+      syntax.Qualified(qualifier:, name:, ..) ->
+        list.find_map(module.imports, fn(import_) {
+          case syntax.import_name(import_.definition) == Some(qualifier) {
+            True -> Ok(#(import_.definition.module, name))
+            False -> Error(Nil)
+          }
+        })
+    }
+  })
 }
 
 /// What the failure table rows of the file break: a row naming no test and no
@@ -226,60 +426,6 @@ fn public_test(
   })
 }
 
-/// The text of the file and of each module it imports that is among the sources.
-fn texts_naming(
-  file file: SourceFile,
-  sources sources: List(SourceFile),
-) -> List(String) {
-  let supports =
-    list.filter_map(syntax.imported_modules(file), fn(module) {
-      file_of(sources:, module:)
-    })
-  list.map([file, ..supports], fn(each) { " " <> each.text <> " " })
-}
-
-/// Whether one of the texts holds `name` as an identifier: not as a part of a longer
-/// run of letters, digits and underscores.
-fn named(texts texts: List(String), name name: String) -> Bool {
-  list.any(texts, fn(text) {
-    case string.split(text, name) {
-      [first, ..rest] -> whole_occurrence(before: first, afters: rest)
-      [] -> False
-    }
-  })
-}
-
-/// Whether one of the occurrences between the parts stands apart from identifier
-/// characters, `before` being the part before the first. An empty part between two
-/// occurrences means they touch.
-fn whole_occurrence(
-  before before: String,
-  afters afters: List(String),
-) -> Bool {
-  case afters {
-    [] -> False
-    [after, ..more] ->
-      case ends_apart(before) && starts_apart(after) {
-        True -> True
-        False -> whole_occurrence(before: after, afters: more)
-      }
-  }
-}
-
-fn ends_apart(part: String) -> Bool {
-  case string.last(part) {
-    Ok(character) -> !is_identifier_character(character)
-    Error(Nil) -> False
-  }
-}
-
-fn starts_apart(part: String) -> Bool {
-  case string.first(part) {
-    Ok(character) -> !is_identifier_character(character)
-    Error(Nil) -> False
-  }
-}
-
 fn is_identifier_character(character: String) -> Bool {
   string.contains(
     "_abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
@@ -306,7 +452,8 @@ fn words(text: String) -> List(String) {
 
 /// The timers the connection rule tells apart, read from its source (`game/connection`):
 /// the `_timer` names `timer_due` compares the fired timer with, the module of each
-/// `owns` check of `other_timer_fired`, and `claim`, the timer no `owns` check claims.
+/// `owns` check of `other_timer_fired`, and the function its last arm calls, which no
+/// `owns` check claims.
 pub fn connection_timers(file file: SourceFile) -> List(String) {
   let module = syntax.parse(file)
   let only = fn(name) {
@@ -335,7 +482,30 @@ pub fn connection_timers(file file: SourceFile) -> List(String) {
         _ -> Error(Nil)
       }
     })
-  list.flatten([compared, owners, ["claim"]])
+  list.flatten([compared, owners, fall_through(only("other_timer_fired"))])
+}
+
+/// The function the last arm of the function's last `case` calls, the arm no check before
+/// it claims: none when the function ends otherwise.
+fn fall_through(module: glance.Module) -> List(String) {
+  let last_call = {
+    use definition <- result.try(list.first(module.functions))
+    use statement <- result.try(list.last(definition.definition.body))
+    use clauses <- result.try(case statement {
+      glance.Expression(glance.Case(clauses:, ..)) -> Ok(clauses)
+      _ -> Error(Nil)
+    })
+    use clause <- result.try(list.last(clauses))
+    case clause.body {
+      glance.Call(function:, ..) -> Ok(syntax.called(function))
+      _ -> Error(Nil)
+    }
+  }
+  case last_call {
+    Ok(syntax.CalledByName(name:)) -> [name]
+    Ok(syntax.CalledThroughVariable(label:, ..)) -> [label]
+    Ok(syntax.CalledOtherwise) | Error(Nil) -> []
+  }
 }
 
 /// The CamelCase names written in backticks in the cells of the file's failure tables

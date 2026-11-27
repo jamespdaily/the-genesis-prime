@@ -4,8 +4,12 @@
 //// from their types or, for the connection's timers, from the arms that tell them apart
 //// (`family_rows`).
 ////
-//// - `Order` names a test that takes the variant in the orders it can arrive in.
-//// - `Owner` names the test of the decision the variant's owner makes on it.
+//// - `Order` names a test that sends the variant itself, written as the type's constructor
+////   in the test or the test support it reaches (`order_coverage.breaches_of`), in the orders
+////   it can arrive in.
+//// - `Owner` names the test of the decision the variant's owner makes on it, among them the
+////   variants the code under test sends and the test only drives, by a client's bytes or a
+////   timer, and sees the effect of.
 //// - `Independent` gives why the relation does not read the variant: the map relays a news
 ////   unread (it reads only `Appeared`, the first of a snapshot), and the creature's own
 ////   decisions on facts the stream delivered meet it in the creature's mailbox, each
@@ -13,7 +17,6 @@
 
 import code_rule/order_coverage.{type Row, Independent, Order, Owner, Row}
 import code_rule/source.{type SourceFile}
-import code_rule/syntax
 import gleam/list
 import gleam/string
 
@@ -140,7 +143,7 @@ fn news_rows() -> List(Row) {
       module: news,
       type_name: "News",
       variants: ["Appeared"],
-      cover: Order(
+      cover: Owner(
         "player_streams_test.a_pair_is_shown_by_the_owners_snapshot_and_one_that_leaves_and_returns_is_two_generations_and_needs_a_new_snapshot_in_every_legal_order_test",
       ),
     ),
@@ -148,7 +151,7 @@ fn news_rows() -> List(Row) {
       module: news,
       type_name: "News",
       variants: ["CreatureAppeared", "Health"],
-      cover: Order(
+      cover: Owner(
         "legal_order_test.a_viewer_that_arrives_or_leaves_as_the_creature_expires_is_shown_one_picture_in_every_legal_order_test",
       ),
     ),
@@ -156,22 +159,32 @@ fn news_rows() -> List(Row) {
       module: news,
       type_name: "News",
       variants: ["Removed"],
-      cover: Order(
-        "legal_order_test.an_unseen_and_the_creatures_news_write_nothing_after_the_unit_is_removed_in_every_legal_order_test",
+      cover: Owner(
+        "legal_order_test.a_viewer_that_arrives_or_leaves_as_the_creature_expires_is_shown_one_picture_in_every_legal_order_test",
       ),
     ),
     Row(
       module: news,
       type_name: "News",
-      variants: [
-        "CastStarted",
-        "CastWent",
-        "CastFinished",
-        "HeldCastStarted",
-        "HeldCastEnded",
-      ],
-      cover: Order(
+      variants: ["CastStarted", "CastWent", "HeldCastStarted"],
+      cover: Owner(
         "player_streams_test.an_ally_start_is_taken_after_its_casters_start_at_every_viewer_in_every_legal_order_test",
+      ),
+    ),
+    Row(
+      module: news,
+      type_name: "News",
+      variants: ["CastFinished"],
+      cover: Owner(
+        "player_streams_test.a_cast_finished_at_a_viewer_before_the_allys_start_through_the_maps_relays_is_written_the_finish_and_no_start_in_both_orders_test",
+      ),
+    ),
+    Row(
+      module: news,
+      type_name: "News",
+      variants: ["HeldCastEnded"],
+      cover: Owner(
+        "game_connection_viewers_test.a_cast_an_ally_listed_is_ended_for_the_viewer_by_the_ally_only_when_its_caster_did_not_tell_the_viewer_the_cast_test",
       ),
     ),
     Row(
@@ -275,7 +288,7 @@ fn notice_rows() -> List(Row) {
       module: map,
       type_name: "Notice",
       variants: ["SeenBy"],
-      cover: Order(
+      cover: Owner(
         "player_streams_test.the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355_then_its_new_0x262_and_its_heals_reach_the_new_stay_test",
       ),
     ),
@@ -283,7 +296,7 @@ fn notice_rows() -> List(Row) {
       module: map,
       type_name: "Notice",
       variants: ["UnseenBy"],
-      cover: Order(
+      cover: Owner(
         "player_streams_test.a_move_that_takes_a_viewer_out_of_sight_is_written_before_its_0x355_or_not_at_all_and_never_after_it_test",
       ),
     ),
@@ -291,7 +304,7 @@ fn notice_rows() -> List(Row) {
       module: map,
       type_name: "Notice",
       variants: ["PlayerUnseen"],
-      cover: Order(
+      cover: Owner(
         "player_streams_test.a_viewer_that_leaves_the_casters_sight_between_its_go_and_the_allys_start_borrows_the_cast_on_the_ally_in_both_orders_test",
       ),
     ),
@@ -299,7 +312,7 @@ fn notice_rows() -> List(Row) {
       module: map,
       type_name: "Notice",
       variants: ["UnitUnseen"],
-      cover: Order(
+      cover: Owner(
         "legal_order_test.an_unseen_and_the_creatures_news_write_nothing_after_the_unit_is_removed_in_every_legal_order_test",
       ),
     ),
@@ -307,7 +320,7 @@ fn notice_rows() -> List(Row) {
       module: map,
       type_name: "Notice",
       variants: ["Gone"],
-      cover: Order(
+      cover: Owner(
         "map_relay_test.a_snapshot_in_the_maps_mailbox_when_its_creature_ends_is_relayed_and_gone_follows_test",
       ),
     ),
@@ -326,7 +339,7 @@ fn delivered_rows() -> List(Row) {
       module: relay,
       type_name: "Delivered",
       variants: ["News"],
-      cover: Order(
+      cover: Owner(
         "world_relay_test.a_viewer_writes_the_creatures_snapshot_and_then_its_news_in_the_order_the_map_relayed_them_test",
       ),
     ),
@@ -350,7 +363,7 @@ fn delivered_rows() -> List(Row) {
       module: relay,
       type_name: "Delivered",
       variants: ["Said"],
-      cover: Order(
+      cover: Owner(
         "player_streams_test.a_players_line_is_relayed_to_its_relaying_viewers_with_their_stay_and_before_the_snapshot_a_viewer_is_told_nothing_test",
       ),
     ),
@@ -363,7 +376,7 @@ fn payload_rows() -> List(Row) {
       module: relay,
       type_name: "Payload",
       variants: ["Struck", "KillCredit"],
-      cover: Order(
+      cover: Owner(
         "world_relay_test.the_caster_is_told_the_answer_the_credit_and_the_health_news_in_that_order_while_the_maps_sends_are_held_back_test",
       ),
     ),
@@ -423,7 +436,7 @@ fn landing_rows() -> List(Row) {
       module: relay,
       type_name: "Landing",
       variants: ["HealStrike"],
-      cover: Order(
+      cover: Owner(
         "player_streams_test.a_heal_the_map_accepted_before_its_caster_left_sight_is_applied_and_one_for_a_stay_the_player_left_after_the_map_accepted_it_is_dropped_at_the_connection_test",
       ),
     ),
@@ -452,7 +465,7 @@ fn creature_message_rows() -> List(Row) {
       module: creature,
       type_name: "Message",
       variants: ["Seen"],
-      cover: Order(
+      cover: Owner(
         "legal_order_test.news_before_a_snapshot_and_a_snapshot_of_an_earlier_generation_are_dropped_in_every_legal_order_test",
       ),
     ),
@@ -460,7 +473,7 @@ fn creature_message_rows() -> List(Row) {
       module: creature,
       type_name: "Message",
       variants: ["Unseen"],
-      cover: Order(
+      cover: Owner(
         "legal_order_test.an_unseen_and_the_creatures_news_write_nothing_after_the_unit_is_removed_in_every_legal_order_test",
       ),
     ),
@@ -511,23 +524,35 @@ fn map_message_rows() -> List(Row) {
     Row(
       module: map,
       type_name: "Message",
-      variants: ["Join", "Leave", "PlayerSnapshot"],
-      cover: Order(
+      variants: ["PlayerSnapshot"],
+      cover: Owner(
         "player_streams_test.a_pair_is_shown_by_the_owners_snapshot_and_one_that_leaves_and_returns_is_two_generations_and_needs_a_new_snapshot_in_every_legal_order_test",
       ),
     ),
     Row(
       module: map,
       type_name: "Message",
+      variants: ["Join"],
+      cover: Independent(fenced_ask),
+    ),
+    Row(
+      module: map,
+      type_name: "Message",
+      variants: ["Leave"],
+      cover: Independent(fenced_ask),
+    ),
+    Row(
+      module: map,
+      type_name: "Message",
       variants: ["Moved"],
-      cover: Order(
+      cover: Owner(
         "player_streams_test.a_move_that_takes_a_viewer_out_of_sight_is_written_before_its_0x355_or_not_at_all_and_never_after_it_test",
       ),
     ),
     Row(
       module: map,
       type_name: "Message",
-      variants: ["Released", "Relay", "TellCreature"],
+      variants: ["TellCreature"],
       cover: Order(
         "legal_order_test.a_strike_and_the_senders_move_out_of_sight_are_taken_in_the_order_the_sender_told_them_and_each_order_has_its_own_result_test",
       ),
@@ -535,8 +560,24 @@ fn map_message_rows() -> List(Row) {
     Row(
       module: map,
       type_name: "Message",
+      variants: ["Relay"],
+      cover: Owner(
+        "legal_order_test.a_strike_and_the_senders_move_out_of_sight_are_taken_in_the_order_the_sender_told_them_and_each_order_has_its_own_result_test",
+      ),
+    ),
+    Row(
+      module: map,
+      type_name: "Message",
+      variants: ["Released"],
+      cover: Owner(
+        "map_release_test.a_released_creature_is_gone_for_every_viewer_and_starts_again_after_the_release_time_test",
+      ),
+    ),
+    Row(
+      module: map,
+      type_name: "Message",
       variants: ["Snapshot", "Broadcast", "Expired"],
-      cover: Order(
+      cover: Owner(
         "legal_order_test.a_viewer_that_arrives_or_leaves_as_the_creature_expires_is_shown_one_picture_in_every_legal_order_test",
       ),
     ),
@@ -560,7 +601,7 @@ fn map_message_rows() -> List(Row) {
       module: map,
       type_name: "Message",
       variants: ["Say"],
-      cover: Order(
+      cover: Owner(
         "player_streams_test.a_players_line_is_relayed_to_its_relaying_viewers_with_their_stay_and_before_the_snapshot_a_viewer_is_told_nothing_test",
       ),
     ),
@@ -617,10 +658,7 @@ pub fn families(
   sources sources: List(SourceFile),
 ) -> List(#(#(String, String), List(String))) {
   let variants = fn(module, type_name) {
-    case order_coverage.file_of(sources:, module:) {
-      Ok(file) -> syntax.variants_of(file:, type_names: [type_name])
-      Error(Nil) -> []
-    }
+    order_coverage.variants_in(sources:, module:, type_name:)
   }
   let types =
     list.map(
@@ -775,7 +813,7 @@ pub fn family_rows() -> List(Row) {
         "class_resource",
         "player_life",
         "departures",
-        "claim",
+        "claim_wait_over",
       ],
       cover: Independent(not_a_relation_fact),
     ),

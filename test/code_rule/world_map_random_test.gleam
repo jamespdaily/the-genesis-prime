@@ -9,14 +9,21 @@ import code_rule/source.{type SourceFile}
 import code_rule/syntax
 import gleam/int
 import gleam/list
+import gleam/string
 import owned_test
 import unitest
 
-/// The functions a file must not call: `module.name` as written.
-const drawing_calls = ["int.random", "float.random", "list.shuffle"]
+/// The functions a file must not call: `#(module, function)`.
+const drawing_calls = [
+  #("gleam/int", "random"),
+  #("gleam/float", "random"),
+  #("gleam/list", "shuffle"),
+]
 
 /// What the file draws: an import of `genesis_prime/random` and a call or reference of
-/// `int.random`, `float.random` or `list.shuffle`, each with its line.
+/// `int.random`, `float.random` or `list.shuffle` however the module is imported (aliased,
+/// or the function imported unqualified, under another name too), each with its line and
+/// the module's own name.
 fn draws(file file: SourceFile) -> List(String) {
   let module = syntax.parse(file)
   let imports =
@@ -31,17 +38,16 @@ fn draws(file file: SourceFile) -> List(String) {
       }
     })
   let calls =
-    list.filter_map(syntax.references(module), fn(reference) {
-      case reference {
-        syntax.Qualified(location:, qualifier:, name:) -> {
-          let written = qualifier <> "." <> name
-          case list.contains(drawing_calls, written) {
-            True -> Ok(#(location.start, "calls " <> written))
-            False -> Error(Nil)
-          }
-        }
-        syntax.Unqualified(..) -> Error(Nil)
+    list.flat_map(drawing_calls, fn(drawing) {
+      let #(from, function) = drawing
+      let written = case list.last(string.split(from, "/")) {
+        Ok(last) -> last <> "." <> function
+        Error(Nil) -> function
       }
+      syntax.references_to(module:, from: [from], named: [function])
+      |> list.map(fn(reference) {
+        #(syntax.location_of(reference).start, "calls " <> written)
+      })
     })
   list.append(imports, calls)
   |> list.sort(by: fn(first, second) { int.compare(first.0, second.0) })

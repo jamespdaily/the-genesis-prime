@@ -13,7 +13,6 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   type Basis, FailsLoad, LeavesOut, OpenQuestion, Unexplained,
 }
-import glance
 import gleam/int
 import gleam/list
 import gleam/string
@@ -26,15 +25,12 @@ fn declared_variants() -> List(String) {
   let path = "src/genesis_prime/game/spell_plan.gleam"
   let assert Ok(text) = simplifile.read(path)
     as "the plan's source is in the repository"
-  let module = syntax.parse(SourceFile(path:, text:))
-  let assert Ok(declared) =
-    list.find(module.custom_types, fn(definition) {
-      definition.definition.name == "PlanError"
-    })
-    as "spell_plan declares PlanError"
-  list.map(declared.definition.variants, fn(variant: glance.Variant) {
-    variant.name
-  })
+  let declared =
+    syntax.variants_of(file: SourceFile(path:, text:), type_names: [
+      "PlanError",
+    ])
+  assert declared != [] as "spell_plan declares PlanError"
+  declared
 }
 
 /// Checks a basis against the fact file: a question's record holds it, an unexplained value's

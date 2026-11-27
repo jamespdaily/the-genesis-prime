@@ -547,7 +547,8 @@ pub fn calls(module: glance.Module) -> List(Call) {
   })
 }
 
-fn called(function: Expression) -> Called {
+/// What the expression names when it is called.
+pub fn called(function: Expression) -> Called {
   case function {
     glance.Variable(name:, ..) -> CalledByName(name)
     glance.FieldAccess(
