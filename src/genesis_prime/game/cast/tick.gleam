@@ -39,6 +39,7 @@ import genesis_prime/game/cooldown
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Proxy, type Spell}
 import genesis_prime/game/start_place.{type Place}
@@ -1048,7 +1049,7 @@ pub fn nodes_ended_frames(
   ended ended: List(#(Int, lasting.Node)),
   kept kept: List(#(Int, lasting.Node)),
 ) -> List(Effect) {
-  case holder.lingering && kept == [] {
+  case holder.phase == cast_state.LastGoGone && kept == [] {
     True -> finished_effects(cast_id:)
     False ->
       targets_removed_effects(
@@ -1428,8 +1429,7 @@ fn node_row_of(entry entry: Reached) -> Result(lasting.NodeEffect, Nil) {
       Ok(
         lasting.LifeOnly(row: lasting.LastingRow(
           delay_ms: healed.delay_ms,
-          duration_ms: 0,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 0),
         )),
       )
     spell_plan.HealEffect(..), cast_state.Plain
@@ -1483,8 +1483,7 @@ pub fn node_of(
             Ok(
               lasting.LifeOnly(row: lasting.LastingRow(
                 delay_ms: entry.0.row.row.delay_ms,
-                duration_ms: entry.0.row.row.duration_ms,
-                until_removed: entry.0.row.row.until_removed,
+                lasts: entry.0.row.row.lasts,
               )),
             )
           False -> Error(Nil)
@@ -1496,8 +1495,10 @@ pub fn node_of(
         let life =
           lasting.LastingRow(
             delay_ms: row.schedule.delay_ms,
-            duration_ms: row.schedule.duration_ms,
-            until_removed: ticking.lasts_until_removed(schedule: row.schedule),
+            lasts: lasts.of_row(
+              until_removed: ticking.lasts_until_removed(schedule: row.schedule),
+              duration_ms: row.schedule.duration_ms,
+            ),
           )
         case row.unit_id == unit_id {
           True ->

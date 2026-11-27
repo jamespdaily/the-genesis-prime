@@ -28,6 +28,7 @@ import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/held_changes
 import genesis_prime/game/lasting.{type LastingRow, LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{Absorption, AimsAtCaster, Always}
 import genesis_prime/game/spend
 import genesis_prime/game/unit_properties.{type Source, Change}
@@ -65,7 +66,7 @@ fn spectral_form_row() -> spell_plan.PropertyModifier {
   absorb_row(
     id: 178_144,
     formula: spectral_form_row_formula(),
-    row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+    row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000)),
   )
 }
 
@@ -155,7 +156,7 @@ pub fn a_delayed_absorb_starts_on_a_timer_test() -> Nil {
     absorb_row(
       id: 99_356,
       formula: Formula(multiplier: 1.0, base: 100.0, parameters: []),
-      row: LastingRow(delay_ms: 251, duration_ms: 10_000, until_removed: False),
+      row: LastingRow(delay_ms: 251, lasts: lasts.For(duration_ms: 10_000)),
     )
   let plans =
     support.plans_of([
@@ -289,7 +290,7 @@ pub fn an_absorb_ends_at_once_when_its_node_is_taken_off_or_its_persistence_fail
     absorb_row(
       id: 99_356,
       formula: Formula(multiplier: 1.0, base: 100.0, parameters: []),
-      row: LastingRow(delay_ms: 251, duration_ms: 10_000, until_removed: False),
+      row: LastingRow(delay_ms: 251, lasts: lasts.For(duration_ms: 10_000)),
     )
   let both =
     support.plans_of([
@@ -352,7 +353,7 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
         flat: 1000.0,
         per_level: 0.0,
       )),
-      row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
       condition: Always,
       tag: spend.always,
       armor: None,
@@ -361,7 +362,7 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
     absorb_row(
       id: 178_144,
       formula: spectral_form_row_formula(),
-      row: LastingRow(delay_ms: 251, duration_ms: 5000, until_removed: False),
+      row: LastingRow(delay_ms: 251, lasts: lasts.For(duration_ms: 5000)),
     )
   let plans =
     support.plans_of([

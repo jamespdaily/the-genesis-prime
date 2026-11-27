@@ -30,6 +30,7 @@ import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/held_changes
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/player_address.{PlayerAddress}
 import genesis_prime/game/proc
 import genesis_prime/game/shown
@@ -946,8 +947,7 @@ fn caster_holding_an_ally_proc(
         holder: spell_plan.HeldByAreaAllies,
         row: lasting.LastingRow(
           delay_ms: 0,
-          duration_ms: 12_000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 12_000),
         ),
       ),
       chance:,

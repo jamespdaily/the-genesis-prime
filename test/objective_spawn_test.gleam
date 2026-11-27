@@ -173,7 +173,7 @@ fn placed_over(
   )
 }
 
-/// The rows of Jim's world database, imported into a database of the test's own and
+/// The rows of the world database, imported into a database of the test's own and
 /// read back (with the migrations' seeded rows).
 fn stored_by_the_world_database() -> List(Row) {
   let assert Ok(folder) = envoy.get("GENESIS_WORLD_DATA")

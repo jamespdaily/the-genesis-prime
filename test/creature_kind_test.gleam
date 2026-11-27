@@ -22,6 +22,7 @@ import database_support
 import fixture_tables
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
+import genesis_prime/content/sql
 import genesis_prime/game/strike_tell
 import genesis_prime/message/crowd_control_state
 import genesis_prime/table/id.{Spell4Id}
@@ -56,8 +57,7 @@ const default_row =
     respawn_ms: 60_000,
     attack_spell4_id: 5649,
     attack_interval_ms: 1500,
-    guard_spell4_id: option.None,
-    opening_spell4_id: option.None,
+    guard: option.None,
   )
 
 pub fn an_attack_interval_below_the_strike_deadline_is_refused_by_name_test() -> Nil {
@@ -176,8 +176,7 @@ pub fn an_attack_with_a_cast_time_loads_with_it_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: 85_469,
         attack_interval_ms: 3000,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
     ])
     as "a spell with a cast time and a type 15 cast prerequisite loads"
@@ -211,8 +210,7 @@ pub fn an_attack_whose_cast_prerequisite_the_creature_cannot_answer_is_refused_t
           respawn_ms: 60_000,
           attack_spell4_id: 85_469,
           attack_interval_ms: 3000,
-          guard_spell4_id: option.None,
-          opening_spell4_id: option.None,
+          guard: option.None,
         ),
       ],
       special_rows: [],
@@ -237,16 +235,14 @@ pub fn rows_load_into_the_kinds_a_creature_reads_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
       Row(
         creature_id: 73_464,
         respawn_ms: 5000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
     ])
   assert kinds
@@ -304,8 +300,7 @@ pub fn a_table_with_no_default_row_is_refused_test() -> Nil {
         respawn_ms: 5000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
     ])
     as "the start stops: a creature must always have a kind"
@@ -321,16 +316,14 @@ pub fn a_row_for_a_creature_the_client_does_not_hold_is_refused_by_name_test() -
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
       Row(
         creature_id: 99,
         respawn_ms: 5000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
     ])
     as "Creature2 99 has no row in the client's table"
@@ -346,16 +339,14 @@ pub fn a_respawn_time_below_one_is_refused_by_name_test() -> Nil {
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
       Row(
         creature_id: 73_464,
         respawn_ms: 0,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
     ])
     as "a creature that respawns in no time has no corpse: migration 0009 refuses it too"
@@ -371,16 +362,14 @@ pub fn a_respawn_time_below_the_strike_deadline_is_refused_by_name_and_the_deadl
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
       Row(
         creature_id: 73_464,
         respawn_ms: strike_tell.deadline_ms - 1,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
     ])
     as "a creature that stands again before the round it was struck in has closed would take the held news of its earlier unit"
@@ -393,16 +382,14 @@ pub fn a_respawn_time_below_the_strike_deadline_is_refused_by_name_and_the_deadl
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
       Row(
         creature_id: 73_464,
         respawn_ms: strike_tell.deadline_ms,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
     ])
     as "a respawn time of the deadline itself is taken"
@@ -418,16 +405,14 @@ pub fn every_refused_row_is_collected_test() -> Nil {
         respawn_ms: 5000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
       Row(
         creature_id: 73_464,
         respawn_ms: -1,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
     ])
   assert list.map(refusals, fn(refused) { refused.row })
@@ -455,33 +440,36 @@ pub fn a_migrated_database_holds_the_60_second_default_row_and_the_sim_turrets_c
         respawn_ms: 60_000,
         attack_spell4_id: 5649,
         attack_interval_ms: 1500,
-        guard_spell4_id: option.None,
-        opening_spell4_id: option.None,
+        guard: option.None,
       ),
       Row(
         creature_id: 73_494,
         respawn_ms: 60_000,
         attack_spell4_id: 85_469,
         attack_interval_ms: 3000,
-        guard_spell4_id: option.Some(85_474),
-        opening_spell4_id: option.Some(85_472),
+        guard: option.Some(creature_kind.GuardSpells(
+          guard_spell4_id: 85_474,
+          opening_spell4_id: 85_472,
+        )),
       ),
       Row(
         creature_id: 74_862,
         respawn_ms: 60_000,
         attack_spell4_id: 86_978,
         attack_interval_ms: 3000,
-        guard_spell4_id: option.Some(85_474),
-        opening_spell4_id: option.Some(85_472),
+        guard: option.Some(creature_kind.GuardSpells(
+          guard_spell4_id: 85_474,
+          opening_spell4_id: 85_472,
+        )),
       ),
     ]
     as "migration 0009 seeds row 0, the server's choice of 60 000 ms, migration 0029 the Sim-Turrets' charges, Spell4 85469 and 86978, and migration 0030 their guard 85474 and opening 85472"
   assert content_support.psql(
       database:,
-      sql: "select source || ': ' || reason from creature_kind where creature_id = 0",
+      sql: "select source from creature_kind where creature_id = 0",
     )
-    == "server_choice: no table holds a respawn time for a creature (death.creature_respawn); attack: no client link (Spell4.5649), interval a server choice"
-    as "a server choice states its reason (death.creature_respawn, Spell4.5649)"
+    == "server_choice"
+    as "no table holds a respawn time for a creature (death.creature_respawn) or links an attack to it (Spell4.5649), so the row is the server's choice"
 }
 
 pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil {
@@ -490,16 +478,8 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
   list.each(
     [
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 0, 5649, 1500, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (73464, 0, 5649, 1500, 'server_choice')",
         "creature_kind_respawn_ms_is_positive",
-      ),
-      #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (73464, 5000, 5649, 1500, 'server_choice')",
-        "creature_kind_other_source_states_its_reason",
-      ),
-      #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 5649, 1500, 'server_choice', '  ')",
-        "creature_kind_reason_says_something",
       ),
       #(
         "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, source_row) values (73464, 5000, 5649, 1500, 'world_database', null)",
@@ -514,27 +494,27 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         "creature_kind_source_row_is_positive",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (0, 5000, 5649, 1500, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (0, 5000, 5649, 1500, 'server_choice')",
         "creature_kind_pkey",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (262144, 5000, 5649, 1500, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (262144, 5000, 5649, 1500, 'server_choice')",
         "creature_kind_creature_id_is_in_18_bits",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 5649, 1500, 'nobody', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (73464, 5000, 5649, 1500, 'nobody')",
         "creature_kind_source_is_a_content_source",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 0, 1500, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (73464, 5000, 0, 1500, 'server_choice')",
         "creature_kind_attack_spell4_id_is_positive",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 5649, 0, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (73464, 5000, 5649, 0, 'server_choice')",
         "creature_kind_attack_interval_ms_is_positive",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, source, reason) values (73464, 5000, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, source) values (73464, 5000, 'server_choice')",
         "attack_spell4_id",
       ),
     ],
@@ -602,10 +582,10 @@ pub fn the_guard_and_opening_columns_load_test() -> Nil {
     as "a creature with no row of its own has no guard"
   assert content_support.psql(
       database:,
-      sql: "select reason from creature_kind where creature_id = 73494",
+      sql: "select source from creature_kind where creature_id = 73494",
     )
-    |> string.contains("Spell4.85472.trigger")
-    as "the row states why: the client links neither spell to the creature"
+    == "server_choice"
+    as "the client links neither spell to the creature, so the row is the server's choice"
 }
 
 pub fn a_guard_with_an_effect_other_than_immunity_is_refused_test() -> Nil {
@@ -616,8 +596,10 @@ pub fn a_guard_with_an_effect_other_than_immunity_is_refused_test() -> Nil {
       respawn_ms: 60_000,
       attack_spell4_id: 85_469,
       attack_interval_ms: 3000,
-      guard_spell4_id: option.Some(85_469),
-      opening_spell4_id: option.Some(85_472),
+      guard: option.Some(creature_kind.GuardSpells(
+        guard_spell4_id: 85_469,
+        opening_spell4_id: 85_472,
+      )),
     )
   // The charge Spell4 85469 holds a Fluff (17) and a Damage (8) effect and no type 79.
   let assert Error([Refusal(table: "creature_kind", row: RowId(73_494), rule:)]) =
@@ -635,7 +617,13 @@ pub fn a_guard_with_an_effect_other_than_immunity_is_refused_test() -> Nil {
     creature_kind.select(
       rows: [
         default_row,
-        Row(..turret_row, guard_spell4_id: option.Some(85_474)),
+        Row(
+          ..turret_row,
+          guard: option.Some(creature_kind.GuardSpells(
+            guard_spell4_id: 85_474,
+            opening_spell4_id: 85_472,
+          )),
+        ),
       ],
       special_rows: [],
       auto_attack_rows: [],
@@ -689,8 +677,10 @@ pub fn an_opening_with_an_effect_kind_the_creature_does_not_apply_is_refused_tes
       respawn_ms: 60_000,
       attack_spell4_id: 85_469,
       attack_interval_ms: 3000,
-      guard_spell4_id: option.Some(85_474),
-      opening_spell4_id: option.Some(85_472),
+      guard: option.Some(creature_kind.GuardSpells(
+        guard_spell4_id: 85_474,
+        opening_spell4_id: 85_472,
+      )),
     )
   // Synthetic: Spell4Effects 224652 is a RavelSignal (81); type 8 is a Damage, which the
   // creature does not apply to itself.
@@ -736,8 +726,8 @@ pub fn a_guard_without_an_opening_is_refused_by_the_database_test() -> Nil {
   let database = database_support.new_database(on: database_support.shared())
   list.each(
     [
-      "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, guard_spell4_id, source, reason) values (73464, 5000, 5649, 1500, 85474, 'server_choice', 'x')",
-      "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, opening_spell4_id, source, reason) values (73464, 5000, 5649, 1500, 85472, 'server_choice', 'x')",
+      "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, guard_spell4_id, source) values (73464, 5000, 5649, 1500, 85474, 'server_choice')",
+      "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, opening_spell4_id, source) values (73464, 5000, 5649, 1500, 85472, 'server_choice')",
     ],
     fn(bad) {
       let assert Error(failed) =
@@ -788,4 +778,76 @@ pub fn kinds_put_under_a_key_are_read_back_test() -> Nil {
     as "one term for the whole table, put once"
   assert content_creature_kind.table == "creature_kind"
   owned_key.erase(key)
+}
+
+pub fn a_creature_kind_row_holds_its_guard_and_opening_spells_both_or_neither_test() -> Nil {
+  use <- owned_test.run(5000)
+  let returned =
+    sql.LoadCreatureKindsRow(
+      creature_id: 73_464,
+      respawn_ms: 5000,
+      attack_spell4_id: 5649,
+      attack_interval_ms: 1500,
+      guard_spell4_id: option.None,
+      opening_spell4_id: option.None,
+    )
+  let half_set =
+    Error(Refusal(
+      table: "creature_kind",
+      row: RowId(73_464),
+      rule: "a guard and an opening are both set or both left out",
+    ))
+  list.each(
+    [
+      #(
+        "a guard and no opening",
+        sql.LoadCreatureKindsRow(
+          ..returned,
+          guard_spell4_id: option.Some(85_474),
+        ),
+        half_set,
+      ),
+      #(
+        "an opening and no guard",
+        sql.LoadCreatureKindsRow(
+          ..returned,
+          opening_spell4_id: option.Some(85_472),
+        ),
+        half_set,
+      ),
+      #(
+        "a guard and an opening",
+        sql.LoadCreatureKindsRow(
+          ..returned,
+          guard_spell4_id: option.Some(85_474),
+          opening_spell4_id: option.Some(85_472),
+        ),
+        Ok(Row(
+          creature_id: 73_464,
+          respawn_ms: 5000,
+          attack_spell4_id: 5649,
+          attack_interval_ms: 1500,
+          guard: option.Some(creature_kind.GuardSpells(
+            guard_spell4_id: 85_474,
+            opening_spell4_id: 85_472,
+          )),
+        )),
+      ),
+      #(
+        "neither",
+        returned,
+        Ok(Row(
+          creature_id: 73_464,
+          respawn_ms: 5000,
+          attack_spell4_id: 5649,
+          attack_interval_ms: 1500,
+          guard: option.None,
+        )),
+      ),
+    ],
+    fn(row) {
+      let #(reason, returned, expected) = row
+      assert content_creature_kind.row_of(row: returned) == expected as reason
+    },
+  )
 }

@@ -3,7 +3,7 @@
 //// checks, and what the kind holds of them (genesis_prime/world_map/creature_kind
 //// `Kind.specials`). The client lists no spell for a creature and no cadence
 //// (`creature.ai_data`), so each row is a server choice from a retail record, and its
-//// cooldown a guess, both marked in the row's `reason`.
+//// cooldown a guess.
 ////
 //// ```
 //// creature_special rows ─▶ refusal_of(row, tables, sources) ─▶ Refusal(table: "creature_special", row: RowId(creature_id), rule)
@@ -224,6 +224,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Creature specials",
       missing: "a channel whose last pulse falls before its channelMaxTime, where the client's cast ends, is refused, as the creature's round writes its 0x7fe after the last go and has no later finish",
+    ),
+    gap.Entry(
+      area: "Creature specials",
+      missing: "a creature spell taken from a retail record has an order and a cooldown the server guessed: an auto-attack's place is its description number and then its Spell4 id, a special's place is the order its retail page lists it in with a cooldown of 10000 ms, and a page is matched to a creature by its name and world, as no client table links a creature to a page; of a spell a page lists at several tiers the lowest tier is kept, as the client holds no creature spell list",
     ),
 
     gap.Entry(

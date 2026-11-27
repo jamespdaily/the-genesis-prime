@@ -1,5 +1,5 @@
 //// Where the sitting bot (`genesis_prime/sitting_bot`) is seated in a database,
-//// which is the database Jim plays on: a character of another account is
+//// which is the play database: a character of another account is
 //// refused and left as it is, seating twice makes no second account, and a
 //// refusal adds nothing. Its whole path against a server is proven here too: it
 //// and a player see each other appear, hear each other's say lines and leave, it

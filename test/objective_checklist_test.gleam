@@ -20,12 +20,11 @@ import fixture_tables
 import genesis_prime/game/objective.{Advanced, ReleaseUnit, SendProgress, Used}
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
-import genesis_prime/store.{ActiveQuest, QuestRow}
+import genesis_prime/store.{ActiveQuest, ActiveRow}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Faction2Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
-import gleam/option.{Some}
 import gleam/set
 import owned_test
 import planted_table.{Integer}
@@ -78,7 +77,7 @@ fn fresh_log() -> quest_log.QuestLog {
 
 /// The stored progress of the quest's objectives, as the log is saved.
 fn stored(log log: quest_log.QuestLog, quest_id quest_id: Int) -> List(Int) {
-  let assert [QuestRow(active: Some(ActiveQuest(progress:, ..)), ..)] =
+  let assert [ActiveRow(active: ActiveQuest(progress:, ..), ..)] =
     quest_log.rows(log:, now_ms: 0)
     |> list.filter(fn(row) { row.quest_id == quest_id })
     as "the quest is in the active list"
@@ -343,7 +342,7 @@ pub fn a_checklist_target_of_a_done_objective_is_not_used_test() -> Nil {
 pub fn a_use_that_sets_a_new_type_14_bit_releases_the_unit_test() -> Nil {
   use <- owned_test.run(60_000)
   // The unit goes for everyone when its use sets a bit the objective did not hold, as any
-  // used quest object does (Jim, 2026-11-16); a unit whose bit is set counts for nothing
+  // used quest object does (the server's choice); a unit whose bit is set counts for nothing
   // (`0x140611680`) and so releases nothing.
   let tables = character_tables.shared()
   let first =

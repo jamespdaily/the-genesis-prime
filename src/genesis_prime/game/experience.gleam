@@ -22,7 +22,7 @@
 //// - **The amount is the server's choice.** The client has no kill formula: the
 ////   server sends the amount in 0x1ac (`0x14050cbf0`, `opcode.0x1ac`). The base is the
 ////   client's XpPerLevel `baseQuestXpPerLevel` at the creature's level, and the fraction and
-////   the nine level-difference multipliers are game_number rows, each with its reason
+////   the nine level-difference multipliers are game_number rows, each a server choice
 ////   (genesis_prime/world_map/game_number, migration 0022). The creature's difficulty
 ////   weight is the client's Creature2Difficulty `clusterContributionValueDifficulty`; no
 ////   client code shows that column feeds experience, so using it is a server choice too.

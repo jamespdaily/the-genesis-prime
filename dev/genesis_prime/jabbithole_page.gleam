@@ -25,13 +25,7 @@ pub type Ability {
 /// A page of the record: the Jabbithole zone (a MapZone id), the creature's name, the
 /// page's address, its capture date and the Abilities tab's spells in the order listed.
 pub type Page {
-  Page(
-    zone: Int,
-    name: String,
-    url: String,
-    captured: String,
-    abilities: List(Ability),
-  )
+  Page(zone: Int, name: String, url: String, abilities: List(Ability))
 }
 
 /// Why the file is refused: the line (the first is line 1) and what is wrong with it.
@@ -99,14 +93,13 @@ fn parsed_decoder() -> decode.Decoder(Parsed) {
   use variant <- decode.field("variant", decode.optional(decode.string))
   use name <- decode.field("name", decode.string)
   use url <- decode.field("url", decode.string)
-  use captured <- decode.field("captured", decode.string)
   use tables <- decode.then(decode.optionally_at(
     ["tabs", "Abilities"],
     [],
     decode.list(rows_decoder()),
   ))
   decode.success(Parsed(
-    page: Page(zone:, name:, url:, captured:, abilities: list.flatten(tables)),
+    page: Page(zone:, name:, url:, abilities: list.flatten(tables)),
     variant:,
   ))
 }

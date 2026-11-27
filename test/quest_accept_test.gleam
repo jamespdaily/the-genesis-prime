@@ -40,7 +40,7 @@ import genesis_prime/game/shown.{type Picture}
 import genesis_prime/message/quest_retry.{QuestRetry}
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{
-  type HeldItem, type QuestRow, ActiveQuest, HeldItem, QuestRow,
+  type HeldItem, type QuestRow, Accepted, ActiveQuest, ActiveRow, HeldItem,
 }
 import genesis_prime/table/id.{Item2Id, Quest2Id}
 import genesis_prime/table/quest2.{type Quest2, Quest2}
@@ -156,21 +156,18 @@ pub fn accept_answers_accepted_and_adds_a_tracked_entry_test() -> Nil {
     as "0x35C {quest 2417, state 1, objective 0}, the answer the client waits for"
   assert quest_log.rows(log: taken.log, now_ms: 0)
     == [
-      QuestRow(
+      ActiveRow(
         quest_id: 2417,
-        state: 1,
-        completed_at: None,
-        active: Some(
-          ActiveQuest(
-            placeholder_objective_id: 0,
-            tracked: True,
-            done_mask: 0,
-            progress: [],
-            quest_ms_left: 0,
-            objective_ms_left: [],
-            kill_mask: [0, 0, 0, 0, 0, 0],
-            used: [],
-          ),
+        state: Accepted,
+        active: ActiveQuest(
+          placeholder_objective_id: 0,
+          tracked: True,
+          done_mask: 0,
+          progress: [],
+          quest_ms_left: 0,
+          objective_ms_left: [],
+          kill_mask: [0, 0, 0, 0, 0, 0],
+          used: [],
         ),
       ),
     ]
@@ -229,7 +226,7 @@ pub fn accept_takes_a_quest_held_in_the_side_list_test() -> Nil {
         <> ": a quest held in state 5 to 7 is accepted"
       }
     assert list.map(quest_log.rows(log: taken.log, now_ms: 0), fn(row) {
-        row.state
+        quest_support.state_of(row)
       })
       == [1]
       as { "state " <> int.to_string(state) <> ": one entry, now Accepted" }
@@ -1201,21 +1198,18 @@ pub fn retry_takes_only_a_botched_quest_test() -> Nil {
     as "a Botched quest (4) is taken again"
   assert quest_log.rows(log: taken.log, now_ms: 0)
     == [
-      QuestRow(
+      ActiveRow(
         quest_id: 2417,
-        state: 1,
-        completed_at: None,
-        active: Some(
-          ActiveQuest(
-            placeholder_objective_id: 0,
-            tracked: True,
-            done_mask: 0,
-            progress: [],
-            quest_ms_left: 90_000,
-            objective_ms_left: [],
-            kill_mask: [0, 0, 0, 0, 0, 0],
-            used: [],
-          ),
+        state: Accepted,
+        active: ActiveQuest(
+          placeholder_objective_id: 0,
+          tracked: True,
+          done_mask: 0,
+          progress: [],
+          quest_ms_left: 90_000,
+          objective_ms_left: [],
+          kill_mask: [0, 0, 0, 0, 0, 0],
+          used: [],
         ),
       ),
     ]

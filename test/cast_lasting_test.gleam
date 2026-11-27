@@ -28,6 +28,7 @@ import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/heal_split
 import genesis_prime/game/lasting.{LastingRow, LifeOnly, Listed, Stack}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{
@@ -59,18 +60,17 @@ import qcheck
 
 // ---- the planted spells ----
 
-/// A Fluff effect aimed by `aim`: no delay, `duration_ms` long, or until removed.
+/// A Fluff effect aimed by `aim`: no delay, lasting as `lasts` says.
 fn fluff(
   id id: Int,
   aim aim: spell_plan.Aim,
-  duration_ms duration_ms: Int,
-  until_removed until_removed: Bool,
+  lasts lasts: lasts.Lasts,
 ) -> spell_plan.Lasting {
   Lasting(
     effect_id: Spell4EffectsId(id),
     phase_flags: -1,
     aim:,
-    row: LastingRow(delay_ms: 0, duration_ms:, until_removed:),
+    row: LastingRow(delay_ms: 0, lasts:),
     condition: Always,
     tag: spend.always,
   )
@@ -137,8 +137,7 @@ pub fn a_go_lists_a_fluff_effect_on_the_caster_with_count_1_and_no_lifetime_test
         fluff(
           id: 96_819,
           aim: spell_plan.AimsAtCaster,
-          duration_ms: 0,
-          until_removed: True,
+          lasts: lasts.UntilRemoved,
         ),
       ]),
     ])
@@ -171,14 +170,12 @@ pub fn a_struck_unit_keeps_its_damage_info_and_an_aimed_unit_that_was_not_struck
         fluff(
           id: 1,
           aim: spell_plan.AimsAtCaster,
-          duration_ms: 3000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 3000),
         ),
         fluff(
           id: 2,
           aim: spell_plan.AimsAtArea,
-          duration_ms: 3000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 3000),
         ),
       ]),
     ])
@@ -231,8 +228,7 @@ fn eight_seconds_on_the_caster() -> Plans {
       fluff(
         id: 200_468,
         aim: spell_plan.AimsAtCaster,
-        duration_ms: 8000,
-        until_removed: False,
+        lasts: lasts.For(duration_ms: 8000),
       ),
     ]),
   ])
@@ -303,8 +299,7 @@ pub fn a_lingering_cast_ends_with_the_finish_alone_whatever_its_method_test() ->
             fluff(
               id: 200_468,
               aim: spell_plan.AimsAtCaster,
-              duration_ms: 8000,
-              until_removed: False,
+              lasts: lasts.For(duration_ms: 8000),
             ),
           ]),
           method: row.0,
@@ -336,14 +331,12 @@ pub fn nodes_ending_at_two_times_end_with_a_0x811_and_then_the_finish_test() -> 
         fluff(
           id: 1,
           aim: spell_plan.AimsAtCaster,
-          duration_ms: 3000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 3000),
         ),
         fluff(
           id: 2,
           aim: spell_plan.AimsAtArea,
-          duration_ms: 8000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 8000),
         ),
       ]),
     ])
@@ -386,21 +379,14 @@ pub fn two_nodes_ending_at_the_same_time_are_one_0x811_naming_both_test() -> Nil
         fluff(
           id: 1,
           aim: spell_plan.AimsAtCaster,
-          duration_ms: 3000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 3000),
         ),
         fluff(
           id: 2,
           aim: spell_plan.AimsAtArea,
-          duration_ms: 3000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 3000),
         ),
-        fluff(
-          id: 3,
-          aim: spell_plan.AimsAtCaster,
-          duration_ms: 0,
-          until_removed: True,
-        ),
+        fluff(id: 3, aim: spell_plan.AimsAtCaster, lasts: lasts.UntilRemoved),
       ]),
     ])
   let #(state, effects) =
@@ -445,8 +431,7 @@ pub fn a_node_until_removed_arms_no_timer_test() -> Nil {
         fluff(
           id: 96_819,
           aim: spell_plan.AimsAtCaster,
-          duration_ms: 0,
-          until_removed: True,
+          lasts: lasts.UntilRemoved,
         ),
       ]),
     ])
@@ -466,8 +451,7 @@ pub fn a_removal_takes_the_casts_of_a_spell_off_and_a_later_timer_finds_nothing_
         fluff(
           id: 1,
           aim: spell_plan.AimsAtCaster,
-          duration_ms: 5000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 5000),
         ),
       ]),
       remover(
@@ -544,8 +528,7 @@ pub fn a_removal_that_a_gate_stops_takes_nothing_off_until_the_gate_passes_test(
         fluff(
           id: 99_472,
           aim: spell_plan.AimsAtCaster,
-          duration_ms: 990,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 990),
         ),
       ]),
       remover(
@@ -573,12 +556,7 @@ pub fn a_removal_behind_a_target_prerequisite_is_not_applied_with_a_debug_line_t
   let plans =
     support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
-        fluff(
-          id: 1,
-          aim: spell_plan.AimsAtCaster,
-          duration_ms: 0,
-          until_removed: True,
-        ),
+        fluff(id: 1, aim: spell_plan.AimsAtCaster, lasts: lasts.UntilRemoved),
       ]),
       remover(
         spell4_id: 301,
@@ -619,8 +597,7 @@ fn stacked(
       fluff(
         id: spell4_id,
         aim: spell_plan.AimsAtCaster,
-        duration_ms: 0,
-        until_removed: True,
+        lasts: lasts.UntilRemoved,
       ),
     ]),
     stack: Stack(group_id: group, cap:),
@@ -717,8 +694,7 @@ pub fn a_nodes_unit_leaving_sight_ends_a_lingering_cast_left_with_no_node_test()
         fluff(
           id: 1,
           aim: spell_plan.AimsAtArea,
-          duration_ms: 8000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 8000),
         ),
       ]),
     ])
@@ -761,17 +737,11 @@ pub fn a_node_removed_with_its_unit_leaves_the_casts_other_nodes_test() -> Nil {
   let plans =
     support.plans_of([
       buff(spell4_id: 101, base: 3, lasting: [
-        fluff(
-          id: 1,
-          aim: spell_plan.AimsAtCaster,
-          duration_ms: 0,
-          until_removed: True,
-        ),
+        fluff(id: 1, aim: spell_plan.AimsAtCaster, lasts: lasts.UntilRemoved),
         fluff(
           id: 2,
           aim: spell_plan.AimsAtArea,
-          duration_ms: 8000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 8000),
         ),
       ]),
     ])
@@ -832,8 +802,7 @@ pub fn a_channel_that_holds_its_own_fluff_ends_its_other_steps_when_it_lingers_t
           fluff(
             id: 1,
             aim: spell_plan.AimsAtCaster,
-            duration_ms: 8000,
-            until_removed: False,
+            lasts: lasts.For(duration_ms: 8000),
           ),
         ],
         channel: spell_plan.Channel(
@@ -903,8 +872,7 @@ fn buffed_channel(
           fluff(
             id: 1,
             aim: spell_plan.AimsAtCaster,
-            duration_ms: 1000,
-            until_removed: False,
+            lasts: lasts.For(duration_ms: 1000),
           ),
         ],
         channel: spell_plan.Channel(
@@ -979,8 +947,7 @@ pub fn a_cancel_of_a_cast_holding_nodes_lets_them_linger_test() -> Nil {
           fluff(
             id: 1,
             aim: spell_plan.AimsAtCaster,
-            duration_ms: 8000,
-            until_removed: False,
+            lasts: lasts.For(duration_ms: 8000),
           ),
         ],
         channel: spell_plan.Channel(
@@ -1026,8 +993,7 @@ pub fn an_earlier_until_removed_node_survives_a_later_go_with_no_life_test() -> 
             ..fluff(
               id: 1,
               aim: spell_plan.AimsAtCaster,
-              duration_ms: 0,
-              until_removed: True,
+              lasts: lasts.UntilRemoved,
             ),
             phase_flags: 1,
           ),
@@ -1035,8 +1001,7 @@ pub fn an_earlier_until_removed_node_survives_a_later_go_with_no_life_test() -> 
             ..fluff(
               id: 2,
               aim: spell_plan.AimsAtCaster,
-              duration_ms: 0,
-              until_removed: False,
+              lasts: lasts.For(duration_ms: 0),
             ),
             phase_flags: 2,
           ),
@@ -1087,8 +1052,7 @@ pub fn a_timed_node_is_re_timed_from_a_later_go_of_its_cast_test() -> Nil {
           fluff(
             id: 1,
             aim: spell_plan.AimsAtCaster,
-            duration_ms: 5000,
-            until_removed: False,
+            lasts: lasts.For(duration_ms: 5000),
           ),
         ],
         channel: spell_plan.Channel(
@@ -1233,8 +1197,7 @@ pub fn a_go_keeps_each_effect_with_its_kind_and_effect_id_on_the_node_test() -> 
       Parameter(kind: 0, value: 0.0),
       Parameter(kind: 0, value: 0.0),
     ])
-  let fluff_row =
-    LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False)
+  let fluff_row = LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 3000))
   let heal =
     spell_plan.Heal(
       effect_id: Spell4EffectsId(4),
@@ -1293,11 +1256,7 @@ pub fn a_go_keeps_each_effect_with_its_kind_and_effect_id_on_the_node_test() -> 
         [
           Listed(
             effect_id: Spell4EffectsId(96_125),
-            row: LastingRow(
-              delay_ms: 0,
-              duration_ms: 6000,
-              until_removed: False,
-            ),
+            row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 6000)),
           ),
         ],
       ),
@@ -1315,9 +1274,8 @@ pub fn a_go_keeps_each_effect_with_its_kind_and_effect_id_on_the_node_test() -> 
                   row: crowd_control.Row(
                     state: AbilityRestriction,
                     delay_ms: 0,
-                    duration_ms: 5000,
+                    lasts: lasts.For(duration_ms: 5000),
                     armor_removed: 0,
-                    until_removed: False,
                   ),
                   condition: Always,
                   tag: spend.always,
@@ -1334,8 +1292,7 @@ pub fn a_go_keeps_each_effect_with_its_kind_and_effect_id_on_the_node_test() -> 
         [
           LifeOnly(row: LastingRow(
             delay_ms: 0,
-            duration_ms: 5000,
-            until_removed: False,
+            lasts: lasts.For(duration_ms: 5000),
           )),
         ],
       ),
@@ -1366,8 +1323,7 @@ pub fn a_go_keeps_each_effect_with_its_kind_and_effect_id_on_the_node_test() -> 
         [
           LifeOnly(row: LastingRow(
             delay_ms: 500,
-            duration_ms: 0,
-            until_removed: False,
+            lasts: lasts.For(duration_ms: 0),
           )),
         ],
       ),
@@ -1421,7 +1377,7 @@ pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_t
       bag: bag_of_base_3,
       at: 1000,
     )
-  let #(waiting, _) =
+  let #(waiting, waiting_effects) =
     support.press(
       plans: channel_before_its_first_go(),
       state: cast_state.new(),
@@ -1435,8 +1391,7 @@ pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_t
           fluff(
             id: 1,
             aim: spell_plan.AimsAtArea,
-            duration_ms: 3000,
-            until_removed: False,
+            lasts: lasts.For(duration_ms: 3000),
           ),
         ]),
       ]),
@@ -1452,8 +1407,7 @@ pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_t
           fluff(
             id: 1,
             aim: spell_plan.AimsAtArea,
-            duration_ms: 3000,
-            until_removed: False,
+            lasts: lasts.For(duration_ms: 3000),
           ),
         ]),
       ]),
@@ -1486,6 +1440,14 @@ pub fn a_players_views_hold_every_live_and_lingering_cast_with_a_listed_target_t
           current: option.Some(support.pressed_id(effects: lingering_effects)),
         ),
         [#(support.pressed_id(effects: lingering_effects), False, True, [7])],
+      ),
+      #(
+        "the current cast before its first go is listed with its first go not gone",
+        cast_state.State(
+          ..waiting,
+          current: option.Some(support.pressed_id(effects: waiting_effects)),
+        ),
+        [#(support.pressed_id(effects: waiting_effects), True, False, [])],
       ),
       #(
         "a live cast that is not the current cast and holds no node yet is not listed",
@@ -1540,12 +1502,7 @@ fn compared_in_turn(
 fn area_buff(duration_ms duration_ms: Int) -> Plans {
   support.plans_of([
     buff(spell4_id: 101, base: 3, lasting: [
-      fluff(
-        id: 2,
-        aim: spell_plan.AimsAtArea,
-        duration_ms:,
-        until_removed: False,
-      ),
+      fluff(id: 2, aim: spell_plan.AimsAtArea, lasts: lasts.For(duration_ms:)),
     ]),
   ])
 }
@@ -1559,8 +1516,7 @@ fn two_gos_of_an_area_buff() -> Plans {
         fluff(
           id: 2,
           aim: spell_plan.AimsAtArea,
-          duration_ms: 5000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 5000),
         ),
       ],
       channel: spell_plan.Channel(
@@ -1661,8 +1617,7 @@ pub fn the_caster_tells_each_creature_what_its_casts_hold_on_it_test() -> Nil {
           fluff(
             id: 2,
             aim: spell_plan.AimsAtCaster,
-            duration_ms: 3000,
-            until_removed: False,
+            lasts: lasts.For(duration_ms: 3000),
           ),
         ]),
       ]),
@@ -2155,14 +2110,13 @@ fn node_drawn(
       1 -> [
         Listed(
           effect_id: Spell4EffectsId(2),
-          row: LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False),
+          row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 3000)),
         ),
       ]
       _ -> [
         LifeOnly(row: LastingRow(
           delay_ms: 0,
-          duration_ms: 3000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 3000),
         )),
       ]
     },
@@ -2474,8 +2428,7 @@ fn aura_with_a_cast_time() -> Spell {
       fluff(
         id: 200_469,
         aim: spell_plan.AimsAtCaster,
-        duration_ms: 0,
-        until_removed: True,
+        lasts: lasts.UntilRemoved,
       ),
     ]),
     cast_time_ms: 1500,
@@ -2497,7 +2450,7 @@ pub fn an_aura_counts_from_the_casts_start_and_not_from_its_go_test() -> Nil {
             effect_id: Spell4EffectsId(200_469),
             phase_flags: -1,
             aim: spell_plan.AimsAtCaster,
-            row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+            row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
             condition: Always,
             tag: spend.always,
           )),

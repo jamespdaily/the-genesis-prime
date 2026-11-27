@@ -15,7 +15,7 @@
 ////   7515 (quest 5101, flags 17, pane 7617 that lists Creature2 20041 of CreationTypeEnum 10)
 ////   has no creature the server fights; 4849 (quest 3769) is named by Spell4Effects 89873;
 ////   1962 (quest 1859) has no marker; 9659 (quest 6296, type 12) is linked by Creature2 27768.
-//// - A row of the migration is a `server_choice` with its reason.
+//// - A row of the migration is a `server_choice`.
 //// - Faction2Relationship 952, 726 and 711 (377, 219 and 200 to 165, level 10, the parent of
 ////   the Exile faction 167 and the Dominion faction 166), 771 (171 to 167, level 10) and 685
 ////   (166 to 171, level 0): a creature of faction 377, 219 or 200 is Friendly to both

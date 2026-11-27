@@ -3,6 +3,7 @@
 //// Armor (dataBits03), and each takes the instance id a caster gave it.
 
 import genesis_prime/game/crowd_control.{Row}
+import genesis_prime/game/lasts
 import genesis_prime/game/strike_tell.{ControlLanded, ControlTell}
 import genesis_prime/message/crowd_control_state.{
   type CrowdControlState, Knockdown, Stun,
@@ -17,9 +18,8 @@ pub fn kick_knockdown(instance_id instance_id: Int) -> strike_tell.ControlTell {
     row: Row(
       state: Knockdown,
       delay_ms: 166,
-      duration_ms: 3000,
+      lasts: lasts.For(duration_ms: 3000),
       armor_removed: 1,
-      until_removed: False,
     ),
     throw: None,
   )
@@ -33,9 +33,8 @@ pub fn stagger_stun(instance_id instance_id: Int) -> strike_tell.ControlTell {
     row: Row(
       state: Stun,
       delay_ms: 0,
-      duration_ms: 2500,
+      lasts: lasts.For(duration_ms: 2500),
       armor_removed: 1,
-      until_removed: False,
     ),
     throw: None,
   )
@@ -49,9 +48,8 @@ pub fn gate_stun(instance_id instance_id: Int) -> strike_tell.ControlTell {
     row: Row(
       state: Stun,
       delay_ms: 0,
-      duration_ms: 3250,
+      lasts: lasts.For(duration_ms: 3250),
       armor_removed: 1,
-      until_removed: False,
     ),
     throw: None,
   )
@@ -81,9 +79,8 @@ pub fn holding(
     row: Row(
       state:,
       delay_ms: 0,
-      duration_ms:,
+      lasts: lasts.For(duration_ms:),
       armor_removed: 1,
-      until_removed: False,
     ),
     throw: None,
   )

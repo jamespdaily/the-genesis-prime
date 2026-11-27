@@ -8,7 +8,7 @@
 ////   69450), and the Prerequisite rows 24581, 24582 and 43811, read by
 ////   `Prerequisite.prerequisiteTypeId.15` and `Prerequisite.flags`.
 //// - The design of issue 418: a gain is given once per go, not once per struck foe
-////   (Jim, 2026-11-05), and a ticking gain is not applied.
+////   (the server's choice), and a ticking gain is not applied.
 //// The bag indices are `cast_support.abilities`'.
 
 import cast_support as support

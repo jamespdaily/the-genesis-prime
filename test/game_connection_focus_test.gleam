@@ -9,7 +9,7 @@
 ////   of type 15 (Focus) with a channel of delay 410, maximum 1250 and pulse 410: 3 gos;
 ////   (`table_rows -- UnitProperty2 108`, `-- GameFormula 88`): a recovery share of 0.011
 ////   each 500 ms, so a pool of 1000 recovers 1000 x 0.011 x 0.5 = 5.5 a tick.
-//// - Jim's decision (issue 945): the pool is a flat 1000 plus what worn items add, full at
+//// - The server's choice: the pool is a flat 1000 plus what worn items add, full at
 ////   entry and when coming back (migration 0048).
 //// - `table_rows -- ItemStat 12`, `-- ItemBudget 3`, `-- Item2 11671`: boots whose one
 ////   budget share of 1.0 is property 5 (valuePerPoint 1.5) at power level 8.

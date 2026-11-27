@@ -5,7 +5,7 @@
 ////   stack at 1 is removed rather than lowered (the check
 ////   `character_item_stack_count_is_positive` also refuses 0).
 //// - `Item2.maxCharges.proxy` and `item_property.max_charges`: a row whose effective
-////   maxCharges is 0 holds none, so a use takes nothing from it (Jim, 2026-11-18).
+////   maxCharges is 0 holds none, so a use takes nothing from it (the server's choice).
 //// - storing-data: a request holds the item as the connection holds it, so the statement
 ////   changes the row only while it is as held.
 

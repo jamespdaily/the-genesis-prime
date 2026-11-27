@@ -36,6 +36,7 @@ import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as c
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, CastGate, NoCasterCast, RequirementWaiver, Spell,
@@ -844,8 +845,7 @@ fn lingering_cast_of(
         aim: spell_plan.AimsAtCaster,
         row: lasting.LastingRow(
           delay_ms: 0,
-          duration_ms: 60_000,
-          until_removed: False,
+          lasts: lasts.For(duration_ms: 60_000),
         ),
         condition: spell_plan.Always,
         tag: spend.always,

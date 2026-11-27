@@ -19,6 +19,7 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/held_tier
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/loadout
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_effect
@@ -1215,7 +1216,7 @@ pub fn every_non_heal_row_aimed_at_the_area_of_an_ally_finding_spell_in_the_plan
           lands_on_a_unit,
           effect_kind.kind_of(effect_type: row.effect_type),
         )
-        && spell_plan.lasting_row_of(effect: row).until_removed
+        && lasts.is_until_removed(spell_plan.lasting_row_of(effect: row).lasts)
         && int.bitwise_and(row.target_flags, 6) != 0
       })
       |> list.map(fn(row) { #(spell4_id, row) })

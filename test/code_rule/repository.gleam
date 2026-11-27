@@ -72,6 +72,31 @@ fn tracked_sources(
   files
 }
 
+/// Every tracked file under the directories that holds text, sorted by path,
+/// read with one `git ls-files`. A file that is not UTF-8 text is left out.
+pub fn texts(under directories: List(String)) -> List(SourceFile) {
+  tracked_paths()
+  |> list.filter(fn(path) {
+    list.any(directories, fn(directory) {
+      string.starts_with(path, directory <> "/")
+    })
+  })
+  |> list.sort(string.compare)
+  |> list.filter_map(fn(path) {
+    case simplifile.read(path) {
+      Ok(text) -> Ok(SourceFile(path:, text:))
+      Error(simplifile.NotUtf8) -> Error(Nil)
+      Error(error) ->
+        panic as {
+          "the tracked file could not be read: "
+          <> path
+          <> " "
+          <> string.inspect(error)
+        }
+    }
+  })
+}
+
 /// Every key of the client's fact file, read once for the run.
 pub fn fact_keys() -> List(String) {
   dict.keys(fact_file.records())

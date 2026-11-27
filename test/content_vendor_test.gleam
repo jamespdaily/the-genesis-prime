@@ -53,11 +53,11 @@ pub fn a_vendor_row_the_tables_refuse_fails_the_load_test() -> Nil {
   let database = database_support.new_database(on: database_support.shared())
   content_support.change(
     database:,
-    sql: "insert into vendor (creature_id, source, reason) values (200001, 'server_choice', 'a creature the client does not hold')",
+    sql: "insert into vendor (creature_id, source) values (200001, 'server_choice')",
   )
   content_support.change(
     database:,
-    sql: "insert into vendor_item (creature_id, position, item_id, source, reason) values (28739, 23, 4000000, 'server_choice', 'an item the client does not hold')",
+    sql: "insert into vendor_item (creature_id, position, item_id, source) values (28739, 23, 4000000, 'server_choice')",
   )
   let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded

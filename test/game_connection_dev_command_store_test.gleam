@@ -29,6 +29,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import item_expiry_support
 import owned_test
+import quest_support
 
 pub fn the_level_and_experience_commanded_are_loaded_by_the_next_login_test() -> Nil {
   use <- owned_test.run(120_000)
@@ -341,9 +342,11 @@ pub fn the_quest_commanded_is_loaded_by_the_next_login_test() -> Nil {
     )
     as "the next login loads the character"
   let assert [row] = reloaded as "the next login holds the one quest"
-  assert row.quest_id == 5972 && row.state == 3 && row.active == None
+  assert row.quest_id == 5972
+    && quest_support.state_of(row) == 3
+    && quest_support.active_of(row) == None
     as "quest 5972 is Completed, in no active entry"
-  assert option.is_some(row.completed_at)
+  assert option.is_some(quest_support.completed_at_of(row))
     as "save_place.sql: a Completed row keeps its completion time"
   account_store_support.stop(stored.store)
 }
@@ -451,7 +454,8 @@ pub fn a_completed_cross_world_go_is_saved_by_the_next_stays_timer_and_the_next_
   assert after.level == 4 && after.experience == Some(2860)
     as "XpPerLevel: level 4 starts at 2860"
   let assert [row] = after.quests as "one quest"
-  assert row.quest_id == 5972 && row.state == 3 as "quest 5972 is Completed"
+  assert row.quest_id == 5972 && quest_support.state_of(row) == 3
+    as "quest 5972 is Completed"
   account_store_support.stop(stored.store)
 }
 

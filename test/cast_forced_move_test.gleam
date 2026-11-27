@@ -28,6 +28,7 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type State} as cast_state
 import genesis_prime/game/forced_move
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Spell, Always}
 import genesis_prime/game/spend
@@ -323,7 +324,7 @@ pub fn a_delayed_throw_is_cancelled_with_its_cast_node_test() -> Nil {
         ),
         aim: spell_plan.AimsAtArea,
       ),
-      row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000)),
       condition: Always,
       tag: spend.always,
       armor: None,

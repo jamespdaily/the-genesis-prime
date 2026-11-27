@@ -24,6 +24,7 @@ import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   type Plans, type Spell, GatedOnCasterAndTarget, Proxy, Spell,
@@ -625,8 +626,7 @@ pub fn cripples_second_hit_needs_the_casters_own_group_464_cast_test() -> Nil {
             aim: spell_plan.AimsAtArea,
             row: lasting.LastingRow(
               delay_ms: 0,
-              duration_ms: 60_000,
-              until_removed: False,
+              lasts: lasts.For(duration_ms: 60_000),
             ),
             condition: spell_plan.Always,
             tag: spend.always,

@@ -41,6 +41,7 @@ import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{
   AimedAtOtherUnits, AimsAtArea, AimsAtCaster, AimsAtCasterAndArea,
   AimsAtCasterAndPrimaryTarget, AimsAtPrimaryTarget, Always, Applied, Heal,
@@ -349,8 +350,7 @@ pub fn a_shield_overload_row_aimed_at_the_area_is_a_lasting_row_on_each_struck_u
                 aim: AimsAtArea,
                 row: LastingRow(
                   delay_ms: 0,
-                  duration_ms: 4000,
-                  until_removed: False,
+                  lasts: lasts.For(duration_ms: 4000),
                 ),
                 condition: Always,
                 tag: spend.EqualTo(value: 0),

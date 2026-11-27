@@ -30,9 +30,9 @@ import genesis_prime/message/generic_error.{GenericError}
 import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/step
 import genesis_prime/store.{
-  type QuestRow, AccountId, Character, CharacterId, ForItems, HeldItem, Items,
-  ItemsNotSaved, Move, NewStack, QuestRow, SavePlace, SaveRefused, TurnInQuest,
-  TurnedIn,
+  type QuestRow, AccountId, Character, CharacterId, CompletedRow, ForItems,
+  HeldItem, Items, ItemsNotSaved, Move, NewStack, SavePlace, SaveRefused,
+  TurnInQuest, TurnedIn,
 }
 import genesis_prime/table/id.{ClassId, Item2Id}
 import gleam/list
@@ -99,12 +99,7 @@ pub fn turned_in_answer_sends_rewards_then_state_test() -> Nil {
     as "the override 1055 from 0 is level 2's range"
   assert quests
     == [
-      QuestRow(
-        quest_id: 10_520,
-        state: 3,
-        completed_at: Some(unix_seconds),
-        active: None,
-      ),
+      CompletedRow(quest_id: 10_520, at: unix_seconds),
     ]
     as "the log is saved with the quest Completed at the connection's Unix second"
   assert credits_held == 0 && credits_after == 0 && placed == []
@@ -434,7 +429,8 @@ pub fn turn_in_not_saved_leaves_the_quest_achieved_test() -> Nil {
         as "the player is in the world and the quest is still Achieved"
       assert second == first + 1
         as "the save the store did not make is not reused: the next carries the next number"
-      assert list.map(quests, fn(row: QuestRow) { row.state }) == [3]
+      assert list.map(quests, fn(row: QuestRow) { quest_support.state_of(row) })
+        == [3]
     },
   )
 }
@@ -629,12 +625,7 @@ pub fn communicator_turn_in_sends_rewards_then_state_as_the_unit_dialog_test() -
   assert placed == unit_placed
   assert quests
     == [
-      QuestRow(
-        quest_id: 10_519,
-        state: 3,
-        completed_at: Some(unix_seconds),
-        active: None,
-      ),
+      CompletedRow(quest_id: 10_519, at: unix_seconds),
     ]
   let answer =
     step.Answer(FromStore(ForItems(TurnedIn(credits: credits_after, made: []))))
@@ -688,7 +679,9 @@ pub fn turning_in_a_quest_completes_another_quests_objective_that_names_it_test(
     )
   let assert TurnInQuest(quests: saved, ..) = asked_turn_in(taken:)
     as "the accepted turn-in is the store's ask"
-  assert list.any(saved, fn(row) { row.quest_id == 6305 && row.state == 3 })
+  assert list.any(saved, fn(row) {
+    row.quest_id == 6305 && quest_support.state_of(row) == 3
+  })
     as "the ask saves quest 6305 completed, the quest the objective names"
   let #(_, answered) =
     game_connection_support.answer(
@@ -757,7 +750,7 @@ fn the_beast_killed(
 
 /// The quest ids and states of the rows a turn-in saves.
 fn saved_states(rows rows: List(QuestRow)) -> List(#(Int, Int)) {
-  list.map(rows, fn(row) { #(row.quest_id, row.state) })
+  list.map(rows, fn(row) { #(row.quest_id, quest_support.state_of(row)) })
 }
 
 /// The state the 0x35c frame last written says the quest is in.
@@ -782,12 +775,7 @@ pub fn a_server_completion_saves_the_quest_completed_and_answers_like_a_turn_in_
     as "the quest no creature receives is completed by the server: the store is asked"
   assert quests
     == [
-      QuestRow(
-        quest_id: 1857,
-        state: 3,
-        completed_at: Some(unix_seconds),
-        active: None,
-      ),
+      CompletedRow(quest_id: 1857, at: unix_seconds),
     ]
     as "the log is saved with the quest Completed at the connection's Unix second"
   assert list.map(placed, fn(one) { one.item2_id })
@@ -958,12 +946,7 @@ pub fn a_relog_with_a_quest_achieved_completes_it_after_the_entry_test() -> Nil 
     as "after the entry's frames the store is asked for the completion"
   assert quests
     == [
-      QuestRow(
-        quest_id: 5859,
-        state: 3,
-        completed_at: Some(unix_seconds),
-        active: None,
-      ),
+      CompletedRow(quest_id: 5859, at: unix_seconds),
     ]
   assert list.map(placed, fn(one) { one.item2_id })
     == [Item2Id(81_917), Item2Id(29_661)]

@@ -17,7 +17,7 @@
 //// - The design of issue 945: Focus is stat 1 (`ApplyUnitStat` 0x1403d9a60 case 1,
 ////   `SetUnitStatsFromCreate` 0x140458140 case 1: the float form only, at the unit's
 ////   +0x218) with its maximum as property 5 (`GetMaxFocus` 0x14064a810), for the
-////   classes whose level grants cost it, at the pool of 1000 (Jim's decision).
+////   classes whose level grants cost it, at the pool of 1000 (the server's choice).
 ////
 //// Gap: no vector here is a client's or a recording's bytes. The 0x935 vector and
 //// the bytes of each 0x262 resource stat are built by hand from the schema's field
@@ -224,7 +224,7 @@ pub fn a_healers_0x262_carries_stat_1_in_the_float_form_at_the_pool_and_property
               UnitStatFloat(value: float32.to_bits(1000.0)),
             ),
           )
-          as "form 1, the float form the client keeps (0x140458140 case 1), at the pool of 1000 (Jim's decision)"
+          as "form 1, the float form the client keeps (0x140458140 case 1), at the pool of 1000 (the server's choice)"
         assert stat_bytes(stat) == message_support.hex("21 00 00 3d 22")
           as "stat 1 in 5 bits, form 1 in 2, then 1000.0 (0x447A0000); built by hand from the schema (module gap)"
         let assert [pool] = pools as "one property 5"

@@ -44,8 +44,7 @@ const default_row =
     respawn_ms: 60_000,
     attack_spell4_id: 5649,
     attack_interval_ms: 1500,
-    guard_spell4_id: option.None,
-    opening_spell4_id: option.None,
+    guard: option.None,
   )
 
 /// The auto-attack `spell4_id` of Yeti Snowstalker (Creature2 51126) at place `order_index`.
@@ -279,8 +278,7 @@ pub fn a_creature_with_a_kind_row_and_auto_attack_rows_is_refused_test() -> Nil 
       respawn_ms: 60_000,
       attack_spell4_id: 5649,
       attack_interval_ms: 1500,
-      guard_spell4_id: option.None,
-      opening_spell4_id: option.None,
+      guard: option.None,
     )
   let assert Error([
     Refusal(table: "creature_auto_attack", row: RowId(51_126), rule:),
@@ -342,7 +340,7 @@ pub fn the_rows_of_the_acceptance_creatures_load_on_the_clients_tables_test() ->
   let kinds = content_creature_kind.kinds(key:)
   let ids = fn(spell4_ids) { list.map(spell4_ids, Spell4Id) }
   // Each: the creature, its lead, its alternates and its specials, from its Jabbithole page
-  // (the page named in the row's `reason`) and the Spell4 descriptions "#1" and "#2".
+  // and the Spell4 descriptions "#1" and "#2".
   list.each(
     [
       #(51_126, 33_251, [33_252], []),
@@ -372,11 +370,11 @@ pub fn the_rows_of_the_acceptance_creatures_load_on_the_clients_tables_test() ->
     as "Venombite Hatchling's Pinch and Slice name a damage parameter the creature formula does not read, so it holds no auto-attack row and keeps 5649 and its Venomous Mandible"
   assert content_support.psql(
       database:,
-      sql: "select count(*) from creature_auto_attack where source <> 'retail_record' or reason not like '%guess%'",
+      sql: "select count(*) from creature_auto_attack where source <> 'retail_record'",
     )
     |> string.trim
     == "0"
-    as "every hand-entered row is a retail record with its guess marked"
+    as "every hand-entered row is a retail record"
 }
 
 pub fn a_retired_row_is_not_loaded_and_its_place_can_be_written_again_test() -> Nil {
@@ -399,7 +397,7 @@ pub fn a_retired_row_is_not_loaded_and_its_place_can_be_written_again_test() -> 
   )
   content_support.change(
     database:,
-    sql: "insert into creature_auto_attack (creature_id, spell4_id, order_index, source, reason, import_id) values (51126, 33251, 0, 'retail_record', 'written again by the run', (select max(id) from retail_record_import))",
+    sql: "insert into creature_auto_attack (creature_id, spell4_id, order_index, source, import_id) values (51126, 33251, 0, 'retail_record', (select max(id) from retail_record_import))",
   )
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil) as "a database with retired rows loads"

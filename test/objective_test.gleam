@@ -90,8 +90,8 @@
 ////   0x21), 2 is 21295 (type 22, flags 3), 3 is 21296 (type 2, creature 73499, flags 3)
 ////   and 4 is 21298 (type 17, zone 5998, flags 3).
 //// - `QuestObjective.type.23`: a use of any unit in the objective's TargetGroup counts
-////   one for each unit: a second use of the same unit counts nothing (the server's choice,
-////   Jim, 2026-11-11; the client keeps no record of the units used).
+////   one for each unit: a second use of the same unit counts nothing (the server's choice;
+////   the client keeps no record of the units used).
 ////   QuestObjective 21094 (quest 10415, group 14175 of creatures 72197, 72198, 72231 ...,
 ////   count 8, flags 4); the Bon Voyage objectives of quest 10528 (21326
 ////   talk, 21327 travel, 21328 and 21329 choices, 21342 an optional type 14) and
@@ -107,7 +107,7 @@ import genesis_prime/game/objective.{
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
 import genesis_prime/game/target_group
-import genesis_prime/store.{ActiveQuest, HeldItem, QuestRow}
+import genesis_prime/store.{ActiveQuest, ActiveRow, HeldItem}
 import genesis_prime/table/id.{
   Creature2Id, Faction2Id, Item2Id, Spell4Id, UnitRaceId,
 }
@@ -580,7 +580,7 @@ fn kill_masks_of(
   log log: quest_log.QuestLog,
   quest_id quest_id: Int,
 ) -> List(Int) {
-  let assert [QuestRow(active: Some(ActiveQuest(kill_mask:, ..)), ..)] =
+  let assert [ActiveRow(active: ActiveQuest(kill_mask:, ..), ..)] =
     quest_log.rows(log:, now_ms: 0)
     |> list.filter(fn(row) { row.quest_id == quest_id })
     as "the quest is in the active list"
@@ -838,7 +838,7 @@ pub fn an_abandoned_quest_retaken_starts_its_group_with_no_kills_test() -> Nil {
     quest_log.hold(
       log: killed_once,
       quest_id: strange_brew,
-      state: quest_log.Abandoned,
+      state: store.Abandoned,
     )
   let retaken =
     quest_log.accept(
@@ -2371,8 +2371,8 @@ type Counting {
 pub fn a_spawn_counts_once_for_an_objective_and_each_use_counts_where_the_objective_reuses_test() -> Nil {
   use <- owned_test.run(10_000)
   // The client keeps no per-spawn record of a non-checklist objective (`0x1405517a0` makes
-  // none a checklist), so counting each object once is the server's choice (Jim,
-  // 2026-11-25), and the object is its spawn's id. Quest 6723's only objective, 10383, is
+  // none a checklist), so counting each object once is the server's choice,
+  // and the object is its spawn's id. Quest 6723's only objective, 10383, is
   // type 23 on Creature2 30826 and 30827, count 15; quest 3480's objective 4470 is type 12
   // on Creature2 11070, count 3; quest 10520's first objective is a checklist on Creature2
   // 73500, whose uses count by the unit's checklist index.
@@ -2980,7 +2980,7 @@ pub fn a_self_aimed_cast_still_counts_with_no_target_test() -> Nil {
 
 pub fn a_second_cast_at_the_same_unit_counts_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Jim, 2026-11-11: a targeted cast objective counts each unit once, as a type 23 does.
+  // The server's choice: a targeted cast objective counts each unit once, as a type 23 does.
   // `0x1405517a0` makes no type 11 objective a checklist, so the client keeps no
   // per-unit record and the once is the server's choice.
   use tables <- quest_support.with_objectives(edits: [])
@@ -3031,7 +3031,7 @@ pub fn an_abandoned_and_retaken_quest_forgets_its_cast_units_test() -> Nil {
       log: quest_log.hold(
         log: first.log,
         quest_id: 3145,
-        state: quest_log.Abandoned,
+        state: store.Abandoned,
       ),
       quest:,
       max_time_ms: 0,
@@ -3241,8 +3241,8 @@ pub fn server_completions_lists_the_achieved_qualifying_quests_of_a_log_in_id_or
 // not a checklist (`0x1405517a0`), and it offers a linked creature again until its
 // objective is done (`QuestObjective.type.32.repeat_use`, which names types 5 and 32), so
 // the once, the exception for an objective whose world holds fewer units than its count
-// (`reused`) and the release of a used unit are the server's choice (Jim, 2026-11-16: a
-// used quest object vanishes for everyone; 2026-11-15: an objective with too few units
+// (`reused`) and the release of a used unit are the server's choice (a
+// used quest object vanishes for everyone; an objective with too few units
 // counts a unit again). The effect is `ReleaseUnit`, once for the use, after every other
 // effect of the event.
 
@@ -3701,7 +3701,7 @@ pub fn a_use_that_only_a_reused_type_32_objective_counts_releases_nothing_test()
 
 pub fn a_cast_at_a_unit_releases_nothing_test() -> Nil {
   use <- owned_test.run(60_000)
-  // Nothing is spent by a cast at a unit (Jim, 2026-11-16: a use of a quest object
+  // Nothing is spent by a cast at a unit (the server's choice: a use of a quest object
   // vanishes it; a cast of a spell is not one).
   use tables <- quest_support.with_objectives(edits: [])
   assert used_by(

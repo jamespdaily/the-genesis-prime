@@ -31,6 +31,7 @@ import genesis_prime/game/area
 import genesis_prime/game/crowd_control
 import genesis_prime/game/forced_move
 import genesis_prime/game/hit.{Blow, Offence, Rolls, Worked}
+import genesis_prime/game/lasts
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{
   type Key, Answered, Attacks, CreatureStriker, Immune, Key, Landed,
@@ -1203,7 +1204,7 @@ pub fn at_home_the_creature_aggroes_the_near_players_test() -> Nil {
   let #(_, home) = fire(state:, at_ms: 11_500, timer: timer_for(leashed, 5500))
   assert list.contains(said(home), "0x908(50, 1) to 5")
     && list.contains(said(home), "Threatened(7, 3) to 5")
-    as "home, at full health, it aggroes the player still in its ring (Jim's answer of 2026-11-04)"
+    as "home, at full health, it aggroes the player still in its ring (the server's choice)"
 }
 
 /// A Battle Beast at x = 0 started for these viewers with these players in the ring of its
@@ -1366,7 +1367,7 @@ pub fn a_ring_at_a_start_puts_every_ring_player_into_near_and_aggroes_the_viewer
 
 // Stealth (issue 483): the map tells a creature `Withdrew` for a player that enters
 // stealth. The creature's rule is not changed; these tests hold what the step relies
-// on. Evidence: Jim's decision on issue 483 (Discord, 2026-11-06, option A): a
+// on. The server's choice: a
 // creature keeps fighting a stealthed player already on its threat list, and does not
 // aggro one that is not.
 
@@ -2809,7 +2810,7 @@ pub fn a_deflected_stun_only_strike_lands_no_state_and_sends_no_0x87f_test() -> 
 
 // ---- Interrupt Armor (`genesis_prime/world_map/creature_control`) ----
 //
-// Expected values come from these places: Jim's decision for the step (Design 445
+// Expected values come from these places: the server's choice for the step (Design 445
 // section 3): a state lands only on a creature whose armor is already 0 when the strike
 // arrives, a strike on armor above 0 lands none and destroys the row's dataBits03 points
 // (Stagger's Stun 83827 removes 1), never below 0, and infinite armor (-1) takes none and
@@ -4912,7 +4913,7 @@ pub fn a_viewer_arriving_while_the_turret_is_opened_is_told_the_opening_with_the
 // DisableCinematic and 27 AbilityRestriction, so not Root (2) and not Snare (21). The
 // Sim-Turret's charge, Spell4 85469, names row 2, which masks nothing. That a creature
 // holding Stun, Knockdown or Knockback casts nothing is a retail record (WildStar wiki,
-// Combat, "Moment of Opportunity"). Jim decided on 2026-11-11 that a state of any kind
+// Combat, "Moment of Opportunity"). The server's choice is that a state of any kind
 // landing during a charge breaks it. A Sim-Turret starts no charge while it holds any
 // other state either, as before: a gap, issue 801.
 
@@ -5205,9 +5206,8 @@ fn knockback_state(instance_id instance_id: Int) -> strike_tell.ControlTell {
     row: crowd_control.Row(
       state: crowd_control_state.Knockback,
       delay_ms: 0,
-      duration_ms: 0,
+      lasts: lasts.For(duration_ms: 0),
       armor_removed: 1,
-      until_removed: False,
     ),
     throw: Some(forced_move.Throw(
       move: forced_move.Move(
@@ -8657,7 +8657,7 @@ pub fn a_fixed_target_row_strikes_around_where_the_target_stood_at_the_start_tes
   // (0, 0); player 2, the target, at (0, -8); player 5 at (3, -8), 3 from the circle's centre,
   // inside 4 plus the player hit radius 1.2; player 6 at (8, -8), 8 from it, outside 5.2 though
   // within the area row's 10. Player 2 then steps to (0, -14), 6 from the centre, outside
-  // 5.2. The circle stays where the start put it (Jim's answer on the series: a guess,
+  // 5.2. The circle stays where the start put it (a guess,
   // marked): only player 5 is struck. A centre that followed player 2 would strike player 2,
   // and the creature as centre none of them.
   let #(state, _, go) =

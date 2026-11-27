@@ -37,7 +37,7 @@ import genesis_prime/message/item_added
 import genesis_prime/message/quest_state.{QuestState}
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{
-  type QuestRow, HeldItem, NewStack, Placed, QuestRow, StackGrowth,
+  type QuestRow, CompletedRow, HeldItem, NewStack, Placed, StackGrowth,
 }
 import genesis_prime/table/id.{Item2Id, Quest2Id}
 import genesis_prime/table/loader/store as table_store
@@ -46,7 +46,7 @@ import genesis_prime/world_map/creature_life.{Hostile}
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None, Some}
+import gleam/option.{None}
 import gleam/set
 import gleam/string
 import owned_test
@@ -97,12 +97,7 @@ pub fn achieved_quest_at_its_receiver_is_turned_in_test() -> Nil {
   assert turn_in.quest_id == 10_520
   assert rows_of(log: turn_in.log)
     == [
-      QuestRow(
-        quest_id: 10_520,
-        state: 3,
-        completed_at: Some(1_700_000_000),
-        active: None,
-      ),
+      CompletedRow(quest_id: 10_520, at: 1_700_000_000),
     ]
     as "the log holds the quest Completed at the Unix second of the turn-in (0x1405fbdc0.state_3)"
   assert effects == []
@@ -227,12 +222,7 @@ pub fn a_quest_is_turned_in_to_a_simple_receiver_in_reach_test() -> Nil {
   assert turn_in.quest_id == 3689
   assert rows_of(log: turn_in.log)
     == [
-      QuestRow(
-        quest_id: 3689,
-        state: 3,
-        completed_at: Some(1_700_000_000),
-        active: None,
-      ),
+      CompletedRow(quest_id: 3689, at: 1_700_000_000),
     ]
     as "the log holds the quest Completed at the Unix second of the turn-in (0x1405fbdc0.state_3)"
   assert_refused(
@@ -262,12 +252,7 @@ pub fn auto_complete_quest_is_turned_in_untaken_test() -> Nil {
   let #(turn_in, _) = support.asked(scene:, tables:)
   assert rows_of(log: turn_in.log)
     == [
-      QuestRow(
-        quest_id: 1806,
-        state: 3,
-        completed_at: Some(1_700_000_000),
-        active: None,
-      ),
+      CompletedRow(quest_id: 1806, at: 1_700_000_000),
     ]
     as "no entry goes straight to Completed (0x1405fbdc0.state_3 reads no earlier state)"
   let mentioned = support.Scene(..scene, log: [quest_support.known(1806, 5)])
@@ -288,7 +273,7 @@ pub fn auto_complete_quest_is_turned_in_untaken_test() -> Nil {
     as "the log is full: 0x140552550 check 15"
   let #(from_full, _) = support.asked(scene: crowded, tables:)
   assert list.any(rows_of(log: from_full.log), fn(row) {
-    row.quest_id == 1806 && row.state == 3
+    row.quest_id == 1806 && quest_support.state_of(row) == 3
   })
     as "a full log does not stop an auto-complete quest"
 }
@@ -344,12 +329,7 @@ pub fn completed_repeatable_auto_complete_quest_is_turned_in_again_test() -> Nil
   let #(turn_in, _) = support.asked(scene:, tables:)
   assert rows_of(log: turn_in.log)
     == [
-      QuestRow(
-        quest_id: 1806,
-        state: 3,
-        completed_at: Some(1_700_000_000),
-        active: None,
-      ),
+      CompletedRow(quest_id: 1806, at: 1_700_000_000),
     ]
     as "a Completed repeatable quest is Completed again, at the new time"
   use tables <- support.with_changes(changes: [
@@ -403,12 +383,7 @@ pub fn communicator_turn_in_needs_no_creature_near_test() -> Nil {
   assert turn_in.quest_id == 10_519
   assert rows_of(log: turn_in.log)
     == [
-      QuestRow(
-        quest_id: 10_519,
-        state: 3,
-        completed_at: Some(1_700_000_000),
-        active: None,
-      ),
+      CompletedRow(quest_id: 10_519, at: 1_700_000_000),
     ]
     as "the log holds the quest Completed at the Unix second of the turn-in"
 }
@@ -1333,12 +1308,7 @@ pub fn a_quest_no_creature_receives_is_completed_by_the_server_test() -> Nil {
   assert turn_in.quest_id == 5859
   assert rows_of(log: turn_in.log)
     == [
-      QuestRow(
-        quest_id: 5859,
-        state: 3,
-        completed_at: Some(1_700_000_000),
-        active: None,
-      ),
+      CompletedRow(quest_id: 5859, at: 1_700_000_000),
     ]
     as "the log holds the quest Completed at the Unix second of the completion (0x1405fbdc0.state_3)"
   assert list.map(turn_in.placed, fn(placed) { placed.item2_id })
@@ -1416,12 +1386,7 @@ pub fn a_flag_8_quest_with_no_receiver_is_completed_by_the_server_test() -> Nil 
   assert turn_in.placed == [] as "no reward row, so nothing to place"
   assert rows_of(log: turn_in.log)
     == [
-      QuestRow(
-        quest_id: 2417,
-        state: 3,
-        completed_at: Some(1_700_000_000),
-        active: None,
-      ),
+      CompletedRow(quest_id: 2417, at: 1_700_000_000),
     ]
 }
 

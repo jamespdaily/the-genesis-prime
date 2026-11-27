@@ -3,8 +3,8 @@
 //// only by the server's 0x361 (`QuestObjective.type.5`) and the client draws its marker as
 //// the destination whatever it asks (`0x140553890`), so the server completes a row of this
 //// table when the player stands at one of its markers (`objective.settle`), and no client
-//// table or code says which objectives ask only that: each is a row the table states with
-//// its reason.
+//// table or code says which objectives ask only that: each is a row the table states as
+//// a server choice.
 ////
 //// ```
 //// content.load: ids ─▶ select(ids, tables) ─▶ Set(objective id) | refusals (the load stops)

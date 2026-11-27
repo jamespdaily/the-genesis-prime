@@ -21,6 +21,17 @@
           }
         ]
       }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/dev/hooks/subagent_leaves_nothing_running.sh",
+            "timeout": 15
+          }
+        ]
+      }
     ]
   }
 }

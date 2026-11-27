@@ -18,6 +18,7 @@
 
 import cast_support
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc.{
   type EventSpell, CannotTell, EventGateFails, EventSpell, FilteredOut, Fires,
@@ -55,7 +56,7 @@ fn row() -> spell_plan.ProcRow {
     event_gate: None,
     holder_gate: None,
     delay_ms: 0,
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
     condition: Always,
     tag: spend.always,
   )

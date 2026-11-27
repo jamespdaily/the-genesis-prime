@@ -30,7 +30,8 @@
 ////
 //// - **It owns every `retail_record` row of the two tables, and deletes none.** A row the
 ////   rule no longer produces is retired: its `retired_by_import` is the run's id, and the
-////   content load reads only rows no run has retired. A changed row is retired and written
+////   content load reads only rows no run has retired. A row is the same when its creature,
+////   spell, order and (for a special) cooldown are; a changed row is retired and written
 ////   again. Rows of any other source (`server_choice`, `world_database`) are never touched,
 ////   and a row of another source that holds the same creature and spell, or the same place
 ////   in the creature's list, makes the table refuse the write, so nothing is written.
@@ -52,6 +53,7 @@
 import argv
 import envoy
 import genesis_prime/content/creature_kind as content_creature_kind
+import genesis_prime/content/refusal
 import genesis_prime/dev_database
 import genesis_prime/digest
 import genesis_prime/import_retail_record/sql
@@ -103,6 +105,8 @@ type Failure {
   /// The import would write fewer rows of a table than `smallest_read_percent` of its
   /// active `retail_record` rows.
   ReadTooSmall(table: String, writing: Int, active: Int)
+  /// The creature_kind table holds rows the load refuses; nothing was written.
+  KindRowsRefused(refusals: List(refusal.Refusal))
   /// The database refused a row, naming the constraint; nothing was written.
   RowRefused(constraint: String)
   /// The database failed in another way.
@@ -160,7 +164,14 @@ fn run() -> Result(String, Failure) {
   use spawned <- result.try(read_spawned(db:))
   use kind_rows <- result.try(
     content_creature_kind.rows(db)
-    |> result.map_error(fn(error) { Database(dev_database.failure_of(error:)) }),
+    |> result.map_error(fn(error) {
+      case error {
+        content_creature_kind.QueryFailed(reason:) ->
+          Database(dev_database.failure_of(error: reason))
+        content_creature_kind.RowsRefused(refusals:) ->
+          KindRowsRefused(refusals:)
+      }
+    }),
   )
   use texts <- result.try(texts_of(language:, tables:, spawned:))
   let outcomes =
@@ -343,7 +354,6 @@ fn write(
           auto_columns(fn(row) { row.creature_id }),
           auto_columns(fn(row) { row.spell4_id }),
           auto_columns(fn(row) { row.order_index }),
-          auto_columns(fn(row) { row.reason }),
         )
         |> result.map_error(stopped),
       )
@@ -354,7 +364,6 @@ fn write(
           special_columns(fn(row) { row.spell4_id }),
           special_columns(fn(row) { row.order_index }),
           special_columns(fn(row) { row.cooldown_ms }),
-          special_columns(fn(row) { row.reason }),
         )
         |> result.map_error(stopped),
       )
@@ -430,7 +439,6 @@ fn write(
               auto_columns(fn(row) { row.creature_id }),
               auto_columns(fn(row) { row.spell4_id }),
               auto_columns(fn(row) { row.order_index }),
-              auto_columns(fn(row) { row.reason }),
             )
             |> result.map_error(stopped),
           )
@@ -442,7 +450,6 @@ fn write(
               special_columns(fn(row) { row.spell4_id }),
               special_columns(fn(row) { row.order_index }),
               special_columns(fn(row) { row.cooldown_ms }),
-              special_columns(fn(row) { row.reason }),
             )
             |> result.map_error(stopped),
           )
@@ -453,7 +460,6 @@ fn write(
               auto_columns(fn(row) { row.creature_id }),
               auto_columns(fn(row) { row.spell4_id }),
               auto_columns(fn(row) { row.order_index }),
-              auto_columns(fn(row) { row.reason }),
             )
             |> result.map_error(stopped),
           )
@@ -465,7 +471,6 @@ fn write(
               special_columns(fn(row) { row.spell4_id }),
               special_columns(fn(row) { row.order_index }),
               special_columns(fn(row) { row.cooldown_ms }),
-              special_columns(fn(row) { row.reason }),
             )
             |> result.map_error(stopped),
           )
@@ -578,6 +583,9 @@ fn describe(failure failure: Failure) -> String {
       <> "% of its "
       <> int.to_string(active)
       <> " active retail_record rows: nothing was written; pass --accept-smaller-read if the smaller read is right"
+    KindRowsRefused(refusals:) ->
+      string.join(list.map(refusals, refusal.describe), "; ")
+      <> ": nothing was written"
     RowRefused(constraint:) ->
       "the database refused a row under the constraint "
       <> constraint

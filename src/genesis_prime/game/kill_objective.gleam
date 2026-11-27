@@ -5,7 +5,7 @@
 //// kill of a pane creature for a row of this table (`objective.counts`) and the
 //// objective's creatures stand at its marker (`objective_spawn.place`). No client table or
 //// code says which type 5 objectives ask only for a kill: each is a row the table states
-//// with its reason.
+//// as a server choice.
 ////
 //// ```
 //// content.load: ids ─▶ select(ids, tables) ─▶ Set(objective id) | refusals (the load stops)

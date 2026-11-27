@@ -17,6 +17,7 @@
 ////   of the node when the node has one, an aura's (`life_under_aura`, `0x1407180c0`).
 
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/gap
 import gleam/bool
 import gleam/int
@@ -54,25 +55,29 @@ pub fn schedule_of(
   row row: lasting.LastingRow,
   tick_ms tick_ms: Int,
 ) -> Result(Schedule, ScheduleError) {
-  use <- bool.guard(when: row.until_removed, return: Error(UntilRemoved))
-  let count = case tick_ms > 0 {
-    True -> row.duration_ms / tick_ms
-    False -> 0
+  case row.lasts {
+    lasts.UntilRemoved -> Error(UntilRemoved)
+    lasts.For(duration_ms:) -> {
+      let count = case tick_ms > 0 {
+        True -> duration_ms / tick_ms
+        False -> 0
+      }
+      use <- bool.guard(
+        when: count < 1,
+        return: Error(NoTick(tick_ms:, duration_ms:)),
+      )
+      Ok(Schedule(
+        delay_ms: row.delay_ms,
+        tick_ms:,
+        duration_ms:,
+        count: Ticks(count),
+      ))
+    }
   }
-  use <- bool.guard(
-    when: count < 1,
-    return: Error(NoTick(tick_ms:, duration_ms: row.duration_ms)),
-  )
-  Ok(Schedule(
-    delay_ms: row.delay_ms,
-    tick_ms:,
-    duration_ms: row.duration_ms,
-    count: Ticks(count),
-  ))
 }
 
 /// The open schedule of a periodic Proxy row with flags bit 2 and a tickTime of `tick_ms`:
-/// its delay, tickTime and durationTime, with no count, since the row ticks until its holder
+/// its delay and tickTime, with no durationTime and no count, since the row ticks until its holder
 /// spell is removed (`Spell4Effects.effectType.26.periodic`). A tickTime of 0 has none, as in
 /// `schedule_of`: a tick due at every moment would never end. The caller decides which rows
 /// are read as open; a damage or heal row that lasts until removed still has none
@@ -83,18 +88,18 @@ pub fn open_schedule_of(
 ) -> Result(Schedule, ScheduleError) {
   use <- bool.guard(
     when: tick_ms < 1,
-    return: Error(NoTick(tick_ms:, duration_ms: row.duration_ms)),
+    return: Error(NoTick(tick_ms:, duration_ms: 0)),
   )
   Ok(Schedule(
     delay_ms: row.delay_ms,
     tick_ms:,
-    duration_ms: row.duration_ms,
+    duration_ms: 0,
     count: UntilTheNodeEnds,
   ))
 }
 
 /// Whether the schedule has no count, so its row's node lasts until removed
-/// (`lasting.LastingRow.until_removed`) and no durationTime bounds it.
+/// (`lasts.UntilRemoved` in `lasting.LastingRow.lasts`) and no durationTime bounds it.
 pub fn lasts_until_removed(schedule schedule: Schedule) -> Bool {
   case schedule.count {
     UntilTheNodeEnds -> True
@@ -112,15 +117,15 @@ pub fn within_life(
   schedule schedule: Schedule,
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
 ) -> Schedule {
-  let life_ms =
+  let assert Some(life_ms) =
     lasting.lifetime_of(
       row: lasting.LastingRow(
         delay_ms: schedule.delay_ms,
-        duration_ms: schedule.duration_ms,
-        until_removed: False,
+        lasts: lasts.For(duration_ms: schedule.duration_ms),
       ),
       longer_of_delay_and_duration:,
     )
+    as "a row that times out has a lifetime"
   let within = case schedule.tick_ms > 0 {
     True -> { life_ms - schedule.delay_ms } / schedule.tick_ms
     False -> 0

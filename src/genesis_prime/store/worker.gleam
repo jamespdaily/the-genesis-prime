@@ -92,16 +92,16 @@ import genesis_prime/migration.{
 }
 import genesis_prime/service.{type Sent, ToWorker}
 import genesis_prime/store.{
-  type AccountId, type Answer, type Character, type CharacterId,
-  type CreateAnswer, type DeleteAnswer, type FindAccountAnswer, type HeldItem,
-  type ItemFill, type ItemWords, type ItemsAnswer, type ItemsRequest,
-  type MoveAnswer, type MoveRequest, type Naming, type NewCharacter,
-  type NewItem, type QuestRow, type RenameAnswer, type Request,
-  type SelectAnswer, type SelectRequest, type UnsetItem, type UsedSpawn,
-  type WorldAnswer, type WorldRequest, AbilityTierRow, Account, AccountFound,
-  AccountId, ActionSetRefused, ActionSlotRow, ActiveQuest, AmpRow, Bought,
-  BuyFromVendor, Character, CharacterCreated, CharacterDeleted, CharacterId,
-  CharacterLoaded, CharacterRenamed, ChargesFilled, CreateCharacter,
+  type AccountId, type ActiveQuest, type Answer, type Character,
+  type CharacterId, type CreateAnswer, type DeleteAnswer, type FindAccountAnswer,
+  type HeldItem, type ItemFill, type ItemWords, type ItemsAnswer,
+  type ItemsRequest, type MoveAnswer, type MoveRequest, type Naming,
+  type NewCharacter, type NewItem, type QuestRow, type RenameAnswer,
+  type Request, type SelectAnswer, type SelectRequest, type UnsetItem,
+  type UsedSpawn, type WorldAnswer, type WorldRequest, AbilityTierRow, Account,
+  AccountFound, AccountId, ActionSetRefused, ActionSlotRow, ActiveQuest, AmpRow,
+  Bought, BuyFromVendor, Character, CharacterCreated, CharacterDeleted,
+  CharacterId, CharacterLoaded, CharacterRenamed, ChargesFilled, CreateCharacter,
   CreateForNoSuchAccount, Created, CurrencySet, DeleteCharacter, DeleteItem,
   Deleted, ExperienceRefused, FillCharges, FindAccount, ForItems, ForLogin,
   ForMove, ForSelect, ForWorld, HealthRefused, HeldCurrency, HeldItem, ItemMade,
@@ -109,9 +109,9 @@ import genesis_prime/store.{
   LoadCharacter, Login, MergeItems, Move, MoveItems, NameBreaksRule, NameStands,
   NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
   NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
-  PlaceSaved, QuestLogRefused, QuestRow, RenameCharacter, Renamed, SavePlace,
-  SaveRefused, Select, SellToVendor, SetCurrency, SpendItem, SplitItem,
-  TurnInQuest, TurnedIn, Unavailable, UnsetItem, UsedSpawn, World,
+  PlaceSaved, QuestLogRefused, RenameCharacter, Renamed, SavePlace, SaveRefused,
+  Select, SellToVendor, SetCurrency, SpendItem, SplitItem, TurnInQuest, TurnedIn,
+  Unavailable, UnsetItem, UsedSpawn, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -1473,50 +1473,53 @@ fn rows_json(
 /// `character_quest_used_match` holds to one length, read together.
 fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
   list.map(rows, fn(row) {
-    QuestRow(
-      quest_id: row.quest_id,
-      state: row.state,
-      completed_at: case row.state {
-        3 -> Some(row.completed_at)
-        _ -> None
-      },
-      active: case
-        row.placeholder_objective_id,
-        row.tracked,
-        row.done_mask,
-        row.progress,
-        row.quest_ms_left,
-        row.objective_ms_left,
-        row.kill_mask
-      {
-        Some(placeholder_objective_id),
-          Some(tracked),
-          Some(done_mask),
-          Some(progress),
-          Some(quest_ms_left),
-          Some(objective_ms_left),
-          Some(kill_mask)
-        ->
-          Some(ActiveQuest(
-            placeholder_objective_id:,
-            tracked:,
-            done_mask:,
-            progress:,
-            quest_ms_left:,
-            objective_ms_left:,
-            kill_mask:,
-            used: list.map(
-              list.zip(row.used_objective, row.used_spawn),
-              fn(entry) {
-                UsedSpawn(objective_index: entry.0, spawn_id: entry.1)
-              },
-            ),
-          ))
-        None, None, None, None, None, None, None -> None
-        _, _, _, _, _, _, _ ->
-          panic as "character_quest_active_has_its_entry holds all the active columns or none"
-      },
-    )
+    let completed_at = case row.state {
+      3 -> Some(row.completed_at)
+      _ -> None
+    }
+    let active = case
+      row.placeholder_objective_id,
+      row.tracked,
+      row.done_mask,
+      row.progress,
+      row.quest_ms_left,
+      row.objective_ms_left,
+      row.kill_mask
+    {
+      Some(placeholder_objective_id),
+        Some(tracked),
+        Some(done_mask),
+        Some(progress),
+        Some(quest_ms_left),
+        Some(objective_ms_left),
+        Some(kill_mask)
+      ->
+        Some(ActiveQuest(
+          placeholder_objective_id:,
+          tracked:,
+          done_mask:,
+          progress:,
+          quest_ms_left:,
+          objective_ms_left:,
+          kill_mask:,
+          used: list.map(
+            list.zip(row.used_objective, row.used_spawn),
+            fn(entry) { UsedSpawn(objective_index: entry.0, spawn_id: entry.1) },
+          ),
+        ))
+      None, None, None, None, None, None, None -> None
+      _, _, _, _, _, _, _ ->
+        panic as "character_quest_active_has_its_entry holds all the active columns or none"
+    }
+    let assert Ok(quest) =
+      store.quest_row(
+        quest_id: row.quest_id,
+        state: row.state,
+        completed_at:,
+        active:,
+      )
+      as "character_quest_state_is_known, character_quest_completed_has_a_time and character_quest_active_has_its_entry hold the state and its columns together"
+    quest
   })
 }
 
@@ -1525,55 +1528,60 @@ fn quest_rows_of(rows: List(sql.LoadQuestLogRow)) -> List(QuestRow) {
 /// Unix seconds and the active columns null for a row without an active entry.
 fn quests_json(quests: List(QuestRow)) -> Json {
   json.array(from: quests, of: fn(quest) {
+    let #(state, completed_at, active_entry) = store.quest_columns(quest)
     json.object([
       #("quest_id", json.int(quest.quest_id)),
-      #("state", json.int(quest.state)),
-      #("completed_at", json.nullable(quest.completed_at, json.int)),
+      #("state", json.int(state)),
+      #("completed_at", json.nullable(completed_at, json.int)),
       #(
         "placeholder_objective_id",
-        json.nullable(quest.active, fn(active) {
+        json.nullable(active_entry, fn(active) {
           json.int(active.placeholder_objective_id)
         }),
       ),
       #(
         "tracked",
-        json.nullable(quest.active, fn(active) { json.bool(active.tracked) }),
+        json.nullable(active_entry, fn(active) { json.bool(active.tracked) }),
       ),
       #(
         "done_mask",
-        json.nullable(quest.active, fn(active) { json.int(active.done_mask) }),
+        json.nullable(active_entry, fn(active) { json.int(active.done_mask) }),
       ),
       #(
         "progress",
-        json.nullable(quest.active, fn(active) {
+        json.nullable(active_entry, fn(active) {
           json.array(active.progress, json.int)
         }),
       ),
       #(
         "quest_ms_left",
-        json.nullable(quest.active, fn(active) {
+        json.nullable(active_entry, fn(active) {
           json.int(active.quest_ms_left)
         }),
       ),
       #(
         "objective_ms_left",
-        json.nullable(quest.active, fn(active) {
+        json.nullable(active_entry, fn(active) {
           json.array(active.objective_ms_left, json.int)
         }),
       ),
       #(
         "kill_mask",
-        json.nullable(quest.active, fn(active) {
+        json.nullable(active_entry, fn(active) {
           json.array(active.kill_mask, json.int)
         }),
       ),
       #(
         "used_objective",
-        json.array(used_of(quest), fn(used) { json.int(used.objective_index) }),
+        json.array(used_of(active: active_entry), fn(used) {
+          json.int(used.objective_index)
+        }),
       ),
       #(
         "used_spawn",
-        json.array(used_of(quest), fn(used) { json.int(used.spawn_id) }),
+        json.array(used_of(active: active_entry), fn(used) {
+          json.int(used.spawn_id)
+        }),
       ),
     ])
   })
@@ -1581,8 +1589,8 @@ fn quests_json(quests: List(QuestRow)) -> Json {
 
 /// The objects a row's quest has counted: none for a row without an active entry, whose
 /// two arrays are empty, never null (`character_quest_used_only_when_active`).
-fn used_of(quest: QuestRow) -> List(UsedSpawn) {
-  case quest.active {
+fn used_of(active active: Option(ActiveQuest)) -> List(UsedSpawn) {
+  case active {
     Some(active) -> active.used
     None -> []
   }

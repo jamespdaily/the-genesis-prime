@@ -26,6 +26,7 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{type GoAsked} as cast_state
 import genesis_prime/game/class_resource.{type Resources, Payment}
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{type Spell, Proxy}
 import genesis_prime/game/spend
@@ -286,11 +287,7 @@ pub fn a_5_point_mind_burst_with_the_reckful_amp_held_starts_the_crit_buff_test(
           effect_id: id.Spell4EffectsId(1),
           phase_flags: -1,
           aim: spell_plan.AimsAtCaster,
-          row: lasting.LastingRow(
-            delay_ms: 0,
-            duration_ms: 0,
-            until_removed: True,
-          ),
+          row: lasting.LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
           condition: spell_plan.Always,
           tag: spend.always,
         )),

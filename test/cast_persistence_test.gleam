@@ -34,6 +34,7 @@ import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as c
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite.{type Prerequisite}
 import genesis_prime/game/spell_plan.{
   type Spell, Always, KeepsStealth, Spell, StealthRow,
@@ -189,7 +190,7 @@ fn lingering_for_a_minute(
         effect_id: Spell4EffectsId(1),
         phase_flags: -1,
         aim: spell_plan.AimsAtCaster,
-        row: LastingRow(delay_ms: 0, duration_ms: 60_000, until_removed: False),
+        row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 60_000)),
         condition: Always,
         tag: spend.always,
       )),
@@ -660,7 +661,7 @@ pub fn an_ended_casts_stealth_source_drops_and_stealth_changed_comes_last_test()
           effect_id: Spell4EffectsId(83_834),
           phase_flags: -1,
           breaks: spell_plan.BrokenByDamage,
-          row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+          row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
           condition: Always,
           tag: spend.always,
         )),

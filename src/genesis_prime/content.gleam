@@ -16,9 +16,8 @@
 ////
 //// - **Where a row comes from.** Every content table has `source` (a row of the
 ////   `content_source` table: `world_database`, `retail_record`, `server_choice`,
-////   `game_master`, `client`), `source_row` (the row's id in its source file) and `reason`,
-////   and the checks that a world-database row names its source row and any other
-////   row states its reason (migration 0008).
+////   `game_master`, `client`) and `source_row` (the row's id in its source file),
+////   and the check that a world-database row names its source row (migration 0008).
 //// - **How rows get in.** A world-database row comes through the import tool
 ////   (`genesis_prime/import_world_data`), which has one importer for each file
 ////   and records each import in `content_import`; a server choice is seeded by a
@@ -242,10 +241,14 @@ fn read(
   use kind_rows <- result.try(
     content_creature_kind.rows(db)
     |> result.map_error(fn(error) {
-      QueryFailed(
-        table: content_creature_kind.table,
-        reason: worker.describe_query_error(error),
-      )
+      case error {
+        content_creature_kind.QueryFailed(reason:) ->
+          QueryFailed(
+            table: content_creature_kind.table,
+            reason: worker.describe_query_error(reason),
+          )
+        content_creature_kind.RowsRefused(refusals:) -> Refused(refusals:)
+      }
     }),
   )
   use special_rows <- result.try(

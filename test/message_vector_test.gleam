@@ -11,6 +11,7 @@
 //// 0x38C has no emulator vector, so its layout comes from `opcode.0x38c` and
 //// its inner frame from `opcode.0x7e0`.
 
+import ask_support
 import fact_file
 import genesis_prime/message/bit_stream.{Endpoint}
 import genesis_prime/message/buyback_list.{BuybackList}
@@ -40,6 +41,7 @@ import genesis_prime/message/vendor_tab.{VendorTab}
 import genesis_prime/message/world_loading_screen_shown.{WorldLoadingScreenShown}
 import genesis_prime/message/world_message.{WorldMessage}
 import gleam/list
+import gleam/string
 import message_support
 import owned_test
 
@@ -559,4 +561,23 @@ pub fn pong_is_the_clients_8_bits_test() -> Nil {
       decode: pong.decode,
     )
   })
+}
+
+pub fn must_of_a_value_past_its_width_crashes_naming_the_value_field_and_width_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let ended =
+    ask_support.ended_running(fn() {
+      let _bytes = bit_stream.must(Pong(sequence_number: 300), pong.encode)
+      Nil
+    })
+  let text = ask_support.panic_message(ask_support.raised(ended))
+  assert string.contains(text, "Pong(300)")
+    as { "the crash gives the value (schema row pong); it says: " <> text }
+  assert string.contains(text, "sequence_number")
+    as {
+      "the crash names the field of the 8-bit sequence number; it says: "
+      <> text
+    }
+  assert string.contains(text, "8 bits")
+    as { "the crash gives the width, 8 bits (opcode.0x1); it says: " <> text }
 }

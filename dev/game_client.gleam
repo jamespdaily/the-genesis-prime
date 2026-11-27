@@ -971,6 +971,7 @@ fn with_kept(game game: Game, have have: BitArray) -> BitArray {
 /// returned.
 fn next_outer(game game: Game, have have: BitArray) -> #(Frame, BitArray) {
   let assert #([outer], rest) = outers_kept(game:, have:, count: 1)
+    as "read_kept with count 1 gives exactly one message, and outers_kept ends the test on an error"
   #(outer, rest)
 }
 

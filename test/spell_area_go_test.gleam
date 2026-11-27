@@ -1,6 +1,6 @@
 //// The hit shapes of a creature's cast at each of its gos (`genesis_prime/game/spell_area`
 //// `hit_shapes_by_go`), on the client's committed rows. Expected values come from these places.
-//// - `cast.multiphase_telegraph_rows` and Jim: a go strikes with the hit rows its phase names
+//// - `cast.multiphase_telegraph_rows` and the server's choice: a go strikes with the hit rows its phase names
 ////   (`TelegraphDamage.phaseFlags`: bit n is go n, -1 every go) that the client is drawing at the
 ////   go's time (`TelegraphDamage.telegraphTimeStartMs`); a named row not drawn strikes nobody; a
 ////   hit twin (flag 0x40) is never drawn, so it is read by its phase alone, a marked guess.
@@ -228,7 +228,7 @@ pub fn a_hit_row_timed_from_a_go_is_refused_and_a_named_row_not_drawn_leaves_the
       as "the refusal names the spell and the row"
   }
   // Synthetic: row 7957 ends at 3,800 ms, and at 3,400 it has gone when go 2 falls at 3,500,
-  // though its phase names go 2. Jim: a named row not drawn at the go strikes nobody.
+  // though its phase names go 2. The server's choice: a named row not drawn at the go strikes nobody.
   use tables <- fixture_tables.changed(
     table: "TelegraphDamage",
     id: 7957,

@@ -180,6 +180,7 @@ import genesis_prime/game/damage
 import genesis_prime/game/forced_move
 import genesis_prime/game/held_changes
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/player_address.{type PlayerAddress}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_effect
@@ -579,14 +580,14 @@ pub fn restrictions_armed(
     let source = unit_properties.Source(cast_id:, effect_id: one.row.effect_id)
     let row = one.row.row
     let #(cast, cancels) = cast_state.cancel_source_timers(cast:, source:)
-    case row.until_removed {
-      True -> #(cast, list.append(effects, cancels))
-      False -> {
+    case row.lasts {
+      lasts.UntilRemoved -> #(cast, list.append(effects, cancels))
+      lasts.For(duration_ms:) -> {
         let #(cast, _, start) =
           cast_state.armed(
             cast:,
             due: RestrictionEnd(source:),
-            after_ms: row.delay_ms + row.duration_ms,
+            after_ms: row.delay_ms + duration_ms,
           )
         #(cast, list.flatten([effects, cancels, [start]]))
       }
@@ -658,9 +659,10 @@ pub fn cooldown_kept(
   row row: spell_plan.CooldownModifier,
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
 ) -> Bool {
-  row.row.until_removed
-  || lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
-  > row.row.delay_ms
+  case lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:) {
+    None -> True
+    Some(lifetime_ms) -> lifetime_ms > row.row.delay_ms
+  }
 }
 
 /// The crowd-control states the units of a go took, each with its unit, in the order
@@ -1446,14 +1448,14 @@ fn caster_modifier_armed(
       }
       False -> #(cast, [CasterChangeStarts(source:, change:)])
     }
-    let #(cast, ending) = case row.row.until_removed {
-      True -> #(cast, [])
-      False -> {
+    let #(cast, ending) = case row.row.lasts {
+      lasts.UntilRemoved -> #(cast, [])
+      lasts.For(duration_ms:) -> {
         let #(cast, _, start) =
           cast_state.armed(
             cast:,
             due: ModifierEnd(source:),
-            after_ms: row.row.delay_ms + row.row.duration_ms,
+            after_ms: row.row.delay_ms + duration_ms,
           )
         #(cast, [start])
       }

@@ -45,7 +45,7 @@
 ////   `opcode.0x813`, `Spell4Effects.effectType.80`). The oldest first and the
 ////   choice of 0x813 for a stack are the server's: no client code reads a type 80
 ////   row.
-//// - **Stacking is the server's rule** (Jim's decision): each caster keeps at most the
+//// - **Stacking is the server's rule** (a server choice): each caster keeps at most the
 ////   stack group's cap of its own casts of the group on a unit, and a new cast at
 ////   the cap takes that caster's oldest off the unit with 0x811, as a removal does;
 ////   a cap of 0 keeps one cast per spell. The client reads the group only at load
@@ -70,6 +70,7 @@
 //// | The caster leaves | nothing is written: the viewers' 0x355 of the caster finishes its casts on their clients (`0x1404550d0`) | | |
 //// | A viewer leaves sight | the 0x7fe of each cast it wrote comes before the 0x355 | | |
 
+import genesis_prime/game/lasts.{type Lasts}
 import genesis_prime/table/id.{
   type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
 }
@@ -132,18 +133,21 @@ fn row_of(effect effect: NodeEffect) -> LastingRow {
   }
 }
 
-/// The columns of one Fluff row that give a node its life: the effect's delay and
-/// durationTime in milliseconds, and whether its flags have bit 2
-/// (`Spell4Effects.effectType.17`).
+/// The columns of one Fluff row that give a node its life: the effect's delay in
+/// milliseconds, and how long it lasts: until removed when its flags have bit 2, else its
+/// durationTime (`Spell4Effects.effectType.17`).
 pub type LastingRow {
-  LastingRow(delay_ms: Int, duration_ms: Int, until_removed: Bool)
+  LastingRow(delay_ms: Int, lasts: Lasts)
 }
 
 /// Whether the row has a life: a durationTime, or flags bit 2 (until removed). A
 /// property modifier or disguise with none is no time to be changed for, and no go
 /// applies it.
 pub fn has_life(row row: LastingRow) -> Bool {
-  row.until_removed || row.duration_ms > 0
+  case row.lasts {
+    lasts.UntilRemoved -> True
+    lasts.For(duration_ms:) -> duration_ms > 0
+  }
 }
 
 /// The life of a node from the effects a go lists for its unit: each effect's
@@ -158,12 +162,15 @@ pub fn life_of(
   go_ms go_ms: Int,
 ) -> Life {
   use <- bool.guard(
-    when: list.any(effects, fn(row) { row.until_removed }),
+    when: list.any(effects, fn(row) { lasts.is_until_removed(row.lasts) }),
     return: UntilRemoved,
   )
   let longest =
     list.fold(effects, 0, fn(longest, row) {
-      int.max(longest, lifetime_of(row:, longer_of_delay_and_duration:))
+      case lifetime_of(row:, longer_of_delay_and_duration:) {
+        Some(lifetime_ms) -> int.max(longest, lifetime_ms)
+        None -> longest
+      }
     })
   use <- bool.guard(when: longest <= 0, return: NoLife)
   EndsAt(ms: go_ms + longest)
@@ -180,14 +187,15 @@ pub fn time_left_ms(end_ms end_ms: Int, now_ms now_ms: Int) -> Int {
 }
 
 /// One effect's lifetime from the go: its delay plus durationTime, or the larger of
-/// the two (`opcode.0x7f4.effect_time`).
+/// the two (`opcode.0x7f4.effect_time`); `None` for a row that lasts until removed.
 pub fn lifetime_of(
   row row: LastingRow,
   longer_of_delay_and_duration longer_of_delay_and_duration: Bool,
-) -> Int {
-  case longer_of_delay_and_duration {
-    True -> int.max(row.delay_ms, row.duration_ms)
-    False -> row.delay_ms + row.duration_ms
+) -> Option(Int) {
+  case row.lasts, longer_of_delay_and_duration {
+    lasts.UntilRemoved, _ -> None
+    lasts.For(duration_ms:), True -> Some(int.max(row.delay_ms, duration_ms))
+    lasts.For(duration_ms:), False -> Some(row.delay_ms + duration_ms)
   }
 }
 
@@ -218,9 +226,10 @@ pub fn given(
     Some(node) ->
       list.filter(node.effects, fn(effect) {
         let row = row_of(effect:)
-        row.until_removed
-        || node.armed_ms + lifetime_of(row:, longer_of_delay_and_duration:)
-        > go_ms
+        case lifetime_of(row:, longer_of_delay_and_duration:) {
+          None -> True
+          Some(lifetime_ms) -> node.armed_ms + lifetime_ms > go_ms
+        }
       })
     None -> []
   }
@@ -492,7 +501,7 @@ fn named_by_the_stack(
 /// The casts a new cast of `spell4_id` with `stack` pushes off a unit, from `casts`, the
 /// caster's own casts on it: with a cap of 1 or more, those of the same stack group beyond
 /// the cap less one, oldest `started_ms` first; with a cap of 0, those of the same spell.
-/// This is Jim's decision, the server's rule: the client reads a stack group only at load
+/// This is the server's rule, a server choice: the client reads a stack group only at load
 /// and in tooltips, and the rows give the cap but no rule for a cast at it
 /// (`Spell4.spell4StackGroupId`, `Spell4StackGroup.stackCap`).
 pub fn stack_pushed_off(

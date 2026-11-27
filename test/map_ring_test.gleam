@@ -886,7 +886,7 @@ pub fn a_second_join_of_a_player_in_a_ring_names_no_life_and_the_map_keeps_the_o
     as "the connection's own tell of the death is a change, and the creature is told"
 }
 
-/// The place Jim stood at among the Crash Site bodies, inside the 10-unit ring of each
+/// The place the recording stood at among the Crash Site bodies, inside the 10-unit ring of each
 /// (9.23, 1.01 and 9.24 units, in three dimensions, from spawns 18388, 18605 and 18619).
 fn beside_the_crash_site_bodies() -> start_place.Place {
   place_support.at(

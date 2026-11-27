@@ -37,19 +37,20 @@ import genesis_prime/login/guid
 import genesis_prime/migration
 import genesis_prime/service.{ToWorker}
 import genesis_prime/store.{
-  type AccountId, type ActionSlotRow, type ActiveQuest, type QuestRow, Account,
-  AccountFound, AccountId, ActionSetRefused, ActionSlotRow, ActiveQuest,
-  Character, CharacterCreated, CharacterDeleted, CharacterId, CharacterLoaded,
-  CharacterRenamed, CreateCharacter, CreateForNoSuchAccount, Created,
-  DeleteCharacter, DeleteItem, Deleted, ExperienceRefused, FindAccount, ForItems,
-  ForLogin, ForMove, ForSelect, ForWorld, HealthRefused, HeldItem, ItemMade,
-  ItemMove, ItemPlace, Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed,
-  LoadCharacter, Login, LookEntry, MergeItems, Move, MoveItems, NameBreaksRule,
-  NameStands, NameTaken, NeedsRename, NewCharacter, NewItem, NewNameBreaksRule,
-  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable,
-  NotTheAccounts, NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused,
-  QuestRow, RenameCharacter, Renamed, SavePlace, SaveRefused, Select, SpendItem,
-  SplitItem, Unavailable, UsedSpawn, World,
+  type AccountId, type ActionSlotRow, type ActiveQuest, type QuestRow, Abandoned,
+  Accepted, Account, AccountFound, AccountId, ActionSetRefused, ActionSlotRow,
+  ActiveQuest, ActiveRow, Botched, Character, CharacterCreated, CharacterDeleted,
+  CharacterId, CharacterLoaded, CharacterRenamed, CompletedRow, CreateCharacter,
+  CreateForNoSuchAccount, Created, DeleteCharacter, DeleteItem, Deleted,
+  ExperienceRefused, FindAccount, ForItems, ForLogin, ForMove, ForSelect,
+  ForWorld, HealthRefused, HeldItem, ItemMade, ItemMove, ItemPlace, Items,
+  ItemsNotSaved, ItemsSaved, KnownRow, ListCharacters, Listed, LoadCharacter,
+  Login, LookEntry, MergeItems, Move, MoveItems, NameBreaksRule, NameStands,
+  NameTaken, NeedsRename, NewCharacter, NewItem, NewNameBreaksRule, NewNameTaken,
+  NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotRenamable, NotTheAccounts,
+  NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused, RenameCharacter,
+  Renamed, SavePlace, SaveRefused, Select, SpendItem, SplitItem, Unavailable,
+  UsedSpawn, World,
 }
 import genesis_prime/store/worker
 import genesis_prime/table/id.{
@@ -3082,25 +3083,20 @@ pub fn a_split_merge_or_delete_with_a_stale_epoch_or_count_changes_nothing_test(
 
 /// A quest the character completed, at Unix seconds 1_700_000_000.
 fn completed_quest(quest_id: Int) -> QuestRow {
-  QuestRow(quest_id:, state: 3, completed_at: Some(1_700_000_000), active: None)
+  CompletedRow(quest_id:, at: 1_700_000_000)
 }
 
 /// A quest the character botched: a state of the client's second list, with no
 /// active entry.
 fn botched_quest(quest_id: Int) -> QuestRow {
-  QuestRow(quest_id:, state: 4, completed_at: None, active: None)
+  KnownRow(quest_id:, state: Botched)
 }
 
 /// A quest the character has accepted, with the entry the client's active list
 /// carries: a placeholder objective, tracked, objectives 1 and 3 done, three
 /// progress values and a timer for each.
 fn accepted_quest(quest_id: Int) -> QuestRow {
-  QuestRow(
-    quest_id:,
-    state: 1,
-    completed_at: None,
-    active: Some(accepted_entry()),
-  )
+  ActiveRow(quest_id:, state: Accepted, active: accepted_entry())
 }
 
 fn accepted_entry() -> ActiveQuest {
@@ -3240,9 +3236,10 @@ pub fn a_checklist_mask_with_bit_31_is_saved_and_read_back_test() -> Nil {
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   let with_progress = fn(progress) {
-    QuestRow(
-      ..accepted_quest(1003),
-      active: Some(ActiveQuest(..accepted_entry(), progress:)),
+    ActiveRow(
+      quest_id: 1003,
+      state: Accepted,
+      active: ActiveQuest(..accepted_entry(), progress:),
     )
   }
   let log = [with_progress([0x80000001, 0xffffffff, 0])]
@@ -3270,11 +3267,10 @@ pub fn a_partial_group_mask_is_saved_and_read_back_test() -> Nil {
   let #(account, id) = one_character(store:)
   let _login = epoch_of_load(store:, account:, character_id: id)
   let log = [
-    QuestRow(
-      ..accepted_quest(1003),
-      active: Some(
-        ActiveQuest(..accepted_entry(), kill_mask: [0, 3, 0, 0, 0, 127]),
-      ),
+    ActiveRow(
+      quest_id: 1003,
+      state: Accepted,
+      active: ActiveQuest(..accepted_entry(), kill_mask: [0, 3, 0, 0, 0, 127]),
     ),
   ]
   assert save_log(
@@ -3305,9 +3301,10 @@ pub fn a_group_mask_outside_7_bits_is_refused_by_its_named_constraint_test() -> 
         epoch: 1,
         sequence: 1,
         quests: [
-          QuestRow(
-            ..accepted_quest(1003),
-            active: Some(ActiveQuest(..accepted_entry(), kill_mask:)),
+          ActiveRow(
+            quest_id: 1003,
+            state: Accepted,
+            active: ActiveQuest(..accepted_entry(), kill_mask:),
           ),
         ],
       )
@@ -3558,15 +3555,14 @@ fn await_a_statement_waiting_for_a_lock(store store: Store) -> Nil {
 /// A quest the character has accepted whose objectives have counted these objects, each an
 /// objective index and a spawn id, in the order the rows hold them.
 fn accepted_using(quest_id: Int, used: List(#(Int, Int))) -> QuestRow {
-  QuestRow(
-    ..accepted_quest(quest_id),
-    active: Some(
-      ActiveQuest(
-        ..accepted_entry(),
-        used: list.map(used, fn(one) {
-          UsedSpawn(objective_index: one.0, spawn_id: one.1)
-        }),
-      ),
+  ActiveRow(
+    quest_id: quest_id,
+    state: Accepted,
+    active: ActiveQuest(
+      ..accepted_entry(),
+      used: list.map(used, fn(one) {
+        UsedSpawn(objective_index: one.0, spawn_id: one.1)
+      }),
     ),
   )
 }
@@ -3634,8 +3630,7 @@ pub fn the_used_spawns_round_trip_with_the_quest_save_and_load_test() -> Nil {
     == [#(1001, [], []), #(1003, [2], [3])]
     as "the objective that is done dropped its objects, and the next save wrote that"
   assert quests_of_load(store:, account:, character_id: id) == done
-  let abandoned =
-    QuestRow(quest_id: 1003, state: 6, completed_at: None, active: None)
+  let abandoned = KnownRow(quest_id: 1003, state: Abandoned)
   assert save_log(
       store:,
       account:,
@@ -3786,8 +3781,7 @@ pub fn two_saves_at_once_leave_the_later_logs_used_spawns_test() -> Nil {
     accepted_using(1004, [#(0, 7)]),
     accepted_using(1005, [#(0, 8)]),
   ]
-  let abandoned =
-    QuestRow(quest_id: 1003, state: 6, completed_at: None, active: None)
+  let abandoned = KnownRow(quest_id: 1003, state: Abandoned)
   let removes = [abandoned, accepted_using(1004, [#(0, 7)])]
   let run = fn(at_once: Bool, why: String) {
     let store = account_store_support.start_store(pool_size: 4)
@@ -4012,38 +4006,32 @@ pub fn a_quest_row_the_client_would_refuse_is_refused_by_its_named_constraint_te
       as why
   }
   refused(
-    QuestRow(..accepted_quest(1003), state: 4),
-    "character_quest_active_has_its_entry",
-    "opcode.0x35f.active_state_crash: only states 1 and 2 are in the client's active list, so an entry of any other state is refused (the client crashes on it)",
-  )
-  refused(
-    QuestRow(
-      ..accepted_quest(1003),
-      active: Some(
-        ActiveQuest(
-          ..accepted_entry(),
-          progress: [1, 1, 1, 1, 1, 1, 1],
-          objective_ms_left: [0, 0, 0, 0, 0, 0, 0],
-        ),
+    ActiveRow(
+      quest_id: 1003,
+      state: Accepted,
+      active: ActiveQuest(
+        ..accepted_entry(),
+        progress: [1, 1, 1, 1, 1, 1, 1],
+        objective_ms_left: [0, 0, 0, 0, 0, 0, 0],
       ),
     ),
     "character_quest_progress_fits_six_objectives",
     "0x1405510d0: a quest has at most 6 objectives (kQuestMaxObjective), so 7 progress values are refused",
   )
   refused(
-    QuestRow(
-      ..accepted_quest(1003),
-      active: Some(ActiveQuest(..accepted_entry(), objective_ms_left: [0, 0])),
+    ActiveRow(
+      quest_id: 1003,
+      state: Accepted,
+      active: ActiveQuest(..accepted_entry(), objective_ms_left: [0, 0]),
     ),
     "character_quest_timers_match_progress",
     "opcode.0x35f: an objective's time left is sent for each progress value, so 3 progress values with 2 timers are refused",
   )
   refused(
-    QuestRow(
-      ..accepted_quest(1003),
-      active: Some(
-        ActiveQuest(..accepted_entry(), progress: [4_294_967_296, 0, 0]),
-      ),
+    ActiveRow(
+      quest_id: 1003,
+      state: Accepted,
+      active: ActiveQuest(..accepted_entry(), progress: [4_294_967_296, 0, 0]),
     ),
     "character_quest_progress_fits_32_bits",
     "opcode.0x35f, opcode.0x361: a checklist's progress is a mask of 32 bits, so 2^32 has none",
@@ -4063,8 +4051,8 @@ pub fn a_quest_row_the_client_would_refuse_is_refused_by_its_named_constraint_te
     )
     == ForMove(PlaceSaved)
     as "each refusal was one statement that stored nothing and took no sequence, and the store goes on: the next save is written"
-  // A row of a state outside the active list that holds only some of the active
-  // columns cannot come from a `QuestRow`, so it is put into the table directly.
+  // A row of a state outside the active list that holds an active column cannot come
+  // from a `QuestRow`, so it is put into the table directly.
   let put = fn(column: String, value: String) {
     pog.query(
       "insert into character_quest (character_id, quest_id, state, "

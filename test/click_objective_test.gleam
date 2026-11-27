@@ -20,7 +20,7 @@
 ////   Creature2 45780, whose activate spells 44757 and 42154 hold a type 65 effect no rule
 ////   reads; 4849 (quest 3769) is named by Spell4Effects 89873; 1962 (quest 1859) has no
 ////   marker; 9659 (quest 6296, type 12) is linked by Creature2 27768.
-//// - A row of the migration is a `server_choice` with its reason.
+//// - A row of the migration is a `server_choice`.
 
 import client_tables
 import content_support

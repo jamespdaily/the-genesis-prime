@@ -13,6 +13,7 @@ import cast_support as support
 import fixture_tables
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/lasting.{LastingRow, LifeOnly, Listed, Node}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan
 import genesis_prime/game/start_place
 import genesis_prime/game/unit_casts.{
@@ -182,7 +183,7 @@ fn targets_at(
 fn gate_row() -> lasting.NodeEffect {
   Listed(
     effect_id: Spell4EffectsId(67_777),
-    row: LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False),
+    row: LastingRow(delay_ms: 180, lasts: lasts.For(duration_ms: 400)),
   )
 }
 
@@ -191,7 +192,7 @@ fn gate_row() -> lasting.NodeEffect {
 fn power_charge_row() -> lasting.NodeEffect {
   Listed(
     effect_id: Spell4EffectsId(96_819),
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
   )
 }
 
@@ -200,14 +201,14 @@ fn power_charge_row() -> lasting.NodeEffect {
 fn cooldown_row() -> lasting.NodeEffect {
   Listed(
     effect_id: Spell4EffectsId(159_128),
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+    row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0)),
   )
 }
 
 fn proc_row() -> lasting.NodeEffect {
   Listed(
     effect_id: Spell4EffectsId(178_239),
-    row: LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False),
+    row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 3000)),
   )
 }
 
@@ -460,11 +461,7 @@ pub fn an_entry_lists_the_target_a_node_makes_test() -> Nil {
   let power_charge_node = node(effects: [power_charge_row()])
   let power_charge_and_gate = node(effects: [power_charge_row(), gate_row()])
   let restriction =
-    LifeOnly(row: LastingRow(
-      delay_ms: 0,
-      duration_ms: 5000,
-      until_removed: False,
-    ))
+    LifeOnly(row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000)))
   list.each(
     [
       #(

@@ -13,11 +13,11 @@
 ////   linked by Creature2 27768; 9658 (type 8, markers 21383 and 21384) is marked.
 //// - Migration 0041 adds objective 21267 (Quest2 10510 "Learning to Shop", whose text asks
 ////   for a purchase in the In-Game Store, `table_rows -- QuestObjective 21267`) of kind
-////   `store_purchase`, a `server_choice` with its reason.
+////   `store_purchase`, a `server_choice`.
 //// - Migration 0034: 130 rows, 88 of kind `instance_run` and 42 of kind `pvp_match`;
 ////   migration 0039 adds the 15 marked scripts of the instance quests (Quest2
 ////   questContentFinderTypeEnum 1 to 3), each of kind `instance_run`. Each is a
-////   `server_choice` with its reason; the other constraints follow migration 0031's pattern.
+////   `server_choice`; the other constraints follow migration 0031's pattern.
 
 import character_tables
 import content_support
@@ -169,31 +169,23 @@ pub fn the_held_table_refuses_bad_rows_test() -> Nil {
   list.each(
     [
       #(
-        "insert into held_objective (objective_id, kind, source, reason) values (1, 'instance_run', 'nobody', 'x')",
+        "insert into held_objective (objective_id, kind, source) values (1, 'instance_run', 'nobody')",
         "held_objective_source_is_a_content_source",
       ),
       #(
-        "insert into held_objective (objective_id, kind, source, reason) values (1, 'instance_run', 'server_choice', '   ')",
-        "held_objective_reason_says_something",
-      ),
-      #(
-        "insert into held_objective (objective_id, kind, source) values (1, 'instance_run', 'server_choice')",
-        "held_objective_other_source_states_its_reason",
-      ),
-      #(
-        "insert into held_objective (objective_id, kind, source, reason) values (12547, 'instance_run', 'server_choice', 'x')",
+        "insert into held_objective (objective_id, kind, source) values (12547, 'instance_run', 'server_choice')",
         "held_objective_pkey",
       ),
       #(
-        "insert into held_objective (objective_id, kind, source, reason) values (0, 'instance_run', 'server_choice', 'x')",
+        "insert into held_objective (objective_id, kind, source) values (0, 'instance_run', 'server_choice')",
         "held_objective_id_is_positive",
       ),
       #(
-        "insert into held_objective (objective_id, kind, source, reason) values (1, 'duel', 'server_choice', 'x')",
+        "insert into held_objective (objective_id, kind, source) values (1, 'duel', 'server_choice')",
         "held_objective_kind_is_known",
       ),
       #(
-        "insert into held_objective (objective_id, kind, source, source_row, reason) values (1, 'instance_run', 'server_choice', 5, 'x')",
+        "insert into held_objective (objective_id, kind, source, source_row) values (1, 'instance_run', 'server_choice', 5)",
         "held_objective_world_database_row_has_a_source_row",
       ),
     ],
@@ -234,14 +226,14 @@ pub fn the_held_migrations_seed_146_server_choice_rows_test() -> Nil {
     as "42 PvP matches"
   assert content_support.count(
       database:,
-      sql: "select count(*) from held_objective where kind = 'store_purchase' and objective_id = 21267 and source = 'server_choice' and source_row is null and reason like '%Quest2 10510%' and reason like '%In-Game Store%'",
+      sql: "select count(*) from held_objective where kind = 'store_purchase' and objective_id = 21267 and source = 'server_choice' and source_row is null",
     )
     == 1
-    as "migration 0041's one row is objective 21267, whose reason names its quest and the store"
+    as "migration 0041's one row is objective 21267, a store purchase"
   assert content_support.count(
       database:,
-      sql: "select count(*) from held_objective where source = 'server_choice' and reason is not null and source_row is null",
+      sql: "select count(*) from held_objective where source = 'server_choice' and source_row is null",
     )
     == 146
-    as "each row is the server's choice and states its reason"
+    as "each row is the server's choice"
 }

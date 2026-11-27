@@ -1,5 +1,5 @@
 //// Who Gamma Rays strikes (`genesis_prime/game/strike` over the client's own area
-//// rows), on the geometry of the recorded sitting where Jim's Medic cast it at
+//// rows), on the geometry of the recorded sitting where the Medic cast it at
 //// creature 164 (Creature2 24054, standing at (-8126.622, -187.724)). Expected values
 //// come from these places.
 //// - The spells and their beams: `Spell4.29874.area`. The centre spell 29874 strikes

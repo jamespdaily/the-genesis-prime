@@ -15,11 +15,11 @@
 //// - The design of issue 418 (its Design artifact's Evidence): a gain is the
 ////   VitalModifier's dataBits02 into the slot of its vital (`Spell4Effects.effectType.1`),
 ////   clamped to the max; the Warrior's Kinetic Energy drains 150 a second from 1.5 s
-////   after the last gain, in and out of combat (Jim's choice), ticked once a second
+////   after the last gain, in and out of combat (a server choice), ticked once a second
 ////   (a server choice); the Esper's Psi Points go to 0 ten seconds after it leaves
 ////   combat (a retail record).
 //// - The design's rows of migrations 0011, 0012 and 0018, with their names and units.
-//// - The design of issue 945 (Jim's decision): Focus is a pool of 1000 points at every
+//// - The design of issue 945 (a server choice): Focus is a pool of 1000 points at every
 ////   level plus what worn items add (UnitProperty2 5), held by the classes whose level
 ////   grants cost it, full at entry and when coming back; it recovers each 500 ms
 ////   (GameFormula 88) by the maximum x the share x 0.5, the share being UnitProperty2 108
@@ -324,7 +324,7 @@ pub fn a_warriors_gain_of_180_from_0_is_one_change_and_starts_the_drain_wait_tes
       Changed(slot: 1, value: 180.0),
       StartTimer(timer: class_resource.drain_timer, after_ms: 1500),
     ]
-    as "Relentless Strikes' 180 (Spell4Effects 127603 dataBits02) as one 0x935; the drain waits 1.5 s after the last gain (Jim's choice, issue 418); no drain ran, so none is cancelled"
+    as "Relentless Strikes' 180 (Spell4Effects 127603 dataBits02) as one 0x935; the drain waits 1.5 s after the last gain (a server choice, issue 418); no drain ran, so none is cancelled"
   assert class_resource.value(resources:, slot: 1) == 180.0
 }
 
@@ -367,7 +367,7 @@ pub fn the_drain_takes_150_a_tick_and_stops_at_0_test() -> Nil {
       Changed(slot: 1, value: 30.0),
       StartTimer(timer: class_resource.drain_timer, after_ms: 1000),
     ]
-    as "150 a second (Jim's choice, issue 418), a tick each second (the server's choice): 180 - 150"
+    as "150 a second (a server choice, issue 418), a tick each second (the server's choice): 180 - 150"
   let #(resources, last) = drain_fired(resources)
   assert last == [Changed(slot: 1, value: 0.0)]
     as "30 - 150 is clamped to 0, and an empty slot ticks no more"
@@ -636,7 +636,7 @@ pub fn a_warrior_with_a_drain_row_missing_and_an_esper_without_its_empty_wait_ar
     as "the Warrior's drain needs its amount, period, tick and wait, and the Esper its wait after combat (issue 418)"
 }
 
-pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reason_test() -> Nil {
+pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_test() -> Nil {
   use <- owned_test.run(60_000)
   let database = database_support.new_database(on: database_support.shared())
   let assert Ok(rows) =
@@ -646,10 +646,10 @@ pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reaso
     as "the rows of migrations 0011, 0012, 0018 and 0048, in class and name order: the values tables of the designs of issues 403, 418, 419 and 945"
   assert content_support.count(
       database:,
-      sql: "select count(*) from class_resource where source in ('client', 'retail_record', 'server_choice') and reason is not null",
+      sql: "select count(*) from class_resource where source in ('client', 'retail_record', 'server_choice')",
     )
     == 22
-    as "each row is the client's, a retail record or a server choice and states its reason"
+    as "each row is the client's, a retail record or a server choice"
   assert content_support.count(
       database:,
       sql: "select count(*) from class_resource where source = 'client' and class_id in (3, 4) and name = 'max'",
@@ -661,13 +661,13 @@ pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_and_reaso
       sql: "select count(*) from class_resource where source = 'server_choice'",
     )
     == 11
-    as "the Medic's refill, the three ticks, the Warrior's drain amount, period and wait (Jim's choices), the Engineer's empty wait (Jim's decision, issue 419) and the three Focus pools (Jim's decision, issue 945) are the server's"
+    as "the Medic's refill, the three ticks, the Warrior's drain amount, period and wait, the Engineer's empty wait and the three Focus pools are the server's choices"
   assert content_support.count(
       database:,
-      sql: "select count(*) from class_resource where name = 'focus_pool' and class_id in (3, 4, 7) and value = 1000 and unit = 'points' and source = 'server_choice' and reason like '%guess%' and reason like '%Jim%' and reason like '%137%152%'",
+      sql: "select count(*) from class_resource where name = 'focus_pool' and class_id in (3, 4, 7) and value = 1000 and unit = 'points' and source = 'server_choice'",
     )
     == 3
-    as "the Esper, Medic and Spellslinger each hold a flat 1000-point pool, a guess whose reason names Jim's decision and the level-6 costs of 137 to 152 that rule out a pool growing with level"
+    as "the Esper, Medic and Spellslinger each hold a flat 1000-point pool, a flat pool the server chose: the level-6 costs of 137 to 152 rule out a pool growing with level"
 }
 
 pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil {
@@ -676,51 +676,47 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
   list.each(
     [
       #(
-        "insert into class_resource (class_id, name, value, unit, source) values (6, 'max', 1, 'points', 'server_choice')",
-        "class_resource_other_source_states_its_reason",
-      ),
-      #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'decay', 1, 'metres', 'server_choice', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source) values (6, 'decay', 1, 'metres', 'server_choice')",
         "class_resource_unit_is_known",
       ),
       #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (32, 'max', 1, 'points', 'server_choice', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source) values (32, 'max', 1, 'points', 'server_choice')",
         "class_resource_class_id_is_in_5_bits",
       ),
       #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'max', 'NaN', 'points', 'server_choice', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source) values (6, 'max', 'NaN', 'points', 'server_choice')",
         "class_resource_value_is_finite",
       ),
       #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (5, 'max', 1, 'points', 'server_choice', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source) values (5, 'max', 1, 'points', 'server_choice')",
         "class_resource_pkey",
       ),
       #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'max', 1, 'points', 'nobody', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source) values (6, 'max', 1, 'points', 'nobody')",
         "class_resource_source_is_a_content_source",
       ),
       #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'nobody_listed', 1, 'points', 'server_choice', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source) values (6, 'nobody_listed', 1, 'points', 'server_choice')",
         "class_resource_name_has_its_unit",
       ),
       #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'max', 0, 'points', 'server_choice', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source) values (6, 'max', 0, 'points', 'server_choice')",
         "class_resource_value_is_positive",
       ),
       #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'max', -1, 'points', 'server_choice', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source) values (6, 'max', -1, 'points', 'server_choice')",
         "class_resource_value_is_positive",
       ),
       #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'regen_tick_ms', 2.5, 'ms', 'server_choice', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source) values (6, 'regen_tick_ms', 2.5, 'ms', 'server_choice')",
         "class_resource_time_is_whole_ms",
       ),
       #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'max', 10, 'ms', 'server_choice', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source) values (6, 'max', 10, 'ms', 'server_choice')",
         "class_resource_name_has_its_unit",
       ),
       #(
-        "insert into class_resource (class_id, name, value, unit, source, reason) values (6, 'drain_tick_ms', 10, 'points', 'server_choice', 'x')",
+        "insert into class_resource (class_id, name, value, unit, source) values (6, 'drain_tick_ms', 10, 'points', 'server_choice')",
         "class_resource_name_has_its_unit",
       ),
     ],
@@ -828,7 +824,7 @@ pub fn a_new_healer_holds_its_focus_at_the_maximum_of_property_5_and_a_class_wit
     let resources =
       class_resource_support.resources_with(class_id:, changes:, level: 1)
     assert focus_of(resources) == held
-      as "full at entry (Jim's decision): the maximum of property 5, the pool plus gear; a class with no Focus holds 0"
+      as "full at entry (a server choice): the maximum of property 5, the pool plus gear; a class with no Focus holds 0"
     assert class_resource.max(resources:, slot: -1) == held
   })
 }

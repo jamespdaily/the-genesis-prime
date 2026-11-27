@@ -132,6 +132,7 @@ import genesis_prime/game/class_resource.{type Payment}
 import genesis_prime/game/cooldown
 import genesis_prime/game/item_use
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
 import genesis_prime/game/quest_advance
@@ -5759,7 +5760,7 @@ pub fn aimed_at(
           Listed(
             effect_id: Spell4EffectsId(entry.0.tell.effect_id),
             delay_ms: entry.0.tell.row.delay_ms,
-            until_removed: entry.0.tell.row.until_removed,
+            until_removed: lasts.is_until_removed(entry.0.tell.row.lasts),
             instance_id: Some(entry.0.tell.instance_id),
             damage: None,
           ),
@@ -5771,7 +5772,7 @@ pub fn aimed_at(
           Listed(
             effect_id: entry.0.row.effect_id,
             delay_ms: entry.0.row.row.delay_ms,
-            until_removed: entry.0.row.row.until_removed,
+            until_removed: lasts.is_until_removed(entry.0.row.row.lasts),
             instance_id: Some(entry.0.instance_id),
             damage: None,
           ),
@@ -6065,8 +6066,6 @@ fn cooldown_row_armed(
 ) -> #(State, List(Effect)) {
   let source = unit_properties.Source(cast_id:, effect_id: row.effect_id)
   let #(cast, cancels) = cast_state.cancel_source_timers(cast:, source:)
-  let lifetime_ms =
-    lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
   let #(cast, starting) = case row.row.delay_ms > 0 {
     True -> {
       let #(cast, _, start) =
@@ -6080,8 +6079,10 @@ fn cooldown_row_armed(
     False ->
       cooldown_applied(cast:, source:, modifier: row.modifier, kept:, now_ms:)
   }
-  let #(cast, ending) = case kept && !row.row.until_removed {
-    True -> {
+  let lifetime =
+    lasting.lifetime_of(row: row.row, longer_of_delay_and_duration:)
+  let #(cast, ending) = case kept, lifetime {
+    True, Some(lifetime_ms) -> {
       let #(cast, _, start) =
         cast_state.armed(
           cast:,
@@ -6090,7 +6091,7 @@ fn cooldown_row_armed(
         )
       #(cast, [start])
     }
-    False -> #(cast, [])
+    True, None | False, _ -> #(cast, [])
   }
   #(cast, list.flatten([cancels, starting, ending]))
 }

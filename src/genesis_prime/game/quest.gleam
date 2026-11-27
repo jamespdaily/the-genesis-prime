@@ -1169,7 +1169,7 @@ fn abandoned(
     True ->
       Ok(#(
         [SendState(quest_id:, state: abandoned_state, objective_id: 0)],
-        quest_log.hold(log: asker.log, quest_id:, state: quest_log.Abandoned),
+        quest_log.hold(log: asker.log, quest_id:, state: store.Abandoned),
       ))
   }
 }
@@ -1196,7 +1196,7 @@ fn mentioned_by(
     True ->
       Ok(#(
         [],
-        quest_log.hold(log: asker.log, quest_id:, state: quest_log.Mentioned),
+        quest_log.hold(log: asker.log, quest_id:, state: store.Mentioned),
       ))
     False -> Error(CannotMention(quest_id:, state:, mentioned: wish))
   }
@@ -1229,12 +1229,12 @@ fn ignored_by(
     True, 5 | True, 6 ->
       Ok(#(
         [SendState(quest_id:, state: ignored_state, objective_id: 0)],
-        quest_log.hold(log: asker.log, quest_id:, state: quest_log.Ignored),
+        quest_log.hold(log: asker.log, quest_id:, state: store.Ignored),
       ))
     False, 7 ->
       Ok(#(
         [SendState(quest_id:, state: mentioned_state, objective_id: 0)],
-        quest_log.hold(log: asker.log, quest_id:, state: quest_log.Mentioned),
+        quest_log.hold(log: asker.log, quest_id:, state: store.Mentioned),
       ))
     _, _ -> Error(CannotIgnore(quest_id:, state:, ignored: wish))
   }

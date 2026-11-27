@@ -10,7 +10,7 @@
 //// - `Spell4Effects.effectType.80`: the selector (1 a spell group, 2 a Spell4, 3 a
 ////   Spell4Base) and the count of stacks removed; the oldest first is the server's
 ////   choice.
-//// - Jim's decision on stacking (`Spell4StackGroup.stackCap`):
+//// - The server's choice on stacking (`Spell4StackGroup.stackCap`):
 ////   a caster keeps at most the group's cap of its own casts of the group on a
 ////   unit, and a new one at the cap takes the oldest off; a cap of 0 keeps one per
 ////   spell.
@@ -19,6 +19,7 @@ import genesis_prime/game/lasting.{
   type Hold, Base, EndsAt, Group, Hold, LastingRow, NoLife, Node, NodeOff, Spell,
   Stack, StackOff, UntilRemoved,
 }
+import genesis_prime/game/lasts
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/int
 import gleam/list
@@ -44,7 +45,7 @@ pub fn a_duration_is_the_life_from_the_go_test() -> Nil {
   use <- owned_test.run(5000)
   // Quick Draw's marker 99472: no delay, 990 ms (the trace's §4 row).
   assert life(
-      rows: [LastingRow(delay_ms: 0, duration_ms: 990, until_removed: False)],
+      rows: [LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 990))],
       larger: False,
     )
     == EndsAt(ms: 1990)
@@ -52,7 +53,7 @@ pub fn a_duration_is_the_life_from_the_go_test() -> Nil {
 
 pub fn delay_and_duration_add_unless_the_spell_takes_the_larger_test() -> Nil {
   use <- owned_test.run(5000)
-  let row = LastingRow(delay_ms: 500, duration_ms: 3000, until_removed: False)
+  let row = LastingRow(delay_ms: 500, lasts: lasts.For(duration_ms: 3000))
   assert life(rows: [row], larger: False) == EndsAt(ms: 4500)
   assert life(rows: [row], larger: True) == EndsAt(ms: 4000)
 }
@@ -61,14 +62,14 @@ pub fn flags_bit_2_never_ends_whatever_else_the_node_holds_test() -> Nil {
   use <- owned_test.run(5000)
   // Power Charge's 96819 holds flags 2: it ends only when the server takes it off.
   assert life(
-      rows: [LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)],
+      rows: [LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)],
       larger: False,
     )
     == UntilRemoved
   assert life(
       rows: [
-        LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
-        LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+        LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
+        LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
       ],
       larger: False,
     )
@@ -79,7 +80,7 @@ pub fn no_duration_and_no_flag_is_no_life_test() -> Nil {
   use <- owned_test.run(5000)
   // Mind Burst's 95008 and Pulse Blast's 159547: type 17 with neither, "nothing that lasts".
   assert life(
-      rows: [LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False)],
+      rows: [LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0))],
       larger: False,
     )
     == NoLife
@@ -90,9 +91,9 @@ pub fn the_longest_effect_decides_the_life_test() -> Nil {
   use <- owned_test.run(5000)
   assert life(
       rows: [
-        LastingRow(delay_ms: 0, duration_ms: 3000, until_removed: False),
-        LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
-        LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False),
+        LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 3000)),
+        LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
+        LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0)),
       ],
       larger: False,
     )
@@ -122,7 +123,7 @@ pub fn the_time_left_of_an_end_is_never_less_than_1_test() -> Nil {
 fn timed(duration_ms duration_ms: Int) -> lasting.NodeEffect {
   lasting.Listed(
     effect_id: Spell4EffectsId(67_777),
-    row: LastingRow(delay_ms: 0, duration_ms:, until_removed: False),
+    row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms:)),
   )
 }
 
@@ -130,7 +131,7 @@ fn timed(duration_ms duration_ms: Int) -> lasting.NodeEffect {
 fn until_removed() -> lasting.NodeEffect {
   lasting.Listed(
     effect_id: Spell4EffectsId(96_819),
-    row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+    row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
   )
 }
 
@@ -548,7 +549,7 @@ fn drawn_cast() -> qcheck.Generator(#(Int, Int, Int, Int)) {
 
 pub fn the_casts_the_stack_rule_names_are_each_taken_off_by_their_node_or_ended_by_their_kept_change_and_never_by_both_test() -> Nil {
   use <- owned_test.run(30_000)
-  // Jim's decision on stacking (`lasting.stack_pushed_off`): a caster's casts of one group on a
+  // The server's choice on stacking (`lasting.stack_pushed_off`): a caster's casts of one group on a
   // unit count together against the cap, whether a node or a change kept after the caster lost
   // sight of the player holds them. The two paths that end a pushed cast, the node's
   // (`lasting.pushed_off`) and the kept change's (`lasting.kept_pushed_off`), must split the
@@ -772,12 +773,12 @@ pub fn a_node_that_holds_an_until_removed_row_ends_at_an_aura_after_the_go_whate
       let aura_end_ms = go_ms + aura_after_go_ms
       let timed_rows =
         list.map(timed, fn(row) {
-          LastingRow(delay_ms: row.0, duration_ms: row.1, until_removed: False)
+          LastingRow(delay_ms: row.0, lasts: lasts.For(duration_ms: row.1))
         })
       let rows = case until_removed {
         True ->
           list.append(timed_rows, [
-            LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+            LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
           ])
         False -> timed_rows
       }
@@ -819,10 +820,9 @@ pub fn a_node_that_holds_an_until_removed_row_ends_at_an_aura_after_the_go_whate
 
 pub fn a_rows_life_is_its_own_and_an_until_removed_row_takes_the_end_of_an_aura_after_the_go_test() -> Nil {
   use <- owned_test.run(5000)
-  let timed = LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
-  let until_removed =
-    LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
-  let none = LastingRow(delay_ms: 0, duration_ms: 0, until_removed: False)
+  let timed = LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000))
+  let until_removed = LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)
+  let none = LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 0))
   // Each row: why, the row, the aura's end, the life at a go at 1500 (`0x1407180c0`: a buff is
   // timed from the cast's start by spellDuration; a sum not later than now is no end).
   list.each(
@@ -898,9 +898,9 @@ fn first_aura_node(
 
 pub fn an_aura_gives_the_node_the_cases_the_client_reads_from_its_buff_timing_test() -> Nil {
   use <- owned_test.run(5000)
-  let flagged = LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  let flagged = LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)
   let timed_for = fn(duration_ms) {
-    LastingRow(delay_ms: 0, duration_ms:, until_removed: False)
+    LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms:))
   }
   [
     #(

@@ -206,6 +206,7 @@ import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/cooldown
 import genesis_prime/game/hit
 import genesis_prime/game/lasting
+import genesis_prime/game/lasts
 import genesis_prime/game/proc
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/strike_tell
@@ -794,7 +795,7 @@ pub fn nodes_left(
   nodes nodes: Dict(Int, lasting.Node),
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
-  case holder.lingering && dict.is_empty(nodes) {
+  case holder.phase == cast_state.LastGoGone && dict.is_empty(nodes) {
     True -> {
       let #(cast, cancels) = cast_tick.cancel_nodes_end(cast:, cast_id:)
       #(
@@ -862,7 +863,9 @@ pub fn unit_removed(
     let #(cast, ticks) = cast_tick.ticks_dropped(cast:, cast_id:, unit_id:)
     let #(cast, on_units) = cast_control.unit_unseen(cast:, cast_id:, unit_id:)
     let #(cast, left) = nodes_left(cast:, cast_id:, holder:, nodes:, now_ms:)
-    let ends = case holder.lingering && dict.is_empty(nodes) {
+    let ends = case
+      holder.phase == cast_state.LastGoGone && dict.is_empty(nodes)
+    {
       True -> cast_tick.finished_effects(cast_id:)
       False -> []
     }
@@ -944,9 +947,16 @@ fn one_set_aside(
     })
   let #(stealth, others) = cast_tick.split_cast(held: cast.stealth, cast_id: id)
   let #(procs, other_procs) = procs_split(held: cast.procs, cast_id: id)
-  case live, lingering {
-    None, None -> #(cast, None)
-    _, _ -> #(
+  let set_aside_cast = case live, lingering {
+    Some(live), None -> Some(cast_state.WasLive(live:))
+    None, Some(lingering) -> Some(cast_state.WasLingering(lingering:))
+    None, None -> None
+    Some(_), Some(_) ->
+      panic as "a cast is both live and lingering, which finish_or_linger never leaves"
+  }
+  case set_aside_cast {
+    None -> #(cast, None)
+    Some(set_aside_cast) -> #(
       State(
         ..cast,
         casts: dict.delete(cast.casts, id),
@@ -959,8 +969,7 @@ fn one_set_aside(
       Some(Aside(
         id:,
         key:,
-        live:,
-        lingering:,
+        cast: set_aside_cast,
         timers:,
         stealth:,
         procs:,
@@ -976,8 +985,7 @@ pub fn standing_restored(cast cast: State, aside aside: List(Aside)) -> State {
     let Aside(
       id:,
       key:,
-      live:,
-      lingering:,
+      cast: set_aside_cast,
       timers:,
       stealth:,
       procs:,
@@ -989,13 +997,14 @@ pub fn standing_restored(cast cast: State, aside aside: List(Aside)) -> State {
         [] -> cast.on_units
         [_, ..] -> dict.insert(cast.on_units, id, on_units)
       },
-      casts: case live {
-        Some(live) -> dict.insert(cast.casts, id, live)
-        None -> cast.casts
+      casts: case set_aside_cast {
+        cast_state.WasLive(live:) -> dict.insert(cast.casts, id, live)
+        cast_state.WasLingering(..) -> cast.casts
       },
-      lingering: case lingering {
-        Some(lingering) -> dict.insert(cast.lingering, id, lingering)
-        None -> cast.lingering
+      lingering: case set_aside_cast {
+        cast_state.WasLingering(lingering:) ->
+          dict.insert(cast.lingering, id, lingering)
+        cast_state.WasLive(..) -> cast.lingering
       },
       timers: dict.merge(cast.timers, dict.from_list(timers)),
       stealth: dict.merge(cast.stealth, dict.from_list(stealth)),
@@ -1156,7 +1165,7 @@ pub fn effects_ended(
       list.map(cast_control.caster_rows(spell:), fn(row) {
         CasterChangeEnding(
           source: unit_properties.Source(cast_id:, effect_id: row.effect_id),
-          until_removed: row.row.until_removed,
+          until_removed: lasts.is_until_removed(row.row.lasts),
         )
       }),
       list.map(
@@ -1426,7 +1435,7 @@ fn node_off(
       let #(cast, on_units) =
         cast_control.units_ended(cast:, cast_id:, unit_ids: [unit_id])
       let #(cast, left) = nodes_left(cast:, cast_id:, holder:, nodes:, now_ms:)
-      let ends = case holder.lingering && emptied && kept {
+      let ends = case holder.phase == cast_state.LastGoGone && emptied && kept {
         True -> cast_tick.finished_effects(cast_id:)
         False -> []
       }

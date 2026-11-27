@@ -37,6 +37,7 @@ import fixture_tables
 import genesis_prime/game/effect_kind
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{
   AimsAtArea, AimsAtCaster, AimsAtPrimaryTarget, AimsAtPrimaryTargetAndArea,
@@ -49,7 +50,7 @@ import genesis_prime/table/spell4_effects
 import gleam/dict
 import gleam/int
 import gleam/list
-import gleam/option.{None}
+import gleam/option.{None, Some}
 import gleam/set
 import gleam/string
 import owned_test
@@ -119,7 +120,7 @@ pub fn a_scale_row_aimed_at_the_caster_is_a_lasting_row_with_its_columns_test() 
       effect_id: Spell4EffectsId(99_071),
       phase_flags: -1,
       aim: AimsAtCaster,
-      row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
       condition: Always,
       tag: spend.EqualTo(value: 0),
     ))
@@ -140,8 +141,7 @@ pub fn a_scale_row_aimed_at_the_caster_is_a_lasting_row_with_its_columns_test() 
       ),
     )
   let assert Ok(row) = spell_tables.lasting_row_of(spell:, effect_id: 99_101)
-  assert row.row
-    == LastingRow(delay_ms: 250, duration_ms: 0, until_removed: True)
+  assert row.row == LastingRow(delay_ms: 250, lasts: lasts.UntilRemoved)
   assert row.phase_flags == 2
   let assert GatedOnCaster(gates: [_]) = row.condition
   assert list.length(spell_plan.in_phase(
@@ -268,7 +268,7 @@ pub fn a_property_conversion_row_is_a_modifier_that_converts_47_into_60_at_a_qua
       to: UnitProperty2Id(60),
       share: 0.25,
     ))
-  assert row.row == LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  assert row.row == LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)
     as "flags bit 2: until removed"
   assert row.condition == Always
 }
@@ -346,7 +346,7 @@ pub fn onslaughts_42908_lists_109482_on_the_caster_for_8_seconds_test() -> Nil {
       effect_id: Spell4EffectsId(109_482),
       phase_flags: -1,
       aim: AimsAtCaster,
-      row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+      row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
       condition: Always,
       tag: spend.EqualTo(value: 0),
     ))
@@ -383,7 +383,7 @@ pub fn the_engineers_passive_holds_229304_as_a_conversion_from_47_to_60_until_re
       share: 0.25,
     ))
     as "`table_rows -- Spell4Effects spellId=45000`: dataBits00 47, dataBits01 60, dataBits02 0x3e800000"
-  assert row.row == LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  assert row.row == LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)
     as "flags 2"
 }
 
@@ -461,7 +461,7 @@ pub fn an_item_visual_swap_row_aimed_at_the_caster_with_flags_2_is_a_lasting_row
       effect_id: Spell4EffectsId(106_570),
       phase_flags: 1,
       aim: AimsAtCaster,
-      row: LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True),
+      row: LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved),
       condition: Always,
       tag: spend.EqualTo(value: 0),
     ))
@@ -476,13 +476,13 @@ pub fn an_item_visual_swap_row_aimed_at_the_primary_target_keeps_its_delay_and_d
     assert row.aim == AimsAtPrimaryTarget
       as "`table_rows -- Spell4Effects spellId=26567`: targetFlags 2"
     assert row.row
-      == LastingRow(delay_ms: 333, duration_ms: 10_000, until_removed: False)
+      == LastingRow(delay_ms: 333, lasts: lasts.For(duration_ms: 10_000))
       as "delayTime 333, durationTime 10000, flags 0"
     assert lasting.lifetime_of(
         row: row.row,
         longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
       )
-      == 10_333
+      == Some(10_333)
       as "the lifetime is the delay plus the duration, 333 + 10000: Spell4 26567 has propertyFlags 0, no 0x2000"
   })
 }
@@ -504,14 +504,13 @@ pub fn the_six_delayed_item_visual_swap_rows_of_48373_are_each_a_lasting_row_end
       let row = held_row(spell:, id:)
       assert row.aim == AimsAtCaster
         as "`table_rows -- Spell4Effects spellId=48373`: targetFlags 1"
-      assert row.row
-        == LastingRow(delay_ms:, duration_ms:, until_removed: False)
+      assert row.row == LastingRow(delay_ms:, lasts: lasts.For(duration_ms:))
         as "the row's delayTime and durationTime, flags 0"
       assert lasting.lifetime_of(
           row: row.row,
           longer_of_delay_and_duration: spell.longer_of_delay_and_duration,
         )
-        == 9000
+        == Some(9000)
         as "each of the six ends 9000 ms after the go: Spell4 48373 has propertyFlags 1, no 0x2000"
     },
   )

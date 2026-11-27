@@ -1447,8 +1447,8 @@ pub fn a_viewer_arriving_after_a_medic_fissures_a_beast_shows_the_debuff_on_the_
   let #(settled, have) =
     game_client.read_until_pong(game: second, have:, number: 6)
   // Fissure's second and third phases, 250 ms and 500 ms after its first, start a child
-  // each, whose nodes push the earlier ones off the Beast at the stack cap (Jim's decision
-  // on stacking).
+  // each, whose nodes push the earlier ones off the Beast at the stack cap (the server's choice on
+  // stacking).
   driven_time.advance(time:, ms: 500)
   let #(phased, have) =
     game_client.read_until_pong(game: second, have:, number: 7)
@@ -2749,7 +2749,7 @@ fn triage_heal_listed_on(
 /// 8 m ahead, and its heal row 141503 (type 10, targetFlags 4: the area alone, parameter 13 x
 /// 0.3139 and 10 x 13.67, `0x140565600`: the stat part rounded alone) does not name the caster,
 /// so the caster is a candidate of the area, as the text 195454 says ("yourself or an ally based
-/// on who has the lowest health", Jim's decision on 2026-11-23). The one it takes is the one
+/// on who has the lowest health", the server's choice). The one it takes is the one
 /// missing the most health, by the health each told the server on entering. Case one: the ally
 /// entered missing more: its own 0x92f rises by the row's amount, the caster's 0x7f4 lists that
 /// heal on the ally, and the caster's own health does not rise. Case two: the caster entered

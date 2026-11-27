@@ -33,6 +33,7 @@ import fixture_tables
 import genesis_prime/game/damage.{Formula, Parameter}
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/spell_plan.{
   Absorption, AimsAtCaster, AimsAtPrimaryTarget, Always,
 }
@@ -140,7 +141,7 @@ pub fn an_absorption_row_aimed_at_the_caster_is_read_with_its_formula_mask_and_t
           mask: 7,
           aim: AimsAtCaster,
         )),
-        row: LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False),
+        row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000)),
         condition: Always,
         tag: spend.EqualTo(value: 0),
         armor: None,
@@ -292,8 +293,7 @@ pub fn an_absorption_row_with_no_lifetime_fails_the_load_and_one_with_flags_bit_
         ..amount_columns()
       ]),
     )
-  assert kept.row
-    == LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  assert kept.row == LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)
     as "the client gives an effect whose flags have bit 2 no end timer"
 }
 
@@ -303,7 +303,7 @@ pub fn the_water_shield_row_68969_loads_as_an_absorb_test() -> Nil {
     modifier_of(spell4_id: 34_700, effect: client_effect(id: 68_969))
     as "Water Shield - Pell Water: Magic (kind 4) x 5.0 is read for an effect on its caster (0x140566d40 case 4)"
   assert absorb.row
-    == LastingRow(delay_ms: 0, duration_ms: 10_000, until_removed: False)
+    == LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 10_000))
     as "row 68969: delayTime 0, durationTime 10000, flags 0"
 }
 
@@ -506,6 +506,6 @@ pub fn spectral_form_holds_its_absorption_and_the_plans_load_test() -> Nil {
       aim: AimsAtCaster,
     ))
   assert absorb.row
-    == LastingRow(delay_ms: 0, duration_ms: 5000, until_removed: False)
+    == LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 5000))
     as "5000 ms"
 }

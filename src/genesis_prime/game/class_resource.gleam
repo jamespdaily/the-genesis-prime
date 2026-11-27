@@ -54,7 +54,7 @@
 ////   them in the order given, the class slot's changes sent before Focus's.
 //// - **The Warrior's drain** takes `drain_amount` each `drain_period_ms`, ticked
 ////   each `drain_tick_ms`, from `drain_after_ms` after the last gain, in and out of
-////   combat, down to 0 (Jim's choice, migration 0012; 500714 gives no rate).
+////   combat, down to 0 (the server's choice, migration 0012; 500714 gives no rate).
 //// - **The Esper's empty** sets the slot to 0 `empty_after_combat_ms` after it
 ////   leaves combat, and combat again stops the wait (a retail record, migration
 ////   0012; 500718). **The Engineer's Volatility** goes the same way, after 5000 ms
@@ -84,6 +84,7 @@
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import genesis_prime/game/focus
 import genesis_prime/game/unit_properties.{type Properties}
+import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/class
@@ -1130,4 +1131,14 @@ pub fn left(resources resources: Resources) -> #(Resources, List(Effect)) {
     list.filter(timers, is_running(resources:, timer: _))
     |> list.map(fn(timer) { CancelTimer(timer:) })
   #(Resources(..resources, running: set.new()), cancels)
+}
+
+/// What the table leaves undone, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Focus",
+      missing: "the Focus pool of an Esper, a Medic and a Spellslinger is a flat 1000 points at every level plus what worn items add, a guess, as the client's tables hold no pool by class or level",
+    ),
+  ]
 }

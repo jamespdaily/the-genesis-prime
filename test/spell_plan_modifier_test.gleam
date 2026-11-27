@@ -27,6 +27,7 @@ import genesis_prime/game/column_reading
 import genesis_prime/game/damage
 import genesis_prime/game/effect_kind
 import genesis_prime/game/lasting.{LastingRow}
+import genesis_prime/game/lasts
 import genesis_prime/game/prerequisite
 import genesis_prime/game/spell_plan.{Always, GatedOnCaster, GatedOnTarget}
 import genesis_prime/game/spend
@@ -100,7 +101,7 @@ pub fn a_row_aimed_at_the_caster_is_read_with_its_columns_test() -> Nil {
           flat: 0.07999999821186066,
           per_level: 0.0,
         )),
-        row: LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+        row: LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
         condition: Always,
         tag: spend.EqualTo(value: 0),
         armor: None,
@@ -131,7 +132,7 @@ pub fn gates_falling_damage_row_is_read_with_its_delay_and_duration_test() -> Ni
       per_level: 0.0,
     ))
   assert row.row
-    == LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False)
+    == LastingRow(delay_ms: 180, lasts: lasts.For(duration_ms: 400))
 }
 
 pub fn a_negative_multiplier_and_amounts_are_read_from_their_signed_bits_test() -> Nil {
@@ -229,7 +230,7 @@ pub fn row_aimed_at_struck_units_is_planned_test() -> Nil {
         flat: 0.0,
         per_level: 0.0,
       ),
-      LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False),
+      LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000)),
     ),
     #(
       99_062,
@@ -251,7 +252,7 @@ pub fn row_aimed_at_struck_units_is_planned_test() -> Nil {
         flat: 0.0,
         per_level: 0.0,
       ),
-      LastingRow(delay_ms: 1000, duration_ms: 5000, until_removed: False),
+      LastingRow(delay_ms: 1000, lasts: lasts.For(duration_ms: 5000)),
     ),
     #(
       99_063,
@@ -272,7 +273,7 @@ pub fn row_aimed_at_struck_units_is_planned_test() -> Nil {
         flat: 0.0,
         per_level: 0.0,
       ),
-      LastingRow(delay_ms: 1750, duration_ms: 1500, until_removed: False),
+      LastingRow(delay_ms: 1750, lasts: lasts.For(duration_ms: 1500)),
     ),
   ]
   list.each(shapes, fn(shape) {
@@ -337,7 +338,7 @@ pub fn a_row_with_flags_bit_2_lasts_until_removed_test() -> Nil {
         #("flags", Integer(2)),
       ]),
     )
-  assert row.row == LastingRow(delay_ms: 0, duration_ms: 0, until_removed: True)
+  assert row.row == LastingRow(delay_ms: 0, lasts: lasts.UntilRemoved)
 }
 
 pub fn a_row_behind_a_caster_prerequisite_is_gated_on_the_caster_and_behind_a_target_one_is_not_applied_test() -> Nil {
@@ -622,7 +623,7 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
       per_level: 0.0,
     ))
   assert falling.row
-    == LastingRow(delay_ms: 180, duration_ms: 400, until_removed: False)
+    == LastingRow(delay_ms: 180, lasts: lasts.For(duration_ms: 400))
   // Mind Burst, 19019, starts 57030 as a child, whose row 135954 raises BaseCritChance
   // by 0.08 for 8 s.
   let assert Ok(mind_burst) =
@@ -644,7 +645,7 @@ pub fn the_kits_two_rows_are_read_from_the_clients_tables_test() -> Nil {
       per_level: 0.0,
     ))
   assert crit.row
-    == LastingRow(delay_ms: 0, duration_ms: 8000, until_removed: False)
+    == LastingRow(delay_ms: 0, lasts: lasts.For(duration_ms: 8000))
 }
 
 /// Whether the plan of the Spell4 `spell4_id` on `tables` says its changes outlive their

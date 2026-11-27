@@ -8,7 +8,7 @@
 ////   nothing for a time equal to the one it holds, and re-rolls its offers for a
 ////   new one, so one message goes out for each reset that passed, not one for each
 ////   period.
-//// - The reset instants are the server's choice (Jim, 2026-11-08): daily at 10:00
+//// - The reset instants are the server's choice: daily at 10:00
 ////   UTC, weekly on Tuesday at 10:00 UTC, monthly and yearly at the first daily
 ////   reset of the month and year. They are calendar dates, in Unix seconds with
 ////   their FILETIME (100 ns since 1601: Unix seconds times 10,000,000 plus

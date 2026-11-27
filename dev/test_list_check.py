@@ -20,7 +20,7 @@ A name not defined in the diff is looked up in HEAD's tree, so a listed test
 that already existed is told apart from a missing one.
 
 Exit 0 when every listed test is defined in the diff, 1 when one is not,
-2 when no test list on the issue names a test. It replaces the reviewers' by-hand test
+2 when no test list on the issue names a test (a test module's name is not a test). It replaces the reviewers' by-hand test
 list check; it gates no merge, so it has no tests of its own and is checked by
 use.
 
@@ -29,7 +29,7 @@ or the path of a draft file (the whole file), and each backticked listed test al
 is printed as `NAME: already at FILE, write it plainly` (a list backticks only the tests its step adds),
 unless a line of the list that names it also says "row": a new row of an existing table test, printed as
 `NAME: a new row of FILE`. A test list is sized by the decisions a step adds, and a decision that fits an
-existing table test is a row there, not a new function (Jim, 2026-11-22).
+existing table test is a row there, not a new function (the running-a-step skill).
 Exit 1 when a test is printed as already there, 0 when none is, 2 when the list names no test.
 """
 
@@ -89,7 +89,11 @@ def existing(base: str, source: str) -> int:
         print(f"{source} holds no test list naming a test")
         return 2
     found = 0
-    for name in listed_names(text, base):
+    names = listed_names(text, base)
+    if not names:
+        print(f"{source}'s test list names no test, only test modules")
+        return 2
+    for name in names:
         where = defined_at(base, name)
         if not where:
             continue
@@ -136,6 +140,9 @@ def main() -> int:
         print(f"issue {issue} holds no test list naming a test")
         return 2
     listed = listed_names(text, head)
+    if not listed:
+        print(f"issue {issue}'s test list names no test, only test modules")
+        return 2
     diff = run("git", "diff", "-U0", base, head)
     defined = set(DEFINED.findall(diff))
     rows = {name for name in listed if name not in defined and rows_added(base, head, name)}

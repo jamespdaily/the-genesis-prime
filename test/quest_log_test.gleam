@@ -10,7 +10,7 @@
 ////   its current period is flagged in the completed list; the period of a quest is
 ////   its `Quest2.questRepeatPeriodEnum` (`table_rows -- Quest2 1857 9713 9714 9715
 ////   2347`: 1, 2, 3, 4 and 0 for the one-time quest 2347).
-//// - The reset instants are the server's choice (Jim, 2026-11-08): daily at 10:00
+//// - The reset instants are the server's choice: daily at 10:00
 ////   UTC, weekly on Tuesday at 10:00 UTC, monthly and yearly at the first daily
 ////   reset of the month and year. The instants below are calendar dates read off a
 ////   calendar: 2025-04-24 20:26:40 UTC (a Thursday) is the entry time the tests'
@@ -27,7 +27,7 @@ import genesis_prime/game/world_entry
 import genesis_prime/message/quest_completed.{type QuestCompleted}
 import genesis_prime/message/quest_log as quest_message
 import genesis_prime/step.{LogError, Now}
-import genesis_prime/store.{type QuestRow, QuestRow}
+import genesis_prime/store.{type QuestRow}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/int
 import gleam/list
@@ -146,19 +146,6 @@ pub fn a_saved_entry_the_client_would_refuse_fails_the_load_test() -> Nil {
       quest_log.Refused(
         quest_id: quest_support.daily_with_a_placeholder,
         reason: quest_log.NoPlaceholderRow(objective_id: 999_999),
-      ),
-    ),
-    #(
-      "a completed state with no completed time",
-      QuestRow(
-        quest_id: quest_support.daily,
-        state: 3,
-        completed_at: None,
-        active: None,
-      ),
-      quest_log.Refused(
-        quest_id: quest_support.daily,
-        reason: quest_log.StateDoesNotGoWithColumns(state: 3),
       ),
     ),
   ]
@@ -375,7 +362,9 @@ pub fn the_quest_rows_carry_the_used_spawns_in_objective_then_spawn_order_test()
     as "a log with used objects builds them in objective then spawn order"
   assert quest_support.used_of(log:, quest_id: quest_support.daily) == []
     as "a quest with none used builds none"
-  assert list.map(quest_log.rows(log:, now_ms: 0), fn(row) { row.active })
+  assert list.map(quest_log.rows(log:, now_ms: 0), fn(row) {
+      store.quest_columns(row).2
+    })
     |> list.filter(option.is_none)
     |> list.length
     == 2
@@ -404,7 +393,7 @@ pub fn a_quest_taken_again_starts_with_no_used_spawn_test() -> Nil {
   assert quest_support.used_of(log: counted.log, quest_id: 6723) == [#(0, 7)]
     as "the quest's rows keep the object used"
   let abandoned =
-    quest_log.hold(log: counted.log, quest_id: 6723, state: quest_log.Abandoned)
+    quest_log.hold(log: counted.log, quest_id: 6723, state: store.Abandoned)
   let retaken =
     quest_log.accept(log: abandoned, quest:, max_time_ms: 0, now_ms: 0)
   assert quest_support.used_of(log: retaken, quest_id: 6723) == []
@@ -486,7 +475,7 @@ pub fn the_used_set_of_a_type_32_objective_is_dropped_when_it_is_done_test() -> 
   use <- owned_test.run(60_000)
   // Objective 4813 (quest 3741, type 32 through the crate Creature2 12919, count 6) is
   // done by its sixth crate, and `remember_used` drops the set then; a relog empties it
-  // too (Jim, 2026-11-11), so no crate is remembered after the objective is done.
+  // too (the server's choice), so no crate is remembered after the objective is done.
   let tables = character_tables.shared()
   let assert Ok(quest) = quest_log.quest_of(tables:, id: 3741)
     as "the fixture holds quest 3741's rows"

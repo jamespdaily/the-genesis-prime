@@ -4,7 +4,7 @@
 //// visible one that no creature links by a stand-in or, for a listed place, by arrival
 //// (`objective.script_of`), except the ones only an instance run or a PvP match could
 //// complete; no client table or code says which those are, so each is a row the table
-//// states with its reason.
+//// states as a server choice.
 ////
 //// ```
 //// content.load: ids ─▶ select(ids, tables) ─▶ Set(objective id) | refusals (the load stops)
@@ -23,6 +23,7 @@
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/objective
 import genesis_prime/game/objective_row
+import genesis_prime/gap
 import genesis_prime/table/loader/store as table_store
 import gleam/set.{type Set}
 
@@ -47,4 +48,14 @@ pub fn select(
       )
     },
   )
+}
+
+/// What the table leaves undone, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Quest objectives",
+      missing: "a held objective, a visible script that only an instance run, a PvP match or a store purchase could complete, stays open: the server has no event for any of the three; the client's tables mark most of them, by the objective's flag 0x400 or the quest's content-finder type, and the rest only by the objective's text",
+    ),
+  ]
 }

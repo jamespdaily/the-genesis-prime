@@ -11,7 +11,7 @@
 //// ```
 ////
 //// - **Name and world match a page to a creature,** the server's choice (no client table
-////   links a creature to a page), marked so in each row's reason. A Jabbithole zone is a MapZone id
+////   links a creature to a page). A Jabbithole zone is a MapZone id
 ////   (298 of the 299 zones on pages with an Abilities tab are rows of the client's MapZone
 ////   table, and 296 of those carry the client's own text of the name); the client's
 ////   MapZoneWorldJoin maps a zone to its worlds. A name alone matches a creature of another
@@ -26,7 +26,7 @@
 //// - **Any other listed spell is a special** when the load's own check of a special
 ////   (`creature_special.refusal_of`) passes.
 //// - **One tier of a family is kept:** the lowest `tierIndex` listed of a Spell4Base.
-//// - **Orders and the cooldown are guesses**, marked in each row's reason: the auto-attacks by
+//// - **Orders and the cooldown are guesses**: the auto-attacks by
 ////   their number in the description then the Spell4 id, the specials as the page lists them,
 ////   a special's cooldown a fixed 10,000 ms.
 
@@ -63,18 +63,12 @@ pub type Spawned {
 
 /// One auto-attack to write.
 pub type Auto {
-  Auto(creature_id: Int, spell4_id: Int, order_index: Int, reason: String)
+  Auto(creature_id: Int, spell4_id: Int, order_index: Int)
 }
 
 /// One special to write.
 pub type Special {
-  Special(
-    creature_id: Int,
-    spell4_id: Int,
-    order_index: Int,
-    cooldown_ms: Int,
-    reason: String,
-  )
+  Special(creature_id: Int, spell4_id: Int, order_index: Int, cooldown_ms: Int)
 }
 
 /// Why a listed spell is not written.
@@ -384,7 +378,6 @@ fn matched(
         creature_id:,
         spell4_id: listed.ability.spell4_id,
         order_index: index,
-        reason: auto_reason(pages:, listed:),
       )
     }),
     specials: list.index_map(specials, fn(listed, index) {
@@ -393,11 +386,6 @@ fn matched(
         spell4_id: listed.ability.spell4_id,
         order_index: index,
         cooldown_ms: special_cooldown_ms,
-        reason: special_reason(
-          pages:,
-          listed:,
-          family: family_of(found, listed),
-        ),
       )
     }),
     left_out: list.flatten([
@@ -448,14 +436,6 @@ fn lowest_tiers(
     }),
     kept,
   )
-}
-
-/// The other spells of the page that are tiers of the same Spell4Base as `listed`.
-fn family_of(found: List(Listed), listed: Listed) -> List(Listed) {
-  list.filter(found, fn(other) {
-    other.row.spell4_base_id_base_spell == listed.row.spell4_base_id_base_spell
-    && other.ability.spell4_id != listed.ability.spell4_id
-  })
 }
 
 fn auto_loads(
@@ -522,77 +502,6 @@ fn number_of(row: spell4.Spell4) -> Int {
 }
 
 const unnumbered = 1_000_000
-
-/// A page's address without its host, as a page is named in prose.
-fn path_of(url: String) -> String {
-  case string.split_once(url, "jabbithole.com") {
-    Ok(#(_, after)) ->
-      case string.split_once(after, "/") {
-        Ok(#(_, path)) -> "/" <> path
-        Error(Nil) -> after
-      }
-    Error(Nil) -> url
-  }
-}
-
-fn pages_text(pages: List(Page)) -> String {
-  let described =
-    pages
-    |> list.sort(fn(first, second) { string.compare(first.url, second.url) })
-    |> list.map(fn(page) {
-      path_of(page.url) <> " (captured " <> page.captured <> ")"
-    })
-  case described {
-    [one] -> "Jabbithole npc page " <> one <> page_link
-    several ->
-      "Jabbithole npc pages " <> string.join(several, ", ") <> page_link
-  }
-}
-
-/// What a reason says of how its pages were chosen: no client table holds a creature's page,
-/// so the match by name and world is the server's.
-const page_link =
-  ", linked to the creature by its name and world, the server's choice: no table links a creature to a page"
-
-fn tier_text(pages: List(Page), spell4_id: Int) -> String {
-  case
-    list.find_map(pages, fn(page) {
-      list.find(page.abilities, fn(ability) { ability.spell4_id == spell4_id })
-    })
-  {
-    Ok(ability) -> int.to_string(ability.tier)
-    Error(Nil) -> "?"
-  }
-}
-
-fn auto_reason(pages pages: List(Page), listed listed: Listed) -> String {
-  pages_text(pages)
-  <> ", Abilities tab, Spell4 "
-  <> int.to_string(listed.ability.spell4_id)
-  <> " listed at tier "
-  <> tier_text(pages, listed.ability.spell4_id)
-  <> "; the client's Spell4 description marks it an auto-attack; its place among the creature's auto-attacks, by the number in that description then the Spell4 id, is a guess: the client holds no strike order"
-}
-
-fn special_reason(
-  pages pages: List(Page),
-  listed listed: Listed,
-  family family: List(Listed),
-) -> String {
-  pages_text(pages)
-  <> ", Abilities tab, Spell4 "
-  <> int.to_string(listed.ability.spell4_id)
-  <> " listed at tier "
-  <> tier_text(pages, listed.ability.spell4_id)
-  <> case family {
-    [] -> ""
-    _ ->
-      "; other tiers of its Spell4Base are listed too, and the lowest tier is the server's choice, the client holds no creature spell list"
-  }
-  <> "; its place among the creature's specials is the page's order, a guess; the cooldown of "
-  <> int.to_string(special_cooldown_ms)
-  <> " ms is a guess: the client holds no cadence for a special"
-}
 
 /// The sentence for a refusal.
 pub fn describe(refusal refusal: Refusal) -> String {
