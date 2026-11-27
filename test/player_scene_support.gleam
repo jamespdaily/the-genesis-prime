@@ -11,6 +11,12 @@
 //// - What a connection's step tells is what the server delivers it as: the same two
 ////   functions the server's shell uses (`client_connection.told_to_the_map`,
 ////   `client_connection.told_to_a_connection`, `server.map_message`).
+//// - A connection that asks the map takes no other input until the answer: the shell waits
+////   for it in a selective receive (`connection/shell` "An ask"), and the answer is no
+////   message of the map's ordinary queue to that connection. An ask is mail of the asking
+////   connection's queue to the map, its answer mail of the answer's own queue, and the mail
+////   of an asking connection waits. The store answers an ask at once: a worker's answer is
+////   taken by the same wait, so nothing is lost by taking it in the step that asked.
 //// - The invariants are the client's: a unit is created once and removed once, and it is
 ////   told no frame before its 0x262 or after its 0x355 (`opcode.0x262`, `opcode.0x355`).
 ////
@@ -41,18 +47,16 @@ import genesis_prime/step.{
   type ConnectionEvent, type Event, type ServiceEvent, type TimerId, CallerId,
   ConnectionId, OwnEffect, OwnEvent, TimerFired, Told, Woken,
 }
-import genesis_prime/store.{Character}
+import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
 import genesis_prime/world_map/relay
-import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
-import gleam/set
 import gleam/string
 import legal_order_support
 import map_spawn_support
@@ -68,6 +72,7 @@ pub type Receiver {
 /// connection, a player's client, and the timers of a player's connection.
 pub type Sender {
   FromMap
+  FromMapAnswer
   FromConnection(connection: Int)
   FromClient(connection: Int)
   FromTimer(connection: Int)
@@ -77,6 +82,9 @@ pub type Sender {
 pub type Input {
   ToMap(event: Event(ServiceEvent(map.Message)))
   ToConnection(event: Event(ConnectionEvent(Message, Answer)))
+  /// The client of a connection in character select picks the character, the store
+  /// answers with its rows, and the connection asks the map to take it.
+  ToConnectionSelecting(character: Character)
 }
 
 /// One message in a mailbox (`order_explorer.Mail`) of this scene.
@@ -89,8 +97,9 @@ pub type Taken =
 
 /// The map's state, the state of each player's connection, what is in flight, the
 /// monotonic clock of each process, the deliveries so far in order, the
-/// frames each connection wrote in order, and the cast timers each connection started that
-/// are still to fire, each with the connection, the monotonic time it is due and the timer.
+/// frames each connection wrote in order, the cast timers each connection started that
+/// are still to fire, each with the connection, the monotonic time it is due and the timer,
+/// and the ask of the map each connection waits for the answer to.
 pub type Scene {
   Scene(
     tables: table_store.Tables,
@@ -101,6 +110,7 @@ pub type Scene {
     taken: List(Taken),
     frames: Dict(Int, List(Frame)),
     timers: List(#(Int, Int, TimerId)),
+    asking: Dict(Int, step.Ask(client_connection.Request)),
   )
 }
 
@@ -118,6 +128,7 @@ pub fn new(tables tables: table_store.Tables) -> Scene {
     taken: [],
     frames: dict.new(),
     timers: [],
+    asking: dict.new(),
   )
 }
 
@@ -126,10 +137,27 @@ fn settings(scene scene: Scene) -> game_connection.Settings {
   Settings(..connection_support.settings(), tables: scene.tables)
 }
 
+/// The character of the class and level the scene's players are, standing at `place`.
+pub fn character_of(
+  class_id class_id: Int,
+  level level: Int,
+  place place: Place,
+) -> Character {
+  Character(
+    ..connection_support.world_character(),
+    class_id: ClassId(class_id),
+    level:,
+    place: Some(place),
+  )
+}
+
 /// The player of connection `connection`, a character of the class and level, enters the
 /// map standing at `place`: the connection's own steps up to the map's answer, then the
 /// map's join, then the connection's entry burst. What the map and the connection sent
-/// is in the mail, behind what was there; none of it is delivered.
+/// is in the mail, behind what was there; none of it is delivered. A connection the scene
+/// holds already enters again from its own state, camped out to character select, so its
+/// join names the stay after its last, and the map, which has not taken its leave, takes
+/// the join as a player that joins again.
 pub fn enter(
   scene scene: Scene,
   connection connection: Int,
@@ -137,24 +165,25 @@ pub fn enter(
   level level: Int,
   place place: Place,
 ) -> Scene {
-  let accepted =
-    connection_support.feed(
-      state: game_connection.new(settings(scene:)),
-      event: OwnEvent(step.Accepted(
-        ConnectionId(connection),
-        support.peer,
-        support.seed(1),
-      )),
-    ).0
+  let in_select = case dict.get(scene.connections, connection) {
+    Ok(held) -> connection_support.camp_from(held)
+    Error(Nil) -> {
+      let accepted =
+        connection_support.feed(
+          state: game_connection.new(settings(scene:)),
+          event: OwnEvent(step.Accepted(
+            ConnectionId(connection),
+            support.peer,
+            support.seed(1),
+          )),
+        ).0
+      connection_support.in_select_from(accepted)
+    }
+  }
   let #(state, asked) =
     connection_support.joining_saved(
-      in_character_select: connection_support.in_select_from(accepted),
-      character: Character(
-        ..connection_support.world_character(),
-        class_id: ClassId(class_id),
-        level:,
-        place: Some(place),
-      ),
+      in_character_select: in_select,
+      character: character_of(class_id:, level:, place:),
       saved_health: None,
     )
   let message = case connection_support.ask_request(asked) {
@@ -210,6 +239,7 @@ pub fn enter(
       ),
       taken: burst,
     ),
+    asking: dict.delete(scene.asking, connection),
   )
 }
 
@@ -325,6 +355,26 @@ pub fn client_sends(
   )
 }
 
+/// The client of a connection in character select picks the character, as mail of the
+/// client's queue.
+pub fn client_selects(
+  scene scene: Scene,
+  connection connection: Int,
+  character character: Character,
+) -> Scene {
+  Scene(
+    ..scene,
+    mail: list.append(scene.mail, [
+      order_explorer.Mail(
+        to: ConnectionProcess(connection),
+        from: FromClient(connection),
+        input: ToConnectionSelecting(character:),
+        name: "client of " <> int_name(connection) <> " picks its character",
+      ),
+    ]),
+  )
+}
+
 /// The tell of the connection `connection` to the map that its player now stands at
 /// `place`, as its connection's accepted 0x637 sends it, as mail of the connection's queue
 /// to the map.
@@ -419,9 +469,95 @@ pub fn mail_of_the_map(
   })
 }
 
+/// What a map's step answers to the connections that asked it, as mail of the answer's own
+/// queue to each (the ask the connection waits for, `Scene.asking`): the map's reply, with
+/// the loadout the scene's tables give a joined character's class.
+fn answers_of_the_map(
+  scene scene: Scene,
+  taken taken: step.ServiceStep(map.Outgoing),
+) -> List(Mail) {
+  list.map(support.replies(taken), fn(reply) {
+    let #(CallerId(number), outgoing) = reply
+    let assert Ok(ask) = dict.get(scene.asking, number)
+      as "a reply of the map names a connection that waits for it"
+    let answer = case ask.request, outgoing {
+      client_connection.AskMap(message: map.Join(character:, ..), ..),
+        map.Joined(..)
+      | client_connection.AskMapRun(message: map.Join(character:, ..), ..),
+        map.Joined(..)
+      -> {
+        let ClassId(class_id) = character.class_id
+        connection_support.with_the_tables_loadout(
+          joined: outgoing,
+          tables: scene.tables,
+          class_id:,
+        )
+      }
+      _, _ -> outgoing
+    }
+    order_explorer.Mail(
+      to: ConnectionProcess(number),
+      from: FromMapAnswer,
+      input: ToConnection(
+        OwnEvent(step.Answered(
+          ask: ask.ask,
+          outcome: step.Answer(client_connection.FromMap(answer)),
+        )),
+      ),
+      name: "map answers " <> int_name(number) <> ": " <> answer_name(answer:),
+    )
+  })
+}
+
+/// The name of what a map answers, as the mail's name says it.
+fn answer_name(answer answer: map.Outgoing) -> String {
+  case answer {
+    map.Joined(..) -> "Joined"
+    map.Left -> "Left"
+    _ -> "another answer"
+  }
+}
+
 /// What a connection's step tells the map and the connections of other players, in
-/// order, as mail of the connection's queues.
+/// order, and the ask of the map it ends in, as mail of the connection's queues.
 pub fn mail_of_the_connection(
+  connection connection: Int,
+  taken taken: step.ConnectionStep(client_connection.Request),
+) -> List(Mail) {
+  list.append(
+    tells_of_the_connection(connection:, taken:),
+    case support.asked(taken) {
+      Some(step.Ask(request: client_connection.AskMap(message:, ..), ..))
+      | Some(step.Ask(request: client_connection.AskMapRun(message:, ..), ..)) -> [
+        order_explorer.Mail(
+          to: MapProcess,
+          from: FromConnection(connection),
+          input: ToMap(
+            OwnEvent(step.Asked(caller: CallerId(connection), message:)),
+          ),
+          name: "ask of " <> int_name(connection) <> ": " <> ask_name(message:),
+        ),
+      ]
+      Some(step.Ask(request: client_connection.AskStore(..), ..)) | None -> []
+      Some(step.Ask(request:, ..)) ->
+        panic as {
+          "a connection of the scene asks the map or the store; it asked "
+          <> request_name(request:)
+        }
+    },
+  )
+}
+
+/// The name of what a connection asks the map, as the mail's name says it.
+fn ask_name(message message: map.Message) -> String {
+  case message {
+    map.Join(..) -> "Join"
+    map.Leave(..) -> "Leave"
+    _ -> "another ask"
+  }
+}
+
+fn tells_of_the_connection(
   connection connection: Int,
   taken taken: step.ConnectionStep(client_connection.Request),
 ) -> List(Mail) {
@@ -528,8 +664,22 @@ fn outgoing_name(message message: map.Outgoing) -> String {
       }
       <> " of "
       <> int.to_string(unit_id)
+    map.Relayed(delivered: relay.Landed(landing:), ..) ->
+      "Relayed " <> landing_name(landing:)
     map.Relayed(..) -> "Relayed"
     _ -> "another send"
+  }
+}
+
+/// The name of a landing, as the mail's name says it.
+fn landing_name(landing landing: relay.Landing) -> String {
+  case landing {
+    relay.HealStrike(..) -> "heal strike"
+    relay.HealAnswer(..) -> "heal answer"
+    relay.ChangeStart(..) -> "change start"
+    relay.ChangeEnd(..) -> "change end"
+    relay.CastWent(..) -> "cast went"
+    relay.AllyEvent(..) -> "ally event"
   }
 }
 
@@ -545,6 +695,7 @@ fn receiver_name(receiver receiver: Receiver) -> String {
 fn sender_name(sender sender: Sender) -> String {
   case sender {
     FromMap -> "map"
+    FromMapAnswer -> "the map's answer"
     FromConnection(connection:) -> "connection " <> int.to_string(connection)
     FromClient(connection:) -> "client " <> int.to_string(connection)
     FromTimer(connection:) -> "timer " <> int.to_string(connection)
@@ -554,7 +705,7 @@ fn sender_name(sender sender: Sender) -> String {
 /// The scheduler of the scene's processes (`order_explorer`).
 fn scheduler() -> order_explorer.Scheduler(Scene, Receiver, Sender, Input) {
   order_explorer.Scheduler(
-    mail: fn(scene: Scene) { scene.mail },
+    mail: takeable,
     deliver:,
     taken: fn(scene: Scene) { scene.taken },
     queue_name: fn(receiver, sender) {
@@ -563,10 +714,22 @@ fn scheduler() -> order_explorer.Scheduler(Scene, Receiver, Sender, Input) {
   )
 }
 
+/// The mail a receiver may take now: all of it, except that a connection waiting for the
+/// map's answer takes that answer alone, and the rest of its mail waits.
+fn takeable(scene scene: Scene) -> List(Mail) {
+  list.filter(scene.mail, fn(mail) {
+    case mail.to {
+      ConnectionProcess(connection:) ->
+        !dict.has_key(scene.asking, connection) || mail.from == FromMapAnswer
+      MapProcess -> True
+    }
+  })
+}
+
 /// The deliveries the scene allows now: the head of each queue, one for each receiver and
 /// sender, in the order they were sent.
 pub fn deliverable(scene scene: Scene) -> List(Mail) {
-  order_explorer.heads(mail: scene.mail)
+  order_explorer.heads(mail: takeable(scene:))
 }
 
 /// The scenes the deliveries can end in, one for each outcome: each order that takes the
@@ -608,36 +771,115 @@ pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
       Scene(
         ..scene,
         map: state,
-        mail: list.append(scene.mail, mail_of_the_map(taken:)),
+        mail: list.flatten([
+          scene.mail,
+          mail_of_the_map(taken:),
+          answers_of_the_map(scene:, taken:),
+        ]),
       )
     }
     ToConnection(event:), ConnectionProcess(connection:) -> {
       let #(state, taken) =
         connection_support.feed_at(
           state: connection_state(scene:, connection:),
-          filetime: connection_support.filetime + now_ms * 10_000,
+          filetime: filetime_at(now_ms:),
           event:,
         )
-      Scene(
-        ..scene,
-        connections: dict.insert(scene.connections, connection, state),
-        mail: list.append(
-          scene.mail,
-          mail_of_the_connection(connection:, taken:),
+      connection_stepped(scene:, connection:, state:, taken:, now_ms:)
+    }
+    ToConnectionSelecting(character:), ConnectionProcess(connection:) -> {
+      let #(state, taken) =
+        connection_support.joining_saved(
+          in_character_select: connection_state(scene:, connection:),
+          character:,
+          saved_health: None,
+        )
+      connection_stepped(scene:, connection:, state:, taken:, now_ms:)
+    }
+    ToConnection(..), MapProcess | ToConnectionSelecting(..), MapProcess ->
+      panic as "mail of a connection is never to the map"
+  }
+}
+
+fn filetime_at(now_ms now_ms: Int) -> Int {
+  connection_support.filetime + now_ms * 10_000
+}
+
+/// The scene after a connection's step: its state, what it sent, the frames it wrote and
+/// the cast timers it started put in the scene. A step that ends in an ask of the store is
+/// followed by the store's answer at once, since the connection takes nothing else while it
+/// waits; a step that ends in an ask of the map leaves the connection waiting for the map's
+/// answer.
+fn connection_stepped(
+  scene scene: Scene,
+  connection connection: Int,
+  state state: game_connection.State,
+  taken taken: step.ConnectionStep(client_connection.Request),
+  now_ms now_ms: Int,
+) -> Scene {
+  let #(state, steps) = store_answered(state:, taken:, now_ms:, steps: [taken])
+  let scene =
+    Scene(
+      ..scene,
+      connections: dict.insert(scene.connections, connection, state),
+      asking: case support.asked(list.last(steps) |> result.unwrap(taken)) {
+        Some(ask) -> dict.insert(scene.asking, connection, ask)
+        None -> dict.delete(scene.asking, connection)
+      },
+    )
+  list.fold(steps, scene, fn(scene, taken) {
+    Scene(
+      ..scene,
+      mail: list.append(scene.mail, mail_of_the_connection(connection:, taken:)),
+      frames: frames_added(
+        frames: scene.frames,
+        connection:,
+        added: connection_support.heard(
+          taken:,
+          cipher: connection_support.keyed(),
         ),
-        frames: frames_added(
-          frames: scene.frames,
-          connection:,
-          added: connection_support.heard(
-            taken:,
-            cipher: connection_support.keyed(),
-          ),
-        ),
-        timers: timers_after(timers: scene.timers, connection:, now_ms:, taken:),
+      ),
+      timers: timers_after(timers: scene.timers, connection:, now_ms:, taken:),
+    )
+  })
+}
+
+/// The state after the store answered each ask of the store the step ends in, and the steps
+/// that took the answers, after `steps`.
+fn store_answered(
+  state state: game_connection.State,
+  taken taken: step.ConnectionStep(client_connection.Request),
+  now_ms now_ms: Int,
+  steps steps: List(step.ConnectionStep(client_connection.Request)),
+) -> #(
+  game_connection.State,
+  List(step.ConnectionStep(client_connection.Request)),
+) {
+  case support.asked(taken) {
+    Some(step.Ask(request: client_connection.AskStore(request:), ask:, ..)) -> {
+      let #(state, answered) =
+        connection_support.feed_at(
+          state:,
+          filetime: filetime_at(now_ms:),
+          event: OwnEvent(step.Answered(ask:, outcome: store_answer(request:))),
+        )
+      store_answered(
+        state:,
+        taken: answered,
+        now_ms:,
+        steps: list.append(steps, [answered]),
       )
     }
-    ToConnection(..), MapProcess ->
-      panic as "mail of a connection is never to the map"
+    Some(_) | None -> #(state, steps)
+  }
+}
+
+/// What the store answers a connection's ask in a scene: the save a camp makes.
+fn store_answer(request request: store.Request) -> step.Outcome(Answer) {
+  case request {
+    store.Move(request: store.SavePlace(..)) -> connection_support.place_saved()
+    store.Login(..) | store.Select(..) | store.World(..) | store.Items(..) ->
+      panic as "the scene answers the store's save of a camp and no other ask"
   }
 }
 
@@ -762,6 +1004,39 @@ pub fn cast_frames(
   })
 }
 
+/// The unit ids the connection's 0x7f4 frames name as targets, in order.
+pub fn go_targets(scene scene: Scene, connection connection: Int) -> List(Int) {
+  list.flat_map(frames_of(scene:, connection:), fn(frame) {
+    case frame.message_id {
+      0x07F4 -> {
+        let assert Ok(go) = spell_go.decode(frame.body)
+          as "a 0x7f4 the connection wrote decodes"
+        list.map(go.targets, fn(target) { target.unit_id })
+      }
+      _ -> []
+    }
+  })
+}
+
+/// A timer of a connection fires, as mail of the timer's own queue.
+pub fn timer_fires(
+  scene scene: Scene,
+  connection connection: Int,
+  timer timer: TimerId,
+) -> Scene {
+  Scene(
+    ..scene,
+    mail: list.append(scene.mail, [
+      order_explorer.Mail(
+        to: ConnectionProcess(connection),
+        from: FromTimer(connection),
+        input: ToConnection(OwnEvent(TimerFired(timer:))),
+        name: "timer of " <> int_name(connection) <> " fires",
+      ),
+    ]),
+  )
+}
+
 /// The cast a cast frame (0x7ff, 0x7f4, 0x7fe, 0x811) names; any other frame names none.
 fn cast_of(frame frame: Frame) -> Result(Int, Nil) {
   case frame.message_id {
@@ -830,39 +1105,5 @@ pub fn map_is_told(
     mail: list.append(scene.mail, [
       order_explorer.Mail(to: MapProcess, from:, input: ToMap(event), name:),
     ]),
-  )
-}
-
-/// The player of connection `connection` joins the map a second time, in the stay `stay`,
-/// at `place`, as its connection asks: the map's step is taken at once and what it sends is
-/// left in the mail. The connection itself is not stepped.
-pub fn join_again(
-  scene scene: Scene,
-  connection connection: Int,
-  stay stay: Stay,
-  place place: Place,
-) -> Scene {
-  let #(map_state, taken) =
-    map.step(
-      scene.map,
-      support.input_at_ms(
-        ms: order_explorer.now_ms(clocks: scene.clocks, receiver: MapProcess),
-        event: OwnEvent(step.Asked(
-          caller: CallerId(connection),
-          message: map.Join(
-            connection: ConnectionId(connection),
-            character: connection_support.world_character(),
-            place:,
-            stay:,
-            alive: True,
-            hidden: set.new(),
-          ),
-        )),
-      ),
-    )
-  Scene(
-    ..scene,
-    map: map_state,
-    mail: list.append(scene.mail, mail_of_the_map(taken:)),
   )
 }

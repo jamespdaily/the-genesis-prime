@@ -1581,10 +1581,11 @@ fn carried_out(
       ),
         Some(entered)
       -> #(session, [
-        tells_the_player(
+        connection_state.tells_the_landing(
           session:,
           entered:,
-          address:,
+          to: address.connection,
+          to_stay: address.stay,
           landing: relay.ChangeStart(change: held_changes.PlayerChangeStarts(
             from: client_connection.connection(session.link),
             from_stay: entered.stay,
@@ -1599,10 +1600,11 @@ fn carried_out(
       cast_state.OtherPlayerChangeEnds(address:, source:), Some(entered) -> #(
         session,
         [
-          tells_the_player(
+          connection_state.tells_the_landing(
             session:,
             entered:,
-            address:,
+            to: address.connection,
+            to_stay: address.stay,
             landing: relay.ChangeEnd(change: held_changes.PlayerChangeEnds(
               from: client_connection.connection(session.link),
               source:,
@@ -1613,10 +1615,11 @@ fn carried_out(
       cast_state.OtherPlayerCastWent(address:, cast_id:), Some(entered) -> #(
         session,
         [
-          tells_the_player(
+          connection_state.tells_the_landing(
             session:,
             entered:,
-            address:,
+            to: address.connection,
+            to_stay: address.stay,
             landing: relay.CastWent(change: held_changes.PlayerCastWent(
               from: client_connection.connection(session.link),
               cast_id:,
@@ -1808,24 +1811,6 @@ fn procs_fired(
 
 /// The bytes of a chance draw: one 32-bit word (`random.words`).
 const proc_word_bytes = 4
-
-/// The change `change` of a cast, told to the player `address` names for the stay it names,
-/// through the map: the map admits it by the kind's checks and relays it to that player's
-/// connection, which applies it and holds it for this connection.
-fn tells_the_player(
-  session session: Session,
-  entered entered: world_entry.Entered,
-  address address: player_address.PlayerAddress,
-  landing landing: relay.Landing,
-) -> Effect(ConnectionEffect(Request)) {
-  connection_state.tells_the_landing(
-    session:,
-    entered:,
-    to: address.connection,
-    to_stay: address.stay,
-    landing:,
-  )
-}
 
 /// The throw of the creature `unit_id` of `life`, told through the player's map as a
 /// strike's tell goes: the connection draws `forced_move.draw_bytes` from its seed
@@ -2114,10 +2099,11 @@ fn strike_carried_out(
         ),
       ])
       strike.TellPlayerStrike(address:, strike:), Some(entered) -> #(session, [
-        tells_the_player(
+        connection_state.tells_the_landing(
           session:,
           entered:,
-          address:,
+          to: address.connection,
+          to_stay: address.stay,
           landing: relay.HealStrike(strike:),
         ),
       ])

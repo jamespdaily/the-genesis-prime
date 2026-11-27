@@ -16,21 +16,23 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection
 import genesis_prime/game/effect_kind
 import genesis_prime/game/held_changes
+import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts.{EndsAt, HeldEffect}
-import genesis_prime/game/unit_news.{Appeared, PeerNews}
 import genesis_prime/game/unit_properties.{Source}
-import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
+import genesis_prime/message/unit_create_player
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
 import genesis_prime/world_map/relay
+import genesis_prime/world_map/stay
 import gleam/float
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
+import gleam/result
 import gleam/set
 import gleam/string
 import legal_order_support
@@ -656,63 +658,157 @@ pub fn a_snapshot_built_before_a_casters_disappearance_lists_its_held_cast_and_o
     as "and the casts end with C's disappearance: T's 0x811 for each, naming T"
 }
 
+/// Spell4 32820, Mind Over Body, is an Esper's at level 6 by SpellLevel row 767
+/// (`table_rows -- SpellLevel spell4Id=32820`), which the fixture lacks; its Spell4 and heal
+/// rows (Spell4Effects 62019) are in it.
+fn with_the_heal(body body: fn(table_store.Tables) -> Nil) -> Nil {
+  let assert Ok(rows) =
+    fixture_tables.add(
+      rows: fixture_tables.rows(),
+      table: "SpellLevel",
+      copy_of: 647,
+      id: 767,
+      with: [
+        #("characterLevel", planted_table.Integer(6)),
+        #("spell4Id", planted_table.Integer(32_820)),
+      ],
+    )
+  fixture_tables.on_rows(rows:, reaching: [], body:)
+}
+
+/// A Medic H (connection 1, at x 20), the healed player, and an Esper of level 6 E
+/// (connection 2, at x 0, inside Mind Over Body's range of 35 and in sight), settled; and the
+/// bag index of Mind Over Body.
+fn heal_world(tables tables: table_store.Tables) -> #(scene.Scene, Int) {
+  let world =
+    scene.new(tables:)
+    |> scene.enter(
+      connection: 1,
+      class_id: medic,
+      level: 1,
+      place: scene.at(x: 20.0),
+    )
+    |> scene.enter(
+      connection: 2,
+      class_id: 3,
+      level: 6,
+      place: scene.at(x: 0.0),
+    )
+    |> scene.settle
+  #(
+    world,
+    connection_support.bag_index_of(
+      tables:,
+      class_id: 3,
+      level: 6,
+      ability: 19_030,
+    ),
+  )
+}
+
+/// The Esper's press of Mind Over Body at the unit of connection `target`, and the go that
+/// follows its cast time: what the steps sent is in flight, none of it taken.
+fn heal_pressed(
+  world world: scene.Scene,
+  bag_index bag_index: Int,
+  target target: Int,
+) -> scene.Scene {
+  let with_the_press =
+    scene.client_presses(
+      scene: world,
+      connection: 2,
+      bag_index:,
+      client_cast_id: 1,
+      target: unit_of(connection: target),
+    )
+  let assert [press] = scene.deliverable(scene: with_the_press)
+    as "the press is the one message in flight"
+  scene.fire_timers(
+    scene: scene.deliver(scene: with_the_press, mail: press),
+    within_ms: 3000,
+  )
+}
+
+/// The stay each heal strike in flight names for the connection it heals, as the strike's
+/// tell to the map names it.
+fn heal_strikes_in_flight(scene scene: scene.Scene) -> List(#(Int, stay.Stay)) {
+  list.filter_map(scene.mail, fn(mail) {
+    case mail.input {
+      scene.ToMap(step.OwnEvent(step.Told(message: map.TellLanding(
+        to: ConnectionId(to),
+        to_stay:,
+        landing: relay.HealStrike(..),
+        ..,
+      )))) -> Ok(#(to, to_stay))
+      _ -> Error(Nil)
+    }
+  })
+}
+
 pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355_then_its_new_0x262_and_its_heals_reach_the_new_stay_test() -> Nil {
   use <- owned_test.run(10_000)
-  let settled = two_players()
+  use tables <- with_the_heal
+  let #(settled, bag_index) = heal_world(tables:)
+  let written_for_h = fn(scene) {
+    scene.written_for(scene:, connection: 2, unit_id: unit_of(connection: 1))
+  }
   let assert Some(map.Relation(generation: first, ..)) =
-    relation(scene: settled)
-    as "the map holds the sight V has of C"
-  // C's connection joins the map again, in its second stay: the map ends each pair and
-  // begins it again.
+    map.player_relation(
+      state: settled.map,
+      owner: ConnectionId(1),
+      viewer: ConnectionId(2),
+    )
+    as "the map holds the sight E has of H"
+  // H's connection enters again from its own state, in its second stay, the map taking the
+  // join as a player that joins again and ending each pair to begin it again.
   let again =
-    scene.join_again(
+    scene.enter(
       scene: settled,
       connection: 1,
-      stay: map_support.stay(count: 2),
-      place: scene.at(x: 1000.0),
+      class_id: medic,
+      level: 1,
+      place: scene.at(x: 20.0),
     )
   let assert Some(map.Relation(generation: second, stay: viewer_stay, ..)) =
-    relation(scene: again)
-    as "the map holds a new sight of C for V"
+    map.player_relation(
+      state: again.map,
+      owner: ConnectionId(1),
+      viewer: ConnectionId(2),
+    )
+    as "the map holds a new sight of H for E"
   assert generation.compare(second, first) == order.Gt
     as "the new sight is a new generation"
   assert viewer_stay == map_support.stay(count: 1)
-    as "V is in the stay it was in"
-  // C's own new connection state answers the new sight's SeenBy with its snapshot; here the
-  // map is told the snapshot for the new stay as C's connection tells it.
-  let told =
-    scene.map_is_told(
-      scene: again,
-      from: scene.FromConnection(1),
-      event: step.OwnEvent(
-        step.Told(
-          message: map.PlayerSnapshot(
-            by: ConnectionId(1),
-            stay: map_support.stay(count: 2),
-            viewer: ConnectionId(2),
-            generation: second,
-            burst: [
-              PeerNews(
-                unit_id: 1,
-                news: Appeared(
-                  unit: UnitCreatePlayer(
-                    ..connection_support.another_unit(),
-                    unit_id: 1,
-                  ),
-                  generation: second,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-      name: "C's snapshot of the new sight",
-    )
-  let done = scene.settle(scene: told)
-  assert list.drop(written_for_c(scene: done), 1) == ["0x355(1)", "0x262(1)"]
-    as "V is written C's 0x355 and then its new 0x262: the shown unit is removed and created again, not kept under the earlier address"
+    as "E is in the stay it was in"
+  // H's own new connection answers the new sight's SeenBy with its snapshot.
+  let done = scene.settle(scene: again)
+  assert list.drop(written_for_h(done), 1) == ["0x355(1)", "0x262(1)"]
+    as "E is written H's 0x355 and then its new 0x262: the shown unit is removed and created again, not kept under the earlier address"
+  assert !list.contains(
+    scene.written_for(
+      scene: done,
+      connection: 1,
+      unit_id: unit_of(connection: 2),
+    ),
+    "0x355(2)",
+  )
+    as "H's own new entry is written no 0x355 for E"
   assert scene.direct_news(scene: done, from: 1, to: 2) == []
-    as "C told V nothing itself"
+    as "H told E nothing itself"
+  // E presses its heal at H: the strike names H's new stay, which E's own copy took from
+  // the map's SeenBy of the new sight, and H, in that stay, takes it and answers.
+  let healing = heal_pressed(world: done, bag_index:, target: 1)
+  assert heal_strikes_in_flight(scene: healing)
+    == [#(1, map_support.stay(count: 2))]
+    as "the strike names H's second stay, not the stay of the sight E held before"
+  let healed = scene.settle(scene: healing)
+  assert list.any(healed.taken, fn(taken) {
+    taken.name == "tell of 1 to the map: TellLanding"
+  })
+    as "H took the heal in its new stay and answered it through the map"
+  assert scene.go_targets(scene: healed, connection: 2)
+    == [unit_of(connection: 1)]
+    as "the answer closed E's round: its go names H"
 }
 
 /// The moves the connection `from` has told the connection `to` so far (`TellMove`).
@@ -923,60 +1019,147 @@ pub fn at_the_ally_a_change_start_then_the_casters_unseen_ends_or_keeps_it_by_it
   })
 }
 
+/// The position of the first name in the names, if it is there.
+fn position_of(
+  names names: List(String),
+  name name: String,
+) -> Result(Int, Nil) {
+  list.index_map(names, fn(found, index) { #(found, index) })
+  |> list.find(fn(entry) { entry.0 == name })
+  |> result.map(fn(entry) { entry.1 })
+}
+
 pub fn a_heal_the_map_accepted_before_its_caster_left_sight_is_applied_and_one_for_a_stay_the_player_left_after_the_map_accepted_it_is_dropped_at_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
-  let settled = two_players()
-  let heal =
-    strike_support.heal_strike(
-      from: ConnectionId(1),
-      stay: map_support.stay(count: 1),
-      cast_id: 100,
-      unit_id: unit_of(connection: 2),
-      outgoing: 1.0,
-      heals: [#(effect_kind.Health, 10)],
-    )
-  // C's heal reaches the map and then C's move out of T's sight: the heal is taken and
-  // answered whichever comes first at T.
-  let sent =
-    scene.map_is_told(
-      scene: settled,
-      from: scene.FromConnection(1),
-      event: step.OwnEvent(
-        step.Told(message: map.TellLanding(
-          from: ConnectionId(1),
-          stay: map_support.stay(count: 1),
-          to: ConnectionId(2),
-          to_stay: map_support.stay(count: 1),
-          landing: relay.HealStrike(strike: heal),
-        )),
-      ),
-      name: "C's heal of T",
-    )
+  use tables <- with_the_heal
+  // The healer E (connection 2, an Esper) has pressed Mind Over Body at the healed player H
+  // (connection 1) and its go has told the map the strike for H's stay 1.
+  let #(world, bag_index) = heal_world(tables:)
+  let healing = heal_pressed(world:, bag_index:, target: 1)
+  assert heal_strikes_in_flight(scene: healing)
+    == [#(1, map_support.stay(count: 1))]
+    as "the strike in flight names H's stay"
+  // E's heal reaches the map and then E's move out of H's sight: H takes the heal and
+  // answers it through the map, E's round closes and its go names H, in every order.
   list.each(
     scene.orders(scene: scene.tells_the_map_it_moved(
-      scene: sent,
-      connection: 1,
+      scene: healing,
+      connection: 2,
       place: scene.at(x: 3000.0),
       seq: 1,
     )),
     fn(done) {
       assert list.any(done.taken, fn(taken) {
-        string.contains(taken.name, "tell of 2 to the map: TellLanding")
+        taken.name == "tell of 1 to the map: TellLanding"
       })
-        as "T took the heal the map accepted and answered it through the map, though C left its sight"
-      assert scene.direct_news(scene: done, from: 2, to: 1) == []
-        as "T told C nothing itself: the answer is the map's"
+        as "H took the heal the map accepted and answered it through the map, though E left its sight"
+      assert scene.go_targets(scene: done, connection: 2)
+        == [unit_of(connection: 1)]
+        as "the answer reached E's round, for E's stay: its go names H"
+      assert scene.direct_news(scene: done, from: 1, to: 2) == []
+        as "H told E nothing itself: the answer is the map's"
     },
   )
-  // A heal for a stay T is no longer in is dropped at its connection: nothing is told.
+  // H camps and enters again while the heal is on its way: its client camps and picks the
+  // character again, its connection asks the map to leave and to join, and the map takes
+  // the heal, or H's leave, first. Then E's strike timer fires.
+  let camping =
+    healing
+    |> scene.client_sends(
+      connection: 1,
+      bytes: connection_support.camp_request_message(True),
+      name: "camp of 1 starts",
+    )
+    |> scene.client_sends(
+      connection: 1,
+      bytes: connection_support.camp_finished_message(),
+      name: "camp of 1 finishes",
+    )
+    |> scene.client_selects(
+      connection: 1,
+      character: scene.character_of(
+        class_id: medic,
+        level: 1,
+        place: scene.at(x: 20.0),
+      ),
+    )
+  let outcomes =
+    list.map(scene.orders(scene: camping), fn(done) {
+      scene.settle(scene: scene.timer_fires(
+        scene: done,
+        connection: 2,
+        timer: strike.strike_timer,
+      ))
+    })
+  let healed_at = fn(done: scene.Scene) {
+    position_of(
+      names: scene.order_at(scene: done, receiver: scene.ConnectionProcess(1)),
+      name: "map Relayed heal strike to 1",
+    )
+  }
+  let after = fn(done: scene.Scene, name: String) {
+    let assert Ok(position) =
+      position_of(
+        names: scene.order_at(scene: done, receiver: scene.ConnectionProcess(1)),
+        name:,
+      )
+      as { "H took " <> name }
+    position
+  }
+  list.each(outcomes, fn(done) {
+    let answered =
+      list.any(done.taken, fn(taken) {
+        taken.name == "tell of 1 to the map: TellLanding"
+      })
+    assert answered
+      == case healed_at(done) {
+        Ok(position) -> position < after(done, "map answers 1: Left")
+        Error(Nil) -> False
+      }
+      as "H answers the heal only when it took it before the map answered its leave: a heal taken after it, in character select or in the new stay, is dropped"
+    assert scene.go_targets(scene: done, connection: 2)
+      == case answered {
+        True -> [unit_of(connection: 1)]
+        False -> []
+      }
+      as "E's round closes on H's answer, or its strike timer writes the go without H"
+    assert scene.direct_news(scene: done, from: 1, to: 2) == []
+      as "H told E nothing itself"
+  })
+  assert list.any(outcomes, fn(done) {
+    list.any(done.taken, fn(taken) {
+      taken.name == "tell of 1 to the map: TellLanding"
+    })
+  })
+    as "an order in which H takes the heal before it camps, and answers it"
+  assert list.any(outcomes, fn(done) {
+    case healed_at(done) {
+      Ok(position) -> position > after(done, "map answers 1: Joined")
+      Error(Nil) -> False
+    }
+  })
+    as "an order in which H takes the heal for its first stay after it entered the second: the stay fence drops it"
+  assert list.any(outcomes, fn(done) { healed_at(done) == Error(Nil) })
+    as "an order in which the map takes H's leave first and relays H nothing"
+  // A heal told for an earlier stay of the connection is dropped at the connection: nothing is
+  // told.
   let #(_, taken) =
     connection_support.feed(
-      state: scene.connection_state(scene: settled, connection: 2),
+      state: scene.connection_state(scene: world, connection: 1),
       event: connection_support.for_stay(
         stay: map_support.stay(count: 0),
-        sent: client_connection.SentByPlayer(tell: client_connection.Strike(
-          strike: heal,
-        )),
+        sent: client_connection.SentByPlayer(
+          tell: client_connection.Strike(
+            strike: strike_support.heal_strike(
+              from: ConnectionId(2),
+              stay: map_support.stay(count: 1),
+              cast_id: 100,
+              unit_id: unit_of(connection: 1),
+              outgoing: 1.0,
+              heals: [#(effect_kind.Health, 10)],
+            ),
+          ),
+        ),
       ),
     )
   assert connection_support.tells(taken) == []
