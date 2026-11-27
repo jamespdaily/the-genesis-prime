@@ -72,6 +72,16 @@ fn tracked_sources(
   files
 }
 
+/// Every tracked text file under the directories that a rule reads for a
+/// word: Gleam, Erlang, Python, shell, SQL, CSS and TOML, sorted by path.
+pub fn texts(under directories: List(String)) -> List(SourceFile) {
+  let suffixes = [".gleam", ".erl", ".py", ".sh", ".sql", ".css", ".toml"]
+  list.flat_map(suffixes, fn(suffix) {
+    tracked_sources(suffix:, under: directories)
+  })
+  |> list.sort(fn(a, b) { string.compare(a.path, b.path) })
+}
+
 /// Every key of the client's fact file, read once for the run.
 pub fn fact_keys() -> List(String) {
   dict.keys(fact_file.records())
