@@ -186,6 +186,7 @@ import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/departures
 import genesis_prime/game/hello_reply
 import genesis_prime/game/movement
+import genesis_prime/game/objective
 import genesis_prime/game/player_life
 import genesis_prime/game/routing
 import genesis_prime/game/strike
@@ -801,6 +802,11 @@ fn world_carried(
                     now:,
                     entered:,
                     inner: whole,
+                    use_targets: objective.use_targets(
+                      log: entered.quests,
+                      tables: session.settings.tables,
+                      scripts: session.settings.script_rows,
+                    ),
                   )
                 Ok(routing.ItemUse) ->
                   connection_casting.item_use_message(

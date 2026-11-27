@@ -406,12 +406,16 @@ fn world_cast(
 
 /// The player's 0xb3, the use of a unit with no activate spell (genesis_prime/game/cast
 /// `activate_unit`), whose go the rule raises at once: the connection counts it for the
-/// objectives as an activate cast's go is counted.
+/// objectives as an activate cast's go is counted. `use_targets` says whether a use of a
+/// unit counts for an open objective (`objective.use_targets`); the caller that holds the
+/// quest log builds it.
 pub fn activate_unit_message(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
   inner inner: Frame,
+  use_targets use_targets: fn(target_group.Unit, Int, objective.SpawnedUnit) ->
+    Bool,
 ) -> client_connection.Handled(Session) {
   let tables = session.settings.tables
   let caster = caster_of(tables:, entered:)
@@ -429,11 +433,7 @@ pub fn activate_unit_message(
       unit_of: used_unit(
         tables:,
         picture: entered.shown,
-        use_targets: objective.use_targets(
-          log: entered.quests,
-          tables:,
-          scripts: session.settings.script_rows,
-        ),
+        use_targets:,
         link_of: link_of(
           tables:,
           activations: connection_state.activations_of(session:),
