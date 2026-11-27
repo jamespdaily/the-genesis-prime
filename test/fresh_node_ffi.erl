@@ -20,7 +20,7 @@ run_function(Fun, TimeoutMs) ->
 call(Module, Function, Arguments, TimeoutMs) ->
     %% The peer's own erl holds OTP's paths; it is given the project's.
     Paths = project_paths(),
-    Peer = case peer:start_link(#{connection => standard_io, args => ["+hmqd", "off_heap", "-pa" | Paths],
+    Peer = case peer:start_link(#{connection => standard_io, args => ["-pa" | Paths],
                                   env => fixed_seed_ffi:node_environment()}) of
                {ok, Started} -> Started;
                {ok, Started, _Node} -> Started

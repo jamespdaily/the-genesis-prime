@@ -103,8 +103,12 @@
 #                  that had started and not ended, with the seconds each had run.
 #                  A run whose VM dies by a signal (an abort of the VM, signal 6)
 #                  prints the signal and the same names in its log, and fails the part.
-#                  Every VM the check starts for built code runs with `+hmqd off_heap`
-#                  (run_built).
+#                  Every VM that runs this project's tests gets `+hmqd off_heap` from one
+#                  place, ERL_AFLAGS in setup_check/environment.sh, which this script
+#                  sources; the VMs the tests start inherit it. A launcher outside this
+#                  script (`gleam test`, dev/repeat_tests.py) runs after
+#                  `. setup_check/environment.sh`, as CI's repeat step does. The release
+#                  (release/vm.args) and the load runs' peer name `+hmqd on_heap` themselves.
 #                  No tag but serial, world_data, real_start, real_tables and client_rows is
 #                  skipped, so the first run also runs the tests tagged code_rule
 #                  (the tests of test/code_rule) and registry (each one comparing a
@@ -667,16 +671,14 @@ fi
 # entry module genesis_prime@@main (the package's name) running MODULE, -noshell, and
 # the arguments after -extra, where the argv package reads them. The program's exit
 # status is the function's. MODULE is written as gleam's -m takes it (a folder
-# separator is `/`). The VM keeps every process's message queue off its heap (+hmqd
-# off_heap): the VM's abort in major_collection after move_msgs_to_heap is a step only
-# a process with an on-heap queue takes.
+# separator is `/`).
 run_built() {
   local module=$1 dir paths=()
   shift
   for dir in "$PWD"/build/dev/erlang/*/ebin; do
     [ -d "$dir" ] && paths+=(-pa "$dir")
   done
-  erl "${paths[@]}" +hmqd off_heap -eval "genesis_prime@@main:run(${module//\//@})" -noshell -extra "$@"
+  erl "${paths[@]}" -eval "genesis_prime@@main:run(${module//\//@})" -noshell -extra "$@"
 }
 
 # step NAME COMMAND...: runs the command here, its output to a log, and records

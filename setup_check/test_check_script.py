@@ -1795,7 +1795,7 @@ class BuiltCodeTest(unittest.TestCase):
         self.assertRegex(
             lines[0],
             r"^erl -pa /\S+/build/dev/erlang/alpha/ebin -pa /\S+/build/dev/erlang/beta/ebin"
-            r" \+hmqd off_heap -eval genesis_prime@@main:run\(genesis_prime_test\) -noshell -extra --tag serial --reporter table --no-color$")
+            r" -eval genesis_prime@@main:run\(genesis_prime_test\) -noshell -extra --tag serial --reporter table --no-color$")
 
     def test_a_part_that_takes_no_arguments_is_started_with_none_after_extra(self):
         lines = [line for line in shared_run("full").erl.splitlines() if "run(glinter)" in line]

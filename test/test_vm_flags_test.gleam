@@ -1,5 +1,5 @@
-//// The flags of the VM `./check` starts for the built tests (the `run_built` function of
-//// the `check` script).
+//// The flags of every VM that runs the tests, set by ERL_AFLAGS in
+//// `setup_check/environment.sh`.
 //// - OTP: `+hmqd off_heap` makes every new process keep its message queue off its heap,
 ////   read back by `process_info(Pid, message_queue_data)` (`mailbox_support.kept_off_heap`).
 ////   The VM aborts in `major_collection` after `move_msgs_to_heap`, a step that only a
