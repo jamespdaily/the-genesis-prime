@@ -499,6 +499,12 @@ pub const empty_timer = TimerId(7)
 /// to 13, and below the cast rule's from 1000.
 pub const focus_timer = TimerId(14)
 
+/// The timer of the dash energy's refill.
+pub const dash_timer = TimerId(15)
+
+/// The resource slot of the dash energy: stat 9.
+pub const dash_slot = 7
+
 /// Every timer of this rule, in timer-id order.
 const timers = [
   regen_timer,

@@ -610,6 +610,7 @@ fn routed(
     | Ok(routing.Life(..))
     | Ok(routing.Innate(..))
     | Ok(routing.LevelUp)
+    | Ok(routing.Dash)
     | Ok(routing.LimitedActionSet)
     | Ok(routing.Interaction(..))
     | Ok(routing.Quest(..))
@@ -840,6 +841,8 @@ fn world_carried(
                     entered:,
                     inner: whole,
                   )
+                Ok(routing.Dash) ->
+                  connection_state.misrouted(session:, now:, inner: whole)
                 Ok(routing.LimitedActionSet) ->
                   connection_limited_action_set.take_message(
                     session:,

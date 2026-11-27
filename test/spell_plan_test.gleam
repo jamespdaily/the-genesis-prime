@@ -884,8 +884,8 @@ pub fn a_stage_checks_its_row_cost_before_the_spells_innate_costs_test() -> Nil 
     as "the row's cost is checked first, so its refusal is the one given"
 }
 
-pub fn a_cost_of_type_16_is_refused_177_as_a_vital_no_rule_of_the_server_holds_test() -> Nil {
-  use <- owned_test.run(60_000)
+pub fn a_cost_of_type_16_is_a_slot_7_cost_refused_177_test() -> Nil {
+  use <- owned_test.run(10_000)
   let assert Ok(plans) =
     spell_tables.with_loaded(
       reaching: [#("SpellLevel", 920)],
@@ -895,8 +895,8 @@ pub fn a_cost_of_type_16_is_refused_177_as_a_vital_no_rule_of_the_server_holds_t
     as "a cost of type 16 builds"
   let assert Ok(rampage) =
     spell_plan.in_plans(plans:, base: Spell4BaseId(37_968))
-  assert rampage.costs == [spell_plan.UnheldCost(result: 177)]
-    as "0x1403b3320: type 16 gives 177 (Spell4CastResult.vital_cost); it reads slot 7, which no class resource of the server uses"
+  assert rampage.costs == [spell_plan.SlotCost(slot: 7, amount: 5, result: 177)]
+    as "0x1403b3320: type 16 reads resource slot 7 (stat 9, the dash energy) and refuses with 177 (Spell4CastResult.vital_cost)"
 }
 
 pub fn the_costs_of_impale_and_electrocute_give_the_results_of_their_vital_slots_test() -> Nil {

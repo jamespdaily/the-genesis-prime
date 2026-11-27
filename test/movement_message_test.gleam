@@ -19,6 +19,7 @@
 
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_message
+import genesis_prime/message/dash.{Dash}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
 import genesis_prime/message/half_float.{Finite, Infinite}
 import genesis_prime/message/impact_severity.{ImpactSeverity}
@@ -712,6 +713,18 @@ pub fn the_move_speed_setting_is_one_32_bit_value_test() -> Nil {
     value: MoveSpeedSetting(move_speed: 2),
     encode: move_speed_setting.encode,
     decode: move_speed_setting.decode,
+  )
+}
+
+pub fn a_dash_message_is_one_3_bit_direction_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert dash.message_id == 0x015C as "opcode.0x15c: message 0x15c (348)"
+  message_support.assert_codec(
+    name: "opcode.0x15c: the direction in 3 bits (writer 0x14007edf0, WriteBitsSlow(direction, 3)), here 4, Right",
+    body: message_support.packed([#(3, 4)]),
+    value: Dash(direction: 4),
+    encode: dash.encode,
+    decode: dash.decode,
   )
 }
 

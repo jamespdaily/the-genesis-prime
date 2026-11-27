@@ -90,16 +90,19 @@ pub fn focus_pool_of(class_id: Int) -> Float {
 }
 
 /// A level-`level` player's properties as entry makes them for the class: every
-/// UnitProperty2 default, with property 5 (BaseFocusPool) at the class's pool and
-/// each of `changes` (property id, base and value alike) in place of what is there.
+/// UnitProperty2 default, with property 5 (BaseFocusPool) at the class's pool, the
+/// dash's two (38 ResourceMax_7 at 200, the maximum the client's rows give: eight spells
+/// take 200 off it to disable dashing and four add 100, and 39 ResourceRegenMultiplier_7
+/// at 1, the factor the refill is multiplied by) and each of `changes` (property id,
+/// base and value alike) in place of what is there.
 pub fn properties_of(
   class_id class_id: Int,
   changes changes: List(#(Int, Float)),
   level level: Int,
 ) -> Properties {
   let pool = case focus_pool_of(class_id) {
-    0.0 -> []
-    points -> [#(5, points)]
+    0.0 -> [#(38, 200.0), #(39, 1.0)]
+    points -> [#(5, points), #(38, 200.0), #(39, 1.0)]
   }
   let kept =
     list.filter(pool, fn(entry) {

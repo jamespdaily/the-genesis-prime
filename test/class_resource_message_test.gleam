@@ -291,3 +291,37 @@ pub fn resource_max_property_answers_5_for_slot_minus_1_and_a_healers_0x262_reso
       as "no other resource slot is given a maximum"
   })
 }
+
+// ---- Dash energy: stat 9 and property 38 ----
+
+pub fn a_new_players_0x262_carries_stat_9_as_a_float_at_the_dash_maximum_and_property_38_at_it_for_every_class_test() -> Nil {
+  use <- owned_test.run(10_000)
+  [1, 2, 3, 4, 5, 7]
+  |> list.each(fn(class_id) {
+    let player = entered_player_of(class_id)
+    let assert [stat] =
+      list.filter(player.tail.stats, fn(stat) { stat.stat_id == 9 })
+      as "one stat 9, the dash energy (slot 7, ApplyUnitStat case 9), whatever the class"
+    assert stat
+      == UnitStat(
+        stat_id: 9,
+        value: unit_stat_value.Float(
+          UnitStatFloat(value: float32.to_bits(200.0)),
+        ),
+      )
+      as "form 1, the float form the client keeps, at the maximum of 200 (the client's rows: Spell4Effects take 200 off property 38 to disable dashing and add 100 for one more; full at entry is a server choice)"
+    assert stat_bytes(stat) == message_support.hex("29 00 00 a4 21")
+      as "stat 9 in 5 bits, form 1 in 2, then 200.0 (0x43480000); built by hand from the schema (module gap)"
+    let assert [maximum] =
+      list.filter(player.tail.properties, fn(property) {
+        property.property_id == 38
+      })
+      as "one property 38, ResourceMax_7"
+    assert maximum.base == float32.to_bits(200.0)
+      && maximum.value == float32.to_bits(200.0)
+      as "base and value alike (0x1404584b0)"
+  })
+  assert stat_bytes(unit_fields.integer_stat(stat_id: 9, value: 200))
+    == message_support.hex("09 64 00 00 00")
+    as "stat 9 in the integer form is form 0, which the client stores as 0 (the_same_stat_in_the_integer_form_is_another_form_on_the_wire_test)"
+}
