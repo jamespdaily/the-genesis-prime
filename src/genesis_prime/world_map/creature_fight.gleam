@@ -110,8 +110,8 @@
 ////   sends it for a hostile creature (faction level 0 to 2) only. A Neutral creature
 ////   (3 to 7) enters a fight only by a player's strike (`0x1403ad540`). Any threat
 ////   above 0 shows the creature hostile (`0x14045a950`). The map leaves a stealthed
-////   player out of every ring (genesis_prime/world_map/map `StealthChanged`, Jim's
-////   decision, a server choice): it sends `Withdrew` when the player enters stealth and
+////   player out of every ring (genesis_prime/world_map/map `StealthChanged`, a
+////   server choice): it sends `Withdrew` when the player enters stealth and
 ////   `Approached` when it leaves stealth inside the ring. So the home timer and the
 ////   respawn, which aggro the players in `near`, do not aggro a stealthed one, and a
 ////   creature already fighting it keeps it on its threat list, since `Withdrew`
@@ -281,7 +281,7 @@
 ////     and leashes at the first tick after the state ends. It leashes in place only when its
 ////     last threat entry goes while it is held (`Released`), when the walk home waits for `ControlEnded`.
 //// - **A state breaks a charge.** Any crowd-control state, or a throw, that takes hold while the
-////   round is `Charging` (a go is still to come) ends the cast; the hits that went stand. The authority is Jim's decision of 2026-11-11 ("any crowd control
+////   round is `Charging` (a go is still to come) ends the cast; the hits that went stand. The rule is the server's choice ("any crowd control
 ////   that lands during the charge is the interrupt"); the client holds no rule for it. Spell4 85474's
 ////   tooltip, text 748852 ("unless it is interrupted while charging"), and Spell4 85469's hint, text
 ////   748860, are evidence for the Sim-Turrets only. Interrupt Armor already decides whether a state

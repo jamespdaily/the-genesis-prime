@@ -70,7 +70,7 @@ fn entries() -> List(Entry) {
       [],
       #(16, 16),
       [],
-      "Spellslinger 25 saved 17 points of tiers, over the 16 the level gives: every tier of the set is reset (Jim's rule) and all 16 points are left",
+      "Spellslinger 25 saved 17 points of tiers, over the 16 the level gives: every tier of the set is reset (the server's choice) and all 16 points are left",
     ),
     Entry(
       5,

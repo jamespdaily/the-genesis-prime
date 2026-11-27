@@ -33,7 +33,7 @@ pub const spellslinger = 7
 /// The faction of the tests' characters (Dominion).
 pub const faction = 166
 
-/// 0xB1 of the sitting, sequences 16176 and 16252 (`recording_dump` of Jim's 2026-11-19
+/// 0xB1 of the sitting, sequences 16176 and 16252 (`recording_dump` of the 2026-11-19
 /// sitting): 27638, 20684, 20325, 20718 in slots 0 to 3, the rest empty, set 0, no tier
 /// change, no AMP. 51 bytes.
 pub const save_a =

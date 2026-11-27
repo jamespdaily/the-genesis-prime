@@ -1038,7 +1038,7 @@ pub fn creature_leaving_sight_ends_its_modifier_test() -> Nil {
 pub fn pushed_off_node_ends_creature_modifier_test() -> Nil {
   use <- owned_test.run(5000)
   // Two spells of the stack group 5 with a cap of 1: the second cast's node on the
-  // creature pushes the first cast's off (`lasting.pushed_off`, Jim's decision).
+  // creature pushes the first cast's off (`lasting.pushed_off`, the server's choice).
   let stacking = lasting.Stack(group_id: 5, cap: 1)
   let plans =
     support.plans_of([

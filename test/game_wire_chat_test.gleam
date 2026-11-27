@@ -160,7 +160,7 @@ pub fn say_yell_emote_whisper_and_zone_reach_the_right_players_on_the_whole_serv
         text: "emotes",
       ),
     ]
-    as "the player in sight reads the say, the yell and the emote, each on its own channel (Jim, 2026-11-03)"
+    as "the player in sight reads the say, the yell and the emote, each on its own channel (the server's choice)"
   let #(far_heard, far) = written_to(seat: far, number: 3)
   assert chat_lines(far_heard) == []
     as "a player out of sight, under the same top zone, hears no say"
@@ -237,7 +237,7 @@ pub fn say_yell_emote_whisper_and_zone_reach_the_right_players_on_the_whole_serv
     ),
   ]
   assert zone_line(neighbour_heard) == expected
-    as "Jim 2026-11-03: the player in sight under the same top zone hears the zone line"
+    as "the player in sight under the same top zone hears the zone line (the server's choice)"
   assert zone_line(far_heard) == expected
     as "and so does the one out of sight: zone reach is the top zone, not sight"
   let #(other_heard, _) = written_to(seat: other_zone, number: 5)

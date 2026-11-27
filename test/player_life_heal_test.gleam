@@ -211,7 +211,7 @@ pub fn a_shield_heal_leaves_the_shield_clock_as_it_was_test() -> Nil {
     as "and the shield is full, so no next tick"
 }
 
-/// Jim's decision (issue 464, 2026-11-08): a heal is its amount times the healer's
+/// The server's choice: a heal is its amount times the healer's
 /// HealingMultiplierOutgoing (162) times the target's HealingMultiplierIncoming (163);
 /// the client reads neither (`UnitProperty2.damage_heal_multipliers`). The player heals
 /// only itself, so both are its own. 400 of 450 shield and a heal of 40: the two

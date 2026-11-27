@@ -2,7 +2,7 @@
 //// shares. The client reports the most specific zone its terrain names and
 //// names a zone channel after exactly the zone it is given, never walking to a
 //// parent (`opcode.0xf2`, `opcode.0x63a`, `0x140403670`), so the server rolls
-//// the reported zone up itself (`chat.zone_reach`, Jim 2026-11-03).
+//// the reported zone up itself (`chat.zone_reach`, the server's choice).
 ////
 //// ```
 //// the WorldZone table loads ─▶ derivation: for each row, walk parentZoneId

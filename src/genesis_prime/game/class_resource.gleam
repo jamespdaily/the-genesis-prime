@@ -54,7 +54,7 @@
 ////   them in the order given, the class slot's changes sent before Focus's.
 //// - **The Warrior's drain** takes `drain_amount` each `drain_period_ms`, ticked
 ////   each `drain_tick_ms`, from `drain_after_ms` after the last gain, in and out of
-////   combat, down to 0 (Jim's choice, migration 0012; 500714 gives no rate).
+////   combat, down to 0 (the server's choice, migration 0012; 500714 gives no rate).
 //// - **The Esper's empty** sets the slot to 0 `empty_after_combat_ms` after it
 ////   leaves combat, and combat again stops the wait (a retail record, migration
 ////   0012; 500718). **The Engineer's Volatility** goes the same way, after 5000 ms

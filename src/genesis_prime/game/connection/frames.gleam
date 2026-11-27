@@ -637,7 +637,7 @@ fn stopped(state_flags state_flags: Int) -> List(RelayedMovement) {
 /// (`0x140715350`), so a creature killed or held stays as it was. A `Home` facing, the creature
 /// arriving at its spawn, is written as kind 19 toward the point 1 m from `standing_at` along
 /// the facing, so the client blends the turn instead of showing a snap (kind 14's own blend
-/// timing is not read, `0x140785050`; the choice to blend it is Jim's). That kind 19 holds only
+/// timing is not read, `0x140785050`; the choice to blend it is the server's). That kind 19 holds only
 /// while the creature stands: it keeps facing the point as the creature moves. It carries yaw
 /// and pitch only, so a roll is dropped, and a facing within about 0.004 rad of straight up or
 /// down shows yaw 0, which is what the client's direction-to-angles gives there

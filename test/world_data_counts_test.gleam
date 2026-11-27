@@ -1,4 +1,4 @@
-//// The spawns that start in each world from Jim's whole world database, loaded
+//// The spawns that start in each world from the whole world database, loaded
 //// through the content load with the client's real tables. Expected values come
 //// from these places.
 //// - The decode of issue 375 (its facts `world_data.creature_disposition` and

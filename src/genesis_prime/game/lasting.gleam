@@ -45,7 +45,7 @@
 ////   `opcode.0x813`, `Spell4Effects.effectType.80`). The oldest first and the
 ////   choice of 0x813 for a stack are the server's: no client code reads a type 80
 ////   row.
-//// - **Stacking is the server's rule** (Jim's decision): each caster keeps at most the
+//// - **Stacking is the server's rule** (a server choice): each caster keeps at most the
 ////   stack group's cap of its own casts of the group on a unit, and a new cast at
 ////   the cap takes that caster's oldest off the unit with 0x811, as a removal does;
 ////   a cap of 0 keeps one cast per spell. The client reads the group only at load
@@ -501,7 +501,7 @@ fn named_by_the_stack(
 /// The casts a new cast of `spell4_id` with `stack` pushes off a unit, from `casts`, the
 /// caster's own casts on it: with a cap of 1 or more, those of the same stack group beyond
 /// the cap less one, oldest `started_ms` first; with a cap of 0, those of the same spell.
-/// This is Jim's decision, the server's rule: the client reads a stack group only at load
+/// This is the server's rule, a server choice: the client reads a stack group only at load
 /// and in tooltips, and the rows give the cap but no rule for a cast at it
 /// (`Spell4.spell4StackGroupId`, `Spell4StackGroup.stackCap`).
 pub fn stack_pushed_off(

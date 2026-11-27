@@ -4,10 +4,10 @@
 //// - `QuestObjective.type.12`, `.23`, `.11`, `.32` and `.5`: the client keeps no per-unit
 ////   record of any of them (`0x1405517a0` makes none a checklist), so one count for each
 ////   unit is the server's choice, and an objective whose creatures have fewer spawns than
-////   its count would then never finish: those count the same unit again (Jim,
-////   2026-11-15 for type 12; one rule for every type since).
+////   its count would then never finish: those count the same unit again (the server's choice:
+////   one rule for every type).
 //// - The units of each objective are the creatures it counts (`objective_units`), and
-////   the spawn counts below are the play spawn table's as of 2026-11-17 (Jim's world
+////   the spawn counts below are the play spawn table's as of 2026-11-17 (the world
 ////   database rows, a retail source; `spawn.tsv` read for the creatures each objective
 ////   counts):
 ////
@@ -123,7 +123,7 @@ pub fn reused_unit_objectives_are_those_with_too_few_units_test() -> Nil {
   let tables = client_tables.every_table()
   // Rows 8093, 16373, 16557 and 6692 name Creature2 23568, 52832, 54338 and 22429
   // (`table_rows -- QuestObjective 4470 8093 16373 16557 6692`); row 4470 names Creature2
-  // 11070 with count 3: the type 12 rows, as the rule first read them (Jim, 2026-11-15).
+  // 11070 with count 3: the type 12 rows, as the rule first read them (the server's choice).
   let spawn_counts =
     dict.from_list([
       #(11_070, 16),
