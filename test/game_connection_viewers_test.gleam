@@ -492,11 +492,15 @@ fn appearance_at(
     ..player,
     tail: UnitCreateTail(
       ..player.tail,
-      stats: list.filter(player.tail.stats, fn(stat) { stat.stat_id != 3 }),
+      stats: list.filter(player.tail.stats, fn(stat) {
+        stat.stat_id != 3 && stat.stat_id != 9
+      }),
       properties: list.sort(
         list.append(
           list.filter(player.tail.properties, fn(property) {
             property.property_id != 10
+            && property.property_id != 38
+            && property.property_id != 39
           }),
           [
             UnitProperty(property_id: 60, base: 0, value: 0),

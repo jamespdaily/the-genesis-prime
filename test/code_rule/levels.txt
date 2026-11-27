@@ -64,6 +64,7 @@ genesis_prime/game/connection link
 genesis_prime/game/connection/absorption unit
 genesis_prime/game/connection/casting unit
 genesis_prime/game/connection/chat character
+genesis_prime/game/connection/dash unit
 genesis_prime/game/connection/departures unit
 genesis_prime/game/connection/dev_command character
 genesis_prime/game/connection/dropped link
@@ -100,7 +101,7 @@ genesis_prime/game/connection/visibility_check unit
 genesis_prime/game/connection/world link
 genesis_prime/game/currency character
 genesis_prime/game/currency_kind data
-genesis_prime/game/dash character
+genesis_prime/game/dash unit
 genesis_prime/game/deadline_timer character
 genesis_prime/game/departures unit
 genesis_prime/game/dev_command character
@@ -182,7 +183,6 @@ genesis_prime/login/sts_message platform
 genesis_prime/login/sts_wire platform
 genesis_prime/login/sts_xml platform
 genesis_prime/message/bit_stream data
-genesis_prime/message/dash data
 genesis_prime/message/float32 data
 genesis_prime/message/half_float data
 genesis_prime/migration platform

@@ -2283,6 +2283,16 @@ fields = [
 ]
 
 [[message]]
+id = 0x015C
+name = "dash"
+direction = "client_to_server"
+evidence = "opcode.0x15c"
+summary = "the player dashes: the direction, 1 Forward, 2 Backward, 3 Left or 4 Right, which the client sends only when its press check of that direction's dash spell passes (100 or more dash energy); the dash is the client's own movement, reported in 0x637, and the client holds no cast of it"
+fields = [
+  { name = "direction", kind = "unsigned", bits = 3, evidence = "opcode.0x15c", named_by = "opcode.0x15c" },
+]
+
+[[message]]
 id = 0x016F
 name = "innate_index_chosen"
 direction = "client_to_server"

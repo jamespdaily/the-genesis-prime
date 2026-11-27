@@ -94,8 +94,8 @@
 ////   `opcode.0x262.worn_visuals`). The unit's 0x262 also carries the gear's
 ////   health, shield and properties (`player_unit.create`), and the player's own
 ////   carries its class resource's slot at its start and the slot's maximum
-////   (`player_unit.with_resource`, genesis_prime/shared/class_resource), which the
-////   player then holds.
+////   (`player_unit.with_resource`, genesis_prime/shared/class_resource), and the dash
+////   energy (`player_unit.with_dash`), which the player then holds.
 //// - **The innate's passive and the worn items' equip spells** are never cast by the client,
 ////   so the entry's last effect starts them (`StartStanding`, genesis_prime/game/cast
 ////   `standing_changed`), after the entry's writes and the watch on the map, at each join
@@ -1103,6 +1103,7 @@ pub fn joined(
               shield: gear.shield_capacity(gear: worn),
             )
             |> player_unit.with_resource(resource:)
+            |> player_unit.with_dash
           let properties =
             unit_properties.new(
               defaults:,

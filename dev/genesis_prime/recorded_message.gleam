@@ -671,6 +671,7 @@ fn role_of(message: ClientMessage) -> Role {
     | client_message.ClientSideInteractionResult(..)
     | client_message.InnateIndexChosen(..)
     | client_message.ReplayLevelUp(..)
+    | client_message.Dash(..)
     | client_message.ActionSetSave(..)
     | client_message.ChooseResurrection(..)
     | client_message.WatchdogReport(..)

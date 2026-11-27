@@ -134,6 +134,7 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
     "src/genesis_prime/game/connection.gleam",
     "src/genesis_prime/game/connection/casting.gleam",
     "src/genesis_prime/game/connection/chat.gleam",
+    "src/genesis_prime/game/connection/dash.gleam",
     "src/genesis_prime/game/connection/dropped.gleam",
     "src/genesis_prime/game/connection/effects.gleam",
     "src/genesis_prime/game/connection/frames.gleam",

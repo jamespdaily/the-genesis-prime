@@ -152,6 +152,7 @@ import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
+import genesis_prime/game/connection/dash as connection_dash
 import genesis_prime/game/connection/departures as connection_departures
 import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/connection/dropped as connection_dropped
@@ -842,7 +843,12 @@ fn world_carried(
                     inner: whole,
                   )
                 Ok(routing.Dash) ->
-                  connection_state.misrouted(session:, now:, inner: whole)
+                  connection_dash.take_message(
+                    session:,
+                    now:,
+                    entered:,
+                    inner: whole,
+                  )
                 Ok(routing.LimitedActionSet) ->
                   connection_limited_action_set.take_message(
                     session:,

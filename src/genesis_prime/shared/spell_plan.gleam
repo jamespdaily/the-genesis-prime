@@ -5993,21 +5993,26 @@ fn spends_all_of(costs costs: List(Cost)) -> Bool {
   })
 }
 
+/// The Spell4 row's two innate costs as the plan of the spell reads them, in the order the
+/// client checks them, with no stage's threshold costs: what a press that is no cast (a
+/// dash) pays (genesis_prime/game/dash).
+pub fn innate_costs(row row: spell4.Spell4) -> Result(List(Cost), PlanError) {
+  costs_of(
+    row:,
+    innate: [
+      #(row.innate_cost_type0, row.innate_cost0, row.innate_cost_emm_id0),
+      #(row.innate_cost_type1, row.innate_cost1, row.innate_cost_emm_id1),
+    ],
+    threshold: [],
+  )
+}
+
 /// Whether the Spell4 row spends every point held, by its two innate costs, as the plan of
 /// the spell reads them; false when a cost or its class row is not one the plan reads, since
 /// that spell fails its own plan. A stage's threshold costs carry no EMM id, so they never
 /// make a spell spend every point.
 pub fn spends_all(row row: spell4.Spell4) -> Bool {
-  case
-    costs_of(
-      row:,
-      innate: [
-        #(row.innate_cost_type0, row.innate_cost0, row.innate_cost_emm_id0),
-        #(row.innate_cost_type1, row.innate_cost1, row.innate_cost_emm_id1),
-      ],
-      threshold: [],
-    )
-  {
+  case innate_costs(row:) {
     Ok(costs) -> spends_all_of(costs:)
     Error(..) -> False
   }
@@ -8679,7 +8684,18 @@ fn cost_of(
           False -> FocusCost(amount:)
         }),
       )
-    16, _ -> Ok(Some(UnheldCost(result: 177)))
+    16, _ ->
+      Ok(
+        Some(case on_row {
+          True -> UnheldCost(result: dash_refusal)
+          False ->
+            SlotCost(
+              slot: class_resource.dash_slot,
+              amount:,
+              result: dash_refusal,
+            )
+        }),
+      )
     _, Ok(#(slot, result)) -> Ok(Some(SlotCost(slot:, amount:, result:)))
     _, Error(Nil) if class_vital ->
       Ok(
@@ -8702,10 +8718,14 @@ fn is_class_vital(vital vital: Int) -> Bool {
   }
 }
 
+/// The result of a refused type 16 cost, the dash energy's (`0x1403b3320`, 0xb1).
+const dash_refusal = 177
+
 /// The resource slot a cost or requirement type reads and the result its failure
 /// gives: 5 to 11 are slots 0 to 6 (50 to 56) (`0x1403b3320`, `0x1403b1780`). The
-/// client's types 16 and 27 to 29 read slots 7 to 10, which no class resource of
-/// the server uses.
+/// client's types 16 and 27 to 29 read slots 7 to 10; an innate cost of type 16 is the dash
+/// energy's (`cost_of`), a threshold row's is held by no rule, and the others are no class
+/// resource of the server.
 fn slot_of(vital_type vital_type: Int) -> Result(#(Int, Int), Nil) {
   case vital_type {
     _ if vital_type >= 5 && vital_type <= 11 ->

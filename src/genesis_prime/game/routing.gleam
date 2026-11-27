@@ -63,6 +63,7 @@ import genesis_prime/message/client_option
 import genesis_prime/message/client_side_interaction_result
 import genesis_prime/message/create_character_carrier
 import genesis_prime/message/credd_exchange_request
+import genesis_prime/message/dash
 import genesis_prime/message/delete_character
 import genesis_prime/message/dialog_responses_shown
 import genesis_prime/message/fell_below_floor
@@ -350,6 +351,7 @@ const table = [
     [AtWorld],
   ),
   Row(replay_level_up.message_id, InsideWorldMessage, LevelUp, [AtWorld]),
+  Row(dash.message_id, InsideWorldMessage, Dash, [AtWorld]),
   Row(
     action_set_save.message_id,
     InsideWorldMessage,

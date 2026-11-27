@@ -3,6 +3,7 @@
 
 import genesis_prime/game/activate
 import genesis_prime/game/communicator
+import genesis_prime/game/dash
 import genesis_prime/game/level_up
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/objective_action
@@ -59,6 +60,8 @@ import gleam/set.{type Set}
 /// - The shortcut spells: the plan of each spell a cast-a-spell objective names or an item
 ///   casts on its user, built after the ability trees' sources
 ///   (genesis_prime/game/shortcut_spell).
+/// - The dashes: the Spell4 of each of the four directions GameFormula 477 to 480 name and its
+///   innate costs, whose missing rows fail the load (genesis_prime/game/dash).
 /// - The level-up fanfares: the plan of each tier of the Level Up spell, the cast a 0x07A5 is
 ///   answered with, built after the ability trees' sources (genesis_prime/game/level_up).
 /// - The faction levels: each faction's parent and the level of each pair of factions
@@ -101,6 +104,7 @@ pub fn all() -> List(store.Derivation) {
     passed_in_value.derivation(),
     shortcut_spell.derivation(),
     level_up.derivation(),
+    dash.derivation(),
     limited_action_set.derivation(),
     amp_spec.derivation(),
     faction_level.derivation(),

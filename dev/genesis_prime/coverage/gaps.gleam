@@ -23,6 +23,7 @@ import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/click_objective
 import genesis_prime/game/communicator
 import genesis_prime/game/connection/landing as connection_landing
+import genesis_prime/game/dash
 import genesis_prime/game/dev_command
 import genesis_prime/game/dropped
 import genesis_prime/game/heal_split
@@ -132,6 +133,7 @@ pub fn registry() -> List(Entry) {
     kill_objective.gaps(),
     held_objective.gaps(),
     class_resource.gaps(),
+    dash.gaps(),
     cast_press.gaps(),
     activate.gaps(),
     limited_action_set.gaps(),

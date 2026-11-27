@@ -32,6 +32,7 @@ import genesis_prime/message/close_notice.{CloseNotice}
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_carrier.{CreateCharacterCarrier}
 import genesis_prime/message/credd_exchange_request.{CreddExchangeRequest}
+import genesis_prime/message/dash.{Dash}
 import genesis_prime/message/delete_character.{DeleteCharacter}
 import genesis_prime/message/dialog_responses_shown.{DialogResponsesShown}
 import genesis_prime/message/fell_below_floor.{FellBelowFloor}
@@ -316,6 +317,7 @@ fn client_samples() -> List(#(Int, client_message.ClientMessage)) {
       0x063B,
       client_message.MoveSpeedSetting(message: MoveSpeedSetting(move_speed: 2)),
     ),
+    #(0x015C, client_message.Dash(message: Dash(direction: 4))),
     #(
       0x00FB,
       client_message.ImpactSeverity(message: ImpactSeverity(
