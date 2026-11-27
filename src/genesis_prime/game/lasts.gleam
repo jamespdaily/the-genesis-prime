@@ -5,6 +5,8 @@
 ////   (`Spell4Effects.effectType.17`, `lasting.life_of`); the client's table has no row
 ////   with both (the table test `no_spell_effect_row_both_lasts_until_removed_and_names_a_duration_test`).
 
+import gleam/bool
+
 /// How long one row lasts: until its cast's effects end, or for its durationTime.
 pub type Lasts {
   /// Flags bit 2: the row never times out.
@@ -19,10 +21,8 @@ pub fn of_row(
   until_removed until_removed: Bool,
   duration_ms duration_ms: Int,
 ) -> Lasts {
-  case duration_ms > 0, until_removed {
-    True, _ | False, False -> For(duration_ms:)
-    False, True -> UntilRemoved
-  }
+  use <- bool.guard(when: until_removed, return: UntilRemoved)
+  For(duration_ms:)
 }
 
 /// The durationTime a row that times out holds; 0 for one that lasts until removed.
