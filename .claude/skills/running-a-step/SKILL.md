@@ -25,6 +25,7 @@ Test list (with a Design and its review when needed), shape (when processes chan
 - Before approving, settle the review's open questions and trace in the code every input the changed process takes.
 - Detail goes in "Design" and "Brief" artifacts on the issue (`gh issue artifact list N`); reviews and hand-backs are comments.
 - Steps that share no function run at once; parts that share one are one build. At most two builders and two test runs at once.
+- A step that builds on an unmerged step stacks on its branch (`gh stack link`, then `gh stack merge`); the base branch merges main at each builder session's start, since GitHub runs no CI on a conflicting pull request.
 
 ## The shape
 
@@ -41,6 +42,7 @@ A step that changes processes, supervision or what one process asks another gets
 ## Reviews
 
 - Run `dev/test_list_check.py N BASE HEAD` first; a missing test goes to the fix round without a reviewer.
+- Builders and reviewers run only the test files they touch and `./check fast`; CI runs the rest.
 - A hand-back without each listed test's first failure lines, each touched file's last pass line, or a cause for a test fix goes back to the builder.
 - One result review per build, by a `reviewer`, on the pushed commit, started once CI is green on it; a CI failure goes to the builder with the review's findings. Codex runs design and shape reviews with the list and design text in its prompt; the coordinator posts its output.
 - The coordinator reads every diff against the skills the step used.
