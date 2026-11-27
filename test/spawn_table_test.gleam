@@ -176,7 +176,7 @@ pub fn each_spawn_stat_and_import_constraint_refuses_its_own_bad_row_under_its_o
   )
 }
 
-pub fn the_daguns_of_migration_0008_are_27_server_choices_that_state_their_row_test() -> Nil {
+pub fn the_daguns_of_migration_0008_are_27_server_choices_test() -> Nil {
   use <- owned_test.run(120_000)
   let database = database_support.new_database(on: database_support.shared())
   let assert Ok(output) =

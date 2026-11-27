@@ -4,9 +4,6 @@
 -- (`<table>_other_source_states_its_reason` and `<table>_reason_says_something`, or
 -- `<table>_reason_not_null` for `creature_special` and `creature_auto_attack`), since a
 -- table constraint on a dropped column goes with it.
---
--- The retail-record import (dev/genesis_prime/import_retail_record) tells a changed creature
--- spell from an unchanged one by the row's creature, spell, order and cooldown.
 
 alter table arrival_objective drop column reason;
 alter table class_resource drop column reason;

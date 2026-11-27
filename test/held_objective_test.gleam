@@ -13,11 +13,11 @@
 ////   linked by Creature2 27768; 9658 (type 8, markers 21383 and 21384) is marked.
 //// - Migration 0041 adds objective 21267 (Quest2 10510 "Learning to Shop", whose text asks
 ////   for a purchase in the In-Game Store, `table_rows -- QuestObjective 21267`) of kind
-////   `store_purchase`, a `server_choice` with its reason.
+////   `store_purchase`, a `server_choice`.
 //// - Migration 0034: 130 rows, 88 of kind `instance_run` and 42 of kind `pvp_match`;
 ////   migration 0039 adds the 15 marked scripts of the instance quests (Quest2
 ////   questContentFinderTypeEnum 1 to 3), each of kind `instance_run`. Each is a
-////   `server_choice` with its reason; the other constraints follow migration 0031's pattern.
+////   `server_choice`; the other constraints follow migration 0031's pattern.
 
 import character_tables
 import content_support

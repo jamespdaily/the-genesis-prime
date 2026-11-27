@@ -661,7 +661,7 @@ pub fn a_migrated_database_holds_the_designs_rows_each_with_its_source_test() ->
       sql: "select count(*) from class_resource where source = 'server_choice'",
     )
     == 11
-    as "the Medic's refill, the three ticks, the Warrior's drain amount, period and wait the Engineer's empty wait and the three Focus pools are the server's choices"
+    as "the Medic's refill, the three ticks, the Warrior's drain amount, period and wait, the Engineer's empty wait and the three Focus pools are the server's choices"
   assert content_support.count(
       database:,
       sql: "select count(*) from class_resource where name = 'focus_pool' and class_id in (3, 4, 7) and value = 1000 and unit = 'points' and source = 'server_choice'",

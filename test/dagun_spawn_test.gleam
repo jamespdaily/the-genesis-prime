@@ -84,10 +84,4 @@ pub fn each_dagun_stands_at_the_offset_of_a_beast_point_from_the_exile_circles_c
       <=. dominion.radius *. dominion.radius
       as "and lies inside the Dominion circle (radius 55)"
   })
-  assert content_support.count(
-      database:,
-      sql: "select count(*) from spawn where source = 'server_choice'",
-    )
-    == 27
-    as "the 27 Daguns are the spawn table's server choices"
 }
