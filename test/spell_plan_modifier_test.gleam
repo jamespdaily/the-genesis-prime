@@ -250,14 +250,15 @@ pub fn a_row_that_names_a_property_the_client_cannot_store_fails_the_load_test()
       effect_id: 99_047,
       property: 197,
     )
-  assert list.length(
-      modifiers_of(
-        row: modifier_row(id: 99_048, target_flags: 1, columns: [
-          #("dataBits00", Integer(196)),
-        ]),
-      ),
+  let assert [kept] =
+    modifiers_of(
+      row: modifier_row(id: 99_048, target_flags: 1, columns: [
+        #("dataBits00", Integer(196)),
+      ]),
     )
-    == 1
+    as "property 196 is below the client's slots and loads"
+  let assert spell_plan.PropertyChange(Change(property:, ..)) = kept.change
+  assert property == UnitProperty2Id(196)
 }
 
 pub fn row_aimed_at_struck_units_is_planned_test() -> Nil {
