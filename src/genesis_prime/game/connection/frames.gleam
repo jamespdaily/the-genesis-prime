@@ -133,24 +133,26 @@ fn ghost_created_frame(
   now now: Now,
 ) -> Frame {
   let player = appearance_at(entered:, place:, now:)
-  let assert Ok(body) =
-    unit_create_ghost.encode(UnitCreateGhost(
-      unit_id: map.ghost_unit_id(unit_id: entered.unit_id),
-      character_id: player.character_id,
-      realm_id: player.realm_id,
-      name: player.name,
-      race_id: player.race_id,
-      class_id: player.class_id,
-      gender: player.gender,
-      group_id: 0,
-      guild_name: "",
-      guild_type: 0,
-      guild_ids: [],
-      bone_values: player.bone_values,
-      title_id: player.title_id,
-      tail: UnitCreateTail(..player.tail, stats: []),
-    ))
-    as "the player's own 0x262 values fit the ghost's, whose fields are the same"
+  let body =
+    bit_stream.must(
+      UnitCreateGhost(
+        unit_id: map.ghost_unit_id(unit_id: entered.unit_id),
+        character_id: player.character_id,
+        realm_id: player.realm_id,
+        name: player.name,
+        race_id: player.race_id,
+        class_id: player.class_id,
+        gender: player.gender,
+        group_id: 0,
+        guild_name: "",
+        guild_type: 0,
+        guild_ids: [],
+        bone_values: player.bone_values,
+        title_id: player.title_id,
+        tail: UnitCreateTail(..player.tail, stats: []),
+      ),
+      unit_create_ghost.encode,
+    )
   Frame(message_id: unit_create_ghost.message_id, body:)
 }
 
@@ -300,9 +302,11 @@ pub fn properties_changed_frame(
   unit_id unit_id: Int,
   properties properties: List(UnitProperty),
 ) -> Frame {
-  let assert Ok(body) =
-    unit_properties_changed.encode(UnitPropertiesChanged(unit_id:, properties:))
-    as "a unit id of 32 bits and at most 197 entries, one for each property id, fit the message"
+  let body =
+    bit_stream.must(
+      UnitPropertiesChanged(unit_id:, properties:),
+      unit_properties_changed.encode,
+    )
   Frame(message_id: unit_properties_changed.message_id, body:)
 }
 
@@ -365,12 +369,11 @@ pub fn item_visuals_frame(
   unit_id unit_id: Int,
   item_visuals item_visuals: List(ItemVisual),
 ) -> Frame {
-  let assert Ok(body) =
-    unit_item_visuals_changed.encode(UnitItemVisualsChanged(
-      unit_id:,
-      item_visuals:,
-    ))
-    as "a unit id of 32 bits and a count of 32 bits fit the message"
+  let body =
+    bit_stream.must(
+      UnitItemVisualsChanged(unit_id:, item_visuals:),
+      unit_item_visuals_changed.encode,
+    )
   Frame(message_id: unit_item_visuals_changed.message_id, body:)
 }
 
@@ -461,15 +464,17 @@ fn moved_frame(
   kept kept: Int,
   commands commands: List(RelayedMovement),
 ) -> Frame {
-  let assert Ok(body) =
-    unit_movement.encode(UnitMovement(
-      unit_id:,
-      server_time: server_time_ms,
-      reset_movement: 0,
-      kept:,
-      commands:,
-    ))
-    as "a mover sends at most 31 commands and a time of 32 bits"
+  let body =
+    bit_stream.must(
+      UnitMovement(
+        unit_id:,
+        server_time: server_time_ms,
+        reset_movement: 0,
+        kept:,
+        commands:,
+      ),
+      unit_movement.encode,
+    )
   Frame(message_id: unit_movement.message_id, body:)
 }
 
@@ -768,8 +773,7 @@ pub fn vendor_refused_frame(unit_id unit_id: Int) -> Frame {
 }
 
 fn vendor_items_message(message: VendorItems) -> Frame {
-  let assert Ok(body) = vendor_items.encode(message)
-    as "a unit id the player's picture holds and a stock of the content load fit the message's fields"
+  let body = bit_stream.must(message, vendor_items.encode)
   Frame(message_id: vendor_items.message_id, body:)
 }
 
@@ -778,11 +782,11 @@ fn vendor_items_message(message: VendorItems) -> Frame {
 pub fn buyback_list_frame(
   entries entries: List(world_entry.BuybackEntry),
 ) -> Frame {
-  let assert Ok(body) =
-    buyback_list.encode(
+  let body =
+    bit_stream.must(
       BuybackList(entries: list.map(entries, vendor_sale.buyback_entry_message)),
+      buyback_list.encode,
     )
-    as "a list of held entries fits its 32-bit count"
   Frame(message_id: buyback_list.message_id, body:)
 }
 
@@ -798,34 +802,35 @@ pub fn creature_created_frame(
   unit unit: UnitCreateCreature,
   unit_type unit_type: CreatureUnitType,
 ) -> Frame {
-  let assert Ok(body) = creature_unit.body(unit:, unit_type:)
-    as "a creature's values fit the message's fields: the spawn's checks hold each"
+  let body =
+    bit_stream.must(unit, fn(unit) { creature_unit.body(unit:, unit_type:) })
   Frame(message_id: unit_create_creature.message_id, body:)
 }
 
 /// 0x262 for a static object, as the map built it.
 pub fn object_created_frame(unit unit: Created) -> Frame {
-  let #(message_id, encoded) = case unit {
-    CreatedWithChecklist(message) -> #(
-      unit_create_static.message_id,
-      unit_create_static.encode(message),
-    )
-    CreatedDoor(message) -> #(
-      unit_create_door.message_id,
-      unit_create_door.encode(message),
-    )
-    CreatedMailbox(message) -> #(
-      unit_create_mailbox.message_id,
-      unit_create_mailbox.encode(message),
-    )
-    CreatedPortal(message) -> #(
-      unit_create_portal.message_id,
-      unit_create_portal.encode(message),
-    )
+  case unit {
+    CreatedWithChecklist(message) ->
+      Frame(
+        message_id: unit_create_static.message_id,
+        body: bit_stream.must(message, unit_create_static.encode),
+      )
+    CreatedDoor(message) ->
+      Frame(
+        message_id: unit_create_door.message_id,
+        body: bit_stream.must(message, unit_create_door.encode),
+      )
+    CreatedMailbox(message) ->
+      Frame(
+        message_id: unit_create_mailbox.message_id,
+        body: bit_stream.must(message, unit_create_mailbox.encode),
+      )
+    CreatedPortal(message) ->
+      Frame(
+        message_id: unit_create_portal.message_id,
+        body: bit_stream.must(message, unit_create_portal.encode),
+      )
   }
-  let assert Ok(body) = encoded
-    as "an object's values fit the message's fields: the spawn's checks and the table's constraints hold each"
-  Frame(message_id:, body:)
 }
 
 /// 0x355 for another player's unit or a creature, with its one bit 0

@@ -99,6 +99,10 @@ import gleam/list
 import gleam/option.{Some}
 import gleam/result
 
+/// The client's property slots: ids 0 to 196. Its 0x93a handler fails an entry of id 197
+/// (0xc5) or more and drops the rest of the frame (`opcode.0x93a`, 0x140466a90).
+pub const client_property_slots = 197
+
 /// Strength (0): the attribute a formula's parameter type 1 reads (`0x140566d40`).
 pub const strength = UnitProperty2Id(0)
 

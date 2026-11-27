@@ -75,6 +75,7 @@
 
 import genesis_prime/game/item_stat_kind
 import genesis_prime/game/random_stat_word
+import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/table/game_formula
@@ -693,6 +694,49 @@ pub fn equip_requirements(
 /// 0x1403b4710 reads all three; an id of 0 names none).
 pub fn requirements() -> List(table_store.Requirement) {
   list.append(budget_requirements(), equip_requirement_rows())
+  |> list.append(property_slot_requirements())
+}
+
+/// The load's checks that no UnitProperty2 row an item reaches has an id the client has
+/// no slot for (`unit_properties.client_property_slots`): the property of an ItemStat
+/// entry of kind 1, and a row of the budget list, which `gear.bases` sends in 0x93a
+/// (`opcode.0x93a`).
+fn property_slot_requirements() -> List(table_store.Requirement) {
+  let beyond = fn(ids: List(Int)) {
+    list.filter(ids, fn(id) { id >= unit_properties.client_property_slots })
+  }
+  [
+    table_store.Requirement(
+      from_table: "UnitProperty2",
+      column: "flags",
+      to_table: "the client's property slots",
+      missing: fn(tables) {
+        budget_properties(tables:) |> list.map(fn(id) { id.value }) |> beyond
+      },
+    ),
+    ..list.index_map(stat_data_columns, fn(column, index) {
+      table_store.Requirement(
+        from_table: "ItemStat",
+        column:,
+        to_table: "the client's property slots",
+        missing: fn(tables) { stat_property_ids(tables:, index:) |> beyond },
+      )
+    })
+  ]
+}
+
+/// The property each ItemStat names in its `index`th entry, for the entries of kind 1.
+fn stat_property_ids(
+  tables tables: table_store.Tables,
+  index index: Int,
+) -> List(Int) {
+  item_stat.all(tables)
+  |> list.filter_map(fn(stat) {
+    item_stat_kind.of_stat(stat) |> list.drop(index) |> list.first
+  })
+  |> list.filter_map(fn(kind) {
+    item_stat_kind.property_of(kind) |> result.map(fn(id) { id.value })
+  })
 }
 
 /// The load's checks that the rows an item's budget reads exist: the ItemBudget
@@ -756,16 +800,9 @@ fn stat_property_requirement(
     column:,
     to_table: "UnitProperty2",
     missing: fn(tables) {
-      item_stat.all(tables)
-      |> list.filter_map(fn(stat) {
-        item_stat_kind.of_stat(stat) |> list.drop(index) |> list.first
-      })
-      |> list.filter_map(fn(kind) {
-        use property_id <- result.try(item_stat_kind.property_of(kind))
-        case result.is_error(unit_property2.get(tables:, id: property_id)) {
-          True -> Ok(property_id.value)
-          False -> Error(Nil)
-        }
+      stat_property_ids(tables:, index:)
+      |> list.filter(fn(id) {
+        result.is_error(unit_property2.get(tables:, id: UnitProperty2Id(id)))
       })
     },
   )
