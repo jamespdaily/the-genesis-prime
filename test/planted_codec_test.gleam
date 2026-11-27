@@ -48,28 +48,6 @@ pub fn the_codec_generated_for_a_schema_with_a_field_of_every_kind_round_trips_t
   )
 }
 
-pub fn generator_writes_must_encode_naming_each_message_test() -> Nil {
-  use <- owned_test.run(10_000)
-  let files = planted_files()
-  let assert Ok(text) = simplifile.read("test/planted_codec/schema.toml")
-    as "the planted schema reads"
-  let assert Ok(schema) = message_schema.parse(text)
-    as "the planted schema is a schema"
-  assert schema.messages != [] as "the planted schema holds a message"
-  list.each(schema.messages, fn(message) {
-    let path = "src/genesis_prime/message/" <> message.name <> ".gleam"
-    let assert Ok(file) = list.find(files, fn(file) { file.path == path })
-      as { "the generator writes " <> path }
-    assert string.contains(file.text, "pub fn must_encode(")
-      as { message.name <> " has a must_encode" }
-    assert string.contains(
-      file.text,
-      "bit_stream.must(encode(message), \"" <> message.name <> "\")",
-    )
-      as { message.name <> "'s must_encode names the message from the schema" }
-  })
-}
-
 pub fn the_planted_codec_with_an_open_field_and_a_union_of_never_and_open_tags_builds_and_refuses_those_tags_test() -> Nil {
   use <- owned_test.run(180_000)
   use folder <- recording_support.in_folder

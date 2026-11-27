@@ -70,12 +70,6 @@ pub fn encode(message: UnitCreatePlayer) -> Result(BitArray, EncodeError) {
   |> bit_stream.finish
 }
 
-/// The message as the bytes of its body, for values that fit their fields; a
-/// value that does not ends the process, naming the message and the field.
-pub fn must_encode(message: UnitCreatePlayer) -> BitArray {
-  bit_stream.must(encode(message), "unit_create_player")
-}
-
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(UnitCreatePlayer, DecodeError) {
   let reader = bit_stream.new_reader(body)

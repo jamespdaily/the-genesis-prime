@@ -250,23 +250,6 @@ fn message_module(message: Message) -> String {
       ["}", ""],
       wrap(
         "///",
-        "The message as the bytes of its body, for values that fit their fields; a value that does not ends the process, naming the message and the field.",
-      ),
-      function_head(
-        name: "must_encode",
-        parameters: [unused <> "message: " <> type_name],
-        returns: "BitArray",
-      ),
-      must_encode_body(
-        argument: case unused {
-          "_" -> type_name
-          _ -> "message"
-        },
-        name: message.name,
-      ),
-      ["}", ""],
-      wrap(
-        "///",
         "The message read from the bytes of a body, or why they are not one.",
       ),
       decode_head,
@@ -275,24 +258,6 @@ fn message_module(message: Message) -> String {
       gaps_function(message.gaps, "message"),
     ]),
   )
-}
-
-/// The body of `must_encode`, broken as `gleam format` breaks a call that is
-/// wider than the line.
-fn must_encode_body(
-  argument argument: String,
-  name name: String,
-) -> List(String) {
-  let one = "  bit_stream.must(encode(" <> argument <> "), \"" <> name <> "\")"
-  case string.length(one) <= width {
-    True -> [one]
-    False -> [
-      "  bit_stream.must(",
-      "    encode(" <> argument <> "),",
-      "    \"" <> name <> "\",",
-      "  )",
-    ]
-  }
 }
 
 fn record_module(record: Record) -> String {

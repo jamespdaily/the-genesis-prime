@@ -663,7 +663,7 @@ pub fn a_resource_frame_of_slot_minus_1_is_0x935_of_stat_1_and_slots_0_to_7_keep
   })
 }
 
-pub fn unit_removed_frame_past_32_bits_crashes_naming_unit_destroyed_test() -> Nil {
+pub fn unit_removed_frame_past_32_bits_crashes_naming_the_value_field_and_width_test() -> Nil {
   use <- owned_test.run(10_000)
   let ended =
     ask_support.ended_running(fn() {
@@ -671,11 +671,12 @@ pub fn unit_removed_frame_past_32_bits_crashes_naming_unit_destroyed_test() -> N
       Nil
     })
   let text = ask_support.panic_message(ask_support.raised(ended))
-  assert string.contains(text, "unit_destroyed")
+  assert string.contains(text, "UnitDestroyed(4294967296")
     as {
-      "the crash names the message (schema row unit_destroyed); it says: "
-      <> text
+      "the crash gives the value (schema row unit_destroyed); it says: " <> text
     }
   assert string.contains(text, "unit_id")
-    as { "the crash names the 32-bit field; it says: " <> text }
+    as { "the crash names the field; it says: " <> text }
+  assert string.contains(text, "32 bits")
+    as { "the crash gives the width of a unit id, 32 bits; it says: " <> text }
 }

@@ -46,12 +46,6 @@ pub fn encode(
   |> bit_stream.finish
 }
 
-/// The message as the bytes of its body, for values that fit their fields; a
-/// value that does not ends the process, naming the message and the field.
-pub fn must_encode(message: ClientSideInteractionResult) -> BitArray {
-  bit_stream.must(encode(message), "client_side_interaction_result")
-}
-
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(
   body: BitArray,

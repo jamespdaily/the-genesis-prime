@@ -29,12 +29,6 @@ pub fn encode(message: SpellThresholdIndex) -> Result(BitArray, EncodeError) {
   |> bit_stream.finish
 }
 
-/// The message as the bytes of its body, for values that fit their fields; a
-/// value that does not ends the process, naming the message and the field.
-pub fn must_encode(message: SpellThresholdIndex) -> BitArray {
-  bit_stream.must(encode(message), "spell_threshold_index")
-}
-
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(SpellThresholdIndex, DecodeError) {
   let reader = bit_stream.new_reader(body)

@@ -30,12 +30,6 @@ pub fn encode(message: ClientControlGranted) -> Result(BitArray, EncodeError) {
   |> bit_stream.finish
 }
 
-/// The message as the bytes of its body, for values that fit their fields; a
-/// value that does not ends the process, naming the message and the field.
-pub fn must_encode(message: ClientControlGranted) -> BitArray {
-  bit_stream.must(encode(message), "client_control_granted")
-}
-
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(ClientControlGranted, DecodeError) {
   let reader = bit_stream.new_reader(body)

@@ -22,6 +22,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/telegraph_entries.{type Opening}
 import genesis_prime/game/unit_casts
+import genesis_prime/message/bit_stream
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_cc_state.{CombatLogCcState}
@@ -68,19 +69,21 @@ pub fn failed_frame(
   unit_id unit_id: Int,
 ) -> Frame {
   let body =
-    spell_failed.must_encode(SpellFailed(
-      cast_id:,
-      result:,
-      unit_id:,
-      cut_visuals: 0,
-    ))
+    bit_stream.must(
+      SpellFailed(cast_id:, result:, unit_id:, cut_visuals: 0),
+      spell_failed.encode,
+    )
   Frame(message_id: spell_failed.message_id, body:)
 }
 
 /// 0x881: the tether anchor of the unit the receiving client controls is this unit
 /// (`opcode.0x881`).
 pub fn tether_anchor_frame(anchor_unit_id anchor_unit_id: Int) -> Frame {
-  let body = unit_tether_anchor.must_encode(UnitTetherAnchor(anchor_unit_id:))
+  let body =
+    bit_stream.must(
+      UnitTetherAnchor(anchor_unit_id:),
+      unit_tether_anchor.encode,
+    )
   Frame(message_id: unit_tether_anchor.message_id, body:)
 }
 
@@ -92,11 +95,10 @@ pub fn control_applied_frame(
   instance_id instance_id: Int,
 ) -> Frame {
   let body =
-    unit_cc_state_applied.must_encode(UnitCcStateApplied(
-      unit_id:,
-      state:,
-      instance_id:,
-    ))
+    bit_stream.must(
+      UnitCcStateApplied(unit_id:, state:, instance_id:),
+      unit_cc_state_applied.encode,
+    )
   Frame(message_id: unit_cc_state_applied.message_id, body:)
 }
 
@@ -109,13 +111,16 @@ pub fn control_ended_frame(
   instance_id instance_id: Int,
 ) -> Frame {
   let body =
-    unit_cc_state_ended.must_encode(UnitCcStateEnded(
-      unit_id:,
-      state:,
-      cast_id:,
-      instance_id:,
-      keeps_flag_4_entries: 0,
-    ))
+    bit_stream.must(
+      UnitCcStateEnded(
+        unit_id:,
+        state:,
+        cast_id:,
+        instance_id:,
+        keeps_flag_4_entries: 0,
+      ),
+      unit_cc_state_ended.encode,
+    )
   Frame(message_id: unit_cc_state_ended.message_id, body:)
 }
 
@@ -184,7 +189,7 @@ fn interrupt_logged_frame(
   interrupted_spell4_id interrupted_spell4_id: Spell4Id,
 ) -> Frame {
   let body =
-    combat_log.must_encode(
+    bit_stream.must(
       CombatLog(
         entry: combat_log_entry.Interrupted(CombatLogInterrupted(
           interrupting_spell4_id: interrupting_spell4_id.value,
@@ -195,6 +200,7 @@ fn interrupt_logged_frame(
           combat_result: combat_result.Hit,
         )),
       ),
+      combat_log.encode,
     )
   Frame(message_id: combat_log.message_id, body:)
 }
@@ -210,7 +216,7 @@ pub fn control_logged_frame(
   removed removed: Bool,
 ) -> Frame {
   let body =
-    combat_log.must_encode(
+    bit_stream.must(
       CombatLog(
         entry: combat_log_entry.CcState(CombatLogCcState(
           state:,
@@ -227,6 +233,7 @@ pub fn control_logged_frame(
           combat_result: combat_result.Hit,
         )),
       ),
+      combat_log.encode,
     )
   Frame(message_id: combat_log.message_id, body:)
 }
@@ -241,7 +248,7 @@ pub fn immunity_logged_frame(
   spell4_id spell4_id: Spell4Id,
 ) -> Frame {
   let body =
-    combat_log.must_encode(
+    bit_stream.must(
       CombatLog(
         entry: combat_log_entry.Immunity(CombatLogImmunity(
           caster_unit_id:,
@@ -250,6 +257,7 @@ pub fn immunity_logged_frame(
           combat_result: combat_result.Hit,
         )),
       ),
+      combat_log.encode,
     )
   Frame(message_id: combat_log.message_id, body:)
 }
@@ -263,7 +271,7 @@ pub fn armor_logged_frame(
   amount amount: Int,
 ) -> Frame {
   let body =
-    combat_log.must_encode(
+    bit_stream.must(
       CombatLog(
         entry: combat_log_entry.ModifyInterruptArmor(
           CombatLogModifyInterruptArmor(
@@ -275,6 +283,7 @@ pub fn armor_logged_frame(
           ),
         ),
       ),
+      combat_log.encode,
     )
   Frame(message_id: combat_log.message_id, body:)
 }
@@ -390,11 +399,10 @@ pub fn refused_frame(
   result result: cast_result.CastResult,
 ) -> Frame {
   let body =
-    spell_cast_refused.must_encode(SpellCastRefused(
-      client_cast_id:,
-      spell4_id:,
-      result:,
-    ))
+    bit_stream.must(
+      SpellCastRefused(client_cast_id:, spell4_id:, result:),
+      spell_cast_refused.encode,
+    )
   Frame(message_id: spell_cast_refused.message_id, body:)
 }
 
@@ -431,22 +439,25 @@ pub fn opened_frame(
   cast_id cast_id: Int,
 ) -> Frame {
   let body =
-    spell_threshold_opened.must_encode(SpellThresholdOpened(
-      spell4_id: spell4_id.value,
-      resolving_spell4_id: bag_spell.value,
-      cooldown_spell4_id: 0,
-      cancel_cast_id: cast_id,
-    ))
+    bit_stream.must(
+      SpellThresholdOpened(
+        spell4_id: spell4_id.value,
+        resolving_spell4_id: bag_spell.value,
+        cooldown_spell4_id: 0,
+        cancel_cast_id: cast_id,
+      ),
+      spell_threshold_opened.encode,
+    )
   Frame(message_id: spell_threshold_opened.message_id, body:)
 }
 
 /// 0x0817 for the index the next press casts (`opcode.0x817`).
 pub fn index_frame(spell4_id spell4_id: Spell4Id, index index: Int) -> Frame {
   let body =
-    spell_threshold_index.must_encode(SpellThresholdIndex(
-      spell4_id: spell4_id.value,
-      index:,
-    ))
+    bit_stream.must(
+      SpellThresholdIndex(spell4_id: spell4_id.value, index:),
+      spell_threshold_index.encode,
+    )
   Frame(message_id: spell_threshold_index.message_id, body:)
 }
 
@@ -457,10 +468,10 @@ pub fn closed_frame(
   start_cooldowns start_cooldowns: Int,
 ) -> Frame {
   let body =
-    spell_threshold_closed.must_encode(SpellThresholdClosed(
-      spell4_id: spell4_id.value,
-      start_cooldowns:,
-    ))
+    bit_stream.must(
+      SpellThresholdClosed(spell4_id: spell4_id.value, start_cooldowns:),
+      spell_threshold_closed.encode,
+    )
   Frame(message_id: spell_threshold_closed.message_id, body:)
 }
 
@@ -634,7 +645,7 @@ pub fn interrupted_frame(cast_id cast_id: Int, unit_id unit_id: Int) -> Frame {
 /// 0x07FE for a cast that ends, written by the caster's rule and by each
 /// viewer's connection the same way (`opcode.0x7fe`).
 pub fn finished_frame(cast_id cast_id: Int) -> Frame {
-  let body = spell_finished.must_encode(SpellFinished(cast_id:))
+  let body = bit_stream.must(SpellFinished(cast_id:), spell_finished.encode)
   Frame(message_id: spell_finished.message_id, body:)
 }
 
@@ -649,7 +660,7 @@ pub fn targets_removed_frame(removed removed: SpellTargetsRemoved) -> Frame {
 /// 0x0813 for a cast that loses one stack on a unit, written by the caster's rule and
 /// by each viewer's connection the same way (`opcode.0x813`).
 pub fn stack_removed_frame(removed removed: SpellStackRemoved) -> Frame {
-  let body = spell_stack_removed.must_encode(removed)
+  let body = bit_stream.must(removed, spell_stack_removed.encode)
   Frame(message_id: spell_stack_removed.message_id, body:)
 }
 

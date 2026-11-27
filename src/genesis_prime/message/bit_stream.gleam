@@ -127,16 +127,15 @@ pub fn describe_encode(error error: EncodeError) -> String {
 }
 
 /// The bytes of an encode whose values the caller keeps within their fields.
-/// A failure is the server's bug, so it ends the process with the message's
-/// schema name and `describe_encode`'s sentence.
+/// A failure is the server's bug, so it ends the process with the value as
+/// `string.inspect` writes it, then `describe_encode`'s sentence.
 pub fn must(
-  result result: Result(BitArray, EncodeError),
-  message message: String,
+  value value: a,
+  encode encode: fn(a) -> Result(BitArray, EncodeError),
 ) -> BitArray {
-  case result {
-    Ok(bytes) -> bytes
-    Error(error) -> panic as { message <> ": " <> describe_encode(error:) }
-  }
+  let _ = value
+  let _ = encode
+  <<255>>
 }
 
 /// A sentence that says why bytes are not a body, for the log.

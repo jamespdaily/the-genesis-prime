@@ -12,6 +12,7 @@ import genesis_prime/game/unit_properties
 import genesis_prime/game/vendor.{type Vendor}
 import genesis_prime/game/vendor_sale
 import genesis_prime/game/world_entry
+import genesis_prime/message/bit_stream
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/combat_log.{CombatLog}
 import genesis_prime/message/combat_log_death.{CombatLogDeath}
@@ -99,23 +100,22 @@ pub fn bit(yes: Bool) -> Int {
 /// client control that comes back, so both are 0.
 pub fn death_state_frame(unit_id unit_id: Int, dead dead: Bool) -> Frame {
   let body =
-    unit_death_state.must_encode(UnitDeathState(
-      unit_id:,
-      dead: bit(dead),
-      unread_3: 0,
-      health: 0,
-    ))
+    bit_stream.must(
+      UnitDeathState(unit_id:, dead: bit(dead), unread_3: 0, health: 0),
+      unit_death_state.encode,
+    )
   Frame(message_id: unit_death_state.message_id, body:)
 }
 
 /// 0x247 of type 22 when `died`, else 23, for the unit (`opcode.0x247.death`).
 pub fn combat_log_frame(unit_id unit_id: Int, died died: Bool) -> Frame {
   let body =
-    combat_log.must_encode(
+    bit_stream.must(
       CombatLog(entry: case died {
         True -> combat_log_entry.Death(CombatLogDeath(unit_id:))
         False -> combat_log_entry.Resurrect(CombatLogResurrect(unit_id:))
       }),
+      combat_log.encode,
     )
   Frame(message_id: combat_log.message_id, body:)
 }
@@ -162,16 +162,19 @@ fn resurrection_window_frame(
   dead dead: Bool,
 ) -> Frame {
   let body =
-    resurrection_window.must_encode(ResurrectionWindow(
-      ghost_unit_id:,
-      wake_here_cost: player_life.window_zero,
-      death_penalty_ms: player_life.window_zero,
-      dead: bit(dead),
-      choices: player_life.offered_choices,
-      caster_asked: 0,
-      wake_here_cooldown_ms: player_life.window_zero,
-      forced_release_ms: player_life.window_zero,
-    ))
+    bit_stream.must(
+      ResurrectionWindow(
+        ghost_unit_id:,
+        wake_here_cost: player_life.window_zero,
+        death_penalty_ms: player_life.window_zero,
+        dead: bit(dead),
+        choices: player_life.offered_choices,
+        caster_asked: 0,
+        wake_here_cooldown_ms: player_life.window_zero,
+        forced_release_ms: player_life.window_zero,
+      ),
+      resurrection_window.encode,
+    )
   Frame(message_id: resurrection_window.message_id, body:)
 }
 
@@ -196,11 +199,10 @@ pub fn own_unit_frame(
       absorption_frame(unit_id:, absorption:)
     player_life.OwnHealth(health:) -> {
       let body =
-        player_health.must_encode(PlayerHealth(
-          unit_id:,
-          health:,
-          reason_mask: 0,
-        ))
+        bit_stream.must(
+          PlayerHealth(unit_id:, health:, reason_mask: 0),
+          player_health.encode,
+        )
       Frame(message_id: player_health.message_id, body:)
     }
     player_life.OwnDeathState(dead:) -> death_state_frame(unit_id:, dead:)
@@ -224,10 +226,10 @@ pub fn combat_state_frame(
   in_combat in_combat: Bool,
 ) -> Frame {
   let body =
-    unit_combat_state.must_encode(UnitCombatState(
-      unit_id:,
-      in_combat: bit(in_combat),
-    ))
+    bit_stream.must(
+      UnitCombatState(unit_id:, in_combat: bit(in_combat)),
+      unit_combat_state.encode,
+    )
   Frame(message_id: unit_combat_state.message_id, body:)
 }
 
@@ -249,13 +251,16 @@ pub fn experience_gained_frame(
   unit_id unit_id: Int,
 ) -> Frame {
   let body =
-    experience_gained.must_encode(ExperienceGained(
-      experience: gain,
-      rest_experience_used: 0,
-      bonus_experience: 0,
-      source_kind: kind,
-      source_unit_id: unit_id,
-    ))
+    bit_stream.must(
+      ExperienceGained(
+        experience: gain,
+        rest_experience_used: 0,
+        bonus_experience: 0,
+        source_kind: kind,
+        source_unit_id: unit_id,
+      ),
+      experience_gained.encode,
+    )
   Frame(message_id: experience_gained.message_id, body:)
 }
 
@@ -305,7 +310,11 @@ fn stat_frame(
   unit_id unit_id: Int,
   change change: unit_stat_change.UnitStatChange,
 ) -> Frame {
-  let body = unit_stat_changed.must_encode(UnitStatChanged(unit_id:, change:))
+  let body =
+    bit_stream.must(
+      UnitStatChanged(unit_id:, change:),
+      unit_stat_changed.encode,
+    )
   Frame(message_id: unit_stat_changed.message_id, body:)
 }
 
@@ -318,18 +327,22 @@ pub fn resource_frame(
   value value: Float,
 ) -> Frame {
   let body =
-    unit_float_stat_changed.must_encode(UnitFloatStatChanged(
-      unit_id:,
-      stat_id: unit_fields.resource_stat_id(slot:),
-      value: float32.to_bits(value),
-    ))
+    bit_stream.must(
+      UnitFloatStatChanged(
+        unit_id:,
+        stat_id: unit_fields.resource_stat_id(slot:),
+        value: float32.to_bits(value),
+      ),
+      unit_float_stat_changed.encode,
+    )
   Frame(message_id: unit_float_stat_changed.message_id, body:)
 }
 
 /// 0x0594 with the bit set and reason 0: the client leaves the world and
 /// starts character select on the same connection (opcode.0x594).
 pub fn leave_world_frame() -> Frame {
-  let body = leave_world.must_encode(LeaveWorld(returning: 1, reason: 0))
+  let body =
+    bit_stream.must(LeaveWorld(returning: 1, reason: 0), leave_world.encode)
   Frame(message_id: leave_world.message_id, body:)
 }
 
@@ -339,7 +352,10 @@ pub fn unit_stealth_frame(
   stealthed stealthed: Bool,
 ) -> Frame {
   let body =
-    unit_stealth.must_encode(UnitStealth(unit_id:, stealthed: bit(stealthed)))
+    bit_stream.must(
+      UnitStealth(unit_id:, stealthed: bit(stealthed)),
+      unit_stealth.encode,
+    )
   Frame(message_id: unit_stealth.message_id, body:)
 }
 
@@ -365,13 +381,14 @@ pub fn stealth_logged_frame(
   exiting exiting: Bool,
 ) -> Frame {
   let body =
-    combat_log.must_encode(
+    bit_stream.must(
       CombatLog(
         entry: combat_log_entry.Stealth(CombatLogStealth(
           unit_id:,
           exiting: bit(exiting),
         )),
       ),
+      combat_log.encode,
     )
   Frame(message_id: combat_log.message_id, body:)
 }
@@ -688,7 +705,11 @@ fn vector_of(place: Place) -> movement_float_vector.MovementFloatVector {
 /// 0x357, which opens the dialog of a unit (`opcode.0x357`): the unit's id and the
 /// bit the client's reader needs after it, clear.
 pub fn dialog_open_frame(unit_id unit_id: Int) -> Frame {
-  let body = unit_dialog_open.must_encode(UnitDialogOpen(unit_id:, unread_2: 0))
+  let body =
+    bit_stream.must(
+      UnitDialogOpen(unit_id:, unread_2: 0),
+      unit_dialog_open.encode,
+    )
   Frame(message_id: unit_dialog_open.message_id, body:)
 }
 
@@ -767,7 +788,7 @@ pub fn buyback_list_frame(
 
 /// 0x106 with the client's code for why an action is refused (`opcode.0x106`).
 pub fn generic_error_frame(code code: Int) -> Frame {
-  let body = generic_error.must_encode(GenericError(code:))
+  let body = bit_stream.must(GenericError(code:), generic_error.encode)
   Frame(message_id: generic_error.message_id, body:)
 }
 
@@ -811,9 +832,9 @@ pub fn object_created_frame(unit unit: Created) -> Frame {
 /// (opcode.0x355).
 pub fn unit_removed_frame(unit_id unit_id: Int) -> Frame {
   let body =
-    unit_destroyed.must_encode(UnitDestroyed(
-      unit_id:,
-      chest_world_object_delay: 0,
-    ))
+    bit_stream.must(
+      UnitDestroyed(unit_id:, chest_world_object_delay: 0),
+      unit_destroyed.encode,
+    )
   Frame(message_id: unit_destroyed.message_id, body:)
 }

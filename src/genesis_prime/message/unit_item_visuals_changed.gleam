@@ -39,12 +39,6 @@ pub fn encode(
   |> bit_stream.finish
 }
 
-/// The message as the bytes of its body, for values that fit their fields; a
-/// value that does not ends the process, naming the message and the field.
-pub fn must_encode(message: UnitItemVisualsChanged) -> BitArray {
-  bit_stream.must(encode(message), "unit_item_visuals_changed")
-}
-
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(UnitItemVisualsChanged, DecodeError) {
   let reader = bit_stream.new_reader(body)

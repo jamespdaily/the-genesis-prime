@@ -11,6 +11,7 @@
 
 import ask_support
 import genesis_prime/message/bit_stream.{Endpoint}
+import genesis_prime/message/pong.{Pong}
 import gleam/bit_array
 import gleam/int
 import gleam/list
@@ -506,14 +507,16 @@ fn result_value(result: Result(#(a, bit_stream.Reader), e)) -> Result(a, e) {
 pub fn must_returns_the_bytes_of_an_ok_result_test() -> Nil {
   use <- owned_test.run(5000)
   let bytes = <<1, 2, 3>>
-  assert bit_stream.must(Ok(bytes), "any_message") == bytes
+  assert bit_stream.must(7, fn(_) { Ok(bytes) }) == bytes
     as "`finish` gives Ok(bytes) and `must` hands those bytes on untouched"
-  assert bit_stream.must(Ok(<<>>), "any_message") == <<>>
+  assert bit_stream.must(7, fn(_) { Ok(<<>>) }) == <<>>
     as "an empty body is an Ok of no bytes"
 }
 
-/// One error of each variant. The function after the list matches every
-/// variant, so a new `EncodeError` variant fails to compile until it joins.
+/// One error of each variant. The `case` after the list names every variant,
+/// so a new `EncodeError` variant fails to compile until it joins that
+/// `case`; the list itself is not checked, and the new variant must be added
+/// to it by hand.
 fn every_encode_error() -> List(bit_stream.EncodeError) {
   let errors = [
     bit_stream.ValueDoesNotFit(field: "a", bits: 8, value: 300),
@@ -540,20 +543,21 @@ fn every_encode_error() -> List(bit_stream.EncodeError) {
   errors
 }
 
-pub fn must_crash_text_is_the_message_name_then_describe_encode_for_every_variant_test() -> Nil {
+pub fn must_crash_text_is_the_value_then_describe_encode_for_every_variant_test() -> Nil {
   use <- owned_test.run(10_000)
   list.each(every_encode_error(), fn(error) {
     let ended =
       ask_support.ended_running(fn() {
-        let _bytes = bit_stream.must(Error(error), "planted_message")
+        let _bytes =
+          bit_stream.must(Pong(sequence_number: 5), fn(_) { Error(error) })
         Nil
       })
     assert ask_support.panic_message(ask_support.raised(ended))
-      == "planted_message: " <> bit_stream.describe_encode(error:)
+      == "Pong(5): " <> bit_stream.describe_encode(error:)
       as {
         "the crash of "
         <> string.inspect(error)
-        <> " names the message, then the sentence `describe_encode` gives"
+        <> " names the value as `string.inspect` writes it, then the sentence `describe_encode` gives"
       }
   })
 }

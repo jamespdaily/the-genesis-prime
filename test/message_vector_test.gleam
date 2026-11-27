@@ -66,7 +66,6 @@ pub fn server_hello_is_the_clients_373_bits_test() -> Nil {
       unread_11: 0x21222324,
     ),
     encode: server_hello.encode,
-    must_encode: server_hello.must_encode,
     decode: server_hello.decode,
   )
 }
@@ -114,7 +113,6 @@ pub fn login_request_is_the_clients_1168_bits_test() -> Nil {
       realm_data_center_id: 0x99,
     ),
     encode: login_request.encode,
-    must_encode: login_request.must_encode,
     decode: login_request.decode,
   )
 }
@@ -152,7 +150,6 @@ pub fn login_accepted_is_one_32_bit_value_test() -> Nil {
     body: message_support.hex("01000000"),
     value: LoginAccepted(disconnected_for_lag: 1),
     encode: login_accepted.encode,
-    must_encode: login_accepted.must_encode,
     decode: login_accepted.decode,
   )
 }
@@ -164,7 +161,6 @@ pub fn login_refused_is_the_clients_96_bits_test() -> Nil {
     body: message_support.hex("10000000 00000000 00000000"),
     value: LoginRefused(reason: 16, value: 0, suspension_duration: 0),
     encode: login_refused.encode,
-    must_encode: login_refused.must_encode,
     decode: login_refused.decode,
   )
 }
@@ -186,7 +182,6 @@ pub fn game_server_handoff_is_the_clients_351_bits_test() -> Nil {
       realm_note_text_id: 0x1ABCDE,
     ),
     encode: game_server_handoff.encode,
-    must_encode: game_server_handoff.must_encode,
     decode: game_server_handoff.decode,
   )
 }
@@ -206,7 +201,6 @@ pub fn game_hello_reply_is_the_clients_312_bits_test() -> Nil {
       three: 3,
     ),
     encode: game_hello_reply.encode,
-    must_encode: game_hello_reply.must_encode,
     decode: game_hello_reply.decode,
   )
 }
@@ -225,7 +219,6 @@ pub fn enter_world_is_a_15_bit_value_and_five_floats_test() -> Nil {
       unread_6: 0x40600000,
     ),
     encode: enter_world.encode,
-    must_encode: enter_world.must_encode,
     decode: enter_world.decode,
   )
 }
@@ -242,7 +235,6 @@ pub fn movement_send_interval_is_the_clients_74_bits_test() -> Nil {
       interval_milliseconds: 500,
     ),
     encode: movement_send_interval.encode,
-    must_encode: movement_send_interval.must_encode,
     decode: movement_send_interval.decode,
   )
 }
@@ -265,7 +257,6 @@ pub fn realm_handoff_is_the_clients_352_bits_test() -> Nil {
       field_8: 0x0BCDEF,
     ),
     encode: realm_handoff.encode,
-    must_encode: realm_handoff.must_encode,
     decode: realm_handoff.decode,
   )
 }
@@ -303,7 +294,6 @@ pub fn realm_list_is_the_clients_734_bits_test() -> Nil {
       text_groups: [TextGroup(field_1: 0x3333, texts: ["d", "bc"])],
     ),
     encode: realm_list.encode,
-    must_encode: realm_list.must_encode,
     decode: realm_list.decode,
   )
 }
@@ -315,7 +305,6 @@ pub fn a_realm_list_with_no_realms_and_no_groups_is_128_bits_test() -> Nil {
     body: message_support.hex("05000000 00000000 00000000 00000000"),
     value: RealmList(field_1: 5, realms: [], text_groups: []),
     encode: realm_list.encode,
-    must_encode: realm_list.must_encode,
     decode: realm_list.decode,
   )
 }
@@ -327,7 +316,6 @@ pub fn character_select_start_has_an_empty_body_test() -> Nil {
     body: <<>>,
     value: CharacterSelectStart,
     encode: character_select_start.encode,
-    must_encode: character_select_start.must_encode,
     decode: character_select_start.decode,
   )
 }
@@ -339,7 +327,6 @@ pub fn realm_select_start_has_an_empty_body_test() -> Nil {
     body: <<>>,
     value: RealmSelectStart,
     encode: realm_select_start.encode,
-    must_encode: realm_select_start.must_encode,
     decode: realm_select_start.decode,
   )
 }
@@ -353,7 +340,6 @@ pub fn the_loading_screen_message_is_0x83c_with_an_empty_body_test() -> Nil {
     body: <<>>,
     value: WorldLoadingScreenShown,
     encode: world_loading_screen_shown.encode,
-    must_encode: world_loading_screen_shown.must_encode,
     decode: world_loading_screen_shown.decode,
   )
 }
@@ -367,7 +353,6 @@ pub fn the_control_withdrawn_message_is_0x639_with_an_empty_body_test() -> Nil {
     body: <<>>,
     value: ClientControlWithdrawn,
     encode: client_control_withdrawn.encode,
-    must_encode: client_control_withdrawn.must_encode,
     decode: client_control_withdrawn.decode,
   )
 }
@@ -379,7 +364,6 @@ pub fn the_client_wrapper_body_is_the_inner_frame_with_its_length_in_the_clear_t
     body: message_support.hex("06 00 00 00 03 89"),
     value: ClientWrapper(inner_frame: message_support.hex("06 00 00 00 03 89")),
     encode: client_wrapper.encode,
-    must_encode: client_wrapper.must_encode,
     decode: client_wrapper.decode,
   )
 }
@@ -427,7 +411,6 @@ pub fn unit_dialog_open_matches_client_layout_test() -> Nil {
     body: message_support.hex("0110000001"),
     value: UnitDialogOpen(unit_id: 0x1001, unread_2: 1),
     encode: unit_dialog_open.encode,
-    must_encode: unit_dialog_open.must_encode,
     decode: unit_dialog_open.decode,
   )
   let assert Error(_) = unit_dialog_open.decode(message_support.hex("01100000"))
@@ -575,50 +558,26 @@ pub fn pong_is_the_clients_8_bits_test() -> Nil {
       body: message_support.hex(case_.0),
       value: Pong(sequence_number: case_.1),
       encode: pong.encode,
-      must_encode: pong.must_encode,
       decode: pong.decode,
     )
   })
 }
 
-pub fn must_encode_gives_the_vector_bytes_for_each_message_with_a_vector_test() -> Nil {
-  use <- owned_test.run(5000)
-  list.each([#("00", 0), #("13", 19), #("14", 20), #("ff", 255)], fn(case_) {
-    assert pong.must_encode(Pong(sequence_number: case_.1))
-      == message_support.hex(case_.0)
-      as "vector.opcode.0x1.body: pong's 8 bits"
-  })
-  list.each([59, 255], fn(code) {
-    assert generic_error.must_encode(GenericError(code:))
-      == message_support.packed([#(8, code)])
-      as "opcode.0x106: the reader reads one 8-bit code"
-  })
-  assert world_loading_screen_shown.must_encode(WorldLoadingScreenShown) == <<>>
-    as "opcode.0x83c: an empty body"
-  assert client_control_withdrawn.must_encode(ClientControlWithdrawn) == <<>>
-    as "opcode.0x639: an empty body"
-}
-
-pub fn must_encode_of_a_value_past_its_width_crashes_naming_the_message_and_field_test() -> Nil {
+pub fn must_of_a_value_past_its_width_crashes_naming_the_value_field_and_width_test() -> Nil {
   use <- owned_test.run(10_000)
   let ended =
     ask_support.ended_running(fn() {
-      let _bytes = pong.must_encode(Pong(sequence_number: 300))
+      let _bytes = bit_stream.must(Pong(sequence_number: 300), pong.encode)
       Nil
     })
   let text = ask_support.panic_message(ask_support.raised(ended))
-  assert string.contains(text, "pong")
-    as {
-      "the crash names the message `pong` (schema row pong); it says: " <> text
-    }
+  assert string.contains(text, "Pong(300)")
+    as { "the crash gives the value (schema row pong); it says: " <> text }
   assert string.contains(text, "sequence_number")
     as {
       "the crash names the field of the 8-bit sequence number; it says: "
       <> text
     }
-  assert string.contains(text, "300") && string.contains(text, "8 bits")
-    as {
-      "the crash gives the value and the width, 8 bits (opcode.0x1); it says: "
-      <> text
-    }
+  assert string.contains(text, "8 bits")
+    as { "the crash gives the width, 8 bits (opcode.0x1); it says: " <> text }
 }

@@ -119,7 +119,6 @@ pub fn the_clients_0x637_vector_is_a_clock_and_three_commands_test() -> Nil {
       Velocity(MovementVelocity(x: 0x3C00, y: 0, z: 0xBC00, blends: 1)),
     ]),
     encode: player_movement.encode,
-    must_encode: player_movement.must_encode,
     decode: player_movement.decode,
   )
 }

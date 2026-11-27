@@ -33,12 +33,6 @@ pub fn encode(message: Ping) -> Result(BitArray, EncodeError) {
   |> bit_stream.finish
 }
 
-/// The message as the bytes of its body, for values that fit their fields; a
-/// value that does not ends the process, naming the message and the field.
-pub fn must_encode(message: Ping) -> BitArray {
-  bit_stream.must(encode(message), "ping")
-}
-
 /// The message read from the bytes of a body, or why they are not one.
 pub fn decode(body: BitArray) -> Result(Ping, DecodeError) {
   let reader = bit_stream.new_reader(body)
