@@ -791,3 +791,83 @@ pub fn a_static_captive_of_a_released_static_object_is_unseen_with_it_and_return
   let #(_, taken) = timer_fired(state:, at_ms: 37_000, spawn: 29_044)
   assert spawns.player_sends(taken) == [#(1, seen([captive]))]
 }
+
+pub fn a_captive_creature_that_is_waiting_failed_or_dormant_when_its_object_is_released_is_left_as_it_is_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The Bramble Trap (spawn 1) and its captive (spawn 2) are live for the player of
+  // connection 1; the captive then ends, and each row brings it to a state that is
+  // not live. The row's `later` is what happens after the release, and `starts` how
+  // many creatures that starts.
+  let rows = [
+    #(
+      "waiting for its restart",
+      fn(state, mordesh_watch) {
+        spawns.feed(state:, at_ms: 6100, event: WatchEnded(mordesh_watch)).0
+      },
+      fn(state) { timer_fired(state:, at_ms: 8000, spawn: 2).1 },
+      1,
+      "its own timer starts it",
+    ),
+    #(
+      "failed",
+      fn(state, mordesh_watch) {
+        let #(state, _) =
+          spawns.feed(state:, at_ms: 6100, event: WatchEnded(mordesh_watch))
+        let #(state, restarted) = timer_fired(state:, at_ms: 6200, spawn: 2)
+        let assert [#(next_watch, _)] = spawns.starts(restarted)
+          as "the timer starts the captive again"
+        spawns.creature_not_started(
+          state:,
+          at_ms: 6300,
+          watch: next_watch,
+          reason: "the creature supervisor is not running",
+        ).0
+      },
+      fn(state) {
+        let #(state, _) =
+          spawns.move(state:, at_ms: 8000, connection: 1, x: spawns.far)
+        spawns.move(state:, at_ms: 8100, connection: 1, x: 0.0).1
+      },
+      0,
+      "a failed spawn stays empty for the run",
+    ),
+    #(
+      "dormant",
+      fn(state, mordesh_watch) {
+        let #(state, _) =
+          spawns.feed(state:, at_ms: 6100, event: WatchEnded(mordesh_watch))
+        let #(state, _) =
+          spawns.move(state:, at_ms: 6150, connection: 1, x: spawns.far)
+        timer_fired(state:, at_ms: 6200, spawn: 2).0
+      },
+      fn(state) { spawns.move(state:, at_ms: 8000, connection: 1, x: 0.0).1 },
+      1,
+      "a later sight starts it",
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(name, make, later, starts, why) = row
+    let #(state, joined) =
+      spawns.join(
+        state: a_trap_with_its_captive(),
+        at_ms: 6000,
+        connection: 1,
+        x: 0.0,
+      )
+    let assert [#(_, trap), #(mordesh_watch, _)] = started_units(joined)
+      as "the player's sight starts the trap and its captive, in spawn order"
+    let state = make(state, mordesh_watch)
+    let before = map.spawn_state(state:, spawn: SpawnId(2))
+    let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: trap)
+    assert spawns.creature_sends(taken) == [#(trap, "Retire")]
+      as {
+        name <> ": the release tells only the object's own creature to stop"
+      }
+    assert spawns.starts(taken) == [] && spawns.timers(taken) == []
+      as { name <> ": the release starts nothing and starts no timer" }
+    assert map.spawn_state(state:, spawn: SpawnId(2)) == before
+      as { name <> ": the captive's state is as it was" }
+    assert list.length(spawns.starts(later(state))) == starts
+      as { name <> ": " <> why }
+  })
+}

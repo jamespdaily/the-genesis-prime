@@ -444,7 +444,7 @@ pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_un
       idle_since_ms: option.None,
     ))
     as "the next life's spawn is live with its viewer awaiting its first snapshot"
-  let #(_, taken) =
+  let #(ended, taken) =
     spawns.feed(state:, at_ms: 6700, event: WatchEnded(next_watch))
   assert spawns.player_sends(taken)
     == [
@@ -456,6 +456,22 @@ pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_un
     as "the spawn waits the kind's respawn time"
   assert spawns.creature_sends(taken) == []
     as "and the creature that ended is told no Unseen"
+  // The same watch ended a second time: the map no longer holds it for a creature.
+  let #(again, taken) =
+    spawns.feed(state: ended, at_ms: 6800, event: WatchEnded(next_watch))
+  assert again == ended
+    as "a second end of the same creature watch changes nothing"
+  assert spawns.player_sends(taken) == []
+    && spawns.timers(taken) == []
+    && spawns.starts(taken) == []
+    as "and sends no Gone, starts no timer and starts no creature"
+  let assert [line] = support.logs_of(step: taken, level: LogError)
+    as "and writes one error line"
+  assert string.contains(
+    line.text,
+    "a watch ended that names no player of the map",
+  )
+    as "that says the watch names no player: it is read as a player's end"
 }
 
 pub fn a_restart_timer_that_fires_with_no_one_in_sight_leaves_the_spawn_dormant_test() -> Nil {

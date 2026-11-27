@@ -4,7 +4,6 @@
 //// gives a sentence of reason, and a failure row names a test or says why it cannot
 //// happen. Each is shown on planted files.
 
-import code_rule/list_file
 import code_rule/order_coverage.{
   type Cover, type Row, Independent, Order, Owner, Row,
 }
@@ -13,7 +12,6 @@ import code_rule/planted
 import code_rule/repository
 import code_rule/source.{type SourceFile}
 import gleam/list
-import gleam/string
 import owned_test
 import unitest
 
@@ -281,13 +279,6 @@ pub fn a_failure_row_naming_no_type_or_variant_is_a_breach_test() -> Nil {
 
 const map_path = "src/genesis_prime/world_map/map.gleam"
 
-const without_test_path = "test/code_rule/failure_rows_without_test.txt"
-
-/// The rows the list of failure rows without a test holds: writing a test for a row
-/// takes it off the list and lowers this by one, and a new row on the list fails the
-/// count.
-const most_rows_without_test = 32
-
 fn real_sources() -> List(SourceFile) {
   repository.sources(under: ["src", "test"])
 }
@@ -326,23 +317,8 @@ pub fn every_row_of_the_maps_failure_tables_names_a_test_or_why_it_cannot_happen
   let sources = real_sources()
   let assert Ok(map_file) =
     list.find(sources, fn(file) { file.path == map_path })
-  // Rows whose behaviour is described and has no test yet are listed by their point in
-  // the list file; a row not on it must name a test or say why it cannot happen, and a
-  // row on it must still name neither. The list holds exactly `most_rows_without_test`
-  // rows, so a row added to it fails the count and a row given a test is taken off it.
-  let listed = list_file.rows(text: source.read(without_test_path))
-  assert list.length(listed) == most_rows_without_test
-    as "the list holds exactly the rows the count names: a row given a test or a reason leaves the list and lowers the count by one, and a row added to the list is refused"
-  let without_test =
-    list.map(listed, fn(row) {
-      "a failure row names no test and no reason: " <> row.0
-    })
-  assert list.sort(
-      order_coverage.failure_breaches(file: map_file, sources:),
-      string.compare,
-    )
-    == list.sort(without_test, string.compare)
-    as "each row of the map's failure tables names a public test that exists or says cannot happen with its reason, but the rows of the list, which each still name neither"
+  assert order_coverage.failure_breaches(file: map_file, sources:) == []
+    as "each row of the map's failure tables names a public test that exists or says cannot happen with its reason"
 }
 
 pub fn every_type_name_in_a_failure_row_is_a_type_or_variant_in_src_test() -> Nil {

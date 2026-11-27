@@ -679,6 +679,70 @@ pub fn the_watch_of_a_stealthed_player_in_a_ring_ending_sends_its_creatures_unwa
     as "the map's end rule: the creature that saw the player is sent Unwatched, then that the caster is gone, and nothing else (the failure table row 'a player in a ring leaves, camps or its connection ends')"
 }
 
+pub fn a_ready_player_in_a_ring_that_leaves_or_whose_connection_ends_alive_or_dead_sends_its_creature_unseen_and_caster_gone_and_no_withdrew_test() -> Nil {
+  use <- owned_test.run(5000)
+  // The Dagun at 100 holds the player at 92 in its ring. A dead player stands in no
+  // ring, so its end has no ring to leave either.
+  let ends = [
+    #("leave", fn(state, _) {
+      map_spawn_support.leave(state:, at_ms: 6100, connection: 1)
+    }),
+    #("end of the player's watch", fn(state, player_watch) {
+      map_spawn_support.feed(
+        state:,
+        at_ms: 6100,
+        event: step.WatchEnded(watch: player_watch),
+      )
+    }),
+  ]
+  list.each(ends, fn(end) {
+    list.each([True, False], fn(alive) {
+      let state =
+        map_spawn_support.started_with_spawns(spawns: [
+          spawn_support.dagun(number: 1, x: 100.0),
+        ])
+      let #(state, joined) =
+        map_spawn_support.join(
+          state:,
+          at_ms: map_spawn_support.started_at_ms + 1,
+          connection: 1,
+          x: 80.0,
+        )
+      let assert [#(_, creature)] = map_spawn_support.starts(joined)
+        as "the player's sight starts the creature"
+      let assert [#(player_watch, _)] = support.watches(joined)
+        as "the join opens a watch on the player's connection"
+      let #(state, _) = ready(state:, connection: 1)
+      let #(state, _) =
+        map_spawn_support.move(state:, at_ms: 6000, connection: 1, x: 92.0)
+      let state = case alive {
+        True -> state
+        False ->
+          map_spawn_support.life(
+            state:,
+            at_ms: 6050,
+            connection: 1,
+            alive: False,
+          ).0
+      }
+      let #(_, taken) = end.1(state, player_watch)
+      assert map_spawn_support.creature_sends(taken)
+        == [
+          #(creature.unit_id, "Unseen by 1"),
+          #(creature.unit_id, "CasterGone by 1"),
+        ]
+        as {
+          end.0
+          <> case alive {
+            True -> " alive"
+            False -> " dead"
+          }
+          <> ": the creature is sent Unseen, which drops the player from its threat list, then CasterGone, and no Withdrew (the failure table rows 'a player in a ring leaves, camps or its connection ends' and 'a dead player's connection ends or camps')"
+        }
+    })
+  })
+}
+
 // A player's death (issue 496): the connection tells the map `LifeChanged`; a dead
 // player stands in no ring, and each creature it sees is sent `PlayerDied`. A dead
 // player's rings are a server choice (the Design of issue 496, section 2): the client
