@@ -1589,10 +1589,11 @@ fn saved_through_the_store(
 
 pub fn a_relogged_player_using_the_same_spawn_again_counts_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
-  // The server's choice: an object a quest counted counts once for the objective, also after a
-  // relog (the client keeps no per-object record). Quest 6723's objective 10383 is type 23 on Creature2 30826 and 30827, count 15
-  // (the client keeps no per-object record, `0x1405517a0`). Spawn 40 is used, the place is
-  // saved with the real store, and the next login uses spawn 40 again, then spawn 41.
+  // The server's choice: an object a quest counted counts once for the objective, also
+  // after a relog. Quest 6723's objective 10383 is type 23 on Creature2 30826 and 30827,
+  // count 15 (the client keeps no per-object record, `0x1405517a0`). Spawn 40 is used,
+  // the place is saved with the real store, and the next login uses spawn 40 again, then
+  // spawn 41.
   let stored = account_store_support.stored_holding(worn: [], items: [])
   let settings =
     connection_state.Settings(

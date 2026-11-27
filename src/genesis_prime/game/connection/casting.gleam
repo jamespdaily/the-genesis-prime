@@ -1651,8 +1651,7 @@ fn carried_out(
             ),
           ],
           // The map keeps a stealthed player out of every creature's ring: the server's
-          // choice. Told last, after the owner's 0x8f5 and the
-          // viewers' news.
+          // choice. Told last, after the owner's 0x8f5 and the viewers' news.
           [
             connection_state.tells_the_map(
               entered:,

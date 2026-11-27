@@ -10,10 +10,11 @@
 ////   and 3 ms, SpellPhase 2820 to 2823; its damage 79090, 79092 and 79093 is in goes 1 to 3,
 ////   phaseFlags 2, 4 and 8) and Electrocute (41276: innateCostType0 6, innateCost0 8,
 ////   `Spell4CastResult.vital_cost`).
-//// - The server's choices: one +15 for each Pulse Blast cast, at its
-////   striking go (the client's prerequisite 903 holds it to combat), and the Pulse Blast that opens a fight gives it too: the
-////   gain comes with the damage spell's last go, after the creature's threat, which follows
-////   its first answer, has turned the combat flag on (`game_connection_volatility_test`).
+//// - The server's choices: one +15 for each Pulse Blast cast, at its striking go (the
+////   client's prerequisite 903 holds it to combat), and the Pulse Blast that opens a
+////   fight gives it too: the gain comes with the damage spell's last go, after the
+////   creature's threat, which follows its first answer, has turned the combat flag on
+////   (`game_connection_volatility_test`).
 //// The bag indices are `cast_support.abilities`'.
 
 import cast_support as support

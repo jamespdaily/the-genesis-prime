@@ -17,9 +17,12 @@
 ////   keeps it on damage (dataBits02 1) for a caster that holds Spell4 59389, which the
 ////   test of the kept stealth gives it by an edit (`with_stealth_kept_on_damage`). A second
 ////   press starts Stealth Cancel 38783 (107793, behind Prerequisite 8127: stealthed).
-//// - The server's choices, in the viewers and cast modules: the order of a blow is the
-////   health's news, the damage taken, then the death; the stealth change is the last of
-////   the input that moved it; creatures' sight of a stealthed player is left as it was.
+//// - The server's choices, in the viewers, cast and map modules: the order of a blow is
+////   the health's news, the damage taken, then the death; the stealth change is the last
+////   of the input that moved it, and the map is told it after the 0x8f5 and the viewers'
+////   news; a stealthed player stands in no creature's ring, so no creature aggroes a
+////   stealthed player it is not fighting (the client holds no rule,
+////   `UnitProperty2.stealth_detection`).
 
 import cast_support
 import connection_rule_support

@@ -10,10 +10,10 @@
 ////   longest effect, kept on the live cast; a type 80 effect takes the matching nodes of the caster's casts off the
 ////   unit, oldest cast first, each written 0x811 (`opcode.0x811`); and a cast that
 ////   gives a unit a node it holds none on takes off the caster's oldest casts of its
-////   stack at the stack's cap (`Spell4StackGroup.stackCap`; taking them off is the server's choice). A cast
-////   pushed off a creature while its node holds crowd-control states ends them there
-////   (`creature_controls_ended`), since the client ends a state only with a 0x880
-////   (`cc_state.end`).
+////   stack at the stack's cap (`Spell4StackGroup.stackCap`; taking them off is the
+////   server's choice). A cast pushed off a creature while its node holds crowd-control
+////   states ends them there (`creature_controls_ended`), since the client ends a state
+////   only with a 0x880 (`cc_state.end`).
 //// - **A go's property modifiers** (genesis_prime/game/unit_properties): each type 11
 ////   and type 145 effect of the phase that has a life (a durationTime, or flags bit 2) and
 ////   whose gate against the caster passes is listed on the caster like a Fluff effect, gives the

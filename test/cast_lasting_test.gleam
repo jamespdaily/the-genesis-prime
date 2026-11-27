@@ -11,9 +11,9 @@
 ////   end it, so the server holds the 0x7fe of a cast with a node that has life left
 ////   and sends the end when the life is over.
 //// - `opcode.0x811` and `opcode.0x813`: a cast taken off units, and one stack fewer.
-//// - The server's choice on stacking (`Spell4StackGroup.stackCap` is the cap) for what a cast at the cap
-////   takes off, and its other choices the design names (a death ends a lingering
-////   cast; the oldest cast goes first).
+//// - The server's choice on stacking (`Spell4StackGroup.stackCap` is the cap) for what
+////   a cast at the cap takes off, and its other choices the design names (a death ends
+////   a lingering cast; the oldest cast goes first).
 
 import cast_support as support
 import fixture_tables
