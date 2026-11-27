@@ -353,7 +353,6 @@ fn write(
           auto_columns(fn(row) { row.creature_id }),
           auto_columns(fn(row) { row.spell4_id }),
           auto_columns(fn(row) { row.order_index }),
-          auto_columns(fn(row) { row.reason }),
         )
         |> result.map_error(stopped),
       )
@@ -364,7 +363,6 @@ fn write(
           special_columns(fn(row) { row.spell4_id }),
           special_columns(fn(row) { row.order_index }),
           special_columns(fn(row) { row.cooldown_ms }),
-          special_columns(fn(row) { row.reason }),
         )
         |> result.map_error(stopped),
       )
@@ -440,7 +438,6 @@ fn write(
               auto_columns(fn(row) { row.creature_id }),
               auto_columns(fn(row) { row.spell4_id }),
               auto_columns(fn(row) { row.order_index }),
-              auto_columns(fn(row) { row.reason }),
             )
             |> result.map_error(stopped),
           )
@@ -452,7 +449,6 @@ fn write(
               special_columns(fn(row) { row.spell4_id }),
               special_columns(fn(row) { row.order_index }),
               special_columns(fn(row) { row.cooldown_ms }),
-              special_columns(fn(row) { row.reason }),
             )
             |> result.map_error(stopped),
           )
@@ -463,7 +459,6 @@ fn write(
               auto_columns(fn(row) { row.creature_id }),
               auto_columns(fn(row) { row.spell4_id }),
               auto_columns(fn(row) { row.order_index }),
-              auto_columns(fn(row) { row.reason }),
             )
             |> result.map_error(stopped),
           )
@@ -475,7 +470,6 @@ fn write(
               special_columns(fn(row) { row.spell4_id }),
               special_columns(fn(row) { row.order_index }),
               special_columns(fn(row) { row.cooldown_ms }),
-              special_columns(fn(row) { row.reason }),
             )
             |> result.map_error(stopped),
           )

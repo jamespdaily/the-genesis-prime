@@ -7,7 +7,7 @@
 ////   (as migration 0007 refuses them for a character's place).
 //// - The design of the world spawns (the Design artifact of issue 375, section
 ////   0): a row of the world database names its row in the file and any other row
-////   states its reason, which says something; a source row is in the table once;
+////   has a source that is a content source; a source row is in the table once;
 ////   an import's file hash is 64 lower-case hex characters and its rows count is
 ////   not negative.
 //// Each test runs on a database of its own, copied from the migrated template.
@@ -24,7 +24,6 @@ fn good_row() -> dict.Dict(String, String) {
   dict.from_list([
     #("source", "'world_database'"),
     #("source_row", "1"),
-    #("reason", "null"),
     #("entity_type", "0"),
     #("creature_id", "73464"),
     #("world_id", "3460"),
@@ -113,7 +112,6 @@ pub fn each_spawn_constraint_refuses_its_own_bad_row_under_its_own_name_test() -
       #(
         [
           #("source", "'made_up'"),
-          #("reason", "'a reason'"),
           #("source_row", "null"),
         ],
         "spawn_source_is_a_content_source",
@@ -126,29 +124,8 @@ pub fn each_spawn_constraint_refuses_its_own_bad_row_under_its_own_name_test() -
         [
           #("source", "'server_choice'"),
           #("source_row", "5"),
-          #("reason", "'a reason'"),
         ],
         "spawn_world_database_row_has_a_source_row",
-      ),
-      #(
-        [#("source", "'server_choice'"), #("source_row", "null")],
-        "spawn_other_source_states_its_reason",
-      ),
-      #(
-        [#("source", "'retail_record'"), #("source_row", "null")],
-        "spawn_other_source_states_its_reason",
-      ),
-      #(
-        [#("source", "'game_master'"), #("source_row", "null")],
-        "spawn_other_source_states_its_reason",
-      ),
-      #(
-        [
-          #("source", "'server_choice'"),
-          #("source_row", "null"),
-          #("reason", "'   '"),
-        ],
-        "spawn_reason_says_something",
       ),
     ],
     fn(case_) {
@@ -209,10 +186,10 @@ pub fn the_daguns_of_migration_0008_are_27_server_choices_that_state_their_row_t
       arguments: [
         "-At",
         "-c",
-        "select count(*), count(distinct reason), min(creature_id), max(creature_id), min(faction_id), min(display_info_id) from spawn where source = 'server_choice'",
+        "select count(*), min(creature_id), max(creature_id), min(faction_id), min(display_info_id) from spawn where source = 'server_choice'",
       ],
     )
     as "the query ran"
-  assert string.trim(output) == "27|27|73465|73465|1442|26578"
-    as "27 Virtual Defense Daguns (Creature2 73465), each with its own reason naming the world-database row whose offset it takes, faction 1442 (Creature2.factionId), display 26578 (Creature2DisplayGroupEntry 27216)"
+  assert string.trim(output) == "27|73465|73465|1442|26578"
+    as "27 Virtual Defense Daguns (Creature2 73465), faction 1442 (Creature2.factionId), display 26578 (Creature2DisplayGroupEntry 27216)"
 }

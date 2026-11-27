@@ -466,10 +466,10 @@ pub fn a_migrated_database_holds_the_60_second_default_row_and_the_sim_turrets_c
     as "migration 0009 seeds row 0, the server's choice of 60 000 ms, migration 0029 the Sim-Turrets' charges, Spell4 85469 and 86978, and migration 0030 their guard 85474 and opening 85472"
   assert content_support.psql(
       database:,
-      sql: "select source || ': ' || reason from creature_kind where creature_id = 0",
+      sql: "select source from creature_kind where creature_id = 0",
     )
-    == "server_choice: no table holds a respawn time for a creature (death.creature_respawn); attack: no client link (Spell4.5649), interval a server choice"
-    as "a server choice states its reason (death.creature_respawn, Spell4.5649)"
+    == "server_choice"
+    as "no table holds a respawn time for a creature (death.creature_respawn) or links an attack to it (Spell4.5649), so the row is the server's choice"
 }
 
 pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil {
@@ -478,16 +478,8 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
   list.each(
     [
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 0, 5649, 1500, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (73464, 0, 5649, 1500, 'server_choice')",
         "creature_kind_respawn_ms_is_positive",
-      ),
-      #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (73464, 5000, 5649, 1500, 'server_choice')",
-        "creature_kind_other_source_states_its_reason",
-      ),
-      #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 5649, 1500, 'server_choice', '  ')",
-        "creature_kind_reason_says_something",
       ),
       #(
         "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, source_row) values (73464, 5000, 5649, 1500, 'world_database', null)",
@@ -502,27 +494,27 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         "creature_kind_source_row_is_positive",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (0, 5000, 5649, 1500, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (0, 5000, 5649, 1500, 'server_choice')",
         "creature_kind_pkey",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (262144, 5000, 5649, 1500, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (262144, 5000, 5649, 1500, 'server_choice')",
         "creature_kind_creature_id_is_in_18_bits",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 5649, 1500, 'nobody', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (73464, 5000, 5649, 1500, 'nobody')",
         "creature_kind_source_is_a_content_source",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 0, 1500, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (73464, 5000, 0, 1500, 'server_choice')",
         "creature_kind_attack_spell4_id_is_positive",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 5649, 0, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (73464, 5000, 5649, 0, 'server_choice')",
         "creature_kind_attack_interval_ms_is_positive",
       ),
       #(
-        "insert into creature_kind (creature_id, respawn_ms, source, reason) values (73464, 5000, 'server_choice', 'x')",
+        "insert into creature_kind (creature_id, respawn_ms, source) values (73464, 5000, 'server_choice')",
         "attack_spell4_id",
       ),
     ],
@@ -590,10 +582,10 @@ pub fn the_guard_and_opening_columns_load_test() -> Nil {
     as "a creature with no row of its own has no guard"
   assert content_support.psql(
       database:,
-      sql: "select reason from creature_kind where creature_id = 73494",
+      sql: "select source from creature_kind where creature_id = 73494",
     )
-    |> string.contains("Spell4.85472.trigger")
-    as "the row states why: the client links neither spell to the creature"
+    == "server_choice"
+    as "the client links neither spell to the creature, so the row is the server's choice"
 }
 
 pub fn a_guard_with_an_effect_other_than_immunity_is_refused_test() -> Nil {
@@ -734,8 +726,8 @@ pub fn a_guard_without_an_opening_is_refused_by_the_database_test() -> Nil {
   let database = database_support.new_database(on: database_support.shared())
   list.each(
     [
-      "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, guard_spell4_id, source, reason) values (73464, 5000, 5649, 1500, 85474, 'server_choice', 'x')",
-      "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, opening_spell4_id, source, reason) values (73464, 5000, 5649, 1500, 85472, 'server_choice', 'x')",
+      "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, guard_spell4_id, source) values (73464, 5000, 5649, 1500, 85474, 'server_choice')",
+      "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, opening_spell4_id, source) values (73464, 5000, 5649, 1500, 85472, 'server_choice')",
     ],
     fn(bad) {
       let assert Error(failed) =

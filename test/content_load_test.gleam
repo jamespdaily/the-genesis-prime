@@ -195,7 +195,7 @@ pub fn the_load_puts_the_kinds_in_a_term_the_default_row_is_the_60_second_choice
   let database = database_support.new_database(on: database_support.shared())
   content_support.change(
     database:,
-    sql: "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (73464, 5000, 5649, 1500, 'server_choice', 'a short respawn for the training Beast')",
+    sql: "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (73464, 5000, 5649, 1500, 'server_choice')",
   )
   let #(loaded, key) = content_support.load(database:)
   assert loaded == Ok(Nil)
@@ -226,7 +226,7 @@ pub fn a_kind_row_for_a_creature_the_client_does_not_hold_stops_the_load_test() 
   let database = database_support.new_database(on: database_support.shared())
   content_support.change(
     database:,
-    sql: "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (200001, 5000, 5649, 1500, 'server_choice', 'a creature the client does not hold')",
+    sql: "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (200001, 5000, 5649, 1500, 'server_choice')",
   )
   let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
@@ -240,7 +240,7 @@ pub fn a_held_row_naming_an_objective_the_client_does_not_hold_stops_the_load_te
   let database = database_support.new_database(on: database_support.shared())
   content_support.change(
     database:,
-    sql: "insert into held_objective (objective_id, kind, source, reason) values (4000000, 'instance_run', 'server_choice', 'an objective the client does not hold')",
+    sql: "insert into held_objective (objective_id, kind, source) values (4000000, 'instance_run', 'server_choice')",
   )
   let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
@@ -338,15 +338,18 @@ pub fn an_objective_table_loads_its_rows_and_a_refused_row_stops_the_load_test()
       database: refused,
       sql: "insert into "
         <> row.table
-        <> " (objective_id, source, reason) values ("
+        <> " (objective_id, source) values ("
         <> int.to_string(row.refused)
-        <> ", 'server_choice', '"
-        <> row.refused_because
-        <> "')",
+        <> ", 'server_choice')",
     )
     let #(loaded, _key) = content_support.load(database: refused)
     let assert Error(content.Refused(refusals:)) = loaded
-      as { row.table <> ": a refused row stops the start" }
+      as {
+        row.table
+        <> ": a row naming "
+        <> row.refused_because
+        <> " stops the start"
+      }
     assert list.map(refusals, fn(refused) { #(refused.table, refused.row) })
       == [#(row.table, refusal.RowId(row.refused))]
       as { row.table <> ": the refusal names the table and the row" }
@@ -447,7 +450,7 @@ pub fn a_refused_kind_row_does_not_hide_a_refused_spawn_test() -> Nil {
   let database = database_support.new_database(on: database_support.shared())
   content_support.change(
     database:,
-    sql: "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source, reason) values (200001, 5000, 5649, 1500, 'server_choice', 'a creature the client does not hold')",
+    sql: "insert into creature_kind (creature_id, respawn_ms, attack_spell4_id, attack_interval_ms, source) values (200001, 5000, 5649, 1500, 'server_choice')",
   )
   content_support.change(database:, sql: bad_row(row: 1, creature: 200_002))
   let #(loaded, _key) = content_support.load(database:)
@@ -647,7 +650,7 @@ pub fn a_missing_and_an_unknown_game_number_stop_the_load_each_named_test() -> N
   )
   content_support.change(
     database:,
-    sql: "insert into game_number (name, value, unit, source, reason) values ('evade_range', 30, 'units', 'server_choice', 'a number the server has no use for')",
+    sql: "insert into game_number (name, value, unit, source) values ('evade_range', 30, 'units', 'server_choice')",
   )
   let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
@@ -809,7 +812,7 @@ pub fn a_server_proxy_row_that_cannot_be_planned_stops_the_load_naming_each_test
   let database = database_support.new_database(on: database_support.shared())
   content_support.change(
     database:,
-    sql: "insert into server_proxy (spell4_base_id, phase, spell4_id, source, reason) values (99999, 0, 42148, 'server_choice', 'a base with no plan'), (26468, 2, 42148, 'server_choice', 'a go Pulse Blast does not have'), (26468, 0, 99999, 'server_choice', 'a spell the tables lack')",
+    sql: "insert into server_proxy (spell4_base_id, phase, spell4_id, source) values (99999, 0, 42148, 'server_choice'), (26468, 2, 42148, 'server_choice'), (26468, 0, 99999, 'server_choice')",
   )
   let #(loaded, _key) = content_support.load(database:)
   let assert Error(content.Refused(refusals:)) = loaded
