@@ -1,12 +1,13 @@
 """dev/pr_wait.py: how its wait ends, and that a failed GitHub call is an error, not a CI state.
 
 Three layers, as dev/ci_gate.py's tests:
-- `decide(rows)` is pure: the checks' (bucket, name) rows in, a verdict out.
+- `decide(rows, mergeable)` is pure: the checks' (bucket, name) rows and the `mergeable` value in, a verdict out.
 - `wait(...)` is the loop with its fetch, sleep and clock passed in: a fake clock that only a
   fake sleep moves, so the deadline of 1500 s is crossed with no waiting.
 - the script (dev/pr_wait.sh) runs on a planted `gh`, with the deadline, the poll and the
   limit of one call set small by environment. The planted gh answers
-  `gh pr checks N --json name,bucket` with a JSON list: the names in PLANT_FAILING (a
+  `gh pr checks N --json name,bucket` with a JSON list (and `gh pr view N --json mergeable` with
+  the value PLANT_MERGEABLE, default MERGEABLE): the names in PLANT_FAILING (a
   comma-separated line, bucket fail) and the one pending check named by PLANT_PENDING (bucket
   pending), the gate job `check` as a passing check unless PLANT_GATE is 0 for that call
   (default 1), and the exit status PLANT_JSON_STATUS (default 0; a failed call prints
@@ -145,26 +146,26 @@ def run_wait(fake: Fake, **limits) -> tuple[int, str]:
 
 class DecideTest(unittest.TestCase):
     def test_every_check_passed_with_the_gate_job_is_a_pass(self):
-        verdict = pr_wait.decide(rows_of(("pass", "build"), ("pass", "check")))
+        verdict = pr_wait.decide(rows_of(("pass", "build"), ("pass", "check")), "MERGEABLE")
         self.assertEqual(verdict.kind, pr_wait.Kind.PASS)
 
     def test_a_failed_or_cancelled_check_is_a_failure_naming_them_in_order_while_others_pend(self):
-        verdict = pr_wait.decide(rows_of(("pending", "slow"), ("cancel", "second"), ("pass", "good"), ("fail", "first")))
+        verdict = pr_wait.decide(rows_of(("pending", "slow"), ("cancel", "second"), ("pass", "good"), ("fail", "first")), "MERGEABLE")
         self.assertEqual(verdict.kind, pr_wait.Kind.FAIL)
         self.assertEqual(verdict.names, ("second", "first"))
 
     def test_a_pending_check_with_none_failed_keeps_waiting(self):
-        verdict = pr_wait.decide(rows_of(("pass", "check"), ("pending", "slow"), ("pending", "slower")))
+        verdict = pr_wait.decide(rows_of(("pass", "check"), ("pending", "slow"), ("pending", "slower")), "MERGEABLE")
         self.assertEqual(verdict.kind, pr_wait.Kind.WAIT)
         self.assertEqual(verdict.names, ("slow", "slower"))
 
     def test_all_passed_without_the_gate_job_keeps_waiting(self):
-        verdict = pr_wait.decide(rows_of(("pass", "build"), ("pass", "tests")))
+        verdict = pr_wait.decide(rows_of(("pass", "build"), ("pass", "tests")), "MERGEABLE")
         self.assertEqual(verdict.kind, pr_wait.Kind.WAIT)
         self.assertEqual(verdict.names, ())
 
     def test_no_rows_is_no_check_yet(self):
-        self.assertEqual(pr_wait.decide([]).kind, pr_wait.Kind.NONE)
+        self.assertEqual(pr_wait.decide([], "UNKNOWN").kind, pr_wait.Kind.NONE)
 
     def test_skipped_checks_are_not_pending_and_a_name_with_spaces_is_kept_whole(self):
         rows = [
@@ -174,7 +175,7 @@ class DecideTest(unittest.TestCase):
         ]
         for why, given, kind, names in rows:
             with self.subTest(why):
-                verdict = pr_wait.decide(given)
+                verdict = pr_wait.decide(given, "MERGEABLE")
                 self.assertEqual((verdict.kind, verdict.names), (kind, names))
 
 
@@ -305,12 +306,18 @@ class PullRequestWaitScriptTest(unittest.TestCase):
     def test_no_checks_reported_three_times_then_a_pass_ends_0_not_as_three_failed_calls(self):
         done = self.wait(PLANT_NO_CHECKS="1,1,1,0")
         self.assertEqual(done.returncode, 0, done.stderr)
-        self.assertEqual(len(done.calls), 4, done.calls)
+        self.assertEqual(len([call for call in done.calls if call.startswith("pr checks")]), 4, done.calls)
 
     def test_only_no_checks_reported_ends_1_after_the_no_check_limit(self):
         done = self.wait(PLANT_NO_CHECKS="1", PR_WAIT_NO_CHECK_SECONDS="0.05")
         self.assertEqual(done.returncode, 1, done.stderr)
         self.assertIn("pr_wait: no check on pull request 7 after 0.05 s", done.stderr)
+
+    def test_a_conflicting_pull_request_with_no_check_exits_1_at_once_with_its_line_end_to_end(self):
+        done = self.wait(PLANT_NO_CHECKS="1", PLANT_MERGEABLE="CONFLICTING")
+        self.assertEqual(done.returncode, 1, done.stderr)
+        self.assertIn("pr_wait: pull request 7 conflicts with its base and GitHub runs no check on it", done.stderr)
+        self.assertEqual(done.calls, ["pr checks 7 --json name,bucket", "pr view 7 --json mergeable"])
 
     def test_a_crash_of_the_script_exits_3_with_its_traceback_not_1(self):
         done = self.wait(PR_WAIT_POLL_SECONDS="soon")
