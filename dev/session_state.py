@@ -27,10 +27,10 @@ STANDS_LINES = 15
 LINE_WIDTH = 170
 
 
-def run(command, cwd=None):
+def run(command, cwd=None, cap_seconds=CAP_SECONDS):
     """The standard output of a command, within the cap; raises when it fails."""
     done = subprocess.run(
-        command, capture_output=True, text=True, timeout=CAP_SECONDS, cwd=cwd, check=True
+        command, capture_output=True, text=True, timeout=cap_seconds, cwd=cwd, check=True
     )
     return done.stdout
 
