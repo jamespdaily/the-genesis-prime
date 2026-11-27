@@ -55,6 +55,7 @@ import gleam/otp/system
 import gleam/result
 import gleam_community/maths
 import item_bot
+import late_sends_support
 import login_support
 import open_wait
 import owned_key
@@ -981,15 +982,26 @@ pub fn started_on(
   })
 }
 
-/// A server as `started_on` makes it, with the sends of its maps to the connections held
-/// back by `delay_ms` of real time each, in the order the maps sent them: the map's notices
-/// and the snapshots it relays arrive late, and nothing a connection sends another directly.
+/// A server as `started_on` makes it, with the sends of its maps to the connection that
+/// entered second held back by `delay_ms` of real time each, in the order the maps sent them
+/// (`late_sends_support`): the map's notices and the snapshots it relays to that connection
+/// arrive late, and nothing a connection sends another directly.
 pub fn started_with_the_maps_sends_delayed(
-  tables _tables: table_store.Tables,
-  time _time: driven_time.Time,
-  delay_ms _delay_ms: Int,
+  tables tables: table_store.Tables,
+  time time: driven_time.Time,
+  delay_ms delay_ms: Int,
 ) -> login_support.Started {
-  panic as "the server's world gives no way to hold its maps' sends back for a time: a settings field for the delay and a delaying reach, built with the map's relays"
+  let late = late_sends_support.delaying(owner: process.self(), delay_ms:)
+  login_support.start_with(time:, change: fn(settings) {
+    server.Settings(
+      ..settings,
+      world: server.World(..settings.world, maps_reach: late),
+      game: server.Served(
+        ..settings.game,
+        settings: connection_state.Settings(..settings.game.settings, tables:),
+      ),
+    )
+  })
 }
 
 /// Where the Dagun stands: 23.5 units along -z from where a new test character

@@ -211,6 +211,11 @@ pub type World {
     map_shutdown_ms: Int,
     /// Where the creatures are found, made once with `creature_registry.new`.
     creatures: CreatureRegistry,
+    /// How the maps reach what they send to: the reach the world builds in, and the reach a
+    /// map's shell uses. The identity in a running server; a test of what a viewer is
+    /// written under a late map puts in a reach that holds a connection's sends back, in the
+    /// order the map sent them.
+    maps_reach: fn(Reach(map.Outgoing)) -> Reach(map.Outgoing),
     /// The scope that types what a creature tells its map: the creature holds its
     /// map's run and tells it with `group_registry.deliver_to`, and the map's shell
     /// takes what the scope's type names (`service_shell.ToldThrough`). Made once
@@ -727,6 +732,7 @@ fn map_reach(
   world world: World,
   reach reach: Reach(map.Outgoing),
 ) -> Reach(map.Outgoing) {
+  let reach = world.maps_reach(reach)
   service.Reach(
     locate: fn(address) {
       case address {

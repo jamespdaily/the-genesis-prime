@@ -33,7 +33,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/order
-import gleam/result
 import gleam/set
 import gleam/string
 import legal_order_support
@@ -1098,21 +1097,19 @@ pub fn at_the_ally_a_change_start_then_the_casters_unseen_ends_or_keeps_it_by_it
   })
 }
 
-/// The position of the first name in the names, if it is there.
-fn position_of(
-  names names: List(String),
-  name name: String,
-) -> Result(Int, Nil) {
-  list.index_map(names, fn(found, index) { #(found, index) })
-  |> list.find(fn(entry) { entry.0 == name })
-  |> result.map(fn(entry) { entry.1 })
-}
-
 /// The positions of the name in the names.
 fn positions_of(names names: List(String), name name: String) -> List(Int) {
   list.index_map(names, fn(found, index) { #(found, index) })
   |> list.filter(fn(entry) { entry.0 == name })
   |> list.map(fn(entry) { entry.1 })
+}
+
+/// The position of the first name in the names, if it is there.
+fn position_of(
+  names names: List(String),
+  name name: String,
+) -> Result(Int, Nil) {
+  list.first(positions_of(names:, name:))
 }
 
 /// The last position of the name in the names; the names hold it.

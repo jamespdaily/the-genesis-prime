@@ -588,6 +588,10 @@ pub fn genuine_real_time() -> List(Exception) {
       "its four tests of the server's own script check the system seed, the node's monotonic reading, the operating system's timer and the readings the script gives the wire recorder",
     ),
     Exception(
+      "test/late_sends_support.gleam",
+      "holds the maps' sends to one connection back by a real time, the late map that makes a race between a viewer's picture and the moves told to it happen on demand: no driven clock reaches a send between two processes of the tree, and the tests that use it assert what holds whatever the timing",
+    ),
+    Exception(
       "test/world_map_registry_test.gleam",
       "checks Maps' deadlines passing on the node's time against a Maps that never answers",
     ),

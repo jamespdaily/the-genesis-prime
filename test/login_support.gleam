@@ -32,6 +32,7 @@ import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/creature_registry
 import gleam/erlang/process.{type Pid}
+import gleam/function
 import gleam/option.{None, Some}
 import login_client.{type Ports, Ports}
 import login_settings_support
@@ -77,6 +78,7 @@ fn world() -> server.World {
     maps: process.new_name("test_maps"),
     map_supervisor: process.new_name("test_map_supervisor"),
     maps_call_ms: ask_support.beyond_the_test_ms,
+    maps_reach: function.identity,
     map_shutdown_ms: 1000,
     creatures: creature_registry.new(),
     map_tells: group_registry.new(label: "map_tells"),
