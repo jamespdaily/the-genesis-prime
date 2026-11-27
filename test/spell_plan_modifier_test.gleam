@@ -207,6 +207,59 @@ pub fn a_row_that_names_a_property_with_no_unitproperty2_row_fails_the_load_test
     )
 }
 
+/// The client's 0x93a refuses an id of 197 or more (`opcode.0x93a`: 197 property slots), and
+/// UnitProperty2 holds empty rows for 197 to 199, so the row's existence does not settle it.
+pub fn a_row_that_names_a_property_the_client_cannot_store_fails_the_load_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let conversion = fn(from: Int, to: Int) {
+    spell_tables.effect_row_over(
+      id: 99_047,
+      effect_type: 145,
+      target_flags: 1,
+      defaults: [
+        #("dataBits00", Integer(from)),
+        #("dataBits01", Integer(to)),
+        #("dataBits02", Integer(one)),
+      ],
+      columns: [],
+    )
+  }
+  assert spell_tables.plan_error(
+      row: modifier_row(id: 99_045, target_flags: 1, columns: [
+        #("dataBits00", Integer(197)),
+      ]),
+    )
+    == spell_plan.ModifierPropertyBeyondClientSlots(
+      spell4_id: strike,
+      effect_id: 99_045,
+      property: 197,
+    )
+  assert spell_tables.plan_error(
+      row: modifier_row(id: 99_046, target_flags: 1, columns: [
+        #("dataBits00", Integer(199)),
+      ]),
+    )
+    == spell_plan.ModifierPropertyBeyondClientSlots(
+      spell4_id: strike,
+      effect_id: 99_046,
+      property: 199,
+    )
+  assert spell_tables.plan_error(row: conversion(102, 197))
+    == spell_plan.ModifierPropertyBeyondClientSlots(
+      spell4_id: strike,
+      effect_id: 99_047,
+      property: 197,
+    )
+  assert list.length(
+      modifiers_of(
+        row: modifier_row(id: 99_048, target_flags: 1, columns: [
+          #("dataBits00", Integer(196)),
+        ]),
+      ),
+    )
+    == 1
+}
+
 pub fn row_aimed_at_struck_units_is_planned_test() -> Nil {
   use <- owned_test.run(60_000)
   // The shapes of 94370 (2: the primary target), 7711 (4: the area) and 184458 (6: both),

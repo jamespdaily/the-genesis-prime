@@ -2631,6 +2631,15 @@ pub type PlanError {
   /// that UnitProperty2 has no row for, which the client's 0x93a refuses from id 197
   /// (`opcode.0x93a`).
   ModifierPropertyHasNoRow(spell4_id: Int, effect_id: Int, property: Int)
+  /// A UnitPropertyModifier or UnitPropertyConversion effect of a tree names a property
+  /// of id 197 or more, which UnitProperty2 may hold a row for but the client has no slot
+  /// for: its 0x93a handler fails the entry and drops the rest of the frame
+  /// (`opcode.0x93a`).
+  ModifierPropertyBeyondClientSlots(
+    spell4_id: Int,
+    effect_id: Int,
+    property: Int,
+  )
   /// A UnitPropertyModifier effect of a tree has a multiplier, flat amount or per-level
   /// amount, or a UnitPropertyConversion effect a share, that is not a finite number:
   /// `column` is its dataBits column.
@@ -2974,6 +2983,16 @@ pub fn describe(error error: PlanError) -> String {
       <> " of property "
       <> int.to_string(property)
       <> ", which UnitProperty2 has no row for"
+    ModifierPropertyBeyondClientSlots(spell4_id:, effect_id:, property:) ->
+      "the Spell4 row "
+      <> int.to_string(spell4_id)
+      <> " has a UnitPropertyModifier or UnitPropertyConversion effect "
+      <> int.to_string(effect_id)
+      <> " of property "
+      <> int.to_string(property)
+      <> ", beyond the "
+      <> int.to_string(client_property_slots)
+      <> " property slots the client stores"
     ModifierNumberNotFinite(spell4_id:, effect_id:, column:) ->
       "the Spell4 row "
       <> int.to_string(spell4_id)
@@ -3650,6 +3669,7 @@ pub fn refusal_of(error error: PlanError) -> PlanRefusal {
     | ChannelWithoutPulse(..)
     | NoThresholdTime(..)
     | ModifierPropertyHasNoRow(..)
+    | ModifierPropertyBeyondClientSlots(..)
     | ModifierNumberNotFinite(..)
     | CooldownNumberNotFinite(..)
     | HealNumberNotFinite(..)
@@ -5422,6 +5442,10 @@ fn conversion_of(
   ))
   Ok(unit_properties.Conversion(from:, to:, share:))
 }
+
+/// The client's property slots: ids 0 to 196 (`opcode.0x93a`, 0x140466a90 fails an id of
+/// 0xc5 or more).
+const client_property_slots = 197
 
 /// The UnitProperty2 id a modifier row names, which the table must have a row for.
 fn property_of(
