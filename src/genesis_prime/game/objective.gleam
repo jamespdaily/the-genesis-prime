@@ -105,6 +105,8 @@ import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/gap
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
@@ -184,9 +186,12 @@ pub fn buttons(
   log log: QuestLog,
   tables tables: table_store.Tables,
 ) -> Set(Button) {
-  list.flat_map(quest_log.active_ids(log:), fn(quest_id) {
-    quest_log.open_objectives(log:, quest: quest_of(tables:, quest_id:))
-  })
+  list.flat_map(
+    quest_view.active_ids(view: quest_log.view(log: log)),
+    fn(quest_id) {
+      quest_log.open_objectives(log:, quest: quest_of(tables:, quest_id:))
+    },
+  )
   |> list.filter_map(fn(open) {
     let objective = open.1
     case objective_kind.cast_spell(objective.kind) {
@@ -279,11 +284,14 @@ fn counted_by(
   scripts scripts: ScriptRows,
 ) -> fn(Event) -> Bool {
   let open =
-    list.flat_map(quest_log.active_ids(log:), fn(quest_id) {
-      let quest = quest_of(tables:, quest_id:)
-      quest_log.open_objectives(log:, quest:)
-      |> list.map(fn(open) { #(quest, open.0, open.1) })
-    })
+    list.flat_map(
+      quest_view.active_ids(view: quest_log.view(log: log)),
+      fn(quest_id) {
+        let quest = quest_of(tables:, quest_id:)
+        quest_log.open_objectives(log:, quest:)
+        |> list.map(fn(open) { #(quest, open.0, open.1) })
+      },
+    )
   fn(event) {
     list.any(open, fn(found) {
       let #(quest, index, objective) = found
@@ -299,15 +307,25 @@ fn counted_by(
 /// (`quest_log.is_used`; an objective in `reused` keeps no such record).
 fn counted_already(
   log log: QuestLog,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   index index: Int,
   event event: Event,
 ) -> Bool {
   case event {
     TalkedTo(checklist_index:, ..) ->
-      quest_log.is_marked(log:, quest:, index:, bit: checklist_index)
+      quest_view.is_marked(
+        view: quest_log.view(log: log),
+        quest:,
+        index:,
+        bit: checklist_index,
+      )
     Used(checklist_index:, unit:, ..) ->
-      quest_log.is_marked(log:, quest:, index:, bit: checklist_index)
+      quest_view.is_marked(
+        view: quest_log.view(log: log),
+        quest:,
+        index:,
+        bit: checklist_index,
+      )
       || quest_log.is_used(log:, quest:, index:, unit: unit.spawn_id)
     Cast(target: Some(CastTarget(ref: SpawnedUnit(spawn_id:, ..), ..)), ..) ->
       quest_log.is_used(log:, quest:, index:, unit: spawn_id)
@@ -318,8 +336,8 @@ fn counted_already(
 fn quest_of(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
-) -> quest_log.Quest {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
+) -> quest_row.Quest {
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: quest_id)
     as {
       "quest "
       <> int.to_string(quest_id)
@@ -344,7 +362,7 @@ pub fn advance(
 ) -> Advanced {
   let #(advanced, credited_a_new_unit) =
     list.fold(
-      quest_log.active_ids(log:),
+      quest_view.active_ids(view: quest_log.view(log: log)),
       #(Advanced(log:, effects: []), False),
       fn(so_far, quest_id) {
         let #(advanced, credited_before) = so_far
@@ -439,13 +457,13 @@ fn quest_counts_the_use(
   quest_id quest_id: Int,
   scripts scripts: ScriptRows,
 ) -> Bool {
-  case quest_log.quest_of(tables:, id: quest_id) {
+  case quest_row.quest_of(tables:, id: quest_id) {
     Ok(quest) ->
       list.index_map(quest.objectives, fn(objective, index) {
         counts(tables:, event:, quest_id:, index:, objective:, scripts:)
       })
       |> list.any(fn(counted) { counted })
-    Error(quest_log.NoQuestRow) | Error(quest_log.NoObjectiveRow(_)) -> False
+    Error(quest_row.NoQuestRow) | Error(quest_row.NoObjectiveRow(_)) -> False
   }
 }
 
@@ -457,7 +475,7 @@ pub fn counts(
   event event: Event,
   quest_id quest_id: Int,
   index index: Int,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
   scripts scripts: ScriptRows,
 ) -> Bool {
   case event {
@@ -545,7 +563,7 @@ pub fn counts(
 /// objective of the kill table (`ScriptRows.kills`), whose pane lists the unit.
 fn killed_in_pane(
   tables tables: table_store.Tables,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
   target target: target_group.Unit,
   scripts scripts: ScriptRows,
 ) -> Bool {
@@ -559,7 +577,7 @@ fn killed_in_pane(
 /// unit when it names none.
 fn in_listed_pane(
   tables tables: table_store.Tables,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
   unit unit: target_group.Unit,
 ) -> Bool {
   objective.reward_pane != 0
@@ -569,7 +587,7 @@ fn in_listed_pane(
 /// Whether the objective is a type 5 objective (a scripted one) of the content table whose
 /// ids are `rows`.
 fn in_script_rows(
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
   rows rows: Set(Int),
 ) -> Bool {
   objective.kind == objective_kind.Scripted
@@ -581,7 +599,7 @@ fn in_script_rows(
 /// choice: `0x140550c50` says nothing of an objective with no pane).
 fn in_pane(
   tables tables: table_store.Tables,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
   unit unit: target_group.Unit,
 ) -> Bool {
   objective.reward_pane == 0
@@ -595,7 +613,7 @@ fn in_pane(
 /// kill as one (`counts`).
 fn group_member(
   tables tables: table_store.Tables,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
   target target: target_group.Unit,
 ) -> Result(#(Int, Int), Nil) {
   use <- bool.guard(
@@ -650,11 +668,11 @@ pub type Pass {
 fn advance_quest(
   so_far so_far: Advanced,
   tables tables: table_store.Tables,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   now_ms now_ms: Int,
   reused reused: Set(Int),
-  counts counts: fn(Int, quest_log.Objective) -> Bool,
-  group_member group_member: fn(quest_log.Objective) -> Result(#(Int, Int), Nil),
+  counts counts: fn(Int, quest_row.Objective) -> Bool,
+  group_member group_member: fn(quest_row.Objective) -> Result(#(Int, Int), Nil),
   checklist_index checklist_index: Int,
   used_unit used_unit: Result(SpawnId, Nil),
 ) -> #(Advanced, Bool) {
@@ -754,7 +772,7 @@ fn advance_quest(
 /// `used` changed the log): the progress it sends and whether it made the quest Achieved.
 fn counted_a_new_unit(
   pass pass: Pass,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   index index: Int,
   counted counted: quest_log.Counted,
 ) -> Pass {
@@ -778,7 +796,7 @@ fn counted_a_new_unit(
 /// quest's earlier objectives made; a count with no unit record credits no unit.
 pub fn progressed_by(
   pass pass: Pass,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   index index: Int,
   amount amount: Int,
   now_ms now_ms: Int,
@@ -864,7 +882,7 @@ pub fn settle(
   now_ms now_ms: Int,
 ) -> Advanced {
   list.fold(
-    quest_log.active_ids(log:),
+    quest_view.active_ids(view: quest_log.view(log: log)),
     Advanced(log:, effects: []),
     fn(so_far, quest_id) {
       let quest = quest_of(tables:, quest_id:)
@@ -930,7 +948,7 @@ pub fn settle(
 /// objective's flags, a later objective of the quest).
 fn opened(
   settling settling: Settling,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   tables tables: table_store.Tables,
   zones zones: List(Int),
   place place: Place,
@@ -1047,7 +1065,7 @@ pub fn script_of(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
   index index: Int,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
   arrival_objectives arrival_objectives: Set(Int),
   scripts scripts: ScriptRows,
 ) -> Script {
@@ -1061,7 +1079,7 @@ pub fn script_of(
     StandInWithQuest,
   )
   use <- bool.guard(
-    int.bitwise_and(objective.flags, quest_log.optional_flag) != 0,
+    int.bitwise_and(objective.flags, quest_row.optional_flag) != 0,
     Optional,
   )
   use <- bool.guard(!objective.marked, StandInWithQuest)
@@ -1086,7 +1104,7 @@ pub fn script_of(
 
 /// The quest's stand-in scripts (`script_of`), a held one left open:
 /// - those that stand in on accept are done as soon as they are open
-///   (`quest_log.objective_open`, so flags 1 and 2 keep one closed behind the objectives
+///   (`quest_view.objective_open`, so flags 1 and 2 keep one closed behind the objectives
 ///   before it), whatever the quest's other objectives are;
 /// - those that stand in with the quest are done once every other required objective of
 ///   the quest is done except the stand-ins and the objectives the client keeps closed
@@ -1103,7 +1121,7 @@ pub fn script_of(
 /// again.
 fn stand_in_scripts(
   settling settling: Settling,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   tables tables: table_store.Tables,
   arrival_objectives arrival_objectives: Set(Int),
   scripts scripts: ScriptRows,
@@ -1129,7 +1147,11 @@ fn stand_in_scripts(
     list.filter(classified, fn(triple) {
       triple.2 == wanted
       && !set.contains(held_objectives, { triple.1 }.objective_id)
-      && quest_log.objective_open(log: settling.log, quest:, index: triple.0)
+      && quest_view.objective_open(
+        view: quest_log.view(log: settling.log),
+        quest:,
+        index: triple.0,
+      )
     })
   }
   let on_accept =
@@ -1191,7 +1213,7 @@ pub fn visible_script_broken(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
   index index: Int,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
 ) -> List(String) {
   list.flatten([
     case objective.kind == objective_kind.Scripted {
@@ -1206,7 +1228,7 @@ pub fn visible_script_broken(
       True -> ["flag 0x8 hides it, so it is a hidden script"]
       False -> []
     },
-    case int.bitwise_and(objective.flags, quest_log.optional_flag) != 0 {
+    case int.bitwise_and(objective.flags, quest_row.optional_flag) != 0 {
       True -> ["flag 0x20 makes it optional, so its quest does not wait for it"]
       False -> []
     },
@@ -1223,12 +1245,12 @@ pub fn visible_script_broken(
 /// it would hold the script, and the quest, for ever.
 fn other_required_objectives_done(
   log log: quest_log.QuestLog,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   scripts scripts: List(Int),
 ) -> Bool {
   let holding =
     list.filter(scripts, fn(index) {
-      !quest_log.objective_done(log:, quest:, index:)
+      !quest_view.objective_done(view: quest_log.view(log: log), quest:, index:)
     })
   quest_log.required_objectives_done(
     log:,
@@ -1244,7 +1266,7 @@ fn other_required_objectives_done(
 /// objective is not open, so it is not counted again.
 fn finishes(
   settling settling: Settling,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   tables tables: table_store.Tables,
   numbers numbers: GameNumbers,
   unix_ms unix_ms: Int,
@@ -1283,7 +1305,7 @@ fn finishes(
 /// units. A done objective is not counted again, which ends the loop.
 fn arrivals(
   settling settling: Settling,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   tables tables: table_store.Tables,
   place place: Place,
   shown shown: shown.Picture,
@@ -1332,7 +1354,7 @@ fn arrivals(
       let #(_, objective) = open
       is_place(objective:)
       && objective.count == 1
-      && int.bitwise_and(objective.flags, quest_log.optional_flag) != 0
+      && int.bitwise_and(objective.flags, quest_row.optional_flag) != 0
       && required_sibling_arrived(
         settling: at_markers,
         quest:,
@@ -1385,7 +1407,7 @@ fn arrivals(
 }
 
 /// Whether the held objective is one of a place (type 22).
-fn is_place(objective objective: quest_log.Objective) -> Bool {
+fn is_place(objective objective: quest_row.Objective) -> Bool {
   objective.kind == objective_kind.ReachPlace
 }
 
@@ -1396,10 +1418,10 @@ fn is_place(objective objective: quest_log.Objective) -> Bool {
 /// objective they hint at (`QuestObjective.type.22`).
 fn required_sibling_arrived(
   settling settling: Settling,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   tables tables: table_store.Tables,
   place place: Place,
-  optional optional: quest_log.Objective,
+  optional optional: quest_row.Objective,
 ) -> Bool {
   optional.data != 0
   && list.index_map(quest.objectives, fn(objective, index) {
@@ -1409,8 +1431,12 @@ fn required_sibling_arrived(
     let #(index, objective) = sibling
     is_place(objective:)
     && objective.data == optional.data
-    && int.bitwise_and(objective.flags, quest_log.optional_flag) == 0
-    && quest_log.objective_progress(log: settling.log, quest:, index:)
+    && int.bitwise_and(objective.flags, quest_row.optional_flag) == 0
+    && quest_view.objective_progress(
+      view: quest_log.view(log: settling.log),
+      quest:,
+      index:,
+    )
     >= objective.count
     && place_objective.at_marker(
       tables:,
@@ -1424,7 +1450,7 @@ fn required_sibling_arrived(
 /// not set. An objective that is not open takes nothing.
 fn mark(
   settling settling: Settling,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   index index: Int,
   bit bit: Int,
   now_ms now_ms: Int,
@@ -1454,7 +1480,7 @@ type Settling {
 /// ends the process.
 fn held_item(
   tables tables: table_store.Tables,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
 ) -> Result(Item2Id, Nil) {
   case
     objective_kind.collected_item(objective.kind),
@@ -1476,7 +1502,7 @@ fn held_item(
 /// objectives, so the count is always taken.
 fn set_count(
   settling settling: Settling,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   index index: Int,
   value value: Int,
   now_ms now_ms: Int,
@@ -1502,7 +1528,7 @@ fn set_count(
 /// chain of zone 0 holds it. A done visit is not counted again, which ends the loop.
 fn visits(
   settling settling: Settling,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   zones zones: List(Int),
   now_ms now_ms: Int,
 ) -> Settling {
@@ -1514,7 +1540,11 @@ fn visits(
         Ok(zone) ->
           zone.value != 0
           && list.contains(zones, zone.value)
-          && quest_log.objective_progress(log: settling.log, quest:, index:)
+          && quest_view.objective_progress(
+            view: quest_log.view(log: settling.log),
+            quest:,
+            index:,
+          )
           < objective.count
         Error(Nil) -> False
       }
@@ -1572,7 +1602,7 @@ pub fn server_completions(
   log log: QuestLog,
   tables tables: table_store.Tables,
 ) -> List(Int) {
-  quest_log.active_ids(log:)
+  quest_view.active_ids(view: quest_log.view(log: log))
   |> list.filter(fn(quest_id) {
     quest_log.stored_state(log:, quest_id:) == achieved_state
     && completion_of(tables:, quest_id:) != []

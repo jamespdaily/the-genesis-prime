@@ -28,7 +28,7 @@ fn pressed(creature_id creature_id: Int, book book: List(Int)) -> Subject {
     in_combat: False,
     target: origin,
     caster: origin,
-    quests: quest_support.log_of(rows: []),
+    quests: quest_support.view_of(rows: []),
     creature_id:,
     checker: prerequisite_support.checker(items: [], book:, world_difficulty: 0),
   )

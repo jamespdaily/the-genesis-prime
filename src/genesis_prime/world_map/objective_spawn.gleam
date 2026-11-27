@@ -89,11 +89,11 @@ import genesis_prime/game/activate
 import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
-import genesis_prime/game/quest_log
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/target_group
 import genesis_prime/gap
 import genesis_prime/message/float32
+import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId, WorldLocation2Id}
 import genesis_prime/table/loader/store as table_store
@@ -691,11 +691,11 @@ fn click_objective(
 ) -> Result(Result(QuestObjective, Nil), LinkWhy) {
   let #(quest_id, index) = link
   use quest <- result.try(
-    quest_log.quest_of(tables:, id: quest_id)
+    quest_row.quest_of(tables:, id: quest_id)
     |> result.map_error(fn(error) {
       case error {
-        quest_log.NoQuestRow -> NoQuestRow
-        quest_log.NoObjectiveRow(objective_id:) -> NoObjectiveRow(objective_id:)
+        quest_row.NoQuestRow -> NoQuestRow
+        quest_row.NoObjectiveRow(objective_id:) -> NoObjectiveRow(objective_id:)
       }
     }),
   )

@@ -83,7 +83,6 @@
 //// | the connection ends while the store works | the store finishes or rolls back; the next login loads whichever |
 
 import genesis_prime/client_connection
-import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction
@@ -94,13 +93,12 @@ import genesis_prime/game/player_life.{type Life}
 import genesis_prime/game/random_stat
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/game/vendor.{type Vendors}
+import genesis_prime/game/vendor_sale
 import genesis_prime/game/vendor_trade.{
   type Effect, type Refusal, NoItemRow, NotDecoded, Refuse, Send,
 }
 import genesis_prime/game/world_entry.{type Buyback, Buyback}
 import genesis_prime/gap
-import genesis_prime/message/bit_stream
-import genesis_prime/message/buyback_removed
 import genesis_prime/message/vendor_buyback
 import genesis_prime/message/vendor_purchase as vendor_purchase_message
 import genesis_prime/store.{
@@ -621,7 +619,7 @@ pub fn answered(
               entry.buyback_id != buyback_id
             }),
           ),
-          [Send(removed_frame(buyback_id:))],
+          [Send(vendor_sale.removed_frame(buyback_id:))],
         )
       }
       #(
@@ -699,16 +697,6 @@ pub fn answered(
     | store.CurrencySet(..) ->
       panic as "the store answers a purchase with Bought, ItemsNotSaved or SaveRefused"
   }
-}
-
-/// The 0xBD that takes an entry off the client's Buyback list (`opcode.0xbd`).
-fn removed_frame(buyback_id buyback_id: Int) -> Frame {
-  let body =
-    bit_stream.must(
-      buyback_removed.BuybackRemoved(buyback_id:),
-      buyback_removed.encode,
-    )
-  frame.Frame(message_id: buyback_removed.message_id, body:)
 }
 
 /// The system line that says the items a command gave were not saved.

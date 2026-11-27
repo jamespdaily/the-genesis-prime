@@ -10,7 +10,9 @@ import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor.{type Vendors, ItemRow, VendorRow}
+import genesis_prime/game/vendor_sale
 import genesis_prime/game/vendor_trade.{type Effect, Log, Refuse, Send}
+import genesis_prime/game/world_entry
 import genesis_prime/store.{type HeldItem, HeldItem}
 import genesis_prime/table/id
 import genesis_prime/world_map/creature_life.{Hostile}
@@ -19,6 +21,7 @@ import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list
 import gleam/option
+import number_support
 import player_state_support
 import spawn_support
 
@@ -235,4 +238,63 @@ pub fn frames(effects effects: List(Effect)) -> List(Frame) {
       Log(..) | Refuse(..) -> Error(Nil)
     }
   })
+}
+
+/// A buyback list of `count` entries with the ids `first_id` and up, each 1 of Item2 14838
+/// sold for 1 credit, its next id the one after the last.
+pub fn buyback_listing(
+  first_id first_id: Int,
+  count count: Int,
+) -> world_entry.Buyback {
+  world_entry.Buyback(
+    next_id: first_id + count,
+    entries: list.map(
+      number_support.counting(from: first_id, count:),
+      fn(buyback_id) {
+        world_entry.BuybackEntry(
+          buyback_id:,
+          item2_id: id.Item2Id(14_838),
+          quantity: 1,
+          words: store.plain_words,
+          currency_type_id: 1,
+          amount: 1,
+        )
+      },
+    ),
+  )
+}
+
+/// A sale of `stacks` whole stacks of 1 of Item2 14838 for 1 credit each, held with the
+/// guids 1 and up, to a vendor that pays in credits, and the store's answer to it.
+pub fn sale_of_stacks(
+  stacks stacks: Int,
+) -> #(vendor_sale.Sale, store.ItemsAnswer) {
+  let sold =
+    list.map(number_support.counting(from: 1, count: stacks), fn(guid) {
+      vendor_sale.SoldItem(
+        item_guid: guid,
+        item2_id: id.Item2Id(14_838),
+        location: 1,
+        held_count: 1,
+        sold_count: 1,
+        paid: 1,
+      )
+    })
+  let assert [first, ..rest] = sold as "a sale holds at least one stack"
+  #(
+    vendor_sale.Sale(
+      unit_id: walker_unit,
+      first:,
+      rest:,
+      currency_type_id: 1,
+      held: 100,
+      after: 100 + stacks,
+    ),
+    store.Sold(
+      amount: 100 + stacks,
+      words: list.map(sold, fn(stack) {
+        store.SoldWord(item_guid: stack.item_guid, words: store.plain_words)
+      }),
+    ),
+  )
 }

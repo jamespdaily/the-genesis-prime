@@ -384,7 +384,6 @@ import genesis_prime/game/lasts
 import genesis_prime/game/loadout
 import genesis_prime/game/look
 import genesis_prime/game/prerequisite.{type Prerequisite}
-import genesis_prime/game/quest_log.{type Quest, type QuestRowError}
 import genesis_prime/game/spell_effect.{type PlannedEffect, PlannedEffect}
 import genesis_prime/game/spell_tier
 import genesis_prime/game/spend
@@ -396,6 +395,7 @@ import genesis_prime/game/worn_visual
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
+import genesis_prime/shared/quest_row.{type Quest, type QuestRowError}
 import genesis_prime/table/cc_state_additional_data
 import genesis_prime/table/id.{
   type ItemSlotId, type PrerequisiteId, type Spell4BaseId, type Spell4EffectsId,

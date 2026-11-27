@@ -21,6 +21,7 @@ import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_units
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
+import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Faction2Id}
 import genesis_prime/table/loader/store as table_store
@@ -212,7 +213,7 @@ fn is_released(
   case_ case_: #(Int, Int, Int),
 ) -> Bool {
   let #(quest_id, index, creature_id) = case_
-  let assert Ok(of_quest) = quest_log.quest_of(tables:, id: quest_id)
+  let assert Ok(of_quest) = quest_row.quest_of(tables:, id: quest_id)
     as "the quest's rows are in the tables"
   let assert Ok(log) =
     quest_log.from_rows(
@@ -264,7 +265,7 @@ fn counted_cases(
   scripts scripts: objective.ScriptRows,
 ) -> List(#(Int, Int, Int)) {
   list.flat_map(quest2.all(tables), fn(quest) {
-    let assert Ok(of_quest) = quest_log.quest_of(tables:, id: quest.id)
+    let assert Ok(of_quest) = quest_row.quest_of(tables:, id: quest.id)
       as "the quest's rows are in the tables"
     list.index_map(of_quest.objectives, fn(objective, index) {
       tried_creatures(tables:, scripts:, quest_id: quest.id, index:, objective:)
@@ -290,7 +291,7 @@ fn tried_creatures(
   scripts scripts: objective.ScriptRows,
   quest_id quest_id: Int,
   index index: Int,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
 ) -> List(id.Creature2Id) {
   let listed = case
     objective_units.units_of(tables:, quest_id:, index:, objective:)

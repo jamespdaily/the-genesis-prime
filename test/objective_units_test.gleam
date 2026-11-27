@@ -30,7 +30,7 @@
 
 import character_tables
 import genesis_prime/game/objective_units.{Listed, NoUnitEvent, Unlisted}
-import genesis_prime/game/quest_log
+import genesis_prime/shared/quest_row
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/dict
@@ -44,7 +44,7 @@ fn units(
   quest_id quest_id: Int,
   index index: Int,
 ) -> objective_units.Units {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: quest_id)
     as "the fixture holds the quest's rows"
   let assert [objective, ..] = list.drop(quest.objectives, index)
     as "the quest holds the objective's slot"

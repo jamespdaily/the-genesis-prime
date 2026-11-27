@@ -14,7 +14,6 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/departures
 import genesis_prime/game/objective_link
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/client_side_interaction_result.{
@@ -22,6 +21,7 @@ import genesis_prime/message/client_side_interaction_result.{
 }
 import genesis_prime/message/interaction_result.{type InteractionResult}
 import genesis_prime/message/spell_cast_confirmed
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{
   type ConnectionStep, type TimerId, OwnEffect, OwnEvent, StartTimer, TimerFired,
 }
@@ -259,7 +259,7 @@ pub fn joined_at(
 
 /// The link of a creature's right-click for a player holding this log, as the rule that
 /// reads it gives it (`objective_link.of`).
-pub fn link_of(quests quests: QuestLog, creature_id creature_id: Int) -> Link {
+pub fn link_of(quests quests: QuestView, creature_id creature_id: Int) -> Link {
   let tables = character_tables.shared()
   let assert Ok(row) = creature2.get(tables:, id: Creature2Id(creature_id))
     as "the creature is a root of the fixture"

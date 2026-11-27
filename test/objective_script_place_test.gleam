@@ -55,6 +55,8 @@ import genesis_prime/game/objective_kind
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view
 import genesis_prime/store
 import genesis_prime/table/id.{QuestObjectiveId, WorldLocation2Id}
 import genesis_prime/table/item2
@@ -558,7 +560,7 @@ pub fn a_marker_naming_no_table_row_completes_as_a_stand_in_test() -> Nil {
 pub fn a_timed_stand_in_completes_before_its_deadline_and_not_after_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: 9282)
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: 9282)
     as "the fixture holds quest 9282"
   // Accepted at 0 ms; the talk (index 0) and the hidden stand-in (index 1) done at 1000 ms
   // start the timer of 17753 (index 2, 300000 ms): its deadline is 301000 ms.
@@ -836,7 +838,7 @@ pub fn an_abandoned_and_retaken_quest_starts_its_place_script_again_test() -> Ni
       arrivals: [tower_objective],
       held: [],
     )
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: tower)
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: tower)
     as "the fixture holds the quest"
   let abandoned =
     quest_log.hold(log: done.log, quest_id: tower, state: store.Abandoned)
@@ -871,10 +873,10 @@ fn arrival_ids() -> Set(Int) {
 /// and the objective.
 fn type_5_places(
   tables tables: table_store.Tables,
-) -> List(#(quest_log.Quest, Int, quest_log.Objective)) {
+) -> List(#(quest_row.Quest, Int, quest_row.Objective)) {
   quest2.all(tables)
   |> list.flat_map(fn(row) {
-    let assert Ok(quest) = quest_log.quest_of(tables:, id: row.id)
+    let assert Ok(quest) = quest_row.quest_of(tables:, id: row.id)
       as "the Quest2 row's objectives are rows of the table"
     list.index_map(quest.objectives, fn(objective, index) {
       #(quest, index, objective)
@@ -997,7 +999,7 @@ fn classes() -> List(objective.Script) {
 /// of test needs; the sweeps below build one per objective.
 fn others_done(
   tables tables: table_store.Tables,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   except except: Int,
 ) -> quest_log.QuestLog {
   let done =
@@ -1010,7 +1012,7 @@ fn others_done(
 /// player at the place, leaves the objective done.
 fn done_after(
   tables tables: table_store.Tables,
-  place place: #(quest_log.Quest, Int, quest_log.Objective),
+  place place: #(quest_row.Quest, Int, quest_row.Objective),
   at at: Place,
   arrivals arrivals: Set(Int),
   held held: Set(Int),
@@ -1026,7 +1028,11 @@ fn done_after(
       held:,
       scripts:,
     )
-  quest_log.objective_done(log: settled.log, quest:, index:)
+  quest_view.objective_done(
+    view: quest_log.view(log: settled.log),
+    quest:,
+    index:,
+  )
 }
 
 /// The place at the first marker row of the objective's row, or the same place a long way
@@ -1186,7 +1192,12 @@ pub fn every_marked_stand_in_completes_on_accept_and_every_held_one_stays_open_t
         )
       let settled =
         settle_sets(log:, tables:, at: away(), arrivals:, held:, scripts: rows)
-      let done = quest_log.objective_done(log: settled.log, quest:, index:)
+      let done =
+        quest_view.objective_done(
+          view: quest_log.view(log: settled.log),
+          quest:,
+          index:,
+        )
       // A collected or crafted objective before it is counted from the items held, so a
       // log that marks it done without the item loses the mark at the settle: the three
       // stand-ins behind one wait for the player's work, which this log cannot do.
@@ -1411,7 +1422,7 @@ fn sized_places() -> List(#(Int, objective.Script, String)) {
 fn place_of(
   tables tables: table_store.Tables,
   objective_id objective_id: Int,
-) -> #(quest_log.Quest, Int, quest_log.Objective) {
+) -> #(quest_row.Quest, Int, quest_row.Objective) {
   let assert Ok(place) =
     list.find(type_5_places(tables:), fn(place) {
       { place.2 }.objective_id == objective_id
@@ -1633,7 +1644,11 @@ pub fn the_four_equip_and_buy_quests_still_complete_on_accept_test() -> Nil {
         settle_sets(log:, tables:, at: away(), arrivals:, held:, scripts: rows)
       case
         quest.id == quest_id
-        && quest_log.objective_done(log: settled.log, quest:, index:)
+        && quest_view.objective_done(
+          view: quest_log.view(log: settled.log),
+          quest:,
+          index:,
+        )
       {
         True -> Error(Nil)
         False -> Ok(#(quest_id, objective_id, reason))
@@ -1720,7 +1735,11 @@ pub fn the_eight_cast_quests_still_complete_on_accept_over_every_client_quest_te
       case
         quest.id == quest_id
         && script == objective.StandInOnAccept
-        && quest_log.objective_done(log: settled.log, quest:, index:)
+        && quest_view.objective_done(
+          view: quest_log.view(log: settled.log),
+          quest:,
+          index:,
+        )
       {
         True -> Error(Nil)
         False -> Ok(#(quest_id, objective_id))

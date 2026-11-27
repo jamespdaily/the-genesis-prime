@@ -27,8 +27,8 @@ import genesis_prime/game/objective as rule
 import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/objective_units.{Listed}
-import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
+import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
   Creature2Id, Faction2Id, TargetGroupId, UnitRaceId,
@@ -85,7 +85,7 @@ fn unit_of(
 /// type 11, a use of the unit for the rest.
 fn event_for(
   tables tables: table_store.Tables,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
   creature_id creature_id: Int,
 ) -> rule.Event {
   let unit = unit_of(tables:, creature_id:)
@@ -114,7 +114,7 @@ fn expected(
   linked linked: Dict(#(Int, Int), List(Int)),
   quest_id quest_id: Int,
   index index: Int,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
 ) -> Expectation {
   case objective.kind {
     objective_kind.UseCreature(creature2_id:) ->
@@ -211,7 +211,7 @@ fn result_or_empty(found: Result(List(Int), Nil)) -> List(Int) {
 /// A short name of the objective for a failing assertion.
 fn where(
   quest_id quest_id: Int,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
 ) -> String {
   "objective "
   <> int.to_string(objective.objective_id)
@@ -227,12 +227,12 @@ pub fn every_creature_an_objective_lists_is_counted_by_its_use_test() -> Nil {
   let listed =
     list.flat_map(quest2.all(tables), fn(row) {
       let quest_id = row.id
-      case quest_log.quest_of(tables:, id: quest_id) {
+      case quest_row.quest_of(tables:, id: quest_id) {
         Ok(quest) ->
           list.index_map(quest.objectives, fn(objective, index) {
             #(quest_id, index, objective)
           })
-        Error(quest_log.NoQuestRow) | Error(quest_log.NoObjectiveRow(_)) -> []
+        Error(quest_row.NoQuestRow) | Error(quest_row.NoObjectiveRow(_)) -> []
       }
     })
     |> list.filter_map(fn(found) {

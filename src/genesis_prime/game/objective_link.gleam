@@ -27,7 +27,8 @@
 
 import genesis_prime/game/activate
 import genesis_prime/game/prerequisite
-import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Creature2Id}
 import genesis_prime/table/loader/store as table_store
@@ -145,7 +146,7 @@ pub fn of(
   tables tables: table_store.Tables,
   activations activations: activate.Activations,
   subject subject: prerequisite.Subject,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   row row: creature2.Creature2,
   checklist_index checklist_index: Int,
 ) -> activate.Link {
@@ -193,20 +194,20 @@ fn prerequisite_link(
 /// or the objective at the index is open and its unit's bit is not marked.
 fn quest_anim_is_open(
   tables tables: table_store.Tables,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   quest_id quest_id: Int,
   index index: Int,
   checklist_index checklist_index: Int,
 ) -> Bool {
-  quest_log.quest_of(tables:, id: quest_id)
+  quest_row.quest_of(tables:, id: quest_id)
   |> result.map(fn(quest) {
-    quest_log.state(log: quests, quest:) == accepted
+    quest_view.state(view: quests, quest:) == accepted
     && {
       index == quest_alone
       || {
-        quest_log.objective_open(log: quests, quest:, index:)
-        && !quest_log.is_marked(
-          log: quests,
+        quest_view.objective_open(view: quests, quest:, index:)
+        && !quest_view.is_marked(
+          view: quests,
           quest:,
           index:,
           bit: checklist_index,
@@ -217,5 +218,5 @@ fn quest_anim_is_open(
   |> result.unwrap(False)
 }
 
-/// The state number of an Accepted quest (`quest_log.state`).
+/// The state number of an Accepted quest (`quest_view.state`).
 const accepted = 1

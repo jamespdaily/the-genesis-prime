@@ -21,7 +21,7 @@ import genesis_prime/game/prerequisite.{Factions}
 import genesis_prime/game/quest.{
   type Verdict, Acceptable, Asker, NotRead, Refused,
 }
-import genesis_prime/game/quest_log
+import genesis_prime/shared/quest_row
 import genesis_prime/table/id.{PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/prerequisite as prerequisite_table
@@ -272,7 +272,7 @@ pub fn the_one_quest_behind_a_title_check_is_10510_and_each_store_text_objective
   ]
   list.each(cases, fn(case_) {
     let #(objective_id, quest_id, script, is_held, reason) = case_
-    let assert Ok(target) = quest_log.quest_of(tables:, id: quest_id)
+    let assert Ok(target) = quest_row.quest_of(tables:, id: quest_id)
       as "the quest is a row of the table"
     let assert Ok(#(index, found)) =
       list.index_map(target.objectives, fn(found, index) { #(index, found) })

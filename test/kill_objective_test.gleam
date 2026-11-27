@@ -33,8 +33,8 @@ import genesis_prime/game/held_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/objective
 import genesis_prime/game/place_objective
-import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
+import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
 import genesis_prime/table/loader/store as table_store
@@ -190,7 +190,7 @@ pub fn every_row_of_the_kill_table_is_a_kill_script_with_a_pane_a_fightable_crea
   let arrivals = content_support.objective_ids(table: arrival_objective.table)
   let wrong =
     list.filter_map(quest2.all(tables), fn(row) {
-      let assert Ok(quest) = quest_log.quest_of(tables:, id: row.id)
+      let assert Ok(quest) = quest_row.quest_of(tables:, id: row.id)
         as "the Quest2 row's objectives are rows of the table"
       Ok(
         list.index_map(quest.objectives, fn(listed, index) {
@@ -341,7 +341,7 @@ pub fn the_kill_rows_left_on_the_stand_in_are_listed_with_their_reasons_test() -
     as "the sizing found 37 kill rows: 9 in the table and these 28 left on the stand-in"
   let wrong =
     list.filter_map(stays, fn(stay) {
-      let assert Ok(quest) = quest_log.quest_of(tables:, id: stay.quest)
+      let assert Ok(quest) = quest_row.quest_of(tables:, id: stay.quest)
         as "the quest's rows are in the tables"
       let assert Ok(listed) =
         list.drop(quest.objectives, stay.index) |> list.first

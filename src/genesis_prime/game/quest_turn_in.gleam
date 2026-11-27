@@ -103,6 +103,8 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor_trade.{type Effect, Log, Refuse, Send}
 import genesis_prime/gap
 import genesis_prime/message/quest_turn_in as quest_turn_in_message
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view
 import genesis_prime/step.{LogError, LogWarning}
 import genesis_prime/store.{
   type AccountId, type CharacterId, type HeldItem, type ItemsAnswer,
@@ -488,15 +490,15 @@ fn row_and_state(
   tables tables: table_store.Tables,
 ) -> Result(#(Quest2, Int), Stop) {
   use known <- result.try(
-    quest_log.quest_of(tables:, id: quest_id)
+    quest_row.quest_of(tables:, id: quest_id)
     |> result.map_error(fn(error) {
       case error {
-        quest_log.NoQuestRow ->
+        quest_row.NoQuestRow ->
           Declined(
             key: "unknown quest",
             text: turning <> ", which has no Quest2 row",
           )
-        quest_log.NoObjectiveRow(objective_id:) ->
+        quest_row.NoObjectiveRow(objective_id:) ->
           Declined(
             key: "quest row",
             text: turning
@@ -509,7 +511,10 @@ fn row_and_state(
   )
   let assert Ok(row) = quest2.get(tables:, id: Quest2Id(quest_id))
     as "a quest the client's rows read has its Quest2 row"
-  Ok(#(row, quest_log.state(log: asker.log, quest: known)))
+  Ok(#(
+    row,
+    quest_view.state(view: quest_log.view(log: asker.log), quest: known),
+  ))
 }
 
 /// How a turn-in picks among a quest's reward choices: the player's 0x035D names a Quest2Reward

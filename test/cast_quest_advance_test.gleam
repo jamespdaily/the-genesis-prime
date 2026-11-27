@@ -52,7 +52,7 @@ const clients_cast_id = 9
 fn holding(quests quests: List(Int)) -> cast_state.Caster {
   cast_state.Caster(
     ..support.caster(),
-    quests: quest_support.log_of(
+    quests: quest_support.view_of(
       rows: list.map(quests, fn(quest_id) { quest_support.untouched(quest_id:) }),
     ),
   )
@@ -471,7 +471,7 @@ pub fn an_advance_carries_the_use_or_cast_it_was_made_with_test() -> Nil {
         state: cast_state.new(),
         caster: items.standing(
           level: 50,
-          quests: quest_support.log_of(rows: [
+          quests: quest_support.view_of(rows: [
             quest_support.accepted(quest_id: 4743, progress: [0, 0, 0, 0]),
           ]),
         ),

@@ -29,8 +29,8 @@
 import genesis_prime/game/departures
 import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
-import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
+import genesis_prime/shared/quest_row
 import genesis_prime/table/id.{type Creature2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
@@ -58,7 +58,7 @@ pub fn units_of(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
   index index: Int,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
 ) -> Units {
   case objective.kind {
     objective_kind.UseCreature(creature2_id:) -> Listed([creature2_id])
@@ -126,7 +126,7 @@ pub fn reused(
 ) -> Set(Int) {
   list.fold(quest2.all(tables), set.new(), fn(reused, row) {
     let quest_id = quest2.id(row).value
-    case quest_log.quest_of(tables:, id: quest_id) {
+    case quest_row.quest_of(tables:, id: quest_id) {
       Ok(quest) ->
         list.index_fold(quest.objectives, reused, fn(reused, objective, index) {
           case is_short(tables:, spawn_counts:, quest_id:, index:, objective:) {
@@ -134,7 +134,7 @@ pub fn reused(
             False -> reused
           }
         })
-      Error(quest_log.NoQuestRow) | Error(quest_log.NoObjectiveRow(_)) -> reused
+      Error(quest_row.NoQuestRow) | Error(quest_row.NoObjectiveRow(_)) -> reused
     }
   })
 }
@@ -146,7 +146,7 @@ fn is_short(
   spawn_counts spawn_counts: Dict(Int, Int),
   quest_id quest_id: Int,
   index index: Int,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
 ) -> Bool {
   case objective.count > 1, units_of(tables:, quest_id:, index:, objective:) {
     True, Listed(creatures) ->

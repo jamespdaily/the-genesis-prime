@@ -31,7 +31,9 @@ import character_tables
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection
+import genesis_prime/connection/encrypted_frame
 import genesis_prime/connection/frame.{type Frame}
+import genesis_prime/game/connection/frames
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction.{Player}
 import genesis_prime/game/player_life.{type Life}
@@ -44,6 +46,7 @@ import genesis_prime/game/vendor_trade.{type Effect, Log, NotDecoded, Refuse}
 import genesis_prime/game/world_entry.{Buyback, BuybackEntry}
 import genesis_prime/message/buyback_added
 import genesis_prime/message/buyback_entry
+import genesis_prime/message/buyback_removed
 import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/message/item_count_changed.{ItemCountChanged}
@@ -60,11 +63,13 @@ import genesis_prime/world_map/creature_life.{type Hostile, Hostile}
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/result
 import gleam/set
 import gleam/string
 import owned_test
 import planted_table.{Integer}
 import player_life_support
+import qcheck
 import vendor_support
 
 /// The vendors of Dorian Walker with a sell multiplier of `multiplier`.
@@ -1547,4 +1552,173 @@ pub fn a_sold_item_keeps_its_flags_on_the_buyback_entry_test() -> Nil {
     let assert [entry] = buyback.entries as "the sale is one entry"
     assert entry.words.item_flags == item_flags as why
   })
+}
+
+/// The ids a 0xBD frame removes and a 0xBA frame adds, in frame order, as `#(id, True)` for
+/// an add and `#(id, False)` for a removal; other frames are skipped.
+fn list_changes(effects effects: List(Effect)) -> List(#(Int, Bool)) {
+  list.filter_map(vendor_support.frames(effects:), fn(frame) {
+    case frame.message_id {
+      id if id == buyback_added.message_id -> {
+        let assert Ok(buyback_added.BuybackAdded(entry:)) =
+          buyback_added.decode(frame.body)
+          as "a 0xBA decodes"
+        Ok(#(entry.buyback_id, True))
+      }
+      id if id == buyback_removed.message_id -> {
+        let assert Ok(buyback_removed.BuybackRemoved(buyback_id:)) =
+          buyback_removed.decode(frame.body)
+          as "a 0xBD decodes"
+        Ok(#(buyback_id, False))
+      }
+      _ -> Error(Nil)
+    }
+  })
+}
+
+fn entry_ids(buyback buyback: world_entry.Buyback) -> List(Int) {
+  list.map(buyback.entries, fn(entry) { entry.buyback_id })
+}
+
+/// A sale of `stacks` stacks answered with the buyback list held to `cap` entries.
+fn sold_within(
+  cap cap: Int,
+  buyback buyback: world_entry.Buyback,
+  stacks stacks: Int,
+) -> #(world_entry.Buyback, List(Effect)) {
+  let #(sale, answer) = vendor_support.sale_of_stacks(stacks:)
+  let #(_, _, buyback, effects) =
+    vendor_sale.answered_within(
+      cap:,
+      sale:,
+      items: [],
+      currencies: vendor_support.credits(total: 100),
+      buyback:,
+      answer:,
+    )
+  #(buyback, effects)
+}
+
+pub fn a_sale_past_the_buyback_cap_drops_the_oldest_entries_and_sends_a_0xbd_for_each_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // A full list of 1154 entries (ids 1 to 1154) and one more stack sold drops entry 1, the
+  // oldest. `opcode.0xbd` (0x1403b88d0) removes an entry by id.
+  let full = vendor_support.buyback_listing(first_id: 1, count: 1154)
+  let #(sale, answer) = vendor_support.sale_of_stacks(stacks: 1)
+  let #(_, _, buyback, effects) =
+    vendor_sale.answered(
+      sale:,
+      items: [],
+      currencies: vendor_support.credits(total: 100),
+      buyback: full,
+      answer:,
+    )
+  assert list.length(buyback.entries) == 1154
+    as "the list stays at the cap the sale reached"
+  assert list.take(entry_ids(buyback:), 2) == [2, 3]
+    as "the oldest entry, id 1, dropped off the front"
+  assert list.last(entry_ids(buyback:)) == Ok(1155)
+    as "the sale's own entry is the newest"
+  assert buyback.next_id == 1156 as "an id is never given again"
+  assert list_changes(effects:) == [#(1, False), #(1155, True)]
+    as "opcode.0xbd for the dropped id, then opcode.0xba for the sale's entry"
+  // The same rule at lowered caps: (cap, entries held, stacks sold, ids dropped, ids left,
+  // the new entries the client is told of). A sale whose own stacks fill the cap leaves only
+  // its newest, and the client is never told of the others.
+  [
+    #(3, 3, 1, [1], [2, 3, 4], [4]),
+    #(3, 3, 2, [1, 2], [3, 4, 5], [4, 5]),
+    #(3, 2, 1, [], [1, 2, 3], [3]),
+    #(2, 2, 3, [1, 2], [4, 5], [4, 5]),
+  ]
+  |> list.each(fn(row) {
+    let #(cap, held, stacks, dropped, left, told) = row
+    let #(buyback, effects) =
+      sold_within(
+        cap:,
+        buyback: vendor_support.buyback_listing(first_id: 1, count: held),
+        stacks:,
+      )
+    assert entry_ids(buyback:) == left
+      as "the newest entries stay, oldest first, up to the cap"
+    assert buyback.next_id == held + stacks + 1
+      as "the ids of the stacks sold are taken even when the cap drops them"
+    assert list_changes(effects:)
+      == list.append(
+        list.map(dropped, fn(id) { #(id, False) }),
+        list.map(told, fn(id) { #(id, True) }),
+      )
+      as "a 0xBD for each dropped entry the client holds, before the 0xBA of each entry kept"
+  })
+}
+
+/// The server's buyback list and the client's list of ids after one more sale: the client
+/// applies each 0xBA (appends) and 0xBD (removes the id) the sale sent, in order.
+fn after_sale(
+  cap cap: Int,
+  state state: #(world_entry.Buyback, List(Int)),
+  stacks stacks: Int,
+) -> #(world_entry.Buyback, List(Int)) {
+  let #(buyback, client) = state
+  let #(buyback, effects) = sold_within(cap:, buyback:, stacks:)
+  #(
+    buyback,
+    list.fold(list_changes(effects:), client, fn(client, change) {
+      case change {
+        #(id, True) -> list.append(client, [id])
+        #(id, False) -> {
+          // The handler 0x1403b88d0 refuses an id it does not hold (0x80004005).
+          assert list.contains(client, id)
+            as "opcode.0xbd: the client refuses a 0xBD for an id it does not hold"
+          list.filter(client, fn(held) { held != id })
+        }
+      }
+    }),
+  )
+}
+
+pub fn the_buyback_list_the_client_builds_from_the_sale_frames_equals_the_servers_after_any_run_of_sales_test() -> Nil {
+  use <- owned_test.run(10_000)
+  qcheck.given(
+    qcheck.tuple2(
+      qcheck.bounded_int(from: 1, to: 6),
+      qcheck.list_from(qcheck.bounded_int(from: 1, to: 4)),
+    ),
+    fn(drawn) {
+      let #(cap, sales) = drawn
+      // The client starts with an empty list, as the server does: 0xBA appends
+      // (`opcode.0xba.price`) and 0xBD removes the entry of its id (`opcode.0xbd`).
+      let #(server, client) =
+        list.fold(
+          sales,
+          #(Buyback(next_id: 1, entries: []), []),
+          fn(state, stacks) { after_sale(cap:, state:, stacks:) },
+        )
+      assert client == entry_ids(buyback: server)
+        as "the client's list is the server's, in the same order"
+      assert list.length(server.entries) <= cap
+        as "the list never holds more than the cap"
+    },
+  )
+}
+
+pub fn the_buyback_cap_is_the_most_entries_one_0xbc_carries_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // `opcode.0xbc`: a 32-bit count then 908 bits for each entry (the schema's
+  // `buyback_entry`): 130,983 bytes for 1154 entries and 131,097 for 1155, against
+  // `largest_inner_body` 131,058.
+  let wraps = fn(count) {
+    encrypted_frame.wrap(
+      wrapper: encrypted_frame.GameWrapper,
+      inner: frames.buyback_list_frame(
+        entries: vendor_support.buyback_listing(first_id: 1, count:).entries,
+      ),
+      cipher: connection_support.keyed(),
+    )
+  }
+  let cap = vendor_sale.buyback_cap()
+  assert cap == 1154 as "floor((131058 x 8 - 32) / 908)"
+  assert result.is_ok(wraps(cap)) as "the largest list the cap allows wraps"
+  assert result.is_error(wraps(cap + 1))
+    as "one entry more does not fit the wrapper, so the cap is the most that does"
 }

@@ -33,12 +33,14 @@
 ////   (0x1405fb350.completed_bit); the bit is computed here from the time the quest
 ////   was completed, never stored.
 //// - **What a prerequisite reads** is the quest as the client keeps it beside its log
-////   (`quest_of`: the quest's objectives with their QuestObjective type, flags and
-////   count, read once) and the log's entry for it: `state` (0x1405fbc40),
+////   (`quest_row.quest_of`: the quest's objectives with their QuestObjective type,
+////   flags and count, read once) and the log's entry for it, through the read-only
+////   snapshot `view` gives (genesis_prime/shared/quest_view): `state` (0x1405fbc40),
 ////   `objective_done` (0x1405510d0), `objective_open` (0x140552f50, 0x140553790) and
 ////   `objective_progress` (0x14049f4d0, 0x1406113b0, 0x140551840, 0x1405517a0). The
 ////   client derives a quest's state from its done objectives rather than storing it,
-////   so the read derives it the same way.
+////   so the read derives it the same way. The modules of the units and the map read
+////   quests only through a view, never the log.
 //// - **The objects an objective counted** are kept for each objective that counts a use
 ////   of a unit or a cast at one, by the object's spawn (`SpawnId`, the id of the spawn
 ////   table's row), so a use of the same object counts once and a relog does not let it
@@ -65,7 +67,6 @@
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/objective_kind
 import genesis_prime/message/bit_stream
-import genesis_prime/message/float32
 import genesis_prime/message/quest_active.{type QuestActive, QuestActive}
 import genesis_prime/message/quest_completed.{
   type QuestCompleted, QuestCompleted,
@@ -75,23 +76,25 @@ import genesis_prime/message/quest_log as quest_message
 import genesis_prime/message/quest_objective_progress.{QuestObjectiveProgress}
 import genesis_prime/message/quest_periodic_reset.{QuestPeriodicReset}
 import genesis_prime/message/quest_state.{QuestState}
+import genesis_prime/shared/quest_row.{type Objective, type Quest}
+import genesis_prime/shared/quest_view.{
+  type Entry, type QuestView, Active, Completed, Known,
+}
 import genesis_prime/step.{type Now}
 import genesis_prime/store.{
-  type ActiveState, type KnownState, type QuestRow, Accepted, Achieved,
-  ActiveQuest, ActiveRow, CompletedRow, KnownRow, UsedSpawn,
+  type KnownState, type QuestRow, Accepted, Achieved, ActiveQuest, ActiveRow,
+  CompletedRow, KnownRow, UsedSpawn,
 }
-import genesis_prime/table/id.{Quest2Id, QuestObjectiveId, WorldLocation2Id}
+import genesis_prime/table/id.{Quest2Id, QuestObjectiveId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2.{type Quest2}
 import genesis_prime/table/quest_objective
-import genesis_prime/table/world_location2
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/spawn_id.{
   type LoadedSpawns, type SpawnId, SpawnId,
 }
 import gleam/bool
 import gleam/dict.{type Dict}
-import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -110,48 +113,11 @@ pub opaque type QuestLog {
   QuestLog(entries: Dict(Int, Entry), told_reset: Int)
 }
 
-/// What the character has of one quest.
-type Entry {
-  /// In the client's active list (opcode.0x35f): accepted or achieved, with the
-  /// placeholder objective's id (0 for none) and, for a quest with a type 31 slot,
-  /// that objective's row, which stands in the slot (0x1405fbdc0), whether it is
-  /// tracked, the done mask (a bit for each of the six objectives), the progress of
-  /// each objective and the time left of the quest and of each objective, in
-  /// milliseconds. A quest whose Quest2 row has a time limit (`maxTimeAllowedMS`) also
-  /// holds the connection's monotonic time, in milliseconds, at which its time runs
-  /// out; `quest_ms_left` is the time the client was last told. Each objective with a
-  /// time limit (`QuestObjective.maxTimeAllowedMS`) holds, once its timer has started,
-  /// the monotonic time at which its time runs out (`objective_deadlines_ms`, one for
-  /// each objective, `None` before the start and for an objective with no limit);
-  /// `objective_ms_left` is what the client was last told. `optional_mask` has a bit for
-  /// each objective with flag 0x20, whose time may run and show but never botches the
-  /// quest, since the quest needs no such objective to be achieved. `kill_masks` holds,
-  /// for each of the six objective slots, a bit for each creature of the objective's
-  /// named group that the player's blow has killed (`kill_marked`); the client is never
-  /// sent it. `used` holds, for each objective that counts a use of a unit or a cast at one
-  /// and is not a checklist, by its index, the spawns of the objects that have counted
-  /// (`used`), except for an objective the unit may count again for
-  /// (`objective_units.reused`); it is saved with the quest (`rows`) and starts empty for a
-  /// quest accepted.
-  Active(
-    state: ActiveState,
-    placeholder_objective_id: Int,
-    placeholder: Option(Objective),
-    tracked: Bool,
-    done_mask: Int,
-    progress: List(Int),
-    quest_ms_left: Int,
-    objective_ms_left: List(Int),
-    deadline_ms: Option(Int),
-    objective_deadlines_ms: List(Option(Int)),
-    optional_mask: Int,
-    kill_masks: List(Int),
-    used: Dict(Int, Set(SpawnId)),
-  )
-  /// Completed, at this many Unix seconds.
-  Completed(at: Int)
-  /// In the client's second list: a quest it holds only a state of.
-  Known(state: KnownState)
+/// The read-only snapshot of the log that the modules of the units and the map read
+/// quests through (genesis_prime/shared/quest_view): the log's entries as they are
+/// now, which a later change to the log does not reach.
+pub fn view(log log: QuestLog) -> QuestView {
+  quest_view.of(entries: log.entries)
 }
 
 /// Why the client would refuse a saved entry: the quest and what is wrong with it.
@@ -322,20 +288,6 @@ fn entry_of(
   }
 }
 
-/// The objectives of the quest, in the order of its six slots, left out where a
-/// slot is empty (0).
-fn objectives(quest quest: Quest2) -> List(Int) {
-  [
-    quest.objective0,
-    quest.objective01,
-    quest.objective02,
-    quest.objective03,
-    quest.objective04,
-    quest.objective05,
-  ]
-  |> list.filter(fn(objective) { objective != 0 })
-}
-
 /// Whether a QuestObjective row is of the placeholder type.
 fn is_placeholder(
   objective objective: Int,
@@ -358,7 +310,7 @@ fn active_taken(
   tables tables: table_store.Tables,
   refuse refuse: fn(Reason) -> Refused,
 ) -> Result(Option(Objective), Refused) {
-  let slots = objectives(quest:)
+  let slots = quest_row.objective_ids(quest:)
   use <- bool.guard(
     list.length(active.progress) != list.length(slots),
     Error(
@@ -379,7 +331,7 @@ fn active_taken(
       {
         True, Error(Nil) ->
           Error(refuse(NoPlaceholderRow(objective_id: placeholder)))
-        True, Ok(row) -> Ok(Some(objective_of(tables:, row:)))
+        True, Ok(row) -> Ok(Some(quest_row.objective_of(tables:, row:)))
         False, _ -> Ok(None)
       }
     }
@@ -491,12 +443,6 @@ fn objectives_ms_left(
   })
 }
 
-/// The entries with their quest ids, in quest id order.
-fn in_quest_order(log log: QuestLog) -> List(#(Int, Entry)) {
-  dict.to_list(log.entries)
-  |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
-}
-
 /// The log as the client is sent it at a play entry, and the log that remembers the
 /// reset time the message carried.
 pub fn login(
@@ -568,9 +514,9 @@ fn started_running(
     ) -> {
       let assert Ok(row) = quest2.get(tables:, id: Quest2Id(quest_id))
         as "from_rows held the saved quest to a Quest2 row"
-      let assert Ok(raw_quest) = quest_of(tables:, id: quest_id)
+      let assert Ok(raw_quest) = quest_row.quest_of(tables:, id: quest_id)
         as "the objectives of a saved quest are rows of the tables"
-      let quest = as_logged(log:, quest: raw_quest)
+      let quest = quest_view.as_logged(view: view(log:), quest: raw_quest)
       let deadlines =
         list.index_map(objective_deadlines_ms, fn(held, index) {
           let told = list.drop(objective_ms_left, index) |> list.first
@@ -619,7 +565,7 @@ fn start_reachable(
   from from: Int,
   now_ms now_ms: Int,
 ) -> QuestLog {
-  let quest = as_logged(log:, quest:)
+  let quest = quest_view.as_logged(view: view(log:), quest:)
   case dict.get(log.entries, quest.id) {
     Ok(Active(objective_deadlines_ms:, done_mask:, ..) as entry) -> {
       let deadlines =
@@ -628,7 +574,7 @@ fn start_reachable(
             log:,
             quest:,
             held:,
-            done: done_in(mask: done_mask, index:),
+            done: quest_row.done_in(mask: done_mask, index:),
             index:,
             from:,
             now_ms:,
@@ -636,7 +582,12 @@ fn start_reachable(
         })
       let optional_mask =
         list.index_fold(quest.objectives, 0, fn(mask, objective, index) {
-          case has_flag(flags: objective.flags, flag: optional_flag) {
+          case
+            quest_row.has_flag(
+              flags: objective.flags,
+              flag: quest_row.optional_flag,
+            )
+          {
             True -> int.bitwise_or(mask, int.bitwise_shift_left(1, index))
             False -> mask
           }
@@ -670,7 +621,7 @@ fn started_deadline(
     None, [objective, ..]
       if index >= from && objective.time_limit_ms > 0 && !done
     ->
-      case reachable(log:, quest:, index:) {
+      case quest_view.reachable(view: view(log:), quest:, index:) {
         True -> Some(now_ms + objective.time_limit_ms)
         False -> held
       }
@@ -896,76 +847,9 @@ pub fn reset_due(
 
 // ---- the client's reads of a quest ----
 
-/// One objective of a quest as the client keeps it (`0x1405a8a40`, the quest record's
-/// words 0x18 and after): its QuestObjective id, kind (the row's type and data decoded,
-/// `objective_kind`), flags, count and data (the id of
-/// the row its type names, a Creature2 id for types 3 and 12), the TargetGroup row of
-/// its reward pane (0 for none), and whether it counts its progress as bits
-/// (`0x1405517a0`), its time limit in milliseconds (`maxTimeAllowedMS`, 0 for none), and
-/// whether it names a place to go to (`marked`: one of its four `worldLocationsIdIndicator`
-/// columns names a WorldLocation2 row the table holds, as `place_objective.markers` reads
-/// them; `place_objective` imports this module, so it cannot be called from here).
-pub type Objective {
-  Objective(
-    objective_id: Int,
-    kind: objective_kind.Kind,
-    flags: Int,
-    count: Int,
-    data: Int,
-    reward_pane: Int,
-    checklist: Bool,
-    time_limit_ms: Int,
-    marked: Bool,
-  )
-}
-
-/// A quest as the client keeps it beside its log: its Quest2 id and its objectives in
-/// slot order, the empty slots left out.
-pub type Quest {
-  Quest(id: Int, objectives: List(Objective))
-}
-
-/// Why a quest cannot be read from the tables.
-pub type QuestRowError {
-  /// The client has no Quest2 row for the id: an unknown quest.
-  NoQuestRow
-  /// A slot of the quest names a QuestObjective row the client's table lacks.
-  NoObjectiveRow(objective_id: Int)
-}
-
-/// The QuestObjective flag of an optional objective, which the client's quest state and
-/// reachability skip (`0x1405fbc40`, `0x140553790`).
-pub const optional_flag = 0x20
-
 /// The objective slots of a quest, which a kill mask has one value for each of
 /// (`0x1405510d0`, kQuestMaxObjective).
 const max_objectives = 6
-
-/// The bits of a checklist's mask: the server's 0x35f and 0x361 carry 32.
-const mask_bits = 32
-
-/// The QuestObjective flag that keeps a kill objective's progress a count.
-const counted_flag = 0x200
-
-/// The quest with this Quest2 id, each objective read from QuestObjective.
-pub fn quest_of(
-  tables tables: table_store.Tables,
-  id id: Int,
-) -> Result(Quest, QuestRowError) {
-  use row <- result.try(
-    quest2.get(tables:, id: Quest2Id(id)) |> result.replace_error(NoQuestRow),
-  )
-  use objectives <- result.map(
-    list.try_map(objectives(quest: row), fn(objective_id) {
-      use row <- result.map(
-        quest_objective.get(tables:, id: QuestObjectiveId(objective_id))
-        |> result.replace_error(NoObjectiveRow(objective_id:)),
-      )
-      objective_of(tables:, row:)
-    }),
-  )
-  Quest(id:, objectives:)
-}
 
 /// The places each QuestObjective is listed at, by its id: for each quest that lists it,
 /// the quest as the log reads it, the objective's index there and the objective. A quest
@@ -974,7 +858,7 @@ pub fn listed_objectives(
   tables tables: table_store.Tables,
 ) -> Dict(Int, List(#(Quest, Int, Objective))) {
   quest2.all(tables)
-  |> list.filter_map(fn(row) { quest_of(tables:, id: row.id) })
+  |> list.filter_map(fn(row) { quest_row.quest_of(tables:, id: row.id) })
   |> list.fold(dict.new(), fn(listed, quest) {
     list.index_fold(quest.objectives, listed, fn(listed, objective, index) {
       dict.upsert(listed, objective.objective_id, fn(places) {
@@ -982,99 +866,6 @@ pub fn listed_objectives(
       })
     })
   })
-}
-
-/// One QuestObjective row as the client keeps it.
-fn objective_of(
-  tables tables: table_store.Tables,
-  row row: quest_objective.QuestObjective,
-) -> Objective {
-  Objective(
-    objective_id: row.id,
-    kind: objective_kind.of_row(row),
-    flags: row.flags,
-    count: row.count,
-    data: row.data,
-    reward_pane: row.target_group_id_reward_pane,
-    checklist: objective_kind.is_checklist(
-      tables:,
-      kind: objective_kind.of_row(row),
-    ),
-    time_limit_ms: row.max_time_allowed_ms,
-    marked: list.any(
-      [
-        row.world_locations_id_indicator00,
-        row.world_locations_id_indicator01,
-        row.world_locations_id_indicator02,
-        row.world_locations_id_indicator03,
-      ],
-      fn(marker_id) {
-        marker_id != 0
-        && result.is_ok(world_location2.get(
-          tables:,
-          id: WorldLocation2Id(marker_id),
-        ))
-      },
-    ),
-  )
-}
-
-/// The quest as the log's entry holds it: an active entry's placeholder row stands in
-/// the quest's type 31 slot (0x1405fbdc0), whatever its type, flags and count.
-fn as_logged(log log: QuestLog, quest quest: Quest) -> Quest {
-  case dict.get(log.entries, quest.id) {
-    Ok(Active(placeholder: Some(placeholder), ..)) -> {
-      let #(before, from_the_slot) =
-        list.split_while(quest.objectives, fn(objective) {
-          objective.kind != objective_kind.Placeholder
-        })
-      case from_the_slot {
-        [_, ..after] ->
-          Quest(
-            ..quest,
-            objectives: list.flatten([before, [placeholder], after]),
-          )
-        [] -> quest
-      }
-    }
-    Ok(Active(..)) | Ok(Completed(..)) | Ok(Known(..)) | Error(Nil) -> quest
-  }
-}
-
-/// The state of the quest as the client computes it for the player (lua QuestState,
-/// `0x1405fbc40`): 0 for a quest not in the log, 1 accepted, 2 achieved, 3 completed
-/// and 4 to 7 for a quest it holds only a state of. A stored Accepted entry reads 2
-/// when every objective without flag 0x20 is done, and a quest with no objectives is
-/// then achieved at once.
-pub fn state(log log: QuestLog, quest quest: Quest) -> Int {
-  let quest = as_logged(log:, quest:)
-  case dict.get(log.entries, quest.id) {
-    Error(Nil) -> 0
-    Ok(Completed(..)) -> 3
-    Ok(Known(state:)) -> store.known_state_number(state:)
-    Ok(Active(state: Achieved, ..)) -> 2
-    Ok(Active(state: Accepted, done_mask:, ..)) ->
-      case
-        every_objective_is_done(quest:, done: fn(index) {
-          done_in(mask: done_mask, index:)
-        })
-      {
-        True -> 2
-        False -> 1
-      }
-  }
-}
-
-/// Whether every objective of the quest without flag 0x20 is done, as `done` says for
-/// its index (`0x1405fbc40`); a quest with no objectives is.
-fn every_objective_is_done(
-  quest quest: Quest,
-  done done: fn(Int) -> Bool,
-) -> Bool {
-  list.index_map(quest.objectives, fn(objective, index) {
-    has_flag(flags: objective.flags, flag: optional_flag) || done(index)
-  })
-  |> list.all(fn(done) { done })
 }
 
 /// Whether every objective of the quest without flag 0x20 is done in the log
@@ -1085,9 +876,10 @@ pub fn required_objectives_done(
   quest quest: Quest,
   ignoring ignoring: List(Int),
 ) -> Bool {
-  let quest = as_logged(log:, quest:)
-  every_objective_is_done(quest:, done: fn(index) {
-    list.contains(ignoring, index) || objective_done(log:, quest:, index:)
+  let quest = quest_view.as_logged(view: view(log:), quest:)
+  quest_row.every_objective_is_done(quest:, done: fn(index) {
+    list.contains(ignoring, index)
+    || quest_view.objective_done(view: view(log:), quest:, index:)
   })
 }
 
@@ -1105,18 +897,6 @@ pub fn stored_state(log log: QuestLog, quest_id quest_id: Int) -> Int {
   }
 }
 
-/// The ids of the quests in the client's active list, accepted or achieved, in
-/// ascending order.
-pub fn active_ids(log log: QuestLog) -> List(Int) {
-  in_quest_order(log:)
-  |> list.filter_map(fn(pair) {
-    case pair.1 {
-      Active(..) -> Ok(pair.0)
-      Completed(..) | Known(..) -> Error(Nil)
-    }
-  })
-}
-
 /// How many quests the log holds in the client's active list that count toward its
 /// limit: every active entry whose Quest2 flags lack 0x80000, which contracts carry
 /// (`0x1405fc680`).
@@ -1129,7 +909,7 @@ pub fn active_count(
     case pair.1 {
       Active(..) ->
         case quest2.get(tables:, id: Quest2Id(pair.0)) {
-          Ok(row) -> !has_flag(flags: row.flags, flag: contract_flag)
+          Ok(row) -> !quest_row.has_flag(flags: row.flags, flag: contract_flag)
           Error(Nil) -> False
         }
       Completed(..) | Known(..) -> False
@@ -1265,8 +1045,8 @@ fn entry_deadline(entry entry: Entry) -> Option(Int) {
     ) ->
       list.index_map(objective_deadlines_ms, fn(deadline, index) {
         case
-          done_in(mask: done_mask, index:)
-          || done_in(mask: optional_mask, index:)
+          quest_row.done_in(mask: done_mask, index:)
+          || quest_row.done_in(mask: optional_mask, index:)
         {
           True -> None
           False -> deadline
@@ -1308,65 +1088,16 @@ pub fn track(
   }
 }
 
-/// Whether bit `index` of a mask of the six objectives is set. The client's objective indexes run 0
-/// to 5; a later one is never done.
-fn done_in(mask mask: Int, index index: Int) -> Bool {
-  index < 6 && int.bitwise_and(mask, int.bitwise_shift_left(1, index)) != 0
-}
-
-fn has_flag(flags flags: Int, flag flag: Int) -> Bool {
-  int.bitwise_and(flags, flag) != 0
-}
-
-/// Whether the quest's objective at `index` is done (`0x1405510d0`): never at or past
-/// the objective count, always for a completed quest, by the done mask for a quest in
-/// the active list, never for any other.
-pub fn objective_done(
-  log log: QuestLog,
-  quest quest: Quest,
-  index index: Int,
-) -> Bool {
-  let quest = as_logged(log:, quest:)
-  use <- bool.guard(when: index >= list.length(quest.objectives), return: False)
-  case dict.get(log.entries, quest.id) {
-    Ok(Completed(..)) -> True
-    Ok(Active(done_mask:, ..)) -> done_in(mask: done_mask, index:)
-    Ok(Known(..)) | Error(Nil) -> False
-  }
-}
-
-/// Whether the quest's objective at `index` is open (`0x14049f3d0`): the quest is in
-/// the active list, the objective is not done, and it is reachable.
-pub fn objective_open(
-  log log: QuestLog,
-  quest quest: Quest,
-  index index: Int,
-) -> Bool {
-  let quest = as_logged(log:, quest:)
-  let in_the_active_list = case dict.get(log.entries, quest.id) {
-    Ok(Active(..)) -> True
-    Ok(Completed(..)) | Ok(Known(..)) | Error(Nil) -> False
-  }
-  in_the_active_list
-  && !objective_done(log:, quest:, index:)
-  && reachable(log:, quest:, index:)
-}
-
 /// The quest's open objectives with their indexes (`0x14049f3d0`), the quest read as the
 /// log holds it.
 pub fn open_objectives(
   log log: QuestLog,
   quest quest: Quest,
 ) -> List(#(Int, Objective)) {
-  let quest = as_logged(log:, quest:)
+  let quest = quest_view.as_logged(view: view(log:), quest:)
   list.index_map(quest.objectives, fn(objective, index) { #(index, objective) })
-  |> list.filter(fn(pair) { objective_open(log:, quest:, index: pair.0) })
-}
-
-/// Whether the objective at `index` is reachable in the log (`0x140553790`).
-fn reachable(log log: QuestLog, quest quest: Quest, index index: Int) -> Bool {
-  reachable_when(quest:, index:, done: fn(at) {
-    objective_done(log:, quest:, index: at)
+  |> list.filter(fn(pair) {
+    quest_view.objective_open(view: view(log:), quest:, index: pair.0)
   })
 }
 
@@ -1383,7 +1114,7 @@ pub fn locked_behind(
   quest quest: Quest,
   holding holding: List(Int),
 ) -> List(Int) {
-  let quest = as_logged(log:, quest:)
+  let quest = quest_view.as_logged(view: view(log:), quest:)
   locked_through(quest:, holding:)
   |> list.filter(fn(index) { !list.contains(holding, index) })
 }
@@ -1394,7 +1125,7 @@ fn locked_through(quest quest: Quest, holding holding: List(Int)) -> List(Int) {
     list.index_map(quest.objectives, fn(_, index) { index })
     |> list.filter(fn(index) {
       list.contains(holding, index)
-      || !reachable_when(quest:, index:, done: fn(at) {
+      || !quest_row.reachable_when(quest:, index:, done: fn(at) {
         !list.contains(holding, at)
       })
     })
@@ -1402,62 +1133,6 @@ fn locked_through(quest quest: Quest, holding holding: List(Int)) -> List(Int) {
     True -> closed
     False -> locked_through(quest:, holding: closed)
   }
-}
-
-/// Whether the objective at `index` is reachable (`0x140553790`) when `done` says which
-/// objectives are done: never at or past the count; always for objective type 0; with
-/// flag 2, when every earlier objective without flag 0x20 is done; else with flag 1, when
-/// every earlier objective is done or itself reachable; with neither flag, always.
-fn reachable_when(
-  quest quest: Quest,
-  index index: Int,
-  done done: fn(Int) -> Bool,
-) -> Bool {
-  case list.drop(quest.objectives, index) {
-    [] -> False
-    [Objective(kind: objective_kind.Unconditional, ..), ..] -> True
-    [objective, ..] -> {
-      let earlier =
-        list.index_map(list.take(quest.objectives, index), fn(before, at) {
-          #(at, before)
-        })
-      case
-        has_flag(flags: objective.flags, flag: 2),
-        has_flag(flags: objective.flags, flag: 1)
-      {
-        True, _ ->
-          list.all(earlier, fn(before) {
-            let #(at, objective) = before
-            has_flag(flags: objective.flags, flag: optional_flag) || done(at)
-          })
-        False, True ->
-          list.all(earlier, fn(before) {
-            done(before.0) || reachable_when(quest:, index: before.0, done:)
-          })
-        False, False -> True
-      }
-    }
-  }
-}
-
-/// The objective kinds whose raw progress is thousandths of completion when flag 0x200
-/// is clear (`0x1406113b0`): the kills.
-fn is_percent_kind(objective objective: Objective) -> Bool {
-  objective_kind.is_kill(objective.kind)
-  && !has_flag(flags: objective.flags, flag: counted_flag)
-}
-
-/// Whether the objective's stored progress is thousandths of completion: a percent kind
-/// objective of a count above 1.
-fn is_thousandths(objective objective: Objective) -> Bool {
-  is_percent_kind(objective:) && objective.count > 1
-}
-
-/// How much progress completes the objective (`0x140551840`): 100 for a percent kind
-/// objective of a count above 1, else its count.
-fn needed(objective objective: Objective) -> Int {
-  use <- bool.guard(when: is_thousandths(objective:), return: 100)
-  objective.count
 }
 
 /// The stored progress of a thousandths objective of `count` after `kills` more: an
@@ -1502,27 +1177,27 @@ pub fn progressed(
   amount amount: Int,
   now_ms now_ms: Int,
 ) -> Result(Progressed, Nil) {
-  let quest = as_logged(log:, quest:)
+  let quest = quest_view.as_logged(view: view(log:), quest:)
   case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
     Ok(Active(done_mask:, progress:, ..) as entry), [objective, ..]
       if index >= 0
     -> {
       use <- bool.guard(
-        when: !objective_open(log:, quest:, index:),
+        when: !quest_view.objective_open(view: view(log:), quest:, index:),
         return: Error(Nil),
       )
       let stored = list.drop(progress, index) |> list.first |> result.unwrap(0)
-      let thousandths = is_thousandths(objective:)
+      let thousandths = quest_row.is_thousandths(objective:)
       let new_progress = case thousandths {
         True ->
           thousandths_after(stored:, count: objective.count, kills: amount)
         False -> int.min(objective.count, stored + amount)
       }
       let shown = case thousandths {
-        True -> in_log_progress(objective:, stored: new_progress)
+        True -> quest_row.in_log_progress(objective:, stored: new_progress)
         False -> new_progress
       }
-      let done_mask = case shown >= needed(objective:) {
+      let done_mask = case shown >= quest_row.needed(objective:) {
         True -> int.bitwise_or(done_mask, int.bitwise_shift_left(1, index))
         False -> done_mask
       }
@@ -1561,18 +1236,23 @@ pub fn marked(
   bit bit: Int,
   now_ms now_ms: Int,
 ) -> Result(Counted, Nil) {
-  let quest = as_logged(log:, quest:)
+  let quest = quest_view.as_logged(view: view(log:), quest:)
   case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
     Ok(Active(done_mask:, progress:, ..) as entry), [objective, ..]
-      if index >= 0 && bit >= 0 && bit < mask_bits && objective.checklist
+      if index >= 0
+      && bit >= 0
+      && bit < quest_row.mask_bits
+      && objective.checklist
     -> {
       use <- bool.guard(
-        when: !objective_open(log:, quest:, index:),
+        when: !quest_view.objective_open(view: view(log:), quest:, index:),
         return: Error(Nil),
       )
       let before = list.drop(progress, index) |> list.first |> result.unwrap(0)
       let mask = int.bitwise_or(before, int.bitwise_shift_left(1, bit))
-      let done_mask = case set_bits(of: mask) >= needed(objective:) {
+      let done_mask = case
+        quest_row.set_bits(of: mask) >= quest_row.needed(objective:)
+      {
         True -> int.bitwise_or(done_mask, int.bitwise_shift_left(1, index))
         False -> done_mask
       }
@@ -1589,28 +1269,6 @@ pub fn marked(
       Ok(Counted(log:, progress: mask, changed: mask != before, moved:))
     }
     _, _ -> Error(Nil)
-  }
-}
-
-/// Whether the unit of checklist index `bit` is counted for the quest's checklist
-/// objective at `index`: the objective's stored mask has the bit (`0x140611680`). False
-/// for an objective that is no checklist, a quest not in the active list and a `bit`
-/// the mask has none of (the client counts those as never counted).
-pub fn is_marked(
-  log log: QuestLog,
-  quest quest: Quest,
-  index index: Int,
-  bit bit: Int,
-) -> Bool {
-  let quest = as_logged(log:, quest:)
-  case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
-    Ok(Active(progress:, ..)), [objective, ..]
-      if index >= 0 && bit >= 0 && bit < mask_bits && objective.checklist
-    -> {
-      let stored = list.drop(progress, index) |> list.first |> result.unwrap(0)
-      int.bitwise_and(stored, int.bitwise_shift_left(1, bit)) != 0
-    }
-    _, _ -> False
   }
 }
 
@@ -1633,11 +1291,11 @@ pub fn used(
   unit unit: SpawnId,
   now_ms now_ms: Int,
 ) -> Result(Counted, Nil) {
-  let quest = as_logged(log:, quest:)
+  let quest = quest_view.as_logged(view: view(log:), quest:)
   case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
     Ok(Active(progress:, ..)), [_, ..] if index >= 0 -> {
       use <- bool.guard(
-        when: !objective_open(log:, quest:, index:),
+        when: !quest_view.objective_open(view: view(log:), quest:, index:),
         return: Error(Nil),
       )
       let stored = list.drop(progress, index) |> list.first |> result.unwrap(0)
@@ -1683,7 +1341,10 @@ fn remember_used(
   let SpawnId(number) = unit
   case dict.get(log.entries, quest.id) {
     Ok(Active(used:, ..) as entry) -> {
-      let units = case objective_done(log:, quest:, index:), number < 0 {
+      let units = case
+        quest_view.objective_done(view: view(log:), quest:, index:),
+        number < 0
+      {
         True, _ -> dict.delete(used, index)
         False, True -> used
         False, False -> with_used(used:, index:, spawn: unit)
@@ -1710,7 +1371,7 @@ pub fn is_used(
   index index: Int,
   unit unit: SpawnId,
 ) -> Bool {
-  let quest = as_logged(log:, quest:)
+  let quest = quest_view.as_logged(view: view(log:), quest:)
   case dict.get(log.entries, quest.id) {
     Ok(Active(used:, ..)) ->
       case dict.get(used, index) {
@@ -1741,13 +1402,13 @@ pub fn kill_marked(
   member member: Int,
   members members: Int,
 ) -> Result(#(QuestLog, Bool), Nil) {
-  let quest = as_logged(log:, quest:)
+  let quest = quest_view.as_logged(view: view(log:), quest:)
   case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
     Ok(Active(kill_masks:, ..) as entry), [_, ..]
       if index >= 0 && member >= 0 && member < members && members <= group_slots
     -> {
       use <- bool.guard(
-        when: !objective_open(log:, quest:, index:),
+        when: !quest_view.objective_open(view: view(log:), quest:, index:),
         return: Error(Nil),
       )
       let before =
@@ -1816,14 +1477,14 @@ pub fn counted(
   value value: Int,
   now_ms now_ms: Int,
 ) -> Result(Counted, Nil) {
-  let quest = as_logged(log:, quest:)
+  let quest = quest_view.as_logged(view: view(log:), quest:)
   case dict.get(log.entries, quest.id), list.drop(quest.objectives, index) {
     Ok(Active(done_mask:, progress:, ..) as entry), [objective, ..]
       if index >= 0
     -> {
       let new_progress = int.max(0, int.min(objective.count, value))
       let done_bit = int.bitwise_shift_left(1, index)
-      let done_mask = case new_progress >= needed(objective:) {
+      let done_mask = case new_progress >= quest_row.needed(objective:) {
         True -> int.bitwise_or(done_mask, done_bit)
         False -> int.bitwise_and(done_mask, int.bitwise_not(done_bit))
       }
@@ -1870,8 +1531,8 @@ fn store_progress(
   let assert Active(state:, progress: kept, ..) = entry
     as "only an entry in the active list takes a count"
   let all_done =
-    every_objective_is_done(quest:, done: fn(index) {
-      done_in(mask: done_mask, index:)
+    quest_row.every_objective_is_done(quest:, done: fn(index) {
+      quest_row.done_in(mask: done_mask, index:)
     })
   let #(state, moved) = case state, all_done {
     Accepted, True -> #(Achieved, BecameAchieved)
@@ -1892,68 +1553,12 @@ fn store_progress(
         ),
       ),
     )
-  case done_in(mask: done_mask, index:) {
+  case quest_row.done_in(mask: done_mask, index:) {
     True -> #(
       start_reachable(log: stored, quest:, from: index + 1, now_ms:),
       moved,
     )
     False -> #(stored, moved)
-  }
-}
-
-/// The progress of the quest's objective at `index` as a prerequisite compares it
-/// (`0x14049f4d0`): 0 for an index at or past the count, the needed count for a
-/// completed quest, the in-log progress for a quest in the active list, 0 for any other.
-pub fn objective_progress(
-  log log: QuestLog,
-  quest quest: Quest,
-  index index: Int,
-) -> Int {
-  let quest = as_logged(log:, quest:)
-  case list.drop(quest.objectives, index), dict.get(log.entries, quest.id) {
-    [], _ -> 0
-    [objective, ..], Ok(Completed(..)) -> needed(objective:)
-    [objective, ..], Ok(Active(progress:, ..)) ->
-      in_log_progress(
-        objective:,
-        stored: list.drop(progress, index) |> list.first |> result.unwrap(0),
-      )
-    _, Ok(Known(..)) | _, Error(Nil) -> 0
-  }
-}
-
-/// An objective's progress in a log entry (`0x1406113b0`): the stored value, its set
-/// bits for a checklist, and above 1 for a percent kind objective, whatever its count,
-/// the thousandths of completion as a share of the needed count, worked in 32-bit
-/// floats.
-fn in_log_progress(objective objective: Objective, stored stored: Int) -> Int {
-  let raw = case objective.checklist {
-    True -> set_bits(of: stored)
-    False -> stored
-  }
-  case raw > 1 && is_percent_kind(objective:) {
-    False -> raw
-    True -> {
-      let share =
-        float32.product(
-          left: float32.rounded(value: int.to_float(raw)),
-          right: float32.rounded(value: 0.001),
-        )
-      float32.product(
-        left: float32.rounded(value: int.to_float(needed(objective:))),
-        right: share,
-      )
-      |> float.truncate
-    }
-  }
-}
-
-fn set_bits(of number: Int) -> Int {
-  case number {
-    0 -> 0
-    _ ->
-      int.bitwise_and(number, 1)
-      + set_bits(of: int.bitwise_shift_right(number, 1))
   }
 }
 
@@ -1985,4 +1590,10 @@ pub fn quest_objective_progress_frame(
       quest_objective_progress.encode,
     )
   Frame(message_id: quest_objective_progress.message_id, body:)
+}
+
+/// The log's entries with their quest ids, in quest id order.
+fn in_quest_order(log log: QuestLog) -> List(#(Int, Entry)) {
+  dict.to_list(log.entries)
+  |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
 }

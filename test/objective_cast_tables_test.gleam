@@ -162,7 +162,7 @@ pub fn the_targeted_objective_spells_plan_test() -> Nil {
 /// the connection cannot judge on a creature it holds no life, vital or faction of.
 fn unjudgeable_rows(tables tables: Tables) -> List(Int) {
   let shortcuts = shortcut_spell.shortcuts(tables:)
-  let assert Ok(quests) = quest_log.from_rows(rows: [], tables:)
+  let assert Ok(log) = quest_log.from_rows(rows: [], tables:)
     as "an empty quest log holds no row to refuse"
   let pose = area.Pose(at: area.Point(x: 0.0, z: 0.0), yaw: 0.0)
   let target =
@@ -172,7 +172,7 @@ fn unjudgeable_rows(tables tables: Tables) -> List(Int) {
       in_combat: False,
       target: pose,
       caster: pose,
-      quests:,
+      quests: quest_log.view(log: log),
       creature_id: 0,
       checker: prerequisite_support.empty_checker(),
     )

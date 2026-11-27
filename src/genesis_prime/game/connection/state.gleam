@@ -46,6 +46,7 @@ import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, LostUserServer,
 }
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionId, type Effect, type Now,
   type TimerId, About, CancelTimer, LogWarning, OwnEffect, StartTimer, Stop,
@@ -177,6 +178,12 @@ pub fn held_plans_of(
     ),
     proxies: session.settings.server_proxies,
   )
+}
+
+/// The quest log of a player in the world as the read-only view the cast and unit rules
+/// read quests through (genesis_prime/shared/quest_view).
+pub fn quests_of(entered entered: world_entry.Entered) -> QuestView {
+  quest_log.view(log: entered.quests)
 }
 
 /// The activate spells' plans and prerequisites the cast rule reads

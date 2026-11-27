@@ -13,6 +13,7 @@ import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
 import gleam/result
+import number_support
 import owned_test
 
 fn first() -> Frame {
@@ -56,7 +57,7 @@ fn cut(bytes: BitArray, size: Int) -> List(BitArray) {
 }
 
 fn sizes_up_to(most: Int) -> List(Int) {
-  list.repeat(Nil, most) |> list.index_map(fn(_, index) { index + 1 })
+  number_support.counting(from: 1, count: most)
 }
 
 pub fn two_frames_in_one_read_are_both_read_test() -> Nil {

@@ -187,7 +187,7 @@ pub fn a_subject_with_no_player_does_not_decide_these_types_test() -> Nil {
       first: None,
       second: prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0),
       player: prerequisite_support.player(),
-      quests: quest_support.log_of(rows: []),
+      quests: quest_support.view_of(rows: []),
     )
   list.each(conditions, fn(condition) {
     let verdict = prerequisite_support.verdict(condition:, subject: place_only)
@@ -215,7 +215,7 @@ pub fn a_struck_units_condition_reads_the_casters_player_test() -> Nil {
       first: None,
       second: prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0),
       player:,
-      quests: quest_support.log_of(rows: []),
+      quests: quest_support.view_of(rows: []),
     )
   }
   assert prerequisite_support.verdict(

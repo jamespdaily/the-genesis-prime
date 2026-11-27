@@ -30,11 +30,11 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/objective_link
-import genesis_prime/game/quest_log
 import genesis_prime/game/spell_plan
 import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
+import genesis_prime/shared/quest_view.{type QuestView}
 
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/interaction_result.{type InteractionResult}
@@ -613,7 +613,7 @@ fn market_terminal_pressed(progress progress: Int) -> List(Effect) {
   let caster =
     cast_state.Caster(
       ..standing(),
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.accepted(quest_id: market_quest, progress: [progress]),
       ]),
     )
@@ -1182,7 +1182,7 @@ const a_chef_with_both_links = 53_445
 
 /// The right-click of the collectible by a caster with this quest log, its link read by
 /// the rule that reads it (genesis_prime/game/objective_link `of`).
-fn collectible_clicked(quests quests: quest_log.QuestLog) -> List(Effect) {
+fn collectible_clicked(quests quests: QuestView) -> List(Effect) {
   clicked(creature_id: the_collectible, quests:)
 }
 
@@ -1190,7 +1190,7 @@ fn collectible_clicked(quests quests: quest_log.QuestLog) -> List(Effect) {
 /// link read by the rule that reads it.
 fn clicked(
   creature_id creature_id: Int,
-  quests quests: quest_log.QuestLog,
+  quests quests: QuestView,
 ) -> List(Effect) {
   let tables = fixture_tables.shared()
   let caster = cast_state.Caster(..standing(), quests:)
@@ -1237,7 +1237,7 @@ pub fn an_activate_cast_on_a_creature_with_no_open_link_is_refused_test() -> Nil
   // waits for its objective to be open, and offers nothing at all otherwise.
   let effects =
     collectible_clicked(
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.active(
           quest_id: 3741,
           state: 2,
@@ -1263,7 +1263,7 @@ pub fn an_activate_cast_on_a_creature_with_an_open_link_starts_test() -> Nil {
   // Quest 3741 is Accepted with objective 4813 at 2 of 6.
   let effects =
     collectible_clicked(
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.accepted(quest_id: 3741, progress: [2]),
       ]),
     )
@@ -1281,7 +1281,7 @@ pub fn a_closed_quest_anim_link_refuses_a_creature_whose_prerequisite_link_is_op
   // for, so the prerequisite link alone would be open. The client closes the link at the
   // questAnim result and never reads the prerequisite (0x14046c4d0).
   let quests =
-    quest_support.log_of(rows: [
+    quest_support.view_of(rows: [
       quest_support.accepted(quest_id: 9110, progress: [0, 0, 0, 0, 0, 1]),
     ])
   let effects = clicked(creature_id: a_chef_with_both_links, quests:)

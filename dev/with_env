@@ -1,0 +1,15 @@
+#!/bin/sh
+# Runs one command with the project's environment loaded, for a shell that cannot source it:
+#
+#   dev/with_env gleam test -- --module NAME
+#   dev/with_env gleam run -m genesis_prime/table_rows -- UnitProperty2 38
+#
+# It loads setup_check/environment.sh from the repository's folder, then replaces itself with the
+# command. A builder's worktree refuses `source` (its guard cannot tell where a sourced string
+# goes), but runs a script, so this is how a builder loads the environment.
+set -eu
+[ "$#" -gt 0 ] || { echo "usage: dev/with_env <command> [arguments...]" >&2; exit 2; }
+cd "$(dirname "$0")/.."
+. setup_check/environment.sh
+cd "$OLDPWD"
+exec "$@"

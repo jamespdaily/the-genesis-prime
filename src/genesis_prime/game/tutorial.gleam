@@ -45,6 +45,7 @@ import genesis_prime/content/refusal.{type Refusal, Refusal, RowId}
 import genesis_prime/game/communicator
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shown
+import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Quest2Id}
 import genesis_prime/table/loader/store as table_store
@@ -146,13 +147,13 @@ fn row_refusal(
 ) -> Result(#(Int, List(String)), List(String)) {
   let quest_id = row.quest_id
   use _ <- result.try(
-    quest_log.quest_of(tables:, id: quest_id)
+    quest_row.quest_of(tables:, id: quest_id)
     |> result.map_error(fn(error) {
       case error {
-        quest_log.NoQuestRow -> [
+        quest_row.NoQuestRow -> [
           "the client's Quest2 table has no row " <> int.to_string(quest_id),
         ]
-        quest_log.NoObjectiveRow(objective_id:) -> [
+        quest_row.NoObjectiveRow(objective_id:) -> [
           "Quest2 row "
           <> int.to_string(quest_id)
           <> " names QuestObjective "
@@ -307,7 +308,7 @@ pub fn grant(
   case due(chain:, log:, faction_enum:) {
     None -> None
     Some(quest_id) -> {
-      let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
+      let assert Ok(quest) = quest_row.quest_of(tables:, id: quest_id)
         as "the load refused a chain row with no Quest2 row"
       let assert Ok(row) = quest2.get(tables:, id: Quest2Id(quest_id))
         as "the load refused a chain row with no Quest2 row"
