@@ -807,6 +807,7 @@ pub fn a_captive_creature_that_is_waiting_failed_or_dormant_when_its_object_is_r
       fn(state) { timer_fired(state:, at_ms: 8000, spawn: 2).1 },
       1,
       "its own timer starts it",
+      Ok(map.WaitingForRestart),
     ),
     #(
       "failed",
@@ -830,6 +831,7 @@ pub fn a_captive_creature_that_is_waiting_failed_or_dormant_when_its_object_is_r
       },
       0,
       "a failed spawn stays empty for the run",
+      Ok(map.Failed),
     ),
     #(
       "dormant",
@@ -843,10 +845,11 @@ pub fn a_captive_creature_that_is_waiting_failed_or_dormant_when_its_object_is_r
       fn(state) { spawns.move(state:, at_ms: 8000, connection: 1, x: 0.0).1 },
       1,
       "a later sight starts it",
+      Error(Nil),
     ),
   ]
   list.each(rows, fn(row) {
-    let #(name, make, later, starts, why) = row
+    let #(name, make, later, starts, why, named_state) = row
     let #(state, joined) =
       spawns.join(
         state: a_trap_with_its_captive(),
@@ -858,6 +861,10 @@ pub fn a_captive_creature_that_is_waiting_failed_or_dormant_when_its_object_is_r
       as "the player's sight starts the trap and its captive, in spawn order"
     let state = make(state, mordesh_watch)
     let before = map.spawn_state(state:, spawn: SpawnId(2))
+    assert before == named_state
+      as {
+        name <> ": the captive is in the state the row names before the release"
+      }
     let #(state, taken) = spawns.released(state:, at_ms: 7000, unit_id: trap)
     assert spawns.creature_sends(taken) == [#(trap, "Retire")]
       as {

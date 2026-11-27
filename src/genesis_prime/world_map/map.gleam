@@ -622,7 +622,7 @@
 //// | `Expired` is taken twice, or of an earlier life or unit | the map ignores an `Expired` for a spawn that is not `Live` under that unit and life; the creature sends one and stops (`a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one_result_for_each_state_test`) |
 //// | `Expired` is taken while the spawn is `Retiring` or `Releasing` | ignored: the creature's end restarts a retiring spawn, and a releasing one waits the release time (`a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one_result_for_each_state_test`) |
 //// | `Released` reaches a `Respawning` spawn, or twice | `Releasing` with no relations; at the creature's end `Gone` to every player and the release time; the second finds `Releasing` and changes nothing (`a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one_result_for_each_state_test`) |
-//// | the map is killed while a spawn is `Respawning` | creatures stop with the run and the spawn is rebuilt from storage with it (`a_map_run_that_ends_ends_its_creatures_test`, `a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_is_not_found_test`) |
+//// | the map is killed while a spawn is `Respawning` | creatures stop with the run and the spawn is rebuilt from storage with it (`a_map_run_that_ends_ends_its_creatures_test`, `a_map_that_ended_is_started_again_with_a_new_incarnation_and_the_old_run_is_not_found_test`); no test kills the map while a spawn is `Respawning`: they end it with creatures live |
 //// | `Expired` waits past a deadline, or the next life's start waits behind a burst | it waits its turn in the map's one queue and the respawn is late by the queue's length; the creature that expired is dead and nothing can reach it; the shell's 5000 ms initialisation timeout decides a start that does not finish (`a_run_that_showed_fewer_players_than_pairs_a_map_that_falls_behind_and_a_delay_past_its_guard_each_fail_and_a_run_that_holds_all_three_passes_test`, `a_tell_to_the_life_that_ended_is_dropped_and_the_same_tell_to_the_life_that_replaced_it_is_taken_for_every_kind_of_tell_test`, `a_respawn_that_does_not_start_leaves_the_spawn_failed_for_the_run_and_tells_no_player_anything_test`) |
 //// | a tell is addressed to the life that ended | dropped by the registry, which finds no creature at that life's address (`a_tell_to_the_life_that_ended_is_dropped_and_the_same_tell_to_the_life_that_replaced_it_is_taken_for_every_kind_of_tell_test`, `a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_the_same_unit_id_and_the_old_address_finds_no_creature_test`) |
 //// | `Unseen(V, g)` reaches a creature twice | the second finds no entry and changes nothing (`a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_time_test`) |
@@ -714,9 +714,9 @@
 //// | a creature crashes as soon as it is told of a player | the same, once for each respawn time: no creature is started or told anything before the timer fires (`a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_under_a_new_unit_id_if_seen_test`, `a_creature_that_crashes_with_a_despawn_pending_is_gone_and_returns_new_test`) |
 //// | the respawn timer fires after the map ended | cannot happen: the timer lives in the process |
 //// | a joining character's class and faction have no Novice set | the join is answered `NotJoined`, with an error line, no unit id given and no player kept: the player's connection tells its client the server failed, and the map does not crash on one character's data (`a_character_whose_class_and_faction_have_no_novice_set_is_refused_and_takes_no_unit_id_test`) |
-//// | the map has given every unit id | cannot happen: the ids last a run about two years of a creature crashing in a loop at a 60 s respawn; the map would crash, which ends its run and its players' connections, and the next run starts from 1 |
+//// | the map has given every unit id | a join, a spawn's first creature or object, a summoned spawn and a crash replacement (after the kind's respawn time) each take one id, so a busy map can use all 2^20 of them; the map crashes, which ends its run and its players' connections, and the next run starts from 1 (`a_map_that_has_given_every_unit_id_crashes_naming_the_limit_test`) |
 //// | the map run ends | each creature's watch on the run ends and it stops; the players' connections end with the run (`a_creature_stops_when_its_run_ends_and_when_the_server_stops_test`, `a_map_run_that_ends_ends_its_creatures_test`, `the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_and_ends_the_connection_test`) |
-//// | the creature supervisor or the creature registry restarts | every creature and every map ends (genesis_prime/server) (`the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_two_subtrees_and_the_closer_last_in_that_order_each_with_its_settings_stated_test`, `a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_test`) |
+//// | the creature supervisor or the creature registry restarts | every creature and every map ends (genesis_prime/server) (`the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_two_subtrees_and_the_closer_last_in_that_order_each_with_its_settings_stated_test`, `a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_test`); the first shows the tree's shape and the second kills Maps: no test kills the creature supervisor or the registry |
 //// | the sweep timer fires after a restart of the map | cannot happen: the timer lives in the process, and a restarted map starts its own |
 //// | a `Moved` comes before the player's `Ready` | sight is decided; no ring is, and no creature is told (`no_approached_before_ready_and_at_ready_one_for_each_ring_the_player_stands_in_test`) |
 //// | a `Ready` comes twice in one stay | the second changes nothing (the connection sends one a stay) (`a_second_ready_in_one_stay_changes_nothing_test`) |
@@ -2196,11 +2196,11 @@ fn started(state: State) -> #(State, ServiceStep(Outgoing)) {
 
 /// The next unit id, and the map that has given it. Ids start at 1 and go up to
 /// `unit_id_limit` less one, about a million, one for each player that joins,
-/// each spawn that first has a creature and each creature that crashed and is
-/// replaced. A map that has given them all crashes, which ends its run and its
-/// players' connections; the next run starts from 1. A creature that crashes in
-/// a loop takes one id for each respawn time, so the ids last a run for about
-/// two years of them.
+/// each spawn that first has a creature or object, each summoned spawn and each
+/// creature that crashed and is replaced (after its kind's respawn time). A busy
+/// map can reach the limit: 1,000 joins an hour give all of them in about 44
+/// days. A map that has given them all crashes, which ends its run and its
+/// players' connections; the next run starts from 1.
 fn take_unit_id(state: State) -> #(State, Int) {
   let unit_id = state.next_unit_id
   case unit_id < unit_id_limit {
