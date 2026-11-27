@@ -223,6 +223,11 @@ pub fn samples() -> List(Sample) {
     Sample(spell_plan.NoRow("Spell4", 1), False, Structure),
     Sample(spell_plan.ModifierPropertyHasNoRow(1, 2, 3), False, Structure),
     Sample(
+      spell_plan.ModifierPropertyBeyondClientSlots(1, 2, 197),
+      False,
+      Structure,
+    ),
+    Sample(
       spell_plan.ModifierNumberNotFinite(1, 2, "dataBits02"),
       False,
       Structure,
