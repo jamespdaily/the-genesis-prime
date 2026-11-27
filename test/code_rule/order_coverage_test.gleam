@@ -256,7 +256,7 @@ fn real_sources() -> List(SourceFile) {
 }
 
 pub fn every_variant_of_the_told_kinds_has_exactly_one_valid_order_row_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
   assert order_coverage.breaches(
       rows: order_coverage_rows.rows(),
@@ -268,7 +268,7 @@ pub fn every_variant_of_the_told_kinds_has_exactly_one_valid_order_row_test() ->
 }
 
 pub fn each_input_family_of_the_relation_table_is_read_from_its_type_and_covered_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
   let sources = real_sources()
   let families = order_coverage_rows.families(sources:)
@@ -284,7 +284,7 @@ pub fn each_input_family_of_the_relation_table_is_read_from_its_type_and_covered
 }
 
 pub fn every_row_of_the_maps_failure_tables_names_a_test_or_why_it_cannot_happen_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
   let sources = real_sources()
   let assert Ok(map_file) =
@@ -306,7 +306,7 @@ pub fn every_row_of_the_maps_failure_tables_names_a_test_or_why_it_cannot_happen
 }
 
 pub fn every_type_name_in_a_failure_row_is_a_type_or_variant_in_src_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
   let sources = real_sources()
   let assert Ok(map_file) =
