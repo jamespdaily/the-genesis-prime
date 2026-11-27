@@ -129,6 +129,7 @@ import genesis_prime/game/item_expiry
 import genesis_prime/game/item_flags
 import genesis_prime/game/item_property
 import genesis_prime/game/player_life.{type Life}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/float32
 import genesis_prime/message/held_item
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
@@ -1191,9 +1192,11 @@ fn place_value(place: ItemPlace) -> Int {
 
 /// The 0x569 of an item moved to an empty place.
 fn frame_of_move(guid guid: Int, place place: ItemPlace) -> Frame {
-  let assert Ok(body) =
-    item_moved.encode(ItemMoved(item_guid: guid, place: place_value(place)))
-    as "a guid and a place of a held item fit 0x569"
+  let body =
+    bit_stream.must(
+      ItemMoved(item_guid: guid, place: place_value(place)),
+      item_moved.encode,
+    )
   Frame(message_id: item_moved.message_id, body:)
 }
 
@@ -1203,22 +1206,26 @@ fn frame_of_swap(
   first first: #(Int, ItemPlace),
   second second: #(Int, ItemPlace),
 ) -> Frame {
-  let assert Ok(body) =
-    items_swapped.encode(ItemsSwapped(
-      first_guid: first.0,
-      first_place: place_value(first.1),
-      second_guid: second.0,
-      second_place: place_value(second.1),
-    ))
-    as "two guids and places of held items fit 0x568"
+  let body =
+    bit_stream.must(
+      ItemsSwapped(
+        first_guid: first.0,
+        first_place: place_value(first.1),
+        second_guid: second.0,
+        second_place: place_value(second.1),
+      ),
+      items_swapped.encode,
+    )
   Frame(message_id: items_swapped.message_id, body:)
 }
 
 /// A 0x56A with the code.
 fn failed(guid guid: Int, code code: Int) -> Frame {
-  let assert Ok(body) =
-    item_action_failed.encode(ItemActionFailed(unread_1: guid, code:))
-    as "a guid and a code fit 0x56A"
+  let body =
+    bit_stream.must(
+      ItemActionFailed(unread_1: guid, code:),
+      item_action_failed.encode,
+    )
   Frame(message_id: item_action_failed.message_id, body:)
 }
 
@@ -1265,8 +1272,8 @@ pub fn item_added_frame(
   time_left_ms time_left_ms: Int,
   reason reason: Int,
 ) -> Frame {
-  let assert Ok(body) =
-    item_added.encode(
+  let body =
+    bit_stream.must(
       ItemAdded(held_item: held_item.HeldItem(
         item: SharedItem(
           item_guid:,
@@ -1298,8 +1305,8 @@ pub fn item_added_frame(
         ),
         reason:,
       )),
+      item_added.encode,
     )
-    as "an item of 18 bits, a location of 9 and a guid of 64 bits, a character number below 2^23, fit the message"
   Frame(message_id: item_added.message_id, body:)
 }
 
@@ -1480,9 +1487,11 @@ pub fn count_changed_frame(
   count count: Int,
   reason reason: Int,
 ) -> Frame {
-  let assert Ok(body) =
-    item_count_changed.encode(ItemCountChanged(item_guid: guid, count:, reason:))
-    as "a guid, a count and a reason of 6 bits fit 0x17F"
+  let body =
+    bit_stream.must(
+      ItemCountChanged(item_guid: guid, count:, reason:),
+      item_count_changed.encode,
+    )
   Frame(message_id: item_count_changed.message_id, body:)
 }
 
@@ -1492,26 +1501,29 @@ fn item_flags_changed_frame(
   guid guid: Int,
   item_flags item_flags: Int,
 ) -> Frame {
-  let assert Ok(body) =
-    item_flags_changed.encode(ItemFlagsChanged(item_guid: guid, item_flags:))
-    as "a guid of 64 bits and a flags byte of 8 bits fit 0x567"
+  let body =
+    bit_stream.must(
+      ItemFlagsChanged(item_guid: guid, item_flags:),
+      item_flags_changed.encode,
+    )
   Frame(message_id: item_flags_changed.message_id, body:)
 }
 
 /// The 0xCA that gives a held item's charges their new count (`opcode.0xca`); the client
 /// raises no event for it.
 pub fn charges_changed_frame(guid guid: Int, charges charges: Int) -> Frame {
-  let assert Ok(body) =
-    item_charges_changed.encode(ItemChargesChanged(item_guid: guid, charges:))
-    as "a guid of 64 bits and charges of 32 bits fit 0xCA"
+  let body =
+    bit_stream.must(
+      ItemChargesChanged(item_guid: guid, charges:),
+      item_charges_changed.encode,
+    )
   Frame(message_id: item_charges_changed.message_id, body:)
 }
 
 /// The 0x148 that takes a held item away.
 pub fn item_removed_frame(guid guid: Int, reason reason: Int) -> Frame {
-  let assert Ok(body) =
-    item_removed.encode(ItemRemoved(item_guid: guid, reason:))
-    as "a guid and a reason of 6 bits fit 0x148"
+  let body =
+    bit_stream.must(ItemRemoved(item_guid: guid, reason:), item_removed.encode)
   Frame(message_id: item_removed.message_id, body:)
 }
 

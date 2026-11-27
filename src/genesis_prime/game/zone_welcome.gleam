@@ -44,6 +44,7 @@
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowId}
 import genesis_prime/game/top_zone
+import genesis_prime/message/bit_stream
 import genesis_prime/message/server_tutorial.{ServerTutorial}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/tutorial
@@ -173,7 +174,7 @@ pub fn on_zone_changed(
 
 /// 0x179 with the Tutorial id the client queues to show (`opcode.0x179`).
 fn server_tutorial_frame(tutorial_id tutorial_id: Int) -> Frame {
-  let assert Ok(body) = server_tutorial.encode(ServerTutorial(tutorial_id:))
-    as "a Tutorial id of the table fits the message's 32 bits"
+  let body =
+    bit_stream.must(ServerTutorial(tutorial_id:), server_tutorial.encode)
   Frame(message_id: server_tutorial.message_id, body:)
 }

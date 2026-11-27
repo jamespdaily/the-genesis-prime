@@ -104,6 +104,7 @@ import genesis_prime/game/reward_property
 import genesis_prime/game/start_place
 import genesis_prime/game_settings
 import genesis_prime/message/account_entitlements.{AccountEntitlements}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/character_list.{CharacterList}
 import genesis_prime/message/character_list_entry.{
   type CharacterListEntry, CharacterListEntry,
@@ -332,11 +333,11 @@ pub fn play_refused(
   account_id account_id: AccountId,
   character_id character_id: Int,
 ) -> #(State, List(Effect)) {
-  let assert Ok(body) =
-    play_character_refused.encode(PlayCharacterRefused(
-      result: play_refusal.Failed,
-    ))
-    as "a refusal's value fits its field"
+  let body =
+    bit_stream.must(
+      PlayCharacterRefused(result: play_refusal.Failed),
+      play_character_refused.encode,
+    )
   #(Listing(selected: Some(CharacterId(character_id))), [
     Send(frame: Frame(message_id: play_character_refused.message_id, body:)),
     Ask(request: store.ListCharacters(account_id:)),
@@ -524,22 +525,22 @@ fn create_result(
   character_id character_id: Int,
   result result: CreateResult,
 ) -> Effect {
-  let assert Ok(body) =
-    create_character_result.encode(CreateCharacterResult(
-      character_id:,
-      unread_2: 0,
-      result:,
-    ))
-    as "an id of the table's 64 bits and a result of 6 bits fit their fields"
+  let body =
+    bit_stream.must(
+      CreateCharacterResult(character_id:, unread_2: 0, result:),
+      create_character_result.encode,
+    )
   Send(frame: Frame(message_id: create_character_result.message_id, body:))
 }
 
 /// 0x00E6 with the result and 0 in the value, which the client reads only for
 /// a guild leader's count (opcode.0xe6.value).
 fn delete_result(result result: DeleteResult) -> Effect {
-  let assert Ok(body) =
-    delete_character_result.encode(DeleteCharacterResult(result:, data: 0))
-    as "a result of 6 bits and a value of 32 bits fit their fields"
+  let body =
+    bit_stream.must(
+      DeleteCharacterResult(result:, data: 0),
+      delete_character_result.encode,
+    )
   Send(frame: Frame(message_id: delete_character_result.message_id, body:))
 }
 
@@ -549,13 +550,11 @@ fn rename_result(
   name name: String,
   result result: RenameResult,
 ) -> Effect {
-  let assert Ok(body) =
-    rename_character_result.encode(RenameCharacterResult(
-      result:,
-      character_id:,
-      name:,
-    ))
-    as "an id of 64 bits, a result of 6 bits and a name the client or the store gave fit their fields"
+  let body =
+    bit_stream.must(
+      RenameCharacterResult(result:, character_id:, name:),
+      rename_character_result.encode,
+    )
   Send(frame: Frame(message_id: rename_character_result.message_id, body:))
 }
 
@@ -566,19 +565,21 @@ fn rename_result(
 /// the client still holds from an earlier list is overwritten
 /// (SetAccountEntitlement 0x1400062c0).
 fn slot_effects(character_slots character_slots: Int) -> List(Effect) {
-  let assert Ok(tier) =
-    premium_tier.encode(PremiumTier(tier: reward_property.signature_tier))
-    as "a tier of 1 fits its 5 bits"
-  let assert Ok(entitlements) =
-    account_entitlements.encode(
+  let tier =
+    bit_stream.must(
+      PremiumTier(tier: reward_property.signature_tier),
+      premium_tier.encode,
+    )
+  let entitlements =
+    bit_stream.must(
       AccountEntitlements(entitlements: [
         HeldEntitlement(
           entitlement_id: base_character_slots_entitlement_id,
           count: character_slots - game_settings.client_base_character_slots,
         ),
       ]),
+      account_entitlements.encode,
     )
-    as "an entitlement id and a count of the settings' range fit their 32 bits"
   [
     Send(frame: Frame(message_id: premium_tier.message_id, body: tier)),
     Send(frame: Frame(
@@ -597,35 +598,37 @@ fn list_effects(
   max_characters max_characters: Int,
   tables tables: table_store.Tables,
 ) -> List(Effect) {
-  let assert Ok(level) =
-    max_character_level.encode(
+  let level =
+    bit_stream.must(
       MaxCharacterLevel(
         highest_level: list.fold(characters, 0, fn(highest, character) {
           int.max(highest, character.level)
         }),
       ),
+      max_character_level.encode,
     )
-    as "a level of the table's checks fits its 32 bits"
   let index = appearance.index(tables:)
-  let assert Ok(body) =
-    character_list.encode(CharacterList(
-      server_time: filetime,
-      characters: list.map(characters, fn(character) {
-        entry(character:, selected:, index:)
-      }),
-      enabled_creation_ids: [],
-      disabled_creation_ids: [],
-      realm_id:,
-      in_world_realm_id: 0,
-      in_world_character_id: 0,
-      in_world_logoff_ms: 0,
-      reservations: 0,
-      max_characters:,
-      unread_11: 0,
-      faction_restriction: 0,
-      free_level_50_available: 0,
-    ))
-    as "the list's values fit their fields: the table's checks hold each row's"
+  let body =
+    bit_stream.must(
+      CharacterList(
+        server_time: filetime,
+        characters: list.map(characters, fn(character) {
+          entry(character:, selected:, index:)
+        }),
+        enabled_creation_ids: [],
+        disabled_creation_ids: [],
+        realm_id:,
+        in_world_realm_id: 0,
+        in_world_character_id: 0,
+        in_world_logoff_ms: 0,
+        reservations: 0,
+        max_characters:,
+        unread_11: 0,
+        faction_restriction: 0,
+        free_level_50_available: 0,
+      ),
+      character_list.encode,
+    )
   [
     Send(frame: Frame(message_id: max_character_level.message_id, body: level)),
     Send(frame: Frame(message_id: character_list.message_id, body:)),

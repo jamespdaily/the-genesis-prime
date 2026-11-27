@@ -99,6 +99,7 @@ import genesis_prime/game/vendor_trade.{
 }
 import genesis_prime/game/world_entry.{type Buyback, Buyback}
 import genesis_prime/gap
+import genesis_prime/message/bit_stream
 import genesis_prime/message/buyback_removed
 import genesis_prime/message/vendor_buyback
 import genesis_prime/message/vendor_purchase as vendor_purchase_message
@@ -702,9 +703,11 @@ pub fn answered(
 
 /// The 0xBD that takes an entry off the client's Buyback list (`opcode.0xbd`).
 fn removed_frame(buyback_id buyback_id: Int) -> Frame {
-  let assert Ok(body) =
-    buyback_removed.encode(buyback_removed.BuybackRemoved(buyback_id:))
-    as "an id the list held, a 32-bit value, is written"
+  let body =
+    bit_stream.must(
+      buyback_removed.BuybackRemoved(buyback_id:),
+      buyback_removed.encode,
+    )
   frame.Frame(message_id: buyback_removed.message_id, body:)
 }
 

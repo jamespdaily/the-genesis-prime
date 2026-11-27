@@ -1093,12 +1093,17 @@ pub fn a_schema_message_with_gaps_generates_a_gaps_function_with_exactly_those_e
 
 /// The kind of one field of one message of the schema.
 fn field_kind(
-  schema: message_schema.Schema,
+  schema schema: message_schema.Schema,
   message message_name: String,
   field field_name: String,
 ) -> Result(message_schema.Kind, Nil) {
-  let _ = #(schema, message_name, field_name)
-  Error(Nil)
+  use message <- result.try(
+    list.find(schema.messages, fn(message) { message.name == message_name }),
+  )
+  use field <- result.map(
+    list.find(message.fields, fn(field) { field.name == field_name }),
+  )
+  field.kind
 }
 
 pub fn a_value_the_client_sends_and_the_server_writes_back_has_one_width_both_ways_test() -> Nil {
@@ -1117,9 +1122,11 @@ pub fn a_value_the_client_sends_and_the_server_writes_back_has_one_width_both_wa
   ]
   list.each(pairs, fn(pair) {
     let #(sent, sent_field, written, written_field) = pair
-    let assert Ok(sent_kind) = field_kind(schema, sent, sent_field)
+    let assert Ok(sent_kind) =
+      field_kind(schema:, message: sent, field: sent_field)
       as { sent <> "." <> sent_field <> " is a field of the schema" }
-    assert field_kind(schema, written, written_field) == Ok(sent_kind)
+    assert field_kind(schema:, message: written, field: written_field)
+      == Ok(sent_kind)
       as {
         written
         <> "."
