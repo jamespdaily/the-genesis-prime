@@ -1233,6 +1233,7 @@ fn visit(
   digests digests: Dict(String, Digest),
 ) -> Result(Selection, Refusal) {
   let assert Ok(digest) = dict.get(digests, table)
+    as "the walk queues only tables the digests hold"
   use <- bool.guard(
     when: !set.contains(digest.ids, id),
     return: Error(RootRowMissing(table:, id:)),
@@ -1266,7 +1267,9 @@ fn children_of(
   |> list.flat_map(fn(entry) {
     let #(index, key) = entry
     let assert Ok(rule) = list.drop(child_rules, index) |> list.first
+      as "the index was made from child_rules"
     let assert Ok(child) = dict.get(digests, rule.child)
+      as "each child rule names a table the server loads"
     dict.get(child.children, index)
     |> result.try(dict.get(_, key))
     |> result.unwrap([])
@@ -1431,6 +1434,7 @@ fn context() -> #(
 fn stale_of(digests: Dict(String, Digest), selected: Selection) -> List(Stale) {
   dict.fold(selected, [], fn(found, table, ids) {
     let assert Ok(digest) = dict.get(digests, table)
+      as "selected holds only tables of the digests"
     set.fold(ids, found, fn(found, id) {
       dict.get(digest.reaches, id)
       |> result.unwrap([])
@@ -1683,6 +1687,7 @@ fn write(fixture: Fixture, folder: String) -> Result(Nil, Refusal) {
     list.try_each(files(), fn(pair) {
       let #(table, file) = pair
       let assert Ok(text) = dict.get(fixture.tables, table)
+        as "fixture.tables holds a text for every file in files()"
       write_file(folder <> "/" <> file <> ".tsv", text)
     }),
   )
@@ -1714,6 +1719,7 @@ pub fn main() -> Nil {
     use _ <- result.map(write(fixture, fixture_folder))
     list.each(files(), fn(pair) {
       let assert Ok(text) = dict.get(fixture.tables, pair.0)
+        as "fixture.tables holds a text for every file in files()"
       io.println(
         pair.1
         <> ".tsv "

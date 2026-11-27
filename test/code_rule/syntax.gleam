@@ -611,8 +611,29 @@ pub type LetAssert {
 /// them: a function's own statements first, then those of each `Block` and
 /// `fn` body inside it. A `let assert` is a statement, so it is found in a
 /// statement list only.
-pub fn let_asserts(_module: glance.Module) -> List(LetAssert) {
-  []
+pub fn let_asserts(module: glance.Module) -> List(LetAssert) {
+  list.flat_map(module.functions, fn(definition) {
+    let body = definition.definition.body
+    let nested =
+      list.flat_map(from_statements(body), fn(expression) {
+        case expression {
+          glance.Block(statements:, ..) -> let_asserts_of(statements)
+          glance.Fn(body:, ..) -> let_asserts_of(body)
+          _ -> []
+        }
+      })
+    list.append(let_asserts_of(body), nested)
+  })
+}
+
+fn let_asserts_of(statements: List(Statement)) -> List(LetAssert) {
+  list.filter_map(statements, fn(statement) {
+    case statement {
+      glance.Assignment(kind: glance.LetAssert(message:), location:, ..) ->
+        Ok(LetAssert(start: location.start, message:))
+      _ -> Error(Nil)
+    }
+  })
 }
 
 /// Every expression in the module's functions, each followed by the
