@@ -1,6 +1,6 @@
 # Sourced by ./check and ./setup-check (POSIX sh), from the repository's folder. Load it in
 # any shell that runs the tests outside them (`gleam test`, dev/repeat_tests.py):
-# `. setup_check/environment.sh`.
+# `. setup_check/environment.sh`; a shell that cannot source it runs `dev/with_env <command>`.
 # Reads the machine's settings, $GENESIS_HOME/env.sh (GENESIS_HOME defaults to
 # ~/.genesis-prime) if it exists, then puts the patched OTP's bin
 # ($GENESIS_OTP_DIR, default $GENESIS_HOME/otp-<erlang version in
