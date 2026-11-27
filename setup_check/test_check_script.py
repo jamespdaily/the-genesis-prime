@@ -117,6 +117,17 @@ fi
 case "$1" in
   format)
     [ -n "$PLANT_FORMAT_SECONDS" ] && sleep "$PLANT_FORMAT_SECONDS"
+    # PLANT_FORMAT_BURN_SECONDS: uses a CPU for that many whole seconds (a fraction after them is
+    # ignored and only marks the run's process by its command line, as the sleeps' does).
+    [ -n "$PLANT_FORMAT_BURN_SECONDS" ] && bash -c 'n=${0##* }; end=$((SECONDS + ${n%%.*})); while [ $SECONDS -lt $end ]; do :; done' "sleep $PLANT_FORMAT_BURN_SECONDS"
+    # PLANT_FORMAT_TRICKLE_SECONDS: for that many whole seconds, uses 10 hundredths of a second
+    # of CPU in each second (it spins until its own CPU clock has moved by that much).
+    [ -n "$PLANT_FORMAT_TRICKLE_SECONDS" ] && "$PLANT_REAL_PYTHON" -c 'import sys, time
+for _ in range(int(sys.argv[1])):
+    start = time.process_time()
+    while time.process_time() - start < 0.1:
+        pass
+    time.sleep(0.9)' "$PLANT_FORMAT_TRICKLE_SECONDS"
     [ -n "$PLANT_FORMAT_KILLS_PARENT" ] && kill -9 "$PPID"
     if grep -rq PLANTED_FORMAT_ERROR src test dev 2>/dev/null; then
       echo "planted format error"
@@ -435,6 +446,9 @@ class PlantedCheckCase(unittest.TestCase):
             "PLANT_LOG": str(self.log),
             "PLANT_MARKER": str(self.marker),
             "PLANT_REAL_PYTHON": PYTHON,
+            # One second, so a planted sleep that hangs is stopped at three times the budget
+            # and not 120 s later; no test reads the default window.
+            "GENESIS_CHECK_IDLE_SECONDS": "1",
         }
         if not client:
             env["GENESIS_NO_CLIENT"] = "1"
@@ -694,12 +708,14 @@ class BudgetTest(unittest.TestCase):
 
 @unittest.skipUnless(RUNNABLE, "the check needs bash, python3.13 and ./check here")
 class HungPartTest(unittest.TestCase):
-    """A run still going at three times its budget is hung: a part that hangs, or a
-    setup check that does, is stopped then, with everything it started, and the
-    check fails naming it.
+    """A run past three times its budget is hung when its process tree has used no CPU
+    for the idle window, or when it reaches the wall cap whatever it does: a part that
+    hangs, or a setup check that does, is stopped then, with everything it started, and
+    the check fails naming it.
 
     A hang is a planted `sleep` of 600 seconds and a fraction unique to the run. The
-    budget is 2 seconds, so the hang is ended at 6."""
+    budget is 2 seconds and run_check's idle window is 1 second, so the hang is ended
+    at 6, three times the budget."""
 
     BUDGET = 2
 
@@ -744,6 +760,56 @@ class HungPartTest(unittest.TestCase):
         run = self.part_and_drop()
         self.assert_stopped_as_hung(run, "format")
         self.assertNotIn("WARNING", run.output, "a hung run is failed, not warned")
+
+    def test_a_part_that_keeps_using_cpu_past_three_times_its_budget_ends_and_passes(self):
+        # Budget 2, so a part with no CPU use would be stopped at 6 s; this one burns CPU for 9.
+        run = shared_run(
+            "burning-part", "fast", PLANT_FORMAT_BURN_SECONDS="9", timeout=40,
+            GENESIS_CHECK_FAST_BUDGET_SECONDS=str(self.BUDGET), GENESIS_CHECK_IDLE_SECONDS="3", GENESIS_CHECK_WALL_CAP_SECONDS="30",
+        )
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertRegex(run.output, r"(?m)^check passed")
+        self.assertRegex(run.output, r"check WARNING: over its budget, wall time \d+s, budget %ds" % self.BUDGET)
+        self.assertNotIn("hung", run.output)
+        self.assertNotIn("check FAILED", run.output)
+
+    def test_a_part_that_uses_no_cpu_for_the_idle_window_is_stopped_as_hung(self):
+        # Budget 1: three times it is 3 s, and the idle window is 6 s, so the stop is by the window.
+        run = shared_run(
+            "idle-part", "fast", hang=lambda seconds: dict(PLANT_FORMAT_SECONDS=seconds), timeout=40,
+            GENESIS_CHECK_FAST_BUDGET_SECONDS="1", GENESIS_CHECK_IDLE_SECONDS="6", GENESIS_CHECK_WALL_CAP_SECONDS="30",
+        )
+        self.assert_stopped_as_hung(run, "format", budget=1)
+        wall = int(re.search(r"wall time (\d+)s", run.output).group(1))
+        self.assertGreaterEqual(wall, 6, "the part was stopped before it had been idle for the window")
+
+    def test_a_part_using_a_little_cpu_each_second_is_busy_by_what_it_uses_over_the_window(self):
+        # 10 hundredths a second is under the noise of 30 in each sample, but 30 in three seconds,
+        # so the tree is not idle for the window of 5 s; it would be if each sample were compared
+        # with the one before. Budget 2, so a tree idle since the start is stopped at 6 s; the
+        # part runs 9.
+        run = shared_run(
+            "trickling-part", "fast", PLANT_FORMAT_TRICKLE_SECONDS="9", timeout=40,
+            GENESIS_CHECK_FAST_BUDGET_SECONDS=str(self.BUDGET), GENESIS_CHECK_IDLE_SECONDS="5",
+            GENESIS_CHECK_CPU_NOISE_HUNDREDTHS="30", GENESIS_CHECK_WALL_CAP_SECONDS="30",
+        )
+        self.assertEqual(run.done.returncode, 0, run.output)
+        self.assertNotIn("hung", run.output)
+
+    def test_a_part_still_running_at_the_wall_cap_is_stopped_as_hung(self):
+        # The part burns CPU until it is stopped; the cap is 8 s, 4 times the budget of 2.
+        run = shared_run(
+            "capped-part", "fast", hang=lambda seconds: dict(PLANT_FORMAT_BURN_SECONDS=seconds), timeout=40,
+            GENESIS_CHECK_FAST_BUDGET_SECONDS=str(self.BUDGET), GENESIS_CHECK_IDLE_SECONDS="3", GENESIS_CHECK_WALL_CAP_SECONDS="8",
+        )
+        output = run.output
+        self.assertNotEqual(run.done.returncode, 0, output)
+        line = failed_line(self, output)
+        self.assertRegex(line, r"^check FAILED: format hung, still running at the wall cap of 8s")
+        self.assertRegex(output, r"(?m)^  format +FAILED +hung")
+        wall = int(re.search(r"wall time (\d+)s", output).group(1))
+        self.assertGreaterEqual(wall, 8, "the part was stopped before the wall cap")
+        self.assertEqual(run.left_running, [], "the planted burn is still running")
 
     def test_the_parts_that_ended_are_not_named_hung(self):
         failed = failed_line(self, self.part_and_drop().output)
