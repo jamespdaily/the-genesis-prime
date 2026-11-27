@@ -239,3 +239,43 @@ pub fn a_call_names_a_variable_or_a_function_of_a_variable_or_another_expression
     },
   )
 }
+
+pub fn variants_of_reads_the_variants_of_the_named_types_in_declaration_order_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    planted.file("src/planted.gleam", [
+      "pub type First {",
+      "  Alpha(a: Int)",
+      "  Beta",
+      "}",
+      "",
+      "pub type Second {",
+      "  Gamma",
+      "}",
+      "",
+      "pub type Third {",
+      "  Delta",
+      "}",
+    ])
+  assert syntax.variants_of(file:, type_names: ["Second", "First"])
+    == ["Alpha", "Beta", "Gamma"]
+    as "the variants of the two types asked, in the order the file declares them, and none of the third"
+  assert syntax.variants_of(file:, type_names: ["Missing"]) == []
+    as "a name that is no type gives no variant"
+}
+
+pub fn table_rows_reads_the_first_backticked_cell_and_the_last_cell_of_each_doc_row_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tag("code_rule")
+  let file =
+    planted.file("src/planted.gleam", [
+      "//// | Name | Meaning |",
+      "//// |---|---|",
+      "//// | `Alpha` | first | one |",
+      "//// | not backticked | skipped |",
+      "//// | `Beta` | second |",
+    ])
+  assert syntax.table_rows(file:) == [#("Alpha", "one"), #("Beta", "second")]
+    as "a row gives its backticked name and its last cell; a header, a rule and a row with no backticked first cell give nothing"
+}

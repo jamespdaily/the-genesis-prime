@@ -48,6 +48,24 @@ pub fn module_name(path: String) -> String {
   |> string.remove_suffix(".erl")
 }
 
+/// The names of the variants of the custom types called `type_names`, in
+/// declaration order; a name that is no type of the file gives none.
+pub fn variants_of(
+  file file: SourceFile,
+  type_names type_names: List(String),
+) -> List(String) {
+  let _ = file
+  let _ = type_names
+  []
+}
+
+/// The rows of the module's `////` doc table whose first cell is backticked:
+/// that cell's text and the row's last cell.
+pub fn table_rows(file file: SourceFile) -> List(#(String, String)) {
+  let _ = file
+  []
+}
+
 /// The Erlang module and function each `@external(erlang, ...)` attribute
 /// names.
 pub fn erlang_externals(
