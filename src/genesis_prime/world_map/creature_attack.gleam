@@ -176,7 +176,7 @@ pub fn damage_effects(
 }
 
 /// The prerequisite type of a unit that is the target of a live cast
-/// (`game/prerequisite`, TargetOfLiveCast): the one cast prerequisite a creature's
+/// (`shared/prerequisite`, TargetOfLiveCast): the one cast prerequisite a creature's
 /// attack answers, since a charge is itself such a cast.
 const target_of_live_cast_type = 15
 

@@ -12,6 +12,7 @@
 ////   measures the path the server takes.
 
 import code_rule/planted
+import code_rule/repository
 import code_rule/source.{type SourceFile}
 import code_rule/syntax
 import gleam/int
@@ -21,6 +22,8 @@ import owned_test
 import unitest
 
 const game_directory = "src/genesis_prime/game"
+
+const shared_directory = "src/genesis_prime/shared"
 
 const registry_module = "genesis_prime/world_map/creature_registry"
 
@@ -123,11 +126,14 @@ pub fn a_connection_tells_a_creature_nothing_but_through_its_map_test() -> Nil {
     ])
   assert tells_a_creature(file: planted_file) == [10, 14, 18]
     as "a tell to a creature, qualified or not, and a creature request to an address held in a variable are found; a tell to a map or a connection, and a creature request to the map, are not"
-  assert list.flat_map(source.files(under: game_directory), fn(file) {
-      list.map(tells_a_creature(file:), fn(line) {
-        file.path <> ":" <> int.to_string(line)
-      })
-    })
+  assert list.flat_map(
+      repository.sources(under: [game_directory, shared_directory]),
+      fn(file) {
+        list.map(tells_a_creature(file:), fn(line) {
+          file.path <> ":" <> int.to_string(line)
+        })
+      },
+    )
     == []
     as "no connection rule tells a creature, but through its map"
 }

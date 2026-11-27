@@ -588,7 +588,7 @@ pub fn a_module_is_under_shared_exactly_when_its_row_says_shared_test() -> Nil {
       #(
         "genesis_prime/game/misplaced",
         Shared,
-        [1],
+        [#(level.list_path, 1)],
         "a shared row for a module outside shared/ fails at the row",
       ),
       #(
@@ -600,7 +600,7 @@ pub fn a_module_is_under_shared_exactly_when_its_row_says_shared_test() -> Nil {
       #(
         "genesis_prime/shared/other_level",
         Unit,
-        [1],
+        [#("src/genesis_prime/shared/other_level.gleam", 1)],
         "a module under shared/ with another level's row fails at its file",
       ),
       #(
@@ -612,10 +612,11 @@ pub fn a_module_is_under_shared_exactly_when_its_row_says_shared_test() -> Nil {
     ],
     fn(row) {
       let #(module, module_level, expected, reason) = row
-      assert planted.lines(level.shared_folder_breaches(
+      assert level.shared_folder_breaches(
           files: [module_file(module, [])],
           rows: rows([#(module, module_level)]),
-        ))
+        )
+        |> list.map(fn(breach) { #(breach.path, breach.line) })
         == expected
         as reason
     },

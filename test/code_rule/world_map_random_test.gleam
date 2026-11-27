@@ -111,4 +111,26 @@ pub fn nothing_in_the_world_map_draws_a_random_value_test() -> Nil {
     |> list.flat_map(fn(file) { draws(file:) })
     == []
     as "no file of the world map imports the random module or draws a value"
+  assert repository.sources(under: ["src/genesis_prime/shared"])
+    |> list.flat_map(fn(file) {
+      draws(file:)
+      |> list.filter(fn(draw) {
+        !string.ends_with(draw, "imports genesis_prime/random")
+      })
+      |> list.map(fn(draw) { file.path <> " " <> draw })
+    })
+    == []
+    as "no shared file draws a value of its own; it may import the random module to turn the bytes it is given into numbers (hit, forced_move, prerequisite), because the connection draws them"
+  let planted_shared =
+    planted.file(path: "src/genesis_prime/shared/planted.gleam", lines: [
+      "import gleam/int",
+      "import genesis_prime/random",
+      "",
+      "pub fn a_draw() {",
+      "  int.random(6)",
+      "}",
+    ])
+  assert draws(file: planted_shared)
+    == ["2: imports genesis_prime/random", "5: calls int.random"]
+    as "a shared file's own draw is found beside its import, which the shared scan then skips"
 }

@@ -16563,7 +16563,7 @@ grade = "fairly sure"
 gap = "Not run."
 
 ["opcode.0x247.falling_damage"]
-statement = "Combat log type 8 (CombatLogFallingDamage) of message 0x247. Body after the 6-bit type: unitCaster (32), nDamageAmount (32); no cast data. The client shows: CombatLog_FallingDamage ('$1n suffers $2n Falling Damage', text 452967). Server: LATER: falling damage is not handled (game/unit_properties.gleam)."
+statement = "Combat log type 8 (CombatLogFallingDamage) of message 0x247. Body after the 6-bit type: unitCaster (32), nDamageAmount (32); no cast data. The client shows: CombatLog_FallingDamage ('$1n suffers $2n Falling Damage', text 452967). Server: LATER: falling damage is not handled (shared/unit_properties.gleam)."
 proof = "Reader table 0x140c1e870 entry 8 = 0x14007a040 (saved C 8eb22adb6de47956). HandleCombatLog 0x1403c3190.c (df371531eea3daad) case 8: filter 0x1403c2ee0, then raiser 0x14060d630 ('CombatLogFallingDamage' with the named fields). Line keys from UI/CombatLog/CombatLog.lua's handler."
 grade = "fairly sure"
 gap = "Not run."
@@ -16605,7 +16605,7 @@ grade = "fairly sure"
 gap = "The 3-bit value and the four 32-bit amounts are named only by analogy with type 3; the entry names come from 0x14060e4e0's strings in order."
 
 ["opcode.0x247.vital_modifier"]
-statement = "Combat log type 16 (CombatLogVitalModifier) of message 0x247. Body after the 6-bit type: nAmount (a float), eVitalType (5), bShowCombatLog (1), then the cast data (caster unit id 32, target unit id 32, Spell4 id 18, combat result 4). The client shows: CombatLog_GainVital / CombatLog_LoseVital, only when bShowCombatLog is 1. Server: NEEDED-NOW (guess): spell resource gains (VitalModifier, game/spell_plan.gleam) are built and only this type logs them; whether retail set bShowCombatLog for them is not in the client."
+statement = "Combat log type 16 (CombatLogVitalModifier) of message 0x247. Body after the 6-bit type: nAmount (a float), eVitalType (5), bShowCombatLog (1), then the cast data (caster unit id 32, target unit id 32, Spell4 id 18, combat result 4). The client shows: CombatLog_GainVital / CombatLog_LoseVital, only when bShowCombatLog is 1. Server: NEEDED-NOW (guess): spell resource gains (VitalModifier, shared/spell_plan.gleam) are built and only this type logs them; whether retail set bShowCombatLog for them is not in the client."
 proof = "Reader table 0x140c1e870 entry 16 = 0x14009f820 (saved C 49fd5a78aaad3411). HandleCombatLog 0x1403c3190.c (df371531eea3daad) case 16: filter 0x1403c2ee0, then raiser 0x14060f170 ('CombatLogVitalModifier' with the named fields). Line keys from UI/CombatLog/CombatLog.lua's handler."
 grade = "fairly sure"
 gap = "Retail's use of bShowCombatLog: a recording of a resource gain would settle it."

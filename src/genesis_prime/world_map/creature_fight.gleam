@@ -2261,8 +2261,8 @@ fn due_in(
 
 /// A go of the open charge is due (`CastEnds` of the round's generation, C alive and Fighting).
 /// The go joins the round's entries in go order (`GoRound`). A go that strikes selects the
-/// fighters on the threat list inside the shapes of its own strike (`game/spell_area`,
-/// `game/area` select) and tells each to take the blows that name the go (`strikes_sent`); a go
+/// fighters on the threat list inside the shapes of its own strike (`shared/spell_area`,
+/// `shared/area` select) and tells each to take the blows that name the go (`strikes_sent`); a go
 /// with no strike, or whose strike finds no one inside, or no centre (`centre_of`: a row on a
 /// target that is no longer a viewer), is an empty entry, complete at once. The `CastEnds` of
 /// the next go is armed, of a new generation, for what is left of its due time; after the last

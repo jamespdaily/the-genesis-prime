@@ -12,6 +12,7 @@
 //// The rule is shown on planted files, then read over the real ones.
 
 import code_rule/planted
+import code_rule/repository
 import code_rule/source.{type SourceFile}
 import code_rule/syntax
 import glance
@@ -23,6 +24,8 @@ import owned_test
 import unitest
 
 const game_directory = "src/genesis_prime/game"
+
+const shared_directory = "src/genesis_prime/shared"
 
 const mover = "src/genesis_prime/game/connection/movement.gleam"
 
@@ -168,7 +171,7 @@ pub fn a_player_tells_another_player_only_through_its_map_test() -> Nil {
     as "a tell to a connection of news, a landing or a line is found, and a whisper's reply, a tell to the map and a move are not"
   assert moves(file: planted_file) == [25]
     as "a move told to a connection is found, and no other tell is"
-  let files = source.files(under: game_directory)
+  let files = repository.sources(under: [game_directory, shared_directory])
   assert list.flat_map(files, fn(file) {
       list.map(breaches(file:), fn(line) {
         file.path <> ":" <> int.to_string(line)
