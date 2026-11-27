@@ -31,6 +31,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/movement
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry.{type Entered, type Readiness}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/client_control_withdrawn
 import genesis_prime/message/relayed_movement.{
@@ -59,35 +60,39 @@ pub fn begin(
   echo_value echo_value: Int,
   now now: Now,
 ) -> #(Entered, List(Frame)) {
-  let assert Ok(unit_body) =
-    unit_movement.encode(UnitMovement(
-      unit_id: entered.unit_id,
-      server_time: map.server_time(
-        origin_ms: entered.clock_origin_ms,
-        monotonic_ms: now.monotonic_ms,
+  let unit_body =
+    bit_stream.must(
+      UnitMovement(
+        unit_id: entered.unit_id,
+        server_time: map.server_time(
+          origin_ms: entered.clock_origin_ms,
+          monotonic_ms: now.monotonic_ms,
+        ),
+        reset_movement: 1,
+        kept: 0,
+        commands: commands(place:),
       ),
-      reset_movement: 1,
-      kept: 0,
-      commands: commands(place:),
-    ))
-    as "a unit id and a time of 32 bits and two commands fit the message"
-  let assert Ok(granted_body) =
-    client_control_granted.encode(ClientControlGranted(
-      echo_value:,
-      reset_movement: 1,
-      unit_id: entered.unit_id,
-    ))
-    as "an echo and a unit id of 32 bits fit the message"
-  let assert Ok(shown_body) =
-    world_loading_screen_shown.encode(
+      unit_movement.encode,
+    )
+  let granted_body =
+    bit_stream.must(
+      ClientControlGranted(
+        echo_value:,
+        reset_movement: 1,
+        unit_id: entered.unit_id,
+      ),
+      client_control_granted.encode,
+    )
+  let shown_body =
+    bit_stream.must(
       world_loading_screen_shown.WorldLoadingScreenShown,
+      world_loading_screen_shown.encode,
     )
-    as "the body is empty"
-  let assert Ok(withdrawn_body) =
-    client_control_withdrawn.encode(
+  let withdrawn_body =
+    bit_stream.must(
       client_control_withdrawn.ClientControlWithdrawn,
+      client_control_withdrawn.encode,
     )
-    as "the body is empty"
   #(
     world_entry.Entered(
       ..entered,

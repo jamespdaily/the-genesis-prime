@@ -122,6 +122,7 @@ fn effect_row_of(error: PlanError) -> Refusal {
     | spell_plan.ControlAimNotRead(effect_id:, ..)
     | spell_plan.ControlPersistenceNotRead(effect_id:, ..)
     | spell_plan.ModifierPropertyHasNoRow(effect_id:, ..)
+    | spell_plan.ModifierPropertyBeyondClientSlots(effect_id:, ..)
     | spell_plan.ModifierNumberNotFinite(effect_id:, ..)
     | spell_plan.CooldownNumberNotFinite(effect_id:, ..)
     | spell_plan.StealthAimNotRead(effect_id:, ..)

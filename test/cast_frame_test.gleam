@@ -13,12 +13,20 @@
 
 import cast_support as support
 import client_tables
+import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/spell_plan
-import genesis_prime/message/spell_go
-import genesis_prime/message/spell_target_info.{type SpellTargetInfo}
+import genesis_prime/message/combat_result
+import genesis_prime/message/spell_go.{SpellGo}
+import genesis_prime/message/spell_position.{SpellPosition}
+import genesis_prime/message/spell_target_info.{
+  type SpellTargetInfo, SpellTargetInfo,
+}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
+import genesis_prime/table/spell4_aoe_target_constraints
 import genesis_prime/table/spell4_effects
+import genesis_prime/table/spell4_telegraph
+import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/result
@@ -209,4 +217,79 @@ fn smallest_delay_ms(node node: List(Told)) -> Int {
 
 fn holds_until_removed(node node: List(Told)) -> Bool {
   list.any(node, fn(told) { int.bitwise_and(told.row.flags, 2) != 0 })
+}
+
+/// The most units one go names: an area row's 200 (`no_area_row_selects_more_than_200_units_test`),
+/// the primary target the area did not select and the caster.
+const most_struck_units = 202
+
+pub fn a_go_of_202_struck_units_encodes_with_a_count_of_202_test() -> Nil {
+  use <- owned_test.run(5000)
+  let targets =
+    list.index_map(list.repeat(Nil, most_struck_units), fn(_, index) {
+      let unit_id = index + 1
+      SpellTargetInfo(
+        unit_id:,
+        index: 0,
+        flags: 0,
+        instance_count: 1,
+        combat_result: combat_result.Hit,
+        effects: [],
+      )
+    })
+  let frame =
+    cast_frame.went_frame(go: SpellGo(
+      cast_id: 9,
+      ignore_cooldown: 0,
+      destination: SpellPosition(x: 0, y: 0, z: 0),
+      targets:,
+      initial_positions: [],
+      telegraph_positions: [],
+      missiles: [],
+      phase: 0,
+    ))
+  let assert Ok(decoded) = spell_go.decode(frame.body)
+    as "the frame is a 0x7f4 the client's reader takes"
+  assert list.length(decoded.targets) == 202
+    as "schema spell_go.targets: an 8-bit count holds 202 units, 200 of the area, the primary target and the caster"
+}
+
+pub fn no_area_row_selects_more_than_200_units_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.guard(client_tables.present())
+  let rows = spell4_aoe_target_constraints.all(client_tables.shared())
+  assert rows != [] as "the client's table has rows"
+  let most =
+    list.fold(rows, 0, fn(most, row) { int.max(most, row.target_count) })
+  assert most <= 200
+    as "Spell4AoeTargetConstraints.targetCount: no row selects more than 200 units, which with the primary target and the caster is the 202 a go names"
+}
+
+pub fn no_spell_has_more_than_85_effect_rows_or_81_telegraph_rows_test() -> Nil {
+  use <- owned_test.run(10_000)
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let most_rows_of = fn(spell4_ids: List(Int)) {
+    list.group(spell4_ids, by: fn(spell4_id) { spell4_id })
+    |> dict.values
+    |> list.map(list.length)
+    |> list.fold(0, int.max)
+  }
+  let effects =
+    most_rows_of(list.map(spell4_effects.all(tables), fn(row) { row.spell_id }))
+  let telegraphs =
+    most_rows_of(
+      list.filter_map(spell4_telegraph.all(tables), fn(row) {
+        case row.spell4_id {
+          // Spell4 has no row 0, so no cast draws the rows with spell4Id 0.
+          0 -> Error(Nil)
+          spell4_id -> Ok(spell4_id)
+        }
+      }),
+    )
+  assert effects <= 85 as "Spell4Effects: no Spell4 has more than 85 rows"
+  assert telegraphs <= 81
+    as "Spell4Telegraph: no Spell4 has more than 81 rows, the rows of spell4Id 0 left out (Spell4 holds no row 0, so no cast draws them)"
+  assert 2 * telegraphs <= 255
+    as "the started frame's telegraph positions, one for each drawn row on the caster and one on the target (`telegraph_entries.opening_of`), stay within an 8-bit count"
 }

@@ -3,15 +3,19 @@
     dev/pr_wait.sh N          (runs this file)
 
 The checks are read every POLL_SECONDS with `gh pr checks N --json name,bucket` (never
-`--watch`, whose own loop has no deadline). `decide` turns one reading into a verdict, `wait`
-repeats it until the verdict ends the wait, and `ask_gh` is the only call to gh, cut at
-CALL_SECONDS.
+`--watch`, whose own loop has no deadline). While no check has appeared, the pull request's
+`mergeable` is read too, with `gh pr view N --json mergeable`: GitHub runs no check on a
+CONFLICTING pull request, so waiting for one is pointless. `decide` turns one reading (the
+rows and the mergeable value) into a verdict, `wait` repeats it until the verdict ends the
+wait, and `ask_gh` is the only call to gh, cut at CALL_SECONDS.
 
-    ask_gh -> parse_rows -> decide -> wait (sleep, deadline) -> exit status
+    ask_gh -> parse_rows (+ parse_mergeable when no row) -> decide -> wait (sleep, deadline)
+        -> exit status
 
 The checks have ended when every one passed and one is named `check`: CI's gate job, which
 branch protection requires, is made about a second after the last part job ends.
 
+A mergeable value of UNKNOWN or MERGEABLE changes nothing: the wait goes on as for no check.
 A call that fails, is cut at its limit or answers something other than a JSON list of
 checks is tried again after a poll; TRIES failed in a row end the wait with 3, so a passing
 blip does not. A failed or cancelled check ends the wait at once, while others still pend.
@@ -19,7 +23,8 @@ blip does not. A failed or cancelled check ends the wait at once, while others s
 Exit status:
   0  every check passed
   1  a check failed (the line `pr_wait: failing jobs: A, B` on stderr names them), or no
-     check appeared within NO_CHECK_SECONDS
+     check appeared within NO_CHECK_SECONDS, or no check has appeared and the pull request is
+     CONFLICTING (the line says it conflicts with its base and GitHub runs no check on it)
   2  usage
   3  a GitHub call failed on all its tries, or this script failed (its traceback is on
      stderr); nothing is known of the checks
@@ -52,6 +57,8 @@ CALL_SECONDS = 60
 # 5 min: the time the old wait gave a pull request to get its first check (20 polls of 15 s).
 NO_CHECK_SECONDS = 300
 TRIES = 3
+CONFLICTING = "CONFLICTING"
+UNKNOWN = "UNKNOWN"
 
 
 class CallFailed(Exception):
@@ -63,21 +70,24 @@ class Kind(enum.Enum):
     FAIL = "fail"
     WAIT = "wait"
     NONE = "none"
+    CONFLICT = "conflict"
 
 
 @dataclass(frozen=True)
 class Verdict:
     """PASS: every check passed. FAIL: names are the failed or cancelled checks. WAIT: names are
-    the pending checks (none when only the gate job is missing). NONE: no check yet."""
+    the pending checks (none when only the gate job is missing). NONE: no check yet. CONFLICT: no
+    check yet and the pull request conflicts with its base."""
 
     kind: Kind
     names: tuple[str, ...] = ()
 
 
-def decide(rows: list[tuple[str, str]]) -> Verdict:
-    """The verdict on one reading of the checks, as (bucket, name) rows in gh's order."""
+def decide(rows: list[tuple[str, str]], mergeable: str) -> Verdict:
+    """The verdict on one reading: the checks as (bucket, name) rows in gh's order, and the
+    pull request's `mergeable` (read only while there is no row; otherwise it is ignored)."""
     if not rows:
-        return Verdict(Kind.NONE)
+        return Verdict(Kind.CONFLICT if mergeable == CONFLICTING else Kind.NONE)
     failed = tuple(name for bucket, name in rows if bucket in ("fail", "cancel"))
     if failed:
         return Verdict(Kind.FAIL, failed)
@@ -103,25 +113,40 @@ def parse_rows(text: str) -> list[tuple[str, str]]:
     return rows
 
 
+def parse_mergeable(text: str) -> str:
+    """The `mergeable` value of gh's JSON for the pull request; anything else is a failed call."""
+    try:
+        read = json.loads(text)
+    except json.JSONDecodeError as error:
+        raise CallFailed(f"gh answered '{text.strip()[:80]}', not JSON ({error.msg})") from error
+    if not (isinstance(read, dict) and isinstance(read.get("mergeable"), str)):
+        raise CallFailed("gh answered JSON without a mergeable value")
+    return read["mergeable"]
+
+
 def wait(
     number: int,
     fetch: Callable[[], str],
     sleep: Callable[[float], None],
     clock: Callable[[], float],
+    fetch_mergeable: Callable[[], str],
     *,
     deadline_seconds: float = DEADLINE_SECONDS,
     poll_seconds: float = POLL_SECONDS,
     no_check_seconds: float = NO_CHECK_SECONDS,
 ) -> tuple[int, str]:
     """Polls until a verdict ends the wait; returns the exit status and the line for stderr
-    (empty on a pass). `fetch` returns gh's answer or raises CallFailed."""
+    (empty on a pass). `fetch` and `fetch_mergeable` return gh's answer or raise CallFailed;
+    the second is called only while no check has appeared."""
     start = clock()
     failed_in_a_row = 0
     seen_a_check = False
     last = None
     while True:
         try:
-            last = decide(parse_rows(fetch()))
+            rows = parse_rows(fetch())
+            mergeable = parse_mergeable(fetch_mergeable()) if not rows and not seen_a_check else UNKNOWN
+            last = decide(rows, mergeable)
             failed_in_a_row = 0
         except CallFailed as error:
             failed_in_a_row += 1
@@ -132,6 +157,8 @@ def wait(
                 return 0, ""
             if last.kind is Kind.FAIL:
                 return 1, f"pr_wait: failing jobs: {', '.join(last.names)}"
+            if last.kind is Kind.CONFLICT:
+                return 1, f"pr_wait: pull request {number} conflicts with its base and GitHub runs no check on it"
             if last.kind is Kind.NONE and not seen_a_check and clock() - start >= no_check_seconds:
                 return 1, f"pr_wait: no check on pull request {number} after {no_check_seconds:g} s"
             seen_a_check = seen_a_check or last.kind is not Kind.NONE
@@ -151,23 +178,28 @@ def unfinished(verdict: Verdict | None) -> str:
     return f"no check named {GATE_CHECK} appeared"
 
 
-def ask_gh(number: int, call_seconds: float) -> str:
-    """gh's JSON of the checks of pull request `number`; a call that fails or is cut at its
-    limit raises CallFailed. A pull request with no check yet is an empty list."""
+def ask_gh(number: int, call_seconds: float, field: str) -> str:
+    """gh's JSON of pull request `number`: its checks (`field` "checks"; a pull request with no
+    check yet is an empty list) or its mergeable value (`field` "mergeable"). A call that
+    fails or is cut at its limit raises CallFailed."""
+    if field == "checks":
+        command = ["gh", "pr", "checks", str(number), "--json", "name,bucket"]
+    else:
+        command = ["gh", "pr", "view", str(number), "--json", "mergeable"]
     try:
         done = subprocess.run(
-            ["gh", "pr", "checks", str(number), "--json", "name,bucket"],
+            command,
             capture_output=True, text=True, timeout=call_seconds, check=False,
         )
     except subprocess.TimeoutExpired as error:
-        raise CallFailed(f"gh pr checks did not answer within {call_seconds:g} s") from error
+        raise CallFailed(f"gh pr {command[2]} did not answer within {call_seconds:g} s") from error
     except OSError as error:
         raise CallFailed(f"gh could not run: {error}") from error
     if done.returncode != 0:
         # gh 2.105.0's text when the pull request has no check yet ("no checks reported on the '%s' branch").
-        if "no checks reported" in done.stderr:
+        if field == "checks" and "no checks reported" in done.stderr:
             return "[]"
-        raise CallFailed(f"gh pr checks ended with status {done.returncode}: {done.stderr.strip()[:80]}")
+        raise CallFailed(f"gh pr {command[2]} ended with status {done.returncode}: {done.stderr.strip()[:80]}")
     return done.stdout
 
 
@@ -183,9 +215,10 @@ def main() -> int:
     call_seconds = seconds_from("PR_WAIT_CALL_SECONDS", CALL_SECONDS)
     status, message = wait(
         number,
-        lambda: ask_gh(number, call_seconds),
+        lambda: ask_gh(number, call_seconds, "checks"),
         time.sleep,
         time.monotonic,
+        lambda: ask_gh(number, call_seconds, "mergeable"),
         deadline_seconds=seconds_from("PR_WAIT_DEADLINE_SECONDS", DEADLINE_SECONDS),
         poll_seconds=seconds_from("PR_WAIT_POLL_SECONDS", POLL_SECONDS),
         no_check_seconds=seconds_from("PR_WAIT_NO_CHECK_SECONDS", NO_CHECK_SECONDS),

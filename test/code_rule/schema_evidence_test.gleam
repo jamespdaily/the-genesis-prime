@@ -987,16 +987,8 @@ fn untraced_fields(
   owner owner: String,
   fact_keys fact_keys: List(String),
 ) -> List(String) {
-  let fields = case
-    list.find(schema.messages, fn(message) { message.name == owner })
-  {
-    Ok(message) -> message.fields
-    Error(Nil) ->
-      case list.find(schema.records, fn(record) { record.name == owner }) {
-        Ok(record) -> record.fields
-        Error(Nil) -> panic as { "no owner named " <> owner <> " in the schema" }
-      }
-  }
+  let assert Ok(fields) = message_schema.fields_of(schema:, owner:)
+    as { "no owner named " <> owner <> " in the schema" }
   list.filter_map(fields, fn(field) {
     let names_a_fact = case field.named_by {
       Some(key) -> list.contains(fact_keys, key)

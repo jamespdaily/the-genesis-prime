@@ -49,6 +49,7 @@
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/camp_countdown.{CampCountdown}
 import genesis_prime/message/camp_finished
 import genesis_prime/message/camp_request
@@ -174,8 +175,8 @@ pub fn take(
 /// currencies are the 120 and 152 bytes of 64-bit amounts the client reads
 /// (opcode.0x92).
 fn countdown_frame(countdown_ms: Int) -> Frame {
-  let assert Ok(body) =
-    camp_countdown.encode(
+  let body =
+    bit_stream.must(
       CampCountdown(
         countdown_ms:,
         cancel: 0,
@@ -184,8 +185,8 @@ fn countdown_frame(countdown_ms: Int) -> Frame {
         currencies: <<0:size(960)>>,
         account_currencies: <<0:size(1216)>>,
       ),
+      camp_countdown.encode,
     )
-    as "a countdown below 60 s fits the message's 32 bits"
   Frame(message_id: camp_countdown.message_id, body:)
 }
 

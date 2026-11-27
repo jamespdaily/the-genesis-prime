@@ -39,10 +39,21 @@
 # its own, GENESIS_CHECK_FAST_BUDGET_SECONDS). A run that ends over its budget passes
 # and prints a warning line with its wall time and its budget, because a loaded
 # machine (two agents testing at once, a cold build) turns correct code into a
-# slow run. Only a hung run fails: one still going at three times its budget has
-# everything the check started stopped, and each part that was running is
-# reported as hung. A part that ends without writing its status fails the check
-# by name.
+# slow run. Only a hung run fails: one past three times its budget whose parts and
+# their children (the process tree of the check) have used no CPU for the idle window,
+# 120 s (GENESIS_CHECK_IDLE_SECONDS), or one still going at the wall cap, 10 times its
+# budget (GENESIS_CHECK_WALL_CAP_SECONDS), has everything the check started stopped, and
+# each part that was running is reported as hung. A part that uses CPU runs on until the
+# cap. No CPU over the window means the tree used under 50 hundredths of a second
+# (GENESIS_CHECK_CPU_NOISE_HUNDREDTHS) in it, the same on macOS and Linux. The tree's CPU
+# time is sampled once a second, the tree as a whole and not each part: on Linux from
+# /proc, which counts children that have exited, on macOS from `ps -o time=`.
+# The window is measured: in one full ./check with Postgres on the development Mac (load
+# 3 to 39), sampled each second, the longest stretch with no CPU in the tree was 3 to 4 s,
+# and 11 s within one part's main VM; an idle VM uses about 4 hundredths in 120 s. The
+# cap is 10 times the budget, 1570 s for the full check and 350 s for ./check fast, the
+# last resort for a part that keeps using CPU; CI sets it below its job's timeout. A part
+# that ends without writing its status fails the check by name.
 #
 # The full check chooses its scope from the files the branch changes since its
 # merge base with origin/main (or main): uncommitted and untracked files count,
@@ -101,6 +112,15 @@
 #                  client-suite parts' tests are in files of their own. When a hang
 #                  stops the check, the summary names under each hung part the tests
 #                  that had started and not ended, with the seconds each had run.
+#                  A run whose VM dies by any signal (an abort of the VM, 6; a kill for
+#                  memory, 9) prints the signal and the same names in its log, and fails the part.
+#                  Every VM that runs this project's tests gets `+hmqd off_heap` from one
+#                  place, ERL_AFLAGS in setup_check/environment.sh, which this script
+#                  sources; the VMs the tests start inherit it. A launcher outside this
+#                  script (`gleam test`, dev/repeat_tests.py) runs after
+#                  `. setup_check/environment.sh`, as CI's repeat step does;
+#                  dev/repeat_tests.py refuses to start without the flag. The release
+#                  (release/vm.args) and the load runs' peer name `+hmqd off_heap` themselves.
 #                  No tag but serial, world_data, real_start, real_tables and client_rows is
 #                  skipped, so the first run also runs the tests tagged code_rule
 #                  (the tests of test/code_rule) and registry (each one comparing a
@@ -285,6 +305,16 @@ budget=${GENESIS_CHECK_BUDGET_SECONDS:-157}
 # development Mac, 2026-11-22, was 35 s (35, 35 and 35 s; glinter, 32 to 33 s, is
 # its longest part), rounded up to 5 s.
 fast_budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-35}
+
+# The idle window: the check, past three times its budget, is hung when the CPU time of
+# everything it started has not moved for this many seconds (GENESIS_CHECK_IDLE_SECONDS).
+# A part that waits on Postgres or a child VM's start uses no CPU of this tree for that
+# long. Idle means the tree used less than cpu_noise_hundredths of CPU over the window
+# (GENESIS_CHECK_CPU_NOISE_HUNDREDTHS), the same on both systems: an idle VM uses about 4
+# hundredths in 120 s, the check's own polling is less. The header says how the default
+# was chosen.
+default_idle_window=120
+cpu_noise_hundredths=${GENESIS_CHECK_CPU_NOISE_HUNDREDTHS:-50}
 if [ "$mode" = fast ]; then
   budget=$fast_budget
 fi
@@ -509,18 +539,52 @@ skip() {
   echo "$2" >"$work/$1.skipped"
 }
 
-# descendants_of PID: the process ids of everything PID started, children,
-# their children and so on, from one snapshot of the process table.
-descendants_of() {
-  ps -A -o pid= -o ppid= | awk -v root="$1" '
-    { parent[$1] = $2 }
+# process_table: one line per running process, "pid ppid cpu", the CPU time in hundredths
+# of a second. On Linux it is read from /proc (utime, stime and the time of the children
+# the process has waited for, so a child that has exited still counts); `ps -o time=` shows
+# only whole seconds of the living ones there and reads 0 for a loop of short children. On
+# macOS it is `ps -o time=`, [[dd-]hh:]mm:ss with hundredths.
+process_table() {
+  if [ -r /proc/self/stat ]; then
+    cat /proc/[0-9]*/stat 2>/dev/null | awk -v ticks="$(getconf CLK_TCK)" '
+      { open = match($0, /^.*\) /); split(substr($0, open + RLENGTH), f, " ")
+        print $1, f[2], int((f[12] + f[13] + f[14] + f[15]) * 100 / ticks) }'
+  else
+    ps -A -o pid= -o ppid= -o time= | awk '
+      { t = $3; days = 0
+        if (index(t, "-")) { split(t, d, "-"); days = d[1]; t = d[2] }
+        n = split(t, f, ":"); seconds = 0
+        for (i = 1; i <= n; i++) seconds = seconds * 60 + f[i]
+        print $1, $2, int((seconds + days * 86400) * 100 + 0.5) }'
+  fi
+}
+
+# tree_of ROOT [EXCLUDED]: "pid cpu" for everything ROOT started, children, their children
+# and so on, from one snapshot of the process table, except EXCLUDED and what it started.
+tree_of() {
+  process_table | awk -v root="$1" -v excluded="${2:-}" '
+    { parent[$1] = $2; cpu[$1] = $3 }
     END {
       for (p in parent) {
-        q = p
-        while ((q in parent) && q != root && q != 0 && q != 1) q = parent[q]
-        if (q == root && p != root) print p
+        q = p; skip = 0
+        while ((q in parent) && q != root && q != 0 && q != 1) {
+          if (q == excluded) skip = 1
+          q = parent[q]
+        }
+        if (q == root && p != root && !skip) print p, cpu[p]
       }
     }'
+}
+
+# descendants_of PID: the process ids of everything PID started.
+descendants_of() {
+  tree_of "$1" | awk '{ print $1 }'
+}
+
+# tree_cpu_hundredths ROOT EXCLUDED: the CPU time of tree_of ROOT EXCLUDED, summed (EXCLUDED
+# is the watchdog, whose own samples would count).
+tree_cpu_hundredths() {
+  tree_of "$1" "$2" | awk '{ total += $2 } END { printf "%d\n", total }'
 }
 
 # stop_everything PID: ends everything PID started: asks first, then kills what
@@ -537,10 +601,14 @@ stop_everything() {
   return 0
 }
 
-# The hang limit is three times the budget: a watchdog sends this shell USR1 when
-# it is reached, and the handler ends everything the check started, so a part or a
-# setup check that hangs cannot hold the check for ever.
+# A watchdog sends this shell USR1 when the check is hung (the header says when), and the
+# handler ends everything the check started, so a part or a setup check that hangs cannot
+# hold the check for ever.
 hung=no
+# hung_reason: the clause of the report that says why the check was stopped.
+hung_reason() {
+  cat "$work/hung.reason" 2>/dev/null || echo "still running at three times its budget of ${budget}s"
+}
 on_hung() {
   hung=yes
   stop_everything $$
@@ -580,7 +648,10 @@ cleanup() {
   if [ -f "$work/database_created" ]; then
     drop_database
   fi
-  [ -n "${watchdog:-}" ] && stop_everything_quickly "$watchdog"
+  if [ -n "${watchdog:-}" ]; then
+    stop_everything_quickly "$watchdog"
+    { wait "$watchdog"; } 2>/dev/null
+  fi
   rm -rf "$work"
 }
 trap cleanup EXIT
@@ -629,13 +700,37 @@ elif [ "$mode" = part ]; then
   echo "scope: part $part_name, so only it and the parts it needs run ($parts)"
 fi
 
-# The watchdog: USR1 to this shell when the hang limit is reached.
+# The watchdog: USR1 to this shell when the check is hung. It samples once a second the
+# CPU time of everything the check started (tree_cpu_hundredths), and the check is hung
+# when it is past the hang limit and that time has moved by less than cpu_noise_hundredths
+# since the last sample that moved it by that much, for the idle window, or when it reaches
+# the wall cap whatever it does. The reason is left in $work/hung.reason.
 hang_limit=$((3 * budget))
+idle_window=${GENESIS_CHECK_IDLE_SECONDS:-$default_idle_window}
+wall_cap=${GENESIS_CHECK_WALL_CAP_SECONDS:-$((10 * budget))}
 (
-  remaining=$((started + hang_limit - $(date +%s)))
-  [ "$remaining" -gt 0 ] || remaining=0
-  sleep "$remaining"
-  kill -USR1 $$ 2>/dev/null
+  # $BASHPID is empty in bash 3.2, so this subshell's pid is its shell's child's parent.
+  self=$(exec sh -c 'echo $PPID')
+  idle_since=$(date +%s)
+  anchor=""
+  while sleep 1; do
+    now=$(date +%s)
+    if [ "$now" -ge $((started + wall_cap)) ]; then
+      echo "still running at the wall cap of ${wall_cap}s" >"$work/hung.reason"
+      kill -USR1 $$ 2>/dev/null
+      exit 0
+    fi
+    cpu=$(tree_cpu_hundredths $$ "$self")
+    if [ -z "$anchor" ] || [ "$((cpu > anchor ? cpu - anchor : anchor - cpu))" -ge "$cpu_noise_hundredths" ]; then
+      idle_since=$now
+      anchor=$cpu
+    fi
+    if [ "$now" -ge $((started + hang_limit)) ] && [ "$((now - idle_since))" -ge "$idle_window" ]; then
+      echo "still running at three times its budget of ${budget}s" >"$work/hung.reason"
+      kill -USR1 $$ 2>/dev/null
+      exit 0
+    fi
+  done
 ) &
 watchdog=$!
 
@@ -646,7 +741,7 @@ wait $!
 setup_status=$?
 if [ "$hung" = yes ]; then
   echo
-  echo "check FAILED: the setup check hung, still running at three times its budget of ${budget}s"
+  echo "check FAILED: the setup check hung, $(hung_reason)"
   echo "wall time $(($(date +%s) - started))s, budget ${budget}s"
   exit 1
 fi
@@ -830,9 +925,12 @@ shard_directory() {
 
 # test_run NAME [VARIABLE=VALUE...] -- ARGUMENTS...: one run of the built tests, in a shell
 # of its own so its variables reach no other run: its tests are listed in $work/NAME.running
-# (GENESIS_TEST_PROGRESS_FILE) and each VARIABLE=VALUE is set for it.
+# (GENESIS_TEST_PROGRESS_FILE) and each VARIABLE=VALUE is set for it. A VM that dies by a
+# signal (an abort, or a kill for memory, 9) prints the signal and the tests that had
+# started and not ended (`still running:` lines, as the hang report has them), and the
+# run fails with the VM's status.
 test_run() {
-  local name=$1
+  local name=$1 status
   shift
   (
     export GENESIS_TEST_PROGRESS_FILE="$work/$name.running"
@@ -843,6 +941,12 @@ test_run() {
     shift
     run_built genesis_prime_test "$@"
   )
+  status=$?
+  if [ "$status" -gt 128 ]; then
+    echo "the test VM of $name died by signal $((status - 128)); the tests it had started and not ended:"
+    running_tests "$name" | sed 's/^/  still running: /'
+  fi
+  return $status
 }
 
 # ran_a_test LOG: succeeds when unitest's summary in LOG counts more than 0 passed tests.
@@ -1168,7 +1272,7 @@ for part in $parts; do
   elif [ ! -f "$work/$part.status" ]; then
     failed="$failed $part"
     if [ "$hung" = yes ] && [ -f "$work/$part.started" ]; then
-      printf '  %-18s FAILED  hung: still running at three times its budget\n' "$part"
+      printf '  %-18s FAILED  hung: %s\n' "$part" "$(hung_reason)"
       if [ "$part" = gleam-test ] || in_list "$part" "$fast_tag_parts" || [ "$part" = client-suite ] || in_list "$part" "$tagged_parts"; then
         running_tests "$part" | sed 's/^/                       still running: /'
       fi
@@ -1237,7 +1341,7 @@ fi
 if [ -n "$failed" ] || [ "$hung" = yes ]; then
   reasons=$failed_names
   if [ "$hung" = yes ]; then
-    reasons="${reasons:+$reasons; }${hung_names:-the check} hung, still running at three times its budget of ${budget}s"
+    reasons="${reasons:+$reasons; }${hung_names:-the check} hung, $(hung_reason)"
   fi
   echo "check FAILED: $reasons"
   echo "wall time ${elapsed}s, budget ${budget}s"

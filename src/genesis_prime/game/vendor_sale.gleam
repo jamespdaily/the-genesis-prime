@@ -99,6 +99,7 @@ import genesis_prime/game/world_entry.{
   type Buyback, type BuybackEntry, Buyback, BuybackEntry,
 }
 import genesis_prime/gap
+import genesis_prime/message/bit_stream
 import genesis_prime/message/buyback_added
 import genesis_prime/message/buyback_entry
 import genesis_prime/message/float32
@@ -792,11 +793,11 @@ fn stack_frame(stack stack: SoldItem) -> Frame {
 
 /// The 0xBA that adds the entry to the client's Buyback list (`opcode.0xba.price`).
 fn buyback_frame(entry entry: BuybackEntry) -> Frame {
-  let assert Ok(body) =
-    buyback_added.encode(
+  let body =
+    bit_stream.must(
       buyback_added.BuybackAdded(entry: buyback_entry_message(entry:)),
+      buyback_added.encode,
     )
-    as "an entry whose fields are held values of their widths is written"
   frame.Frame(message_id: buyback_added.message_id, body:)
 }
 

@@ -275,9 +275,7 @@ fn connected(
 /// The hello, bare (genesis_prime/connection/hello).
 fn bare_hello(realm: Realm) -> BitArray {
   let hello = hello.frame(realm_id: realm.id)
-  let assert Ok(bytes) = frame.encode(hello.message_id, hello.body)
-    as "the hello is far below the size limit"
-  bytes
+  frame.must_encode(message_id: hello.message_id, body: hello.body)
 }
 
 /// A frame in the auth wrapper, under the client's base key.
@@ -445,9 +443,11 @@ fn refuse(
   reason reason: Int,
   before before: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
-  let assert Ok(body) =
-    login_refused.encode(LoginRefused(reason:, value: 0, suspension_duration: 0))
-    as "a reason is within 32 bits"
+  let body =
+    bit_stream.must(
+      LoginRefused(reason:, value: 0, suspension_duration: 0),
+      login_refused.encode,
+    )
   Done(
     session,
     list.append(before, [
@@ -586,9 +586,11 @@ fn handed_off(
 ) -> client_connection.Handled(Session) {
   let realm = session.settings.realm
   let store.AccountId(account_id) = holder.account_id
-  let assert Ok(accepted) =
-    login_accepted.encode(LoginAccepted(disconnected_for_lag: 0))
-    as "a value of 0 fits 32 bits"
+  let accepted =
+    bit_stream.must(
+      LoginAccepted(disconnected_for_lag: 0),
+      login_accepted.encode,
+    )
   case
     game_server_handoff.encode(GameServerHandoff(
       game_server: realm.game_server,
