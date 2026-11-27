@@ -321,9 +321,6 @@ pub fn an_ally_start_is_taken_after_its_casters_start_at_every_viewer_in_every_l
   list.each(scenes, fn(done) {
     assert scene.cast_frames(scene: done, connection: 3) == armor_frames
       as "V is written the casts' starts and goes once, in every order: the caster's start is first and the ally's start is dropped"
-    assert count(ids: scene.cast_frames(scene: done, connection: 1), id: 0x07FF)
-      >= 1
-      as "C's frames are not lost to a borrow: its own start is written"
     assert scene.direct_news(scene: done, from: 1, to: 3) == []
       && scene.direct_news(scene: done, from: 2, to: 3) == []
       as "neither C nor T tells V anything itself: the cast news is the map's"
@@ -354,34 +351,44 @@ pub fn a_viewer_that_arrives_mid_cast_holds_the_live_casts_from_its_create_and_o
   use tables <- with_the_armor
   let #(world, bag_index) = armor_world(tables:)
   // Another viewer W (connection 4) comes into sight before the press, after the press and
-  // after the casts' nodes ended.
+  // after the casts' nodes ended. The entry mid-cast is walked in every order: W's join, the
+  // owners' snapshots and the map's relays reach W in each order the BEAM allows.
   let enters = fn(world: scene.Scene) {
-    scene.settle(scene: scene.enter(
+    scene.enter(
       scene: world,
       connection: 4,
       class_id: medic,
       level: 1,
       place: scene.at(x: 500.0),
-    ))
+    )
   }
-  let before = scene.settle(scene: pressed(world: enters(world), bag_index:))
+  let before =
+    scene.settle(scene: pressed(
+      world: scene.settle(scene: enters(world)),
+      bag_index:,
+    ))
   let held = scene.settle(scene: pressed(world:, bag_index:))
-  let mid_cast = enters(held)
+  let mid_cast = scene.orders(scene: enters(held))
   let ended =
-    enters(
-      scene.settle(scene: scene.fire_timers(scene: held, within_ms: 12_000)),
+    scene.settle(
+      scene: enters(
+        scene.settle(scene: scene.fire_timers(scene: held, within_ms: 12_000)),
+      ),
     )
   assert scene.cast_frames(scene: before, connection: 4) == armor_frames
     as "a viewer that was in sight before the press is written the casts' starts and goes"
-  assert listed_casts(
-      scene: mid_cast,
-      connection: 4,
-      unit_id: unit_of(connection: 2),
-    )
-    != []
-    as "a viewer that arrived while T holds the casts has them listed by T's create"
-  assert scene.cast_frames(scene: mid_cast, connection: 4) == []
-    as "and is written no start of them: it holds them from the create"
+  assert mid_cast != [] as "the entry has an order"
+  list.each(mid_cast, fn(done) {
+    assert listed_casts(
+        scene: done,
+        connection: 4,
+        unit_id: unit_of(connection: 2),
+      )
+      != []
+      as "a viewer that arrived while T holds the casts has them listed by T's create, in every order"
+    assert scene.cast_frames(scene: done, connection: 4) == []
+      as "and is written no start of them, in every order: it holds them from the create"
+  })
   assert listed_casts(
       scene: ended,
       connection: 4,
@@ -391,7 +398,7 @@ pub fn a_viewer_that_arrives_mid_cast_holds_the_live_casts_from_its_create_and_o
     as "a viewer that arrived after the casts ended is listed none"
   assert scene.cast_frames(scene: ended, connection: 4) == []
     as "and is written nothing of them"
-  list.each([before, mid_cast, ended], fn(done) {
+  list.each([before, ended, ..mid_cast], fn(done) {
     assert scene.direct_news(scene: done, from: 1, to: 4) == []
       && scene.direct_news(scene: done, from: 2, to: 4) == []
       as "neither C nor T told the viewer anything itself"
@@ -405,7 +412,9 @@ pub fn a_caster_that_dies_between_its_go_and_the_allys_start_writes_its_own_clie
   // C is struck dead by a creature as its go is taken: its own client is written no start
   // of the cast it already holds, whichever of its death and T's start it takes first.
   let gone = pressed(world:, bag_index:)
-  let own = scene.cast_frames(scene: gone, connection: 1)
+  let casts = scene.started_cast_ids(scene: gone, connection: 1)
+  assert casts != [] as "C's own go wrote the start of each of its casts"
+  let own = scene.cast_frames_of(scene: gone, connection: 1, cast_ids: casts)
   let dying =
     scene.connection_is_told(
       scene: gone,
@@ -431,30 +440,32 @@ pub fn a_caster_that_dies_between_its_go_and_the_allys_start_writes_its_own_clie
       ),
       name: "a killing strike on C",
     )
-  // The orders of a scene in which the players tell each other directly are too many to
-  // walk (more than 200,000 outcomes), so one order is read first for what no order may do.
-  let one_order = scene.settle(scene: dying)
-  assert scene.direct_news(scene: one_order, from: 2, to: 1) == []
-    as "T told C nothing itself"
-  list.each(scene.orders(scene: dying), fn(done) {
-    let frames = scene.cast_frames(scene: done, connection: 1)
-    assert count(ids: frames, id: 0x07FF) <= count(ids: own, id: 0x07FF) + 2
-      && count(ids: frames, id: 0x0811) == 0
-      as "C's own client is written no 0x7ff or 0x811 of its own cast that T's start would write"
+  let wrote_no_more_of_its_casts = fn(done: scene.Scene) {
+    let after_its_go =
+      list.drop(
+        scene.cast_frames_of(scene: done, connection: 1, cast_ids: casts),
+        list.length(own),
+      )
+    assert list.filter(after_its_go, fn(id) { id != 0x07FE }) == []
+      as "C's own client is written no 0x7ff, 0x7f4 or 0x811 of its own casts after its go: the finish is all T's start could not turn into a restart"
     assert count(ids: scene.cast_frames(scene: done, connection: 3), id: 0x07FF)
       >= 1
       as "another viewer is written the start (positive control)"
     assert scene.direct_news(scene: done, from: 2, to: 1) == []
       as "T told C nothing itself"
-  })
+  }
+  wrote_no_more_of_its_casts(scene.settle(scene: dying))
+  list.each(scene.orders(scene: dying), wrote_no_more_of_its_casts)
 }
 
 pub fn a_cast_finished_at_a_viewer_before_the_allys_start_through_the_maps_relays_is_written_the_finish_and_no_start_in_both_orders_test() -> Nil {
   use <- owned_test.run(10_000)
   use tables <- with_the_armor
   let #(world, bag_index) = armor_world(tables:)
-  // T leaves C's sight and V's as C's go is taken, which finishes C's casts on it: C's finish
-  // and T's start of the casts it held reach V through the map in any legal order.
+  // T moves to 1030, out of C's sight (1030 from it) and still in V's (30 from it), as C's go
+  // is taken, which finishes C's casts on it: C's finish and T's start of the casts it held
+  // both reach V through the map, in any legal order. (Out of V's sight too, T's start could
+  // never reach V and the order this test is about could not occur.)
   let leaving =
     scene.map_is_told(
       scene: pressed(world:, bag_index:),
@@ -462,29 +473,58 @@ pub fn a_cast_finished_at_a_viewer_before_the_allys_start_through_the_maps_relay
       event: step.OwnEvent(
         step.Told(message: map.Moved(
           connection: ConnectionId(2),
-          place: scene.at(x: 3000.0),
+          place: scene.at(x: 1030.0),
           seq: 1,
         )),
       ),
-      name: "T moves out of sight",
+      name: "T moves out of C's sight",
     )
-  // The orders of a scene in which the players tell each other directly are too many to
-  // walk (more than 200,000 outcomes), so one order is read first for what no order may do.
-  let one_order = scene.settle(scene: leaving)
-  assert scene.direct_news(scene: one_order, from: 1, to: 3) == []
-    && scene.direct_news(scene: one_order, from: 2, to: 3) == []
-    as "neither C nor T told V anything itself"
-  list.each(scene.orders(scene: leaving), fn(done) {
-    assert !starts_after_a_finish(ids: scene.cast_frames(
-      scene: done,
-      connection: 3,
-    ))
+  let judged = fn(done: scene.Scene) {
+    let frames = scene.cast_frames(scene: done, connection: 3)
+    assert list.contains(frames, 0x07FE) || list.contains(frames, 0x0811)
+      as "V is written the end of the cast, whichever of C's finish and T's start it took first: C's 0x7fe, or T's 0x811 when V holds the cast from T's start"
+    assert !starts_after_a_finish(ids: frames)
       as "a start after a finish is dropped: V is written no start of a cast it was written the finish of"
     assert scene.check(scene: done, connection: 3) == Ok(Nil)
       as "no frame of T after its 0x355"
     assert scene.direct_news(scene: done, from: 1, to: 3) == []
       && scene.direct_news(scene: done, from: 2, to: 3) == []
       as "neither C nor T told V anything itself"
+  }
+  judged(scene.settle(scene: leaving))
+  let scenes = scene.orders(scene: leaving)
+  list.each(scenes, judged)
+  let both_taken =
+    list.filter_map(scenes, fn(done) {
+      case
+        took(scene: done, connection: 3, part: "0x7fe of 1"),
+        took(scene: done, connection: 3, part: "held start")
+      {
+        [finish, ..], [start, ..] -> Ok(finish < start)
+        _, _ -> Error(Nil)
+      }
+    })
+  assert list.contains(both_taken, True) && list.contains(both_taken, False)
+    as "both orders occur: V takes C's finish before T's start in some orders and after it in others"
+}
+
+/// The places, in the order the connection took its messages, of the messages whose name
+/// holds `part`.
+fn took(
+  scene scene: scene.Scene,
+  connection connection: Int,
+  part part: String,
+) -> List(Int) {
+  order_explorer.order_at(
+    taken: scene.taken,
+    receiver: scene.ConnectionProcess(connection),
+  )
+  |> list.index_map(fn(name, index) { #(name, index) })
+  |> list.filter_map(fn(named) {
+    case string.contains(named.0, part) {
+      True -> Ok(named.1)
+      False -> Error(Nil)
+    }
   })
 }
 
@@ -493,8 +533,8 @@ pub fn a_viewer_that_leaves_the_casters_sight_between_its_go_and_the_allys_start
   use tables <- with_the_armor
   let #(world, bag_index) = armor_world(tables:)
   // V moves to 1030, out of C's sight (1030 from it) and still in T's (1010 from it), as C's
-  // go is taken: the map's unseen of C at V and T's start of the cast reach V in either
-  // order, and then the casts' nodes end on T.
+  // go is taken: the map's unseen of C at V and T's start of each of the two casts reach V
+  // in either order, and then the casts' nodes end on T.
   let leaving =
     scene.map_is_told(
       scene: pressed(world:, bag_index:),
@@ -508,23 +548,64 @@ pub fn a_viewer_that_leaves_the_casters_sight_between_its_go_and_the_allys_start
       ),
       name: "V moves out of C's sight",
     )
-  let results =
+  let ended_of = fn(done) {
+    scene.settle(scene: scene.fire_timers(scene: done, within_ms: 12_000))
+  }
+  let judged =
     list.map(scene.orders(scene: leaving), fn(done) {
-      let ended =
-        scene.settle(scene: scene.fire_timers(scene: done, within_ms: 12_000))
+      let ended = ended_of(done)
       assert scene.check(scene: ended, connection: 3) == Ok(Nil)
         as "no frame of C after its 0x355"
       assert scene.direct_news(scene: ended, from: 1, to: 3) == []
         && scene.direct_news(scene: ended, from: 2, to: 3) == []
         as "neither C nor T told V anything itself"
-      scene.cast_frames(scene: ended, connection: 3)
+      let unseen = took(scene: done, connection: 3, part: "PlayerUnseen")
+      let held_starts = took(scene: done, connection: 3, part: "held start")
+      let casters_starts = took(scene: done, connection: 3, part: "0x7ff of 1")
+      #(
+        scene.cast_frames(scene: ended, connection: 3),
+        unseen,
+        held_starts,
+        casters_starts,
+      )
     })
-  assert list.all(results, fn(frames) {
-    count(ids: frames, id: 0x07FF) == count(ids: frames, id: 0x07F4)
-    && count(ids: frames, id: 0x07FF) >= 1
+  // (a) The unseen of C comes before C's start and before T's starts: V holds no cast of C,
+  // so each of T's starts borrows the cast on T (`cast.unknown_caster`), and T's end of each
+  // writes 0x811 naming T: the frames a viewer that comes into sight after the go is written.
+  let unseen_first =
+    list.filter(judged, fn(one) {
+      let #(_, unseen, held_starts, casters_starts) = one
+      let assert [unseen_at] = unseen
+      list.all(list.append(held_starts, casters_starts), fn(at) {
+        at > unseen_at
+      })
+    })
+  assert unseen_first != [] as "the unseen comes first in some orders"
+  assert list.all(unseen_first, fn(one) {
+    one.0 == [0x07FF, 0x07F4, 0x07FF, 0x07F4, 0x0811, 0x0811]
   })
-    as "V is written each start with its go, whichever of C and T it came from"
-  assert list.unique(results) |> list.length >= 1 as "every order has a result"
+    as "V is written each cast's 0x7ff and 0x7f4 on T, and T's 0x811 {X, [T]} for each when its node ends"
+  // (b) C's start and T's start of each cast come, in that order, before the unseen: V holds
+  // both casts as written by C when T's starts arrive, so they are dropped, and the unseen
+  // finishes them.
+  let starts_first =
+    list.filter(judged, fn(one) {
+      let #(_, unseen, held_starts, casters_starts) = one
+      let assert [unseen_at] = unseen
+      list.all(list.append(held_starts, casters_starts), fn(at) {
+        at < unseen_at
+      })
+      && list.length(casters_starts) == 2
+      && list.length(held_starts) == 2
+      && list.all(list.zip(casters_starts, held_starts), fn(pair) {
+        pair.0 < pair.1
+      })
+    })
+  assert starts_first != [] as "the starts come first in some orders"
+  assert list.all(starts_first, fn(one) {
+    count(ids: one.0, id: 0x07FF) == 2 && count(ids: one.0, id: 0x0811) == 0
+  })
+    as "T's starts are dropped as V holds the casts from C, and nothing of them follows the unseen"
 }
 
 pub fn a_snapshot_built_before_a_casters_disappearance_lists_its_held_cast_and_one_built_after_does_not_test() -> Nil {
@@ -540,13 +621,15 @@ pub fn a_snapshot_built_before_a_casters_disappearance_lists_its_held_cast_and_o
       name: "C's connection ends",
     )
   }
+  // W stands 1040 from C (out of its sight, which is 1024) and 1020 from T (in T's): W takes
+  // one snapshot that lists the cast, T's, so the cast can only be borrowed.
   let enters = fn(world: scene.Scene) {
     scene.enter(
       scene: world,
       connection: 4,
       class_id: medic,
       level: 1,
-      place: scene.at(x: 500.0),
+      place: scene.at(x: 1040.0),
     )
   }
   // The map takes C's end first: the viewer's snapshot of T is built after it.

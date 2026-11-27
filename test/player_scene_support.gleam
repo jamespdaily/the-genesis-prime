@@ -23,6 +23,7 @@
 
 import cast_support
 import connection_rule_support as support
+import creature_news_support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Answer, type Message}
 import genesis_prime/connection/frame.{type Frame}
@@ -31,6 +32,10 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/unit_news
+import genesis_prime/message/spell_finished
+import genesis_prime/message/spell_go
+import genesis_prime/message/spell_started
+import genesis_prime/message/spell_targets_removed
 import genesis_prime/server
 import genesis_prime/step.{
   type ConnectionEvent, type Event, type ServiceEvent, type TimerId, CallerId,
@@ -40,6 +45,7 @@ import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict.{type Dict}
 import gleam/int
@@ -510,6 +516,19 @@ fn outgoing_name(message message: map.Outgoing) -> String {
     map.Noticed(notice: map.PlayerUnseen(..), ..) -> "PlayerUnseen"
     map.Noticed(notice: map.Gone(..), ..) -> "Gone"
     map.Noticed(..) -> "a notice"
+    map.Relayed(
+      delivered: relay.News(news: unit_news.PeerNews(unit_id:, news:)),
+      ..,
+    ) ->
+      "Relayed "
+      <> case news {
+        unit_news.Appeared(..) -> "0x262"
+        unit_news.HeldCastStarted(..) -> "held start"
+        unit_news.HeldCastEnded(..) -> "held end"
+        _ -> creature_news_support.name_of(news)
+      }
+      <> " of "
+      <> int.to_string(unit_id)
     map.Relayed(..) -> "Relayed"
     _ -> "another send"
   }
@@ -740,6 +759,61 @@ pub fn cast_frames(
     case frame.message_id {
       0x07FF | 0x07F4 | 0x07FE | 0x0811 -> Ok(frame.message_id)
       _ -> Error(Nil)
+    }
+  })
+}
+
+/// The cast a cast frame (0x7ff, 0x7f4, 0x7fe, 0x811) names; any other frame names none.
+fn cast_of(frame frame: Frame) -> Result(Int, Nil) {
+  case frame.message_id {
+    0x07FF ->
+      spell_started.decode(frame.body)
+      |> result.map(fn(started) { started.cast_id })
+      |> result.replace_error(Nil)
+    0x07F4 ->
+      spell_go.decode(frame.body)
+      |> result.map(fn(go) { go.cast_id })
+      |> result.replace_error(Nil)
+    0x07FE ->
+      spell_finished.decode(frame.body)
+      |> result.map(fn(finished) { finished.cast_id })
+      |> result.replace_error(Nil)
+    0x0811 ->
+      spell_targets_removed.decode(frame.body)
+      |> result.map(fn(removed) { removed.cast_id })
+      |> result.replace_error(Nil)
+    _ -> Error(Nil)
+  }
+}
+
+/// The cast ids of the 0x7ff frames the connection wrote, in order.
+pub fn started_cast_ids(
+  scene scene: Scene,
+  connection connection: Int,
+) -> List(Int) {
+  list.filter_map(frames_of(scene:, connection:), fn(frame) {
+    case frame.message_id {
+      0x07FF -> cast_of(frame:)
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The ids of the cast frames (0x7ff, 0x7f4, 0x7fe, 0x811) the connection wrote that name
+/// one of the casts `cast_ids`, in order.
+pub fn cast_frames_of(
+  scene scene: Scene,
+  connection connection: Int,
+  cast_ids cast_ids: List(Int),
+) -> List(Int) {
+  list.filter_map(frames_of(scene:, connection:), fn(frame) {
+    case cast_of(frame:) {
+      Ok(cast_id) ->
+        case list.contains(cast_ids, cast_id) {
+          True -> Ok(frame.message_id)
+          False -> Error(Nil)
+        }
+      Error(Nil) -> Error(Nil)
     }
   })
 }
