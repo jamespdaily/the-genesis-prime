@@ -1109,19 +1109,31 @@ fn focus_changed_to(
 /// maximum: started when it should run and does not, cancelled when it runs and should not.
 fn focus_refills(resources resources: Resources) -> #(Resources, List(Effect)) {
   case resources.focus {
-    Some(Pool(formulas:, ..) as pool) -> {
-      let wanted = resources.alive && pool.value <. pool.numbers.maximum
-      case wanted, is_running(resources:, timer: focus_timer) {
-        True, False -> #(running_with(resources:, timer: focus_timer), [
-          StartTimer(timer: focus_timer, after_ms: formulas.tick_ms),
-        ])
-        False, True -> #(running_without(resources:, timer: focus_timer), [
-          CancelTimer(timer: focus_timer),
-        ])
-        True, True | False, False -> #(resources, [])
-      }
-    }
+    Some(Pool(formulas:, ..) as pool) ->
+      timer_kept(
+        resources:,
+        timer: focus_timer,
+        wanted: resources.alive && pool.value <. pool.numbers.maximum,
+        after_ms: formulas.tick_ms,
+      )
     None -> #(resources, [])
+  }
+}
+
+/// A timer made to run exactly when it is `wanted`: started after `after_ms` when it should
+/// run and does not, cancelled when it runs and should not.
+fn timer_kept(
+  resources resources: Resources,
+  timer timer: TimerId,
+  wanted wanted: Bool,
+  after_ms after_ms: Int,
+) -> #(Resources, List(Effect)) {
+  case wanted, is_running(resources:, timer:) {
+    True, False -> #(running_with(resources:, timer:), [
+      StartTimer(timer:, after_ms:),
+    ])
+    False, True -> #(running_without(resources:, timer:), [CancelTimer(timer:)])
+    True, True | False, False -> #(resources, [])
   }
 }
 
@@ -1172,21 +1184,17 @@ fn dash_changed_to(
 }
 
 /// The dash timer, which runs exactly while the player lives, the energy is below its
-/// maximum and the refill factor is above 0: started when it should run and does not,
-/// cancelled when it runs and should not.
+/// maximum and the refill factor is above 0 (`timer_kept`).
 fn dash_refills(resources resources: Resources) -> #(Resources, List(Effect)) {
   let dash = resources.dash
-  let wanted =
-    resources.alive && dash.value <. dash.maximum && dash.refill_factor >. 0.0
-  case wanted, is_running(resources:, timer: dash_timer) {
-    True, False -> #(running_with(resources:, timer: dash_timer), [
-      StartTimer(timer: dash_timer, after_ms: dash_tick_ms),
-    ])
-    False, True -> #(running_without(resources:, timer: dash_timer), [
-      CancelTimer(timer: dash_timer),
-    ])
-    True, True | False, False -> #(resources, [])
-  }
+  timer_kept(
+    resources:,
+    timer: dash_timer,
+    wanted: resources.alive
+      && dash.value <. dash.maximum
+      && dash.refill_factor >. 0.0,
+    after_ms: dash_tick_ms,
+  )
 }
 
 /// A tick of the dash energy's refill: the rate a second over the tick, times the factor.
