@@ -1,5 +1,5 @@
 //// What a player's life decided, as the connection's effects: the messages to the
-//// player's own client, the news to its viewers, the answer told to the creature that
+//// player's own client, the news to the map, the answer told to the creature that
 //// struck it and the start of a fighter's stream (genesis_prime/game/player_life).
 //// The life's fights and its death are carried out by genesis_prime/game/connection/life,
 //// a change of the player's properties by genesis_prime/game/connection/properties;
@@ -22,7 +22,7 @@ import gleam/list
 import gleam/option.{None, Some}
 
 /// What player_life decided, as the connection's effects: its own unit's messages
-/// to its client, its news to its viewers, the answer told to the creature, and the
+/// to its client, its news to the map, the answer told to the creature, and the
 /// start of a fighter's stream at the player's place now. The casts' end and the
 /// Holocrypt are `life_carried`'s.
 pub fn life_effects(
@@ -39,8 +39,9 @@ pub fn life_effects(
           connection_frames.own_unit_frame(entered:, now:, written:),
         ),
       ]
-      player_life.ToViewers(news:) ->
-        connection_state.news_to_viewers(entered:, news:)
+      player_life.ToViewers(news:) -> [
+        connection_state.broadcast(session:, entered:, news:),
+      ]
       player_life.Answer(unit_id:, life:, answered:) -> [
         connection_state.tells_the_creature(
           entered:,

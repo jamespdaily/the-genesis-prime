@@ -89,7 +89,7 @@ fn armor_of(change change: unit_stat_change.UnitStatChange) -> List(Written) {
 
 /// The armor news among what a viewer is told: the maximum's entry and the armor.
 fn armor_news(steps steps: List(ConnectionStep(Request))) -> List(News) {
-  list.flat_map(steps, fn(taken) { support.news_told_to_viewer_2(taken:) })
+  list.flat_map(steps, fn(taken) { support.news_told(taken:, viewer: 2) })
   |> list.filter(fn(news) {
     list.contains(
       [

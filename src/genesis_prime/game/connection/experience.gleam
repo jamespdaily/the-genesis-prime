@@ -192,10 +192,13 @@ fn carried_out(
           ),
           connection_state.to_client(session, _),
         ),
-        connection_state.news_to_viewers(
-          entered:,
-          news: unit_news.Level(level:),
-        ),
+        [
+          connection_state.broadcast(
+            session:,
+            entered:,
+            news: unit_news.Level(level:),
+          ),
+        ],
       ])
     }
   }

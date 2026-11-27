@@ -107,11 +107,10 @@ fn told(
   viewer viewer: Int,
 ) -> List(Int) {
   list.flat_map(steps, fn(taken) {
-    list.filter_map(support.peer_tells(taken), fn(tell) {
-      case tell.0 == viewer, { tell.1 }.news {
-        True, Absorption(absorption:) -> Ok(absorption)
-        True, _ -> Error(Nil)
-        False, _ -> Error(Nil)
+    list.filter_map(support.news_told(taken:, viewer:), fn(news) {
+      case news {
+        Absorption(absorption:) -> Ok(absorption)
+        _ -> Error(Nil)
       }
     })
   })

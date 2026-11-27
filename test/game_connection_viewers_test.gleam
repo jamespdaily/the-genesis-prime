@@ -3706,7 +3706,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
           <> ": the unit's 0x355, then the 0x7fe of the lingering cast its nodes left"
         }
       assert list.contains(
-        game_connection_support.news_told_to_viewer_2(taken: removed),
+        game_connection_support.news_told(taken: removed, viewer: 2),
         CastFinished(cast_id:),
       )
         as { reason <> ": the viewer told the cast's start is told its finish" }

@@ -194,7 +194,7 @@ pub fn a_struck_medic_pressing_energize_sees_the_heal_and_its_shield_rise_and_so
     as "the shield rises by the amount, capped at 450: one 0x938 to the Medic"
   let told =
     list.flat_map(landed, fn(taken) {
-      connection_support.news_told_to_viewer_2(taken:)
+      connection_support.news_told(taken:, viewer: 2)
     })
   assert list.count(told, fn(news) {
       news == unit_news.Shield(shield: expected)
@@ -337,7 +337,7 @@ pub fn pressing_a_heal_sends_the_go_then_the_new_health_test() -> Nil {
     as "the health rises by 40: one 0x92f to the Medic"
   let told =
     list.flat_map(landed, fn(taken) {
-      connection_support.news_told_to_viewer_2(taken:)
+      connection_support.news_told(taken:, viewer: 2)
     })
   assert list.count(told, fn(news) {
       news == unit_news.Health(health: before + 40, dead: False)

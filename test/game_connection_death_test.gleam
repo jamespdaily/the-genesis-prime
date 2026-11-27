@@ -86,12 +86,7 @@ const ghost_unit_id = 1_048_581
 
 /// The news a step tells viewer `viewer`, in order.
 fn news_told(taken: ConnectionStep(Request), viewer: Int) -> List(News) {
-  list.filter_map(game_connection_support.peer_tells(taken), fn(tell) {
-    case tell.0 == viewer {
-      True -> Ok({ tell.1 }.news)
-      False -> Error(Nil)
-    }
-  })
+  game_connection_support.news_told(taken:, viewer:)
 }
 
 pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_sees_its_ghost_the_window_and_control_of_the_ghost_test() -> Nil {
@@ -1228,6 +1223,7 @@ pub fn an_entry_at_a_saved_health_of_0_starts_no_regeneration_and_saves_0_and_th
     )
   assert support.writes(ticked) == []
     && game_connection_support.peer_tells(ticked) == []
+    && game_connection_support.news_broadcast(ticked) == []
     as "a health tick that fires anyway writes nothing"
   assert game_connection_support.ask_request(camp_finished(state))
     == game_connection_support.save_asked_keeping(
@@ -1258,6 +1254,7 @@ pub fn a_player_that_entered_dead_fights_no_one_a_strike_is_refused_dead_and_a_t
     )
   assert support.writes(taken) == []
     && game_connection_support.peer_tells(taken) == []
+    && game_connection_support.news_broadcast(taken) == []
   let assert [
     #(
       7,
@@ -1428,7 +1425,7 @@ pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths
   use <- owned_test.run(10_000)
   let #(state, _) = game_connection_support.stealthed_stalker_kept_on_damage()
   let #(state, killed) = game_connection_support.killed(state)
-  assert game_connection_support.told_the_map_but_creatures(killed)
+  assert game_connection_support.told_the_map_decisions(killed)
     == [
       game_connection_support.map_tell(
         request: client_connection.TellLifeChanged(
@@ -1460,7 +1457,7 @@ pub fn wake_here_tells_the_map_life_changed_true_after_the_coming_backs_frames_a
   let #(state, _) = game_connection_support.dead_in_world()
   let #(_, woke) =
     game_connection_support.read(state, game_connection_support.wake_here())
-  assert game_connection_support.told_the_map(woke)
+  assert game_connection_support.told_the_map_decisions(woke)
     == [
       game_connection_support.map_tell(
         request: client_connection.TellLifeChanged(
@@ -1476,7 +1473,7 @@ pub fn wake_here_tells_the_map_life_changed_true_after_the_coming_backs_frames_a
     == []
     as "after the coming back's frames and the viewers' news: the tell is the last effect"
   let #(_, chosen) = game_connection_support.holocrypt_chosen()
-  assert game_connection_support.told_the_map(chosen) == []
+  assert game_connection_support.told_the_map_decisions(chosen) == []
     as "the Holocrypt tells the map no life: the Leave follows at once"
   assert game_connection_support.ask_request(chosen)
     == game_connection_support.leave_asked()
@@ -1536,9 +1533,12 @@ pub fn a_killing_blow_tells_the_map_the_answer_before_the_death_test() -> Nil {
           request: client_connection.TellLifeChanged(alive: False, ..),
           ..,
         )) -> "the death"
+        OwnEffect(step.Tell(request: client_connection.TellBroadcast(..), ..)) ->
+          "news for the viewers"
         _ -> "another tell"
       }
     })
-  assert names == ["the answer to creature 7 of life 3", "the death"]
-    as "the killing blow's answer to the creature, then the death, both told to the map"
+  assert list.filter(names, fn(name) { name != "news for the viewers" })
+    == ["the answer to creature 7 of life 3", "the death"]
+    as "the killing blow's answer to the creature, then the death, both told to the map, with the news for the viewers among them"
 }

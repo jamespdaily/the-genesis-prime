@@ -90,10 +90,10 @@ import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/vendor_sale.{VendorSale}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
-  type TimerId, CallerId, CancelTimer, ConnectionId, EndedBeforeAnswer, Map,
-  NoAnswerInTime, NotRunning, OwnEffect, OwnEvent, StartTimer, TimerFired,
-  TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
+  type ConnectionEvent, type ConnectionId, type ConnectionStep, type Event,
+  type Outcome, type TimerId, CallerId, CancelTimer, ConnectionId,
+  EndedBeforeAnswer, Map, NoAnswerInTime, NotRunning, OwnEffect, OwnEvent,
+  StartTimer, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store.{
   AccountId, Character, CharacterId, CharacterLoaded, ForMove, ForSelect,
@@ -1438,15 +1438,27 @@ pub fn news_sent_by_a_peer(
   sent_by_a_peer(news_of(unit_id:, news:))
 }
 
-/// The news a step tells the viewer connection `viewer`, in order.
+/// The news a step tells the viewer connection `viewer`, in the order of the step's
+/// effects: what the player's connection tells it directly and what it tells the map to
+/// relay to each viewer (`TellBroadcast`).
 pub fn news_told(
   taken taken: ConnectionStep(Request),
   viewer viewer: Int,
 ) -> List(News) {
-  list.filter_map(peer_tells(taken), fn(tell) {
-    case tell.0 == viewer {
-      True -> Ok({ tell.1 }.news)
-      False -> Error(Nil)
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: step.Connection(ConnectionId(told)),
+        request: TellPeer(news: PeerNews(news:, ..), ..),
+      ))
+        if told == viewer
+      -> Ok(news)
+      OwnEffect(step.Tell(
+        to: Map(..),
+        request: client_connection.TellBroadcast(news: PeerNews(news:, ..), ..),
+      )) -> Ok(news)
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
     }
   })
 }
@@ -1825,6 +1837,28 @@ pub fn event_of(step: Step) -> Event(ConnectionEvent(Message, Answer)) {
   }
 }
 
+/// The news a step tells the map to relay to each viewer of the player's unit
+/// (`TellBroadcast`), in order, with the connection and stay it names.
+pub fn broadcasts(
+  taken: ConnectionStep(Request),
+) -> List(#(ConnectionId, Stay, PeerNews)) {
+  list.filter_map(support.effects_of(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(
+        to: Map(..),
+        request: client_connection.TellBroadcast(connection:, stay:, news:),
+      )) -> Ok(#(connection, stay, news))
+      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
+        Error(Nil)
+    }
+  })
+}
+
+/// The news a step tells the map to relay to the player's viewers, in order.
+pub fn news_broadcast(taken: ConnectionStep(Request)) -> List(News) {
+  list.map(broadcasts(taken), fn(broadcast) { { broadcast.2 }.news })
+}
+
 /// The tells of a step to the connections of other players: the viewer's
 /// number and the news, in the order of the viewers' numbers.
 pub fn peer_tells(taken: ConnectionStep(Request)) -> List(#(Int, PeerNews)) {
@@ -1856,7 +1890,8 @@ pub fn map_tell(
   OwnEffect(step.Tell(to: Map(map: camp_map(), incarnation:), request:))
 }
 
-/// The tells of a step to the map: where each goes and what it says.
+/// The tells of a step to the map: where each goes and what it says, the player's news
+/// for its viewers (`TellBroadcast`) among them, in the order the map takes them.
 pub fn told_the_map(
   taken: ConnectionStep(Request),
 ) -> List(step.Effect(step.ConnectionEffect(Request))) {
@@ -1864,6 +1899,21 @@ pub fn told_the_map(
     case effect {
       OwnEffect(step.Tell(to: Map(..), ..)) -> True
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> False
+    }
+  })
+}
+
+/// The tells of a step to the map that decide something there: `told_the_map` without a
+/// creature's tells and without the player's news for its viewers (`TellBroadcast`, in
+/// `broadcasts`).
+pub fn told_the_map_decisions(
+  taken: ConnectionStep(Request),
+) -> List(step.Effect(step.ConnectionEffect(Request))) {
+  list.filter(told_the_map_but_creatures(taken), fn(effect) {
+    case effect {
+      OwnEffect(step.Tell(request: client_connection.TellBroadcast(..), ..)) ->
+        False
+      _ -> True
     }
   })
 }
@@ -2186,23 +2236,37 @@ pub fn with_stealth_kept_on_damage(
   )
 }
 
+/// Whether the effect is a tell to the map that decides something there: any tell to the
+/// map but the player's news for its viewers (`TellBroadcast`).
+fn is_the_map_tell(
+  effect: step.Effect(step.ConnectionEffect(Request)),
+) -> Bool {
+  case effect {
+    OwnEffect(step.Tell(
+      to: Map(..),
+      request: client_connection.TellBroadcast(..),
+    )) -> False
+    OwnEffect(step.Tell(to: Map(..), ..)) -> True
+    OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> False
+  }
+}
+
 /// The step's effects after the first tell to the map, kept to those that write to the
-/// client or tell a viewer.
+/// client or tell a viewer, the news the map relays included.
 pub fn writes_or_viewer_tells_after_the_map_tell(
   taken taken: ConnectionStep(Request),
 ) -> List(step.Effect(step.ConnectionEffect(Request))) {
   support.effects_of(taken)
-  |> list.drop_while(fn(effect) {
-    case effect {
-      OwnEffect(step.Tell(to: Map(..), ..)) -> False
-      OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> True
-    }
-  })
+  |> list.drop_while(fn(effect) { !is_the_map_tell(effect) })
   |> list.drop(1)
   |> list.filter(fn(effect) {
     case effect {
       OwnEffect(step.Write(..))
-      | OwnEffect(step.Tell(to: step.Connection(..), ..)) -> True
+      | OwnEffect(step.Tell(to: step.Connection(..), ..))
+      | OwnEffect(step.Tell(
+          to: Map(..),
+          request: client_connection.TellBroadcast(..),
+        )) -> True
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop -> False
     }
   })
@@ -2216,13 +2280,7 @@ pub fn written_around_the_map_tell(
 ) -> #(List(Frame), List(Frame)) {
   let before =
     support.effects_of(taken)
-    |> list.take_while(fn(effect) {
-      case effect {
-        OwnEffect(step.Tell(to: Map(..), ..)) -> False
-        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-          True
-      }
-    })
+    |> list.take_while(fn(effect) { !is_the_map_tell(effect) })
     |> list.count(fn(effect) {
       case effect {
         OwnEffect(step.Write(..)) -> True
@@ -2240,13 +2298,7 @@ pub fn news_told_after_the_map_tell(
 ) -> List(News) {
   let after =
     support.effects_of(taken)
-    |> list.drop_while(fn(effect) {
-      case effect {
-        OwnEffect(step.Tell(to: Map(..), ..)) -> False
-        OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
-          True
-      }
-    })
+    |> list.drop_while(fn(effect) { !is_the_map_tell(effect) })
   list.filter_map(after, fn(effect) {
     case effect {
       OwnEffect(step.Tell(
@@ -2255,6 +2307,10 @@ pub fn news_told_after_the_map_tell(
       ))
         if told == viewer
       -> Ok(news)
+      OwnEffect(step.Tell(
+        to: Map(..),
+        request: client_connection.TellBroadcast(news: PeerNews(news:, ..), ..),
+      )) -> Ok(news)
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
@@ -2315,22 +2371,10 @@ pub fn medic_with_a_lingering_node_on_beast(
     watched_by(state: medic_with_beast_in_world(tables:), viewers: [2])
   let #(state, pressed) = press_paralytic_surge(state:, client_cast_id: 1)
   let assert [unit_news.CastStarted(start:)] =
-    news_told_to_viewer_2(taken: pressed)
+    news_told(taken: pressed, viewer: 2)
   let assert [#(40, key)] = strikes_told(pressed)
   let #(state, landed) = feed(state:, event: landed(key:))
   #(state, landed, start.cast_id)
-}
-
-/// The news the connection 2, a watching viewer, is told in a step, in order.
-pub fn news_told_to_viewer_2(
-  taken taken: ConnectionStep(Request),
-) -> List(News) {
-  list.filter_map(peer_tells(taken), fn(tell) {
-    case tell.0 == 2 {
-      True -> Ok({ tell.1 }.news)
-      False -> Error(Nil)
-    }
-  })
 }
 
 /// The 0x262 news of a Beast, as its process sends it, standing 3 m ahead of the

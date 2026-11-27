@@ -1637,10 +1637,13 @@ fn carried_out(
               ),
             ),
           ],
-          connection_state.news_to_viewers(
-            entered:,
-            news: unit_news.Stealth(stealthed:),
-          ),
+          [
+            connection_state.broadcast(
+              session:,
+              entered:,
+              news: unit_news.Stealth(stealthed:),
+            ),
+          ],
           // The map keeps a stealthed player out of every creature's ring: Jim's
           // decision, a server choice. Told last, after the owner's 0x8f5 and the
           // viewers' news.

@@ -636,11 +636,9 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
     )
   assert combat_states(threatened) == [#(5, 1)]
     as "0x89a (P, 1) to the player's own client: its unit 5, in combat"
-  assert list.map(game_connection_support.peer_tells(threatened), fn(tell) {
-      #(tell.0, { tell.1 }.news)
-    })
-    == [#(5, unit_news.CombatState(in_combat: True))]
-    as "and to its viewers"
+  assert game_connection_support.news_broadcast(threatened)
+    == [unit_news.CombatState(in_combat: True)]
+    as "and to the map, for its viewers"
   assert game_connection_support.told_creatures(threatened)
     == [
       #(
@@ -777,9 +775,7 @@ pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_th
   assert player_health.decode(health)
     == Ok(PlayerHealth(unit_id: 5, health: 735, reason_mask: 0))
     as "the player's own health: 736 less 1, with no fall or breath bit"
-  assert list.map(game_connection_support.peer_tells(struck), fn(tell) {
-      { tell.1 }.news
-    })
+  assert game_connection_support.news_broadcast(struck)
     == [
       unit_news.Shield(shield: 448),
       unit_news.Health(health: 735, dead: False),

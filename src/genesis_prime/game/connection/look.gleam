@@ -113,7 +113,7 @@ fn changed(
   }
 }
 
-/// 0x933 to the player's client and `LookChanged` to each viewer, the same visuals.
+/// 0x933 to the player's client and `LookChanged` to the map, the same visuals.
 fn told(
   session session: Session,
   entered entered: world_entry.Entered,
@@ -127,9 +127,10 @@ fn told(
         item_visuals: visuals,
       ),
     ),
-    ..connection_state.news_to_viewers(
+    connection_state.broadcast(
+      session:,
       entered:,
       news: unit_news.LookChanged(item_visuals: visuals),
-    )
+    ),
   ]
 }

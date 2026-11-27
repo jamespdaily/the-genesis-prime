@@ -28,7 +28,7 @@ import connection_rule_support as rule_support
 import fixture_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, TellPeer,
+  type Answer, type Message, type Request, TellBroadcast, TellPeer,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
@@ -321,7 +321,7 @@ fn tells_but_news(
   list.flat_map(steps, support.tells)
   |> list.filter(fn(told) {
     case told.1 {
-      TellPeer(..) -> False
+      TellPeer(..) | TellBroadcast(..) -> False
       _ -> True
     }
   })

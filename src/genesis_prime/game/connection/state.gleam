@@ -744,8 +744,26 @@ pub fn news_to_connection(
   }
 }
 
+/// The tell of `news` about the player's own unit to the run of its map, which relays it
+/// to each player whose relation with this one relays, in the map's order
+/// (genesis_prime/world_map/map `PlayerBroadcast`): the owner tells no viewer itself.
+pub fn broadcast(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  news news: unit_news.News,
+) -> Effect(ConnectionEffect(Request)) {
+  tells_the_map(
+    entered:,
+    request: client_connection.TellBroadcast(
+      connection: client_connection.connection(session.link),
+      stay: entered.stay,
+      news: unit_news.PeerNews(unit_id: entered.unit_id, news:),
+    ),
+  )
+}
+
 /// The tell of `news` about the player's own unit to each player who sees it, in
-/// connection order.
+/// connection order: the cast news, which the map does not relay.
 pub fn news_to_viewers(
   entered entered: world_entry.Entered,
   news news: unit_news.News,
