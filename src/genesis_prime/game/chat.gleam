@@ -1,217 +1,43 @@
 //// A player's chat in the world: say, yell, emote, zone and whisper, a feature
-//// of the game connection's rule (genesis_prime/game/connection) as the
-//// player's movement and camp are. It keeps what one player's chat holds
-//// (its speaker, its zone channel, its whispers waiting for a reply), decides
-//// what the client's 0x1c3 and 0x1d4 are answered with, and what a line another
-//// connection told this one (genesis_prime/game/chat_tell) writes; the rule
-//// turns its effects into writes, tells, watches and group joins. No new
-//// process: every send is a tell, so no connection asks another. A line of local chat
-//// goes through the map (`Say`), which relays it to the players that see the speaker.
+//// of the game connection's rule (genesis_prime/game/connection). It keeps the
+//// speaker, the zone channel and the whispers waiting for a reply, and decides
+//// what 0x1c3 and 0x1d4 are answered with and what a tell from another
+//// connection (genesis_prime/game/chat_tell) writes. Every send is a tell:
+//// the effects are writes, tells, watches and group joins, never an ask.
 ////
 //// ```
-////                 say / yell / emote                       zone                                          whisper
-//// speaker conn ─ TellSay ─▶ map ─ Relayed ─▶ viewer conns    ─ Tell ZoneChannel(run, top) ─▶ each member conn   ─ Watch + Tell CharacterNamed(n) ─▶ target conn
-////  writes 0x1c2 itself                writes 0x1c8      (a pg group each conn joins)   writes 0x1c8          writes 0x1c8, Tells the speaker Heard
-////                                                                                                         the speaker writes 0x1c2, or 0x1d9 on WatchEnded
+//// 0x1c3 (say/yell/emote) ─▶ 0x1c2; TellSay ─▶ map ─▶ 0x1c8 to each viewer
+//// 0x1c3 (zone) ─▶ 0x1c2; Tell ZoneChannel(run, top) ─▶ 0x1c8 to each member in it
+//// entry ─▶ 0x1da, 0x1bc, JoinGroup; 0xF2/0x63A ─▶ move or leave; camp ─▶ leave
+//// 0x1d4 ─▶ Watch + TellWatched on the folded name ─▶ 0x1c8, Heard ─▶ 0x1c2; else 0x1d9
 //// ```
 ////
-//// Say, yell and emote (the same rules, each on its own channel type, with id 0):
-////
-//// ```
-//// speaker client       speaker conn                       viewer conn                        viewer client
-//// 0x1c3 (t,0) id n  ─▶ checks pass (t = 4, 5 or 8)
-////                      TellSay(Said(line)) ─▶ map ─▶ each relaying viewer, for its stay: same stay? write 0x1c8 (t,0) ─▶ shows the line; a bubble on 4 and 5 if it holds the unit
-////                  ◀── 0x1c2 id n, own name, own unit
-//// ```
-////
-//// Zone:
-////
-//// ```
-//// entry burst, after 0x61:   0x1da top(place zone),  0x1bc (9, 1, "", 0, 0, 0),  JoinGroup(ZoneChannel(run, top))
-////                            the id is 1 in every world and run, so a new entry joins the same channel
-////
-//// first 0xF2 of the stay:    0x1bc (9, 1, "", 0, 0, 0) again, after what the zone report below writes
-////                            ChatLog registers for ChatJoin only after 0xAD, so the burst's ChatJoin may reach no handler
-////
-//// 0xF2 or 0x63A, new zone r:
-////   same top as before   ─▶ keep r; nothing written
-////   another top t2       ─▶ LeaveGroup(old), JoinGroup(ZoneChannel(run, t2)), write 0x1da t2   (the id stays: the client only renames)
-////   r = 0                ─▶ LeaveGroup(old), write 0x1da 0
-////   r has no row         ─▶ as r = 0, and the zone is named once in a warning
-////
-//// speaker client        speaker conn                                     each member conn
-//// 0x1c3 (9,1) id k   ─▶ checks pass
-////                       Tell(ZoneChannel(run, top), ZoneLine(line))   ─▶ from itself? drop
-////                                                                        another run or top than its own now? drop
-////                                                                        else write 0x1c8 (9,1)
-////                   ◀── 0x1c2 id k
-//// ```
-////
-//// Whisper:
-////
-//// ```
-//// speaker conn                                      registry (pg)                target conn
-//// 0x1d4 "B Name", realm, text, id m
-////   checks pass; w = next whisper number
-////   Watch(w, CharacterNamed("b name"))  ─▶ find ─▶ no member ─▶ WatchEnded(w) ─▶ 0x1d9 "B Name", 0, m
-////                                              └▶ member pid: Tellable
-////   Tell(CharacterNamed, Whisper(w, from, line)) ───────────────────────────────▶ in the world?
-////                                                                                yes: write 0x1c8 (6,0), Tell(speaker, Heard(w, own name))
-////                                                                                no:  Tell(speaker, NotHeard(w))
-////   Heard(w, name)    ─▶ Unwatch(w); 0x1c2 id m, name = the target's
-////   NotHeard(w)       ─▶ Unwatch(w); 0x1d9
-////   WatchEnded(w)     ─▶ 0x1d9 (the target ended first)
-//// ```
-////
-//// What the rules are, each with its evidence:
-//// - **Channels the client holds.** It makes Say, Yell, Emote, Whisper and
-////   AccountWhisper itself, each with id 0, and Zone only by 0x1bc, so a line
-////   names a held channel or is refused (`0x140404ee0`, `ChatChannel.flags`).
-//// - **A `!` line on Say is a development command** when the setting
-////   `dev_commands` is on (genesis_prime/game/dev_command): the speaker's slot is
-////   answered with its 0x1c2, nothing is told to the map to relay, and the command is
-////   carried out or answered with a system line (`system_line_frame`); with the
-////   setting off it is a Say line as any other. A server choice, for testing.
-//// - **No 0x1bc for a channel the client makes itself**: it would print a join
-////   again (`opcode.0x1bc`, `0x140404ee0`).
-//// - **The zone channel's name** is the top zone 0x1da last gave, set before
-////   0x1bc, so the new channel takes it (`opcode.0x1da`, `opcode.0x1bc`).
-//// - **The zone channel's id is 1 in every world**: the client sets no rule on
-////   it, and ChatLog saves a viewed channel by its id and type, so one id is one
-////   save entry and a Zone viewed once stays viewed in every world and session
-////   (`chat.zone_channel_id`, a server choice).
-//// - **0x1bc is written again on the first 0xF2 of each stay.** ChatLog
-////   registers for ChatJoin in OnDocumentReady, which runs after 0xAD's
-////   handling, and the client drops a UI event no handler waits for, so the
-////   burst's ChatJoin can be lost and a character whose saved ChatLog lacks
-////   Zone would be refused `/z`. 0xF2 is sent once per entry, after the terrain
-////   near the player loads, and a 0x1bc for a channel the client holds only
-////   raises ChatJoin again. ChatLog's nil test keeps a second join from
-////   changing what a window views, but each ChatJoin still posts the "joined
-////   Zone" line on the Command channel and closes every chat window's input
-////   box (ChatLog.lua 954-959), so a player may see that line twice and the
-////   box close once more (`chat.zone_view`, `lua.ChatLog.OnChatJoin`,
-////   `0x1400ea400`, `chat.zone_join_trigger`, a guess).
-//// - **The zone the client reports** (0xF2 once, 0x63A on each change) is the most
-////   specific WorldZone the terrain names, never a parent; the server rolls it up
-////   to its top zone (`opcode.0xf2`, `opcode.0x63a`, `0x140403670`,
-////   `chat.zone_reach`, the server's choice). Zone 0 means no zone: no group, 0x1da
-////   with 0 (`0x14036d040`, `0x140403670`). A zone with no row is
-////   no zone either, with a warning once for each such zone on a connection: the
-////   client accepts it, since 0x1da names the channel with an empty name when
-////   the table has no row (`0x140403670`), so it is no value its code refuses,
-////   and an area file that names a zone the table lacks must not disconnect the
-////   players who walk there (the coordinator's decision).
-//// - **The old value of 0x63A is not checked**: whether the client's kept value
-////   outlives a camp is not read (`opcode.0x63a`); a server choice.
-//// - **The speaker gets 0x1c2 and never a 0x1c8 of its own line**
-////   (`opcode.0x1c2`, `opcode.0x1c8`); a whisper's 0x1c2 names the target.
-//// - **The viewers are the players the speaker sees** (sight, 1024 units): the
-////   client holds no say range and shows a bubble only over a unit it holds
-////   (`chat.range`, the server's choice). Yell and Emote share it (the server's
-////   choice).
-//// - **0x1c8's fields**: channel type and id as the line's; bGM, bSelf,
-////   bAutoResponse, presence, premium tier and the unread 16-bit value 0; the
-////   speaker's realm and character id and name, an empty realm name (the same
-////   realm); bCrossFaction 1 only when the speaker's and the reader's
-////   `faction_id` differ, on every channel; the speaker's unit id
-////   (`opcode.0x1c8`, `chat.cross_faction`, the server's choice).
-//// - **A line has at most 501 UTF-16 units**: a link or waypoint at 498 units adds
-////   three characters in the same pass as the cut (`chat.sent_text_length`). A
-////   line with more than 31 formats misframes the client's own message, which no
-////   server check can tell from its bytes (`chat.format_count`).
-//// - **Text and formats are relayed as sent**: no format is added and no line is
-////   refused for its words (`0x140c45f50`). Item links are relayed unchanged;
-////   0x1c2 carries no item record (`opcode.0x1c2`), so a type 9 link, which a
-////   client resolves only for an item it holds (FindHeldItemByGuid
-////   `0x1403acbb0`), shows no item to the other players. A format of a type the
-////   client's text never makes (0, 3, 7 or 8, `0x140402720`) is refused with
-////   result 17: the client's reader takes it, but its own code does not send it.
-//// - **The target's name is folded** with `string.lowercase`, the fold of the
-////   database's unique index (migration 0005), and watched like any name: a name
-////   that is no full name by rule 0 is held by no character (the table refuses
-////   it, `character_name_follows_rule_0`), so its watch ends with 0x1d9
-////   (`opcode.0x1d4`, genesis_prime/game/character_name). A target whose fold is an
-////   online character's name reaches that character, as that name's own spelling
-////   does: the registry holds the fold, so U+212A KELVIN SIGN, which folds to
-////   "k", reaches the player named with a "K". A name that is not valid UTF-16
-////   cannot be folded, so it gets 0x1d9 at once with no watch. A realm name
-////   that is neither empty nor the server's own, compared without case, gets 0x1d9
-////   (`opcode.0x1d4`).
-//// - **A whisper to oneself** writes 0x1c8 and 0x1c2 in the speaker's own step,
-////   with no watch: a server choice.
-//// - **An empty whisper** gets 0x1d9 when the target is not found, and otherwise
-////   no answer: the client frees the slot silently after 30 s (`0x140405cb0`).
-//// - **A pending whisper is kept by the speaker's own number `w`**, not by the
-////   client's chat message id; a late or doubled reply finds no `w` and is
-////   dropped. The client ignores an answer for an id it does not hold
-////   (`0x140405e00`). The numbers count for the connection's life, not for one
-////   stay in the world, so a reply to a whisper of an earlier stay never meets a
-////   new whisper's number.
-//// - **A whisper is told through its own watch** (`TellWatched`), not by the
-////   address: two whispers to one name, one made before the target logged in
-////   again and one after, each reach the process their own watch found.
-//// - **A text is relayed as the client sent it**, in UTF-16 units: a format's
-////   range is checked against the unit count, and a lone surrogate, which the
-////   client's own check lets through (`0x1403e0ae0`), is neither dropped nor
-////   refused.
-//// - **The place's zone is server data, not a client report.** A place zone that
-////   is 0 or has no WorldZone row leaves the player in no zone (0x1da with 0,
-////   0x1bc still written, no zone group), with a warning for a missing row; the
-////   connection does not end for it.
-//// - **No timer.** Every whisper path ends in `Heard`, `NotHeard` or `WatchEnded`;
-////   a target busy on an ask takes the whisper after the ask's outcome, which has
-////   a deadline.
-//// - **Account whispers** (bit 1) get 0x1d9 with bit 1: no account friends exist
-////   (`opcode.0x1d4`).
-//// - **No player info** is written or asked: no chat flow sends 0x597, 0x598 or
-////   0x599 (`chat.name_lookup`).
-////
-//// Results and refusals: every 0x1c3 and 0x1d4 gets exactly one answer, except
-//// an empty whisper to a target that is found (`opcode.0x1c2`).
-////
-//// | Case | Answer | Evidence |
-//// |---|---|---|
-//// | Text over 501 UTF-16 units, a character ParseChatText drops, or an empty 0x1c3 | 0x1d3 result 17 | `0x140402720`, `chat.sent_text_length`, `vector.0x140402720.lines` |
-//// | A format whose start is past its end or past the text's end, or whose end is past the text's end (an unclosed type 1 or 2, end 65535, is the client's own) | 0x1d3 result 17 | `0x140085ca0`, `chat.format_bounds` |
-//// | A format of a type the client's text never makes (0, 3, 7, 8) | 0x1d3 result 17 | `0x140402720` |
-//// | A format of type 12 to 15 | the frame is unreadable: the connection ends | `0x140085ca0`; CLAUDE.md |
-//// | Chat message id 0 | 0x1d3 result 17 | `0x140405cb0`: ids start at 1 |
-//// | A channel the player does not hold (a wrong id, Zone before its 0x1bc, Guild) | 0x1d3 result 1 (DoesntExist) | `0x140401cb0`, `ChatChannel.flags` |
-//// | A row without flag 4, or type 6 or 34 in a 0x1c3 | 0x1d3 result 3 (NoPermissions) | `ChatChannel.flags` |
-//// | Party (7): the client holds it, but no group exists | 0x1d3 result 8 (NotInGroup) | `lua.ChatSystemLib.ChatChannelResult`; server choice |
-//// | Support (19), Instance (32): the client holds them, the server builds none | 0x1d3 result 3, and a warning naming the channel once per connection | the server's choice |
-//// | Account whisper (bit 1) | 0x1d9 with bit 1 | `opcode.0x1d4` |
-//// | A whisper with an empty text | 0x1d9 when the target is not found; otherwise no answer | `0x140405cb0` |
-////
-//// What each failure does:
-////
-//// | Step | Killed there / runs twice / times out | What happens |
-//// |---|---|---|
-//// | Whisper: target found, then ends before the tell lands | the tell to a dead process is dropped | the watch's DOWN is `WatchEnded(w)`: 0x1d9 |
-//// | Whisper: target ends after writing 0x1c8, before `Heard` | `Heard` is sent before the end, or not at all | if sent: 0x1c2; if not: `WatchEnded` gives 0x1d9, though the target's client showed the line. Rare; stated |
-//// | Whisper: takeover leaves two members of one name for a moment | `find_named` gives one process | if it is the older login, that one is ending: its DOWN gives 0x1d9, and the speaker may whisper again |
-//// | Whisper: speaker ends before the reply | the reply to a dead process is dropped | nothing; the target's line stands |
-//// | Whisper: target in camp's leave or in character select | not in the world | `NotHeard`: 0x1d9 |
-//// | Whisper: target busy on an ask (a save) | the whisper waits in its mailbox | taken after the ask's outcome, bounded by the ask's deadline |
-//// | Two players whisper each other at once | both are tells | neither waits |
-//// | Say: a viewer has left the speaker's sight, or ended, before the map takes the line | the map relays only to the viewers whose relation relays when it takes it | nothing is relayed to it; a viewer that ended after the relay is sent one that the VM drops, or that is written: channel (t, 0) is always held |
-//// | Say: a viewer is in another map run | the line names the run | dropped |
-//// | Say: a viewer re-entered the same run before the line arrived | the map relays the line for the stay of the viewer's relation, and a new entry is a new stay | dropped by the stay fence |
-//// | Say: a viewer is waiting on an ask (a save) when the line arrives | the line waits with the connection's other held news | written after the ask's answer if the player is in the world again and its stay still the line's, bounded by the ask's deadline; dropped with the session otherwise |
-//// | Zone: a zone change races a zone line | the speaker's tell read the group's members before a member's `LeaveGroup` took effect | the member gets the line, sees it is for another top zone or run than its own now, and drops it. A member that joined just after the read misses the line. Both are stated |
-//// | Zone: the speaker's own top zone changes as it speaks | the line is told to the group of the top zone it held when it took the 0x1c3 | the line reaches that zone; the change is the next input |
-//// | Zone: camp | `LeaveGroup` in the step that starts the camp's leave | no zone line reaches it after the leave; a new entry joins again |
-//// | Zone: a crash of a member's connection | `pg` drops its memberships when the process ends | later lines skip it; a line sent before is dropped by the VM |
-//// | Zone and whisper: `pg:join` or `pg:leave` while the registry scope is restarting | the call exits | the connection crashes; the scope's restart already restarts the listener and every connection |
-//// | Zone: report 0, or a zone with no row | as above | no zone: the group left, 0x1da 0; a zone with no row is named for one warning, and the connection goes on |
-//// | Zone: the place's zone is 0 or has no row | server data, not a report | no zone: 0x1da 0, 0x1bc, no group; one warning for no row |
-//// | Whisper: pending when its speaker camps | the camp's leave drops the watch | the camp answers 0x1d9 first, so the whisper keeps its one answer; an empty whisper gets none, as when its target is found |
-//// | Zone: enter, change zone, camp, enter again | each step joins and leaves its own groups | exactly one membership per group: `join_group` skips a group the process is in |
-//// | Whisper: pending when Sessions ends and the connection claims again | the player is held in the claim's wait or its ask | the reply, the watch's end and a tell are taken for every status that holds a player, so the speaker still gets 0x1c2 or 0x1d9 |
-//// | Whisper: a reply to a whisper of an earlier stay | the number is not held | dropped; numbers never repeat on one connection |
-//// | Whisper: two whispers to one name across the target's relog | each is told through its own watch | each reaches the process its watch found; a watch on the ending login ends and gives 0x1d9 |
-//// | Whisper: `find_named` with two members | the newest member is found | pinned: the older login's end is its watcher's |
+//// - A line must name a held channel: the client's own (id 0) or Zone by its
+////   0x1bc; another is refused (`0x140404ee0`, `ChatChannel.flags`).
+//// - The zone channel is named by 0x1da after the top zone and given by 0x1bc,
+////   id 1 in every world (`opcode.0x1da`, `opcode.0x1bc`, `chat.zone_channel_id`).
+//// - The first 0xF2 of a stay writes 0x1bc again: the burst's ChatJoin can reach
+////   no handler (`chat.zone_join_trigger`, `lua.ChatLog.OnChatJoin`, `0x1400ea400`).
+//// - A zone report (0xF2, 0x63A) is rolled up to its top zone; 0 or no row is
+////   no zone (`opcode.0xf2`, `opcode.0x63a`, `0x140403670`, `chat.zone_reach`).
+//// - The speaker is answered 0x1c2 (a whisper's names the target), never sent
+////   its own 0x1c8; bCrossFaction is 1 when the `faction_id`s differ
+////   (`opcode.0x1c2`, `opcode.0x1c8`, `chat.cross_faction`).
+//// - A local line goes to the players that see the speaker (`chat.range`, a server choice).
+//// - A line is 1 to 501 UTF-16 units, its formats in range and of a type the
+////   client's text makes (`chat.sent_text_length`, `chat.format_bounds`).
+//// - Text and formats are relayed as sent (`0x140c45f50`).
+//// - A whisper's target is found by its folded name, the fold of the database's
+////   unique index (migration 0005, `opcode.0x1d4`, genesis_prime/game/character_name).
+//// - An account whisper (bit 1) is answered 0x1d9 with bit 1 (`opcode.0x1d4`).
+//// - Every 0x1c3 and 0x1d4 gets one answer. A pending whisper is kept by the
+////   connection's own number and told through its own watch (`TellWatched`); an
+////   empty whisper is answered only when its target is missing (`0x140405cb0`, `0x140405e00`).
+//// - A `!` line on Say is a development command when `dev_commands` is on
+////   (genesis_prime/game/dev_command, a server choice).
+//// - A format of type 12 to 15 is unreadable: the connection ends (`0x140085ca0`).
+//// - No timer: every whisper path ends in `Heard`, `NotHeard` or `WatchEnded`.
+//// - No chat flow sends player-info 0x597, 0x598 or 0x599 (`chat.name_lookup`).
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}

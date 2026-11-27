@@ -217,8 +217,31 @@ pub fn the_unit_carries_its_characters_level_as_stat_10_test() -> Nil {
     unit_fields.integer_stat(stat_id: 10, value: 3),
   )
     as "0x140458140: stat 10, in the integer form, is the unit's level; a unit created without it is level 1 (0x1404543c1), so a level 3 character needs it"
-  assert unit.tail.stats == [unit_fields.integer_stat(stat_id: 10, value: 3)]
-    as "create writes the level and no other stat: the health is the connection's (with_integer_stat)"
+  assert unit.tail.stats
+    == [
+      unit_fields.integer_stat(stat_id: 10, value: 3),
+      unit_fields.integer_stat(stat_id: 15, value: 1),
+    ]
+    as "create writes the level and the sheathed stat and no other: the health is the connection's (with_integer_stat)"
+}
+
+pub fn a_players_own_create_carries_stat_15_as_the_integer_1_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let unit =
+    player_unit.create(
+      unit: unit_support.bare_unit(
+        character: roxo(),
+        place: place_support.live_character_place(),
+        unit_id: 1,
+        body: [],
+      ),
+      realm_id: 1,
+    )
+  let assert [sheathed] =
+    list.filter(unit.tail.stats, fn(stat) { stat.stat_id == 15 })
+    as "unit.weapon_sheathed: the list holds stat 15 once"
+  assert sheathed == unit_fields.integer_stat(stat_id: 15, value: 1)
+    as "unit.weapon_sheathed (0x140458302): only the integer form (tag 0) of a non-zero value sets the unit sheathed; a float reads 0 and no stat leaves it drawn"
 }
 
 pub fn the_players_own_record_can_show_less_health_than_the_maximum_test() -> Nil {

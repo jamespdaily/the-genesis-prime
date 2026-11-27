@@ -37,6 +37,7 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/message/unit_stealth
+import genesis_prime/shared/unit_fields
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
 import gleam/dict
@@ -103,6 +104,13 @@ pub fn a_bot_entering_warfare_woods_is_written_one_0x262_for_each_planted_spawn_
     }
   })
     as "each spawn's own values: the Battle Beast's display 26565, faction 1441 and base faction 1441, the Dagun's 26578, 1442 and 1442, and no outfit (the world database's rows and migration 0008's)"
+  assert list.all(seen, fn(creature) {
+    list.contains(
+      creature.tail.stats,
+      unit_fields.integer_stat(stat_id: 15, value: 1),
+    )
+  })
+    as "unit.weapon_sheathed: each creature at rest is created sheathed, stat 15 in the integer form"
   let #(second, second_character) =
     new_player(started:, number: 2, character_name: "Ann Qu")
   character_support.move_to(

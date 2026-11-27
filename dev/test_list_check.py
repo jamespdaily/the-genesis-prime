@@ -27,6 +27,8 @@ use.
 `--existing BASE LIST` runs before the build: LIST is an issue number (its test list as above)
 or the path of a draft file (the whole file), and each backticked listed test already defined at BASE
 is printed as `NAME: already at FILE, write it plainly` (a list backticks only the tests its step adds),
+and a backticked name that is a constant at BASE as `NAME: not a test, a constant at FILE` (it would be
+read as a listed test after the build),
 unless a line of the list that names it also says "row": a new row of an existing table test, printed as
 `NAME: a new row of FILE`. A test list is sized by the decisions a step adds, and a decision that fits an
 existing table test is a row there, not a new function (the running-a-step skill).
@@ -53,6 +55,12 @@ def run(*args: str) -> str:
 def defined_at(ref: str, name: str) -> list[str]:
     """The files of ref's tree that define a function called name."""
     grep = subprocess.run(["git", "grep", "-lE", rf"(pub fn|def) {name}\(", ref], capture_output=True, text=True)
+    return [line.split(":", 1)[1] for line in grep.stdout.split()]
+
+
+def constant_at(ref: str, name: str) -> list[str]:
+    """The files of ref's tree that define a constant called name, which ends in _test but is no test."""
+    grep = subprocess.run(["git", "grep", "-lwE", rf"const {name}", ref], capture_output=True, text=True)
     return [line.split(":", 1)[1] for line in grep.stdout.split()]
 
 
@@ -96,6 +104,10 @@ def existing(base: str, source: str) -> int:
     for name in names:
         where = defined_at(base, name)
         if not where:
+            constant = constant_at(base, name)
+            if constant:
+                print(f"{name}: not a test, a constant at {constant[0]}: write it plainly")
+                found += 1
             continue
         if any(f"`{name}`" in line and ROW_WORD.search(line) for line in text.splitlines()):
             print(f"{name}: a new row of {where[0]}")

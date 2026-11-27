@@ -1,231 +1,43 @@
-//// The shell of a connection: the process that owns one client socket and
-//// runs one rule over it, a gleam_otp actor that Ranch starts. It turns
-//// everything that reaches the process into the rule's inputs, carries out the
-//// rule's effects in order and decides nothing, so what crosses its socket
-//// replays every decision (genesis_prime/wire_recording).
-////
-//// One connection, from accept to end:
+//// The shell of a connection: the actor process that owns one client socket
+//// and runs one `ConnectionRule` over it. It turns all that reaches the
+//// process into the rule's inputs, carries out the rule's effects in order
+//// and decides nothing, so what crosses the socket replays every decision
+//// (genesis_prime/wire_recording).
 ////
 //// ```
-//// Ranch accepts ─▶ genesis_prime_connection_shell_ffi:start_link ─▶ start: the actor
-////   initialiser: waiting messages off the heap, Begin sent to itself,
-////     returns at once; Ranch then sends the handshake
-////   Begin ─▶ ranch:handshake, the socket's options, exits trapped, the logger
-////     metadata of the process (connection, peer)
-////   the settings' `scripts` hands the connection its script (seed, clock,
-////     scheduler) and its accept ordinal; the wire recorder, when on, opens its
-////     file and writes the header
-////   the registry, when the settings hold one: the shell joins the group of
-////     Connection(id), so other processes find it (genesis_prime/connection/registry)
-////   OwnEvent(Accepted(connection id, peer, seed)) ─▶ step ─▶ effects
-////   after each step's effects, before the mailbox is read or a stop is taken:
-////     a watch of a target no process holds ─▶ WatchEnded(id) ─▶ step ─▶ effects
-////   loop, the socket active once, each message taken by the actor's selector:
-////     {tcp, bytes}        ─▶ OwnEvent(Read(bytes))  ─▶ step ─▶ effects
-////     {woken, message}    ─▶ OwnEvent(Woken(message)) ─▶ step ─▶ effects
-////     a timer's message   ─▶ OwnEvent(TimerFired(id)) ─▶ step ─▶ effects
-////     a watched process's DOWN ─▶ WatchEnded(id)   ─▶ step ─▶ effects
-////     {tcp_closed}        ─▶ OwnEvent(PeerClosed)   ─▶ step ─▶ effects
-////     {tcp_error, reason} ─▶ OwnEvent(ReadFailed(_)) ─▶ step ─▶ effects
-////     the parent's exit   ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
-////   each input: the script's clock is called once, told its kind, for its `Now`; the wire
-////     recorder writes the input's line before the step's effects, and each
-////     write after the socket took it, with a sequence number taken before
+//// Ranch accept ─▶ genesis_prime_connection_shell_ffi:start_link ─▶ `start`
+//// `Begin` ─▶ handshake, script, recording, registry join (genesis_prime/connection/registry)
+//// OwnEvent(Accepted(id, peer, seed)) ─▶ step ─▶ effects, then the loop:
+////   {tcp, bytes} ─▶ Read   {woken, message} ─▶ Woken   a timer ─▶ TimerFired
+////   {tcp_closed} ─▶ PeerClosed   {tcp_error} ─▶ ReadFailed   a watch's DOWN ─▶ WatchEnded(id)
+////   the parent's exit ─▶ Stopping(deadline)
 //// ```
 ////
-//// - **A handshake that fails.** A client gone before the handshake, or a
-////   socket that cannot be set up, ends the connection normally with a debug
-////   line and no warning or error: no recording was opened and no step ran.
-//// - **Reads.** The socket's buffer is `frame.read_limit`, so no read holds
-////   more bytes than that, and the socket is active once: the shell arms it
-////   again after each step's effects, including while an ask waits. What
-////   arrives meanwhile is the rule's to hold or refuse
-////   (`genesis_prime/client_connection.hold`). A client that closes while the
-////   socket is armed makes the arm fail, and the close it queued is the input
-////   (`PeerClosed`, or `ReadFailed` for a socket error), not a failed arm. In a replay the script gives
-////   the byte count of the next recorded read, and the shell holds what arrives
-////   and arms the socket again until it holds that many, so the recorded read
-////   is one input (`read_arrived`). The wait for the rest is bounded to 5 s
-////   from the first part by one timer of the script's scheduler
-////   (`script.held_read_timer`), started once; when it fires the shell goes
-////   on with its mailbox and holds what arrives, still not a read.
-//// - **A message the selector does not take.** The shell drops it and logs a
-////   warning that names the message's kind (its tag or its shape) and never its
-////   contents, which could hold a secret; the line carries the connection's
-////   metadata.
-//// - **Exits.** The shell traps exits once it holds the socket, so before the
-////   handshake the parent's stop ends it, with no recording to close. After
-////   it, the parent's exit is the rule's `Stopping` and another process's exit
-////   is dropped.
-//// - **Time.** Each input carries one `Now`: the monotonic clock in
-////   milliseconds and the system time as a FILETIME. The shell reads it from
-////   its script's clock (the node's in the server, the recording's in a replay)
-////   with one call as it takes the input, and makes no call for a message it
-////   drops (a stale timer, a late answer, another process's exit, a stray
-////   message), so the calls made are the inputs taken. The seed of `Accepted`
-////   is the script's. The only other time the shell takes is the node's own
-////   monotonic time for that input, from the script (`node_monotonic_ms`), for
-////   the wait of an ask, which is real time whatever the clock says; in the
-////   server it is the `Now`'s own reading, never a second read.
-//// - **A failed write.** The step's later effects are not carried out; the
-////   next input is `OwnEvent(WriteFailed(_))`. A write that does not finish
-////   within the send deadline fails as `SendTimedOut` and closes the socket.
-//// - **Stop.** The shell carries out the rest of the step's effects in order,
-////   closes the socket, the wire recorder writes the closing line (the client
-////   closed it when the shell took the socket's close, the server otherwise,
-////   also when the rule asked before it stopped, so that the step that stops is
-////   not the one that took the close), and the process ends
-////   normally; a step with a `Stop` makes no ask, and a
-////   failed write after the `Stop` is logged as a warning, closes the socket
-////   and ends the process with no `WriteFailed` input. Bytes still queued
-////   get the send deadline, in whole seconds, to go out before the close drops
-////   them. A rule must return
-////   `Stop` after `PeerClosed` or `ReadFailed`, since no other socket input
-////   reaches the process then.
-//// - **The server stopping.** The shell traps its parent's exit, so the
-////   tree's stop arrives as `Stopping`, with a deadline of the listener's
-////   shutdown time less the send deadline, counted from when the shell takes
-////   the exit and not from when it arrived: an exit that waits behind a step
-////   is counted from when it is taken, while Ranch counts from when it sent
-////   the stop. A rule that has not stopped by whichever deadline comes first
-////   is killed, and its recording has no closing line.
-//// - **A crash.** When the rule's step crashes, the actor ends with that
-////   reason; Ranch starts connection processes as temporary children, so
-////   nothing restarts it and the listener goes on accepting. The socket closes
-////   with the process, and its recording has no closing line, so it never
-////   replays.
-//// - **A recording that cannot be written.** The shell logs it, closes the
-////   socket and ends the process before that step's effects, so no input is
-////   carried out without its record; the recording has no closing line.
-//// - **An ask.** A step that ends in `EffectsThenAsk` has its effects carried
-////   out first; a failed write or a `Stop` among them means the ask is never
-////   made. The shell then hands the request and a reply, tagged with a fresh
-////   reference, to the settings' `directory`, and waits, taking no other
-////   input, until the outcome:
-////
-//// ```
-//// directory(request, the ask's deadline on the node's clock, reply)
-////   Error(Nil)              ─▶ Answered(ask, NotRunning), nothing sent
-////   Ok(NoReplyInTime)       ─▶ Answered(ask, NoAnswerInTime), nothing sent
-////   Ok(ToService(pid))      ─▶ monitor pid, wait until the ask's deadline
-////   Ok(ToWorker(pid))       ─▶ monitor pid, wait until the ask's deadline
-//// waiting:
-////   {ask answer, tag, a}    ─▶ Answered(ask, Answer(a))
-////   the target's DOWN       ─▶ Answered(ask, EndedBeforeAnswer)
-////   the deadline passes     ─▶ Answered(ask, NoAnswerInTime); a worker is
-////                                ended (exit shutdown) first
-////   the parent's exit       ─▶ Answered(ask, StoppedWaiting) at once, then
-////                                Stopping(when the wait takes the exit
-////                                         + shutdown_ms - send_deadline_ms)
-//// after NoAnswerInTime or StoppedWaiting, the tag and the monitor are kept
-////   until the target's answer or DOWN; between steps:
-////   {ask answer, tag, _} of a kept tag ─▶ tag dropped, no input
-////   the DOWN of a kept tag             ─▶ tag dropped, no input
-////   an answer or DOWN of no kept tag   ─▶ dropped
-//// ```
-////
-////   The wait is a selective receive inside the handler, and the answers
-////   arrive on one subject the connection keeps, each tagged with its ask's
-////   reference. An answer whose ask is answered drops the ask's monitor, with
-////   the DOWN that may already wait, so no monitor stays on the target. While
-////   the shell waits, a system message (`sys:get_state`) waits too, up to the
-////   ask's deadline. The deadline is on the node's own monotonic clock, counted
-////   once from the time the ask allows from the `Now` of the input whose step
-////   made it, so a message that does not end the wait never puts it off, and
-////   a replay, whose `Now`s come from a recording, waits no longer than the
-////   recording's ask allowed (`real_deadline_ms`).
-////
-////   A step that follows `StoppedWaiting` and ends in another ask gets
-////   `Answered(_, StoppedWaiting)` at once, with no call to the directory, so
-////   every ask has one `Answered`; `Stopping` is the next input after a step
-////   that ends without an ask. A worker answers late only when its answer left
-////   before the shell's exit reached it. A late answer gives the rule no input,
-////   whether it comes after `NoAnswerInTime` or after `StoppedWaiting`; one
-////   that arrives during a later ask is taken by that ask's wait and dropped,
-////   and never answers the later ask. The `Now` of `Answered` is read when the
-////   outcome is known.
-////   Bytes the client sent during the ask are read only after it, since the
-////   socket is active once and is not re-armed while the shell waits.
-//// - **The directory's own wait.** `directory` runs before the wait begins,
-////   so the deadline does not bound it. A service is reached by a send, which
-////   never waits. A worker is started by its supervisor's `start_child`, a
-////   call with no timeout, but the worker's start does no work before it
-////   returns, so the call waits only for the starts queued before it; a
-////   supervisor that has stopped exits the call with `noproc`, which
-////   `store/worker.ask` turns into `Error(Nil)`. When the directory returns
-////   past the deadline, the outcome is `NoAnswerInTime` at once.
-//// - **A tell.** A `Tell(to, request)` effect sends the request to the process
-////   at `to` and the shell goes on at once: nothing waits, no monitor is kept,
-////   and no outcome comes back. The way to the process is the one the rule's
-////   open watch on `to` found with its lookup (`Tellable`), so a tell makes no
-////   lookup and a move costs none; it goes with the watch, whether the rule
-////   drops it or the process ends. A tell to an address with no such watch is
-////   dropped with a warning. A tell to a `Connection` needs no watch: the
-////   settings' `deliver` sends it through the registry, one lookup of the
-////   group of the connection's id as any service's send makes, and a connection
-////   that is gone drops it with no line. A tell to a `ZoneChannel` needs no watch
-////   either: `deliver` sends it to every member of the group. A tell to a
-////   `Creature` is a bug of the rule: a creature is told through its map, so the shell
-////   writes an error line and sends nothing. A tell to a
-////   `CharacterNamed` goes through a watch, as a tell to a map run does: the
-////   lookup finds the one connection that holds the name, and a name no
-////   connection holds ends the watch as any target no process holds.
-//// - **A tell through a watch.** `TellWatched(watch, request)` tells the process
-////   that watch found, through that watch's own way to tell it, and drops the
-////   tell with no line when the watch found none or is closed: a whisper to a
-////   name no connection holds ends its watch instead of logging a warning.
-//// - **A group.** `JoinGroup(address)` makes the connection's process a member
-////   of the registry's group at `address` (a `CharacterNamed` or a
-////   `ZoneChannel`) and `LeaveGroup(address)` removes it
-////   (`registry.join_group`, `registry.leave_group`), each in the order of the
-////   step's effects; a connection that ends leaves its groups by itself, since
-////   the registry notices it.
-//// - **A message delivered.** Another process sends the connection's pid
-////   `{woken, message}` (`registry.deliver`); the shell takes it between steps
-////   as `OwnEvent(Woken(message))`, in the order it arrived among the socket's
-////   reads. One that arrives during an ask waits until the ask's outcome and
-////   the step it starts are done, like a read. A message for a connection that has ended is
-////   dropped by the VM, and one that arrives after the shell began to stop is
-////   dropped with the process. A connection with no registry in its settings is
-////   joined to no group, so no process can send it anything.
-//// - **A watch.** `Watch(id, target)` finds the target's pid, and the way to
-////   tell it when the rule tells it, with one call of the settings' `locate`,
-////   monitors it and keeps the monitor under `id`
-////   (genesis_prime/step/watch). Its DOWN is taken between steps as
-////   `WatchEnded(id)`, once, and the shell forgets the watch. A target no
-////   process holds is monitored by nothing: the shell holds the id and takes
-////   `WatchEnded(id)` as the next input once the step is done, and after the
-////   outcome of an ask the step ends in, since no other input is taken
-////   meanwhile; before the mailbox is read and before a stop that arrived
-////   during an ask, with the ends of the step's other such watches in the
-////   order opened. A step that stops the connection takes none. `Unwatch(id)`
-////   drops the monitor and the DOWN already waiting, or an id held for a target
-////   no process holds. A watch's DOWN that arrives during an ask waits like a
-////   delivered message. An id already open, monitored or held, ends the
-////   connection with an error log.
-//// - **A timer.** `StartTimer(id, ms)` starts a timer through the script's
-////   scheduler (the operating system's `process.send_after` in the server, a
-////   timer the replay client fires at its line in a replay) that sends the
-////   shell's timer subject `Elapsed(id, reference)`, kept under `id` with its
-////   own reference. It is taken between steps as
-////   `OwnEvent(TimerFired(id))`, once, and the shell forgets the timer; one
-////   that fires during an ask waits like a delivered message. `CancelTimer(id)`
-////   cancels it and forgets it, so no `TimerFired` follows: a message that
-////   had fired or is in flight when it is cancelled is discarded on arrival,
-////   as is any message whose reference is not the current timer's of that id,
-////   so a cancelled timer's message never fires a restarted timer of the same
-////   id. An id with no running timer is cancelled to nothing. An id already
-////   running, or a negative one, which the shell keeps for its own timers
-////   (`script.held_read_timer`), ends the connection with an error log.
-//// - **The registry's scope ending.** The connection stays joined only as long
-////   as the scope lives; the tree restarts the game listener with the scope, so
-////   no connection outlives it (genesis_prime/connection/registry).
-//// - **Effects and inputs of the other kind.** A connection's own effects are
-////   `Write`, `StartTimer`, `CancelTimer` and `Tell`, and its own inputs are the
-////   socket's, `Woken`, `TimerFired` and `Answered` (`ConnectionEffect` and
-////   `ConnectionEvent`). It has no `Reply`, `Send` or `Started`, so a rule that
-////   answers a caller, sends, or takes a service's input does not compile
-////   against this shell.
+//// - A failed handshake ends the connection quietly: a debug line, nothing recorded (`begin`).
+//// - Reads: buffered up to `frame.read_limit`, active once, re-armed after each step's effects;
+////   a replay's read is reassembled to its recorded byte count, bound 5 s from the first part.
+//// - A message no selector takes is dropped with a warning naming its kind, never its contents.
+//// - Once the socket is held the parent's exit is `Stopping`; another process's is dropped.
+//// - One `Now` per input, one call of the script's clock, none for a dropped message.
+//// - A failed write skips the step's later effects and becomes `WriteFailed`; past the send
+////   deadline it fails as `SendTimedOut` and closes the socket.
+//// - `Stop`: the remaining effects run, the socket closes and the closing line is recorded;
+////   a rule must return `Stop` after `PeerClosed` or `ReadFailed`.
+//// - The server's stop is `Stopping` with a deadline of shutdown less the send deadline;
+////   a rule not stopped in time is killed, its recording unclosed.
+//// - A crash ends the actor with its reason; nothing restarts it and its recording never replays.
+//// - A recording that cannot be written is logged and ends the process before that step's effects.
+//// - An ask (`EffectsThenAsk`): the step's effects run first, then the `directory` is called and a
+////   monitored wait runs until the ask's deadline; an unanswered ask is kept by tag.
+//// - A tell: `Connection`/`ZoneChannel` through `deliver`, any other through its open watch's
+////   `Tellable`, dropped with a warning when none; a `Creature` tell is a rule bug.
+//// - `TellWatched` sends by the watch's own way, silently dropped when the watch found none.
+//// - `JoinGroup`/`LeaveGroup` go through the registry in effect order (`registry.join_group`).
+//// - A delivered message is taken between steps as `OwnEvent(Woken)`; one during an ask waits.
+//// - A watch: one `locate` call, the monitor kept under its id; a target no process holds becomes
+////   `WatchEnded(id)` before the mailbox is read; an id already open ends the connection.
+//// - A timer fires once by reference through the script's scheduler; a stale firing is dropped;
+////   an id already running or negative (the shell's own) ends the connection.
 
 import genesis_prime/connection/frame
 import genesis_prime/connection/registry.{type Registry}

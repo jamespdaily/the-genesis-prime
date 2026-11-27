@@ -64,8 +64,8 @@ import planted_table
 // 0x88c (unit, dead, 0, 0) (`opcode.0x88c`); death leaves the combat flag, so 0x89a
 // (P, 0) follows (`death.combat_flag`); 0x247 of type 22 or 23 with the unit
 // (`opcode.0x247.death`); the ghost's 0x262 of type 23 with the character's id,
-// realm, name, race, class and gender, at the body's place, carrying no stat
-// (`0x140096970`, `opcode.0x262.ghost`); 0x1b3's fields in wire order: the ghost,
+// realm, name, race, class and gender, at the body's place, carrying the sheathed stat
+// alone (`unit.weapon_sheathed`, `0x140096970`, `opcode.0x262.ghost`); 0x1b3's fields in wire order: the ghost,
 // cost, penalty, dead, the choices, the caster bit, the cooldown and the forced
 // release (`opcode.0x1b3`), with the server's choices 0 and Wake Here and Holocrypt
 // (`death.server_choices`, `death.window`, `lua.GameLib.RezType`); 0x636 (0, reset
@@ -143,7 +143,8 @@ pub fn a_player_struck_to_0_dies_with_0x88c_0x89a_off_and_0x247_type_22_then_see
     game_connection_support.player_in(game_connection_support.entered().1)
   assert ghost.bone_values == player.bone_values && ghost.bone_values != []
     as "the ghost wears the bone values of the player's own 0x262, which the character has (0x140096970, 0x140096970.ghost_fields)"
-  assert ghost.tail.stats == [] as "the client reads no stat of a ghost"
+  assert ghost.tail.stats == [unit_fields.integer_stat(stat_id: 15, value: 1)]
+    as "the ghost's list is the sheathed stat alone: the client's create reader is shared by every unit type (unit.weapon_sheathed)"
   assert ghost.tail.casts == [] && ghost.tail.cast_id == 0
     as "the ghost lists no cast: the casts a unit create lists are the ones a viewer's copy of a living player holds (opcode.0x262.casts)"
   let assert [start_movement.Position(at), start_movement.Rotation(_)] =
@@ -1097,8 +1098,8 @@ pub fn an_entry_at_a_saved_health_of_0_creates_the_player_dead_and_its_ghost_and
   assert ghost.unit_id == ghost_unit_id
     && ghost.character_id == 42
     && ghost.name == "Ab Cd"
-    && ghost.tail.stats == []
-    as "the character's ghost, with no stat"
+    && ghost.tail.stats == [unit_fields.integer_stat(stat_id: 15, value: 1)]
+    as "the character's ghost, with the sheathed stat alone"
   let assert [start_movement.Position(at), start_movement.Rotation(_)] =
     ghost.tail.movement_commands
   let body = game_connection_support.entry_place()
@@ -1537,4 +1538,18 @@ pub fn a_killing_blow_tells_the_map_the_answer_before_the_death_test() -> Nil {
   assert list.filter(names, fn(name) { name != "news for the viewers" })
     == ["the answer to creature 7 of life 3", "the death"]
     as "the killing blow's answer to the creature, then the death, both told to the map, with the news for the viewers among them"
+}
+
+pub fn the_ghosts_create_carries_only_stat_15_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) = game_connection_support.dead_in_world()
+  let frames =
+    game_connection_support.heard(taken, game_connection_support.keyed())
+  let assert [ghost] =
+    game_connection_support.decoded(frames, 0x0262, unit_create_ghost.decode)
+    as "the ghost's 0x262 is of type 23"
+  assert list.map(ghost.tail.stats, fn(stat) { stat.stat_id }) == [15]
+    as "unit.weapon_sheathed: SetUnitStatsFromCreate is shared by every unit type, so the ghost's one stat is the sheathed one"
+  assert ghost.tail.stats == [unit_fields.integer_stat(stat_id: 15, value: 1)]
+    as "in the integer form, value 1"
 }

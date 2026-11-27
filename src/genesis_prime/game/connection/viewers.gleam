@@ -293,6 +293,15 @@ pub fn map_sent(
                     generation:,
                   ),
                 ),
+                ..case player_life.in_combat(life: entered.life) {
+                  True -> [
+                    unit_news.PeerNews(
+                      unit_id: entered.unit_id,
+                      news: unit_news.CombatState(in_combat: True),
+                    ),
+                  ]
+                  False -> []
+                }
               ],
             ),
           ),

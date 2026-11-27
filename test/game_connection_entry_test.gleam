@@ -328,6 +328,8 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
         stats: [
           unit_fields.integer_stat(stat_id: 0, value: 736),
           unit_fields.integer_stat(stat_id: 10, value: 1),
+          // Sheathed, out of combat (unit.weapon_sheathed).
+          unit_fields.integer_stat(stat_id: 15, value: 1),
           unit_fields.integer_stat(stat_id: 20, value: 450),
           // The Engineer's Volatility, slot 1: stat 3 in the float form at 0.0, its
           // start (472510, opcode.0x262.resource_stats).

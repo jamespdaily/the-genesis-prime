@@ -1453,12 +1453,13 @@ pub fn snapshot_items(taken: ConnectionStep(Request)) -> List(PeerNews) {
 }
 
 /// The `unit_create_player` (0x0262) the tests' player's connection builds for the arriving
-/// viewer connection `viewer`, in the snapshot it tells the map, taken from the state.
+/// viewer connection `viewer`: the first item of the snapshot it tells the map, taken from the
+/// state (a player in combat adds its 0x89A after it).
 pub fn created_for(
   state state: game_connection.State,
   viewer viewer: Int,
 ) -> UnitCreatePlayer {
-  let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+  let assert [PeerNews(news: Appeared(unit:, ..), ..), ..] =
     snapshot_items(
       feed(
         state:,
