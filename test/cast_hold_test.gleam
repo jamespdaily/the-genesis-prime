@@ -17,7 +17,7 @@ import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_cast_refused
 import genesis_prime/message/spell_started
-import genesis_prime/step.{ConnectionId, LogWarning}
+import genesis_prime/step.{LogWarning}
 import genesis_prime/table/id.{Spell4Id}
 import gleam/list
 import gleam/option.{None}
@@ -103,14 +103,9 @@ pub fn a_held_press_of_a_normal_ability_starts_it_with_a_server_cast_id_and_no_0
     as "Spell4.32809, Mind Burst (Spell4Base 19019), the Esper's ability at bag index 2"
   assert started.caster_unit_id == 7 as "cast.hold_answer: the player casts"
   assert started.own_cast == 1 as "opcode.0x7ff.own_cast: the own-cast bit is 1"
-  assert list.filter_map(support.tells(effects:), fn(told) {
-      case told {
-        #(viewer, CastStarted(..)) -> Ok(viewer)
-        #(_, _) -> Error(Nil)
-      }
-    })
-    == [ConnectionId(2), ConnectionId(3)]
-    as "the players that see the caster are told the start, as for a 0x9a cast"
+  let assert [CastStarted(..)] = support.tells(effects:)
+    as "the map is told the start once, as for a 0x9a cast"
+  Nil
 }
 
 pub fn a_held_press_the_rule_refuses_gets_0x7fc_with_client_cast_id_0_and_no_hold_test() -> Nil {

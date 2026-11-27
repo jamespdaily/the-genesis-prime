@@ -357,9 +357,8 @@ pub fn a_press_of_a_held_self_spell_casts_on_the_caster_test() -> Nil {
   assert confirmed.client_cast_id == clients_cast_id
     && confirmed.primary_target_unit_id == 7
     as "0x14055bdc0: targetType 0 takes the caster, unit 7, whatever the press names"
-  let assert [#(_, news), ..] = support.tells(effects: pressed)
-    as "the viewers see the start"
-  let assert CastStarted(start: started) = news
+  let assert [CastStarted(start: started), ..] = support.tells(effects: pressed)
+    as "the map is told the start"
   assert started.spell4_id == the_self_spell
     && started.caster_unit_id == 7
     && started.primary_target_unit_id == 7
@@ -588,9 +587,8 @@ pub fn a_press_of_a_targeted_spell_at_a_cast_group_unit_starts_on_it_test() -> N
     as "Spell4 42735 (Spell4Base 26923: cast group 5506 holds Creature2 41604, range 15) at a unit 10 m off passes every check, and the caster is told its cast started"
   assert confirmed_targets(effects: pressed) == [900]
     as "0x14055bdc0: targetType 1 takes the unit the press names"
-  let assert [#(_, news), ..] = support.tells(effects: pressed)
-    as "the viewers see the start"
-  let assert CastStarted(start: started) = news
+  let assert [CastStarted(start: started), ..] = support.tells(effects: pressed)
+    as "the map is told the start"
   assert started.spell4_id == the_hologram_spell
     && started.caster_unit_id == the_caster
     && started.primary_target_unit_id == 900

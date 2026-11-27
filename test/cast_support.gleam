@@ -74,10 +74,7 @@ import genesis_prime/message/spell_target_info.{
   type SpellTargetInfo, SpellTargetInfo,
 }
 import genesis_prime/message/spell_targets_removed
-import genesis_prime/step.{
-  type ConnectionId, type LogLevel, type Now, type TimerId, ConnectionId, Now,
-  TimerId,
-}
+import genesis_prime/step.{type LogLevel, type Now, type TimerId, Now, TimerId}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
   type Spell4BaseId, type Spell4EffectsId, Creature2Id, Item2Id, ItemDisplayId,
@@ -89,7 +86,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/set
 import place_support
 import quest_support
 import spell_tables
@@ -560,8 +556,7 @@ pub fn standing_holder(
   ])
 }
 
-/// The player 7 with the abilities above and its weapon, seen by the connections
-/// 2 and 3, standing at the live character's place, holding `full_slot_1`.
+/// The player 7 with the abilities above and its weapon, standing at the live character's place, holding `full_slot_1`.
 pub fn caster() -> Caster {
   let place = place_support.live_character_place()
   cast_state.Caster(
@@ -571,7 +566,6 @@ pub fn caster() -> Caster {
     book: list.append(abilities(), [Spell4BaseId(52_215), Spell4BaseId(20_685)]),
     surge_spell: Spell4Id(47_439),
     weapon: Some(Item2Id(81_351)),
-    audience: set.from_list([ConnectionId(2), ConnectionId(3)]),
     players_in_sight: dict.new(),
     other_players: dict.new(),
     hit_radius: place_support.player_hit_radius,
@@ -1411,11 +1405,11 @@ pub fn removed_stacks(frames: List(Frame)) -> List(#(Int, Int)) {
   })
 }
 
-/// What viewers are told, by connection, in order.
-pub fn tells(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
+/// What the map is told of the cast to relay to the viewers, in order.
+pub fn tells(effects effects: List(Effect)) -> List(News) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      cast_state.Tell(to:, news:) -> Ok(#(to, news))
+      cast_state.Broadcast(news:) -> Ok(news)
       _ -> Error(Nil)
     }
   })
@@ -2783,17 +2777,12 @@ pub fn listed_with_delays(
   })
 }
 
-/// The Spell4 id and the root and parent Spell4 ids of each 0x7ff told to the connection
-/// `connection`, in order.
-pub fn started_told_to(
-  effects effects: List(Effect),
-  connection connection: Int,
-) -> List(#(Int, Int, Int)) {
+/// The Spell4 id and the root and parent Spell4 ids of each 0x7ff told to the map, in order.
+pub fn started_told(effects effects: List(Effect)) -> List(#(Int, Int, Int)) {
   list.filter_map(tells(effects:), fn(tell) {
     case tell {
-      #(ConnectionId(told), unit_news.CastStarted(start:))
-        if told == connection
-      -> Ok(#(start.spell4_id, start.root_spell4_id, start.parent_spell4_id))
+      unit_news.CastStarted(start:) ->
+        Ok(#(start.spell4_id, start.root_spell4_id, start.parent_spell4_id))
       _ -> Error(Nil)
     }
   })

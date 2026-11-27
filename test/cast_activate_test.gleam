@@ -45,7 +45,7 @@ import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_go
 import genesis_prime/message/unit_cc_state_applied.{UnitCcStateApplied}
-import genesis_prime/step.{ConnectionId, LogDebug, LogWarning}
+import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -285,11 +285,8 @@ pub fn activate_starts_with_activate_bit_and_creature_cast_time_test() -> Nil {
   assert confirmed.client_cast_id == clients_cast_id
     && confirmed.primary_target_unit_id == its_unit
     as "opcode.0x97: the confirmation answers the client's cast id and names the unit"
-  let assert [#(ConnectionId(2), news_2), #(ConnectionId(3), news_3)] =
-    support.tells(effects:)
-    as "each viewer is told the start"
-  assert news_2 == news_3
-  let assert CastStarted(start: started) = news_2
+  let assert [CastStarted(start: started)] = support.tells(effects:)
+    as "the map is told the start once"
   assert started.cast_id == confirmed.server_cast_id
     && started.spell4_id == 1817
     && started.root_spell4_id == 1817
@@ -595,9 +592,8 @@ pub fn a_creatures_activate_cast_time_does_not_time_the_default_spell_test() -> 
     )
     as "Spell4 8 reaches a unit its edge touches"
   let #(_, steps) = support.run_timers(state:, effects: clicked, from_ms: 1000)
-  let assert [#(_, CastStarted(start: started)), ..] =
-    support.tells(effects: clicked)
-    as "the cast starts and its viewers are told"
+  let assert [CastStarted(start: started), ..] = support.tells(effects: clicked)
+    as "the cast starts and the map is told"
   assert started.spell4_id == 8
     as "no column passes, so the pick is the default spell"
   assert support.written_ids(effects: clicked) == [0x07FD, 0x07F4, 0x07FE]
@@ -643,9 +639,9 @@ fn market_terminal_pressed(progress progress: Int) -> List(Effect) {
 
 pub fn activate_pick_reads_the_checklist_bit_of_the_creature_test() -> Nil {
   use <- owned_test.run(10_000)
-  let assert [#(_, CastStarted(start: started)), ..] =
+  let assert [CastStarted(start: started), ..] =
     support.tells(effects: market_terminal_pressed(progress: 0))
-    as "the cast starts and its viewers are told"
+    as "the cast starts and the map is told"
   assert started.spell4_id == 38_925
     as "Creature2 34758's first column, Spell4 38925, behind Prerequisite 13244: type 94 comparison 2 of quest 7153's objective 0 passes while the unit's bit is clear"
   assert support.refusal_results(effects: market_terminal_pressed(progress: 32))
@@ -1580,11 +1576,8 @@ pub fn a_client_side_interaction_activate_cast_starts_and_waits_for_the_answer_t
   assert confirmed.client_cast_id == clients_cast_id
     && confirmed.primary_target_unit_id == its_unit
     as "opcode.0x97: the confirmation answers the client's cast id and names the unit"
-  let assert [#(ConnectionId(2), news_2), #(ConnectionId(3), news_3)] =
-    support.tells(effects:)
-    as "each viewer is told the start"
-  assert news_2 == news_3
-  let assert CastStarted(start: started) = news_2
+  let assert [CastStarted(start: started)] = support.tells(effects:)
+    as "the map is told the start once"
   assert started.spell4_id == 34_681
     && started.creature_activate == 1
     && started.caster_unit_id == 7

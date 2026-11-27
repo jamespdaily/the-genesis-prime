@@ -479,14 +479,11 @@ pub fn entering_stealth_by_the_innate_press_casts_60724_at_the_player_after_the_
     == 1
     as "only the press is confirmed with a 0x7fd: the proc's cast has none"
   let proc_start = started_of(spell4_id: 60_724, effects:)
-  assert list.filter_map(support.tells(effects:), fn(told) {
-      case told.1 == unit_news.CastStarted(start: proc_start) {
-        True -> Ok(told.0)
-        False -> Error(Nil)
-      }
+  assert list.filter(support.tells(effects:), fn(told) {
+      told == unit_news.CastStarted(start: proc_start)
     })
-    == [ConnectionId(2), ConnectionId(3)]
-    as "each viewer is told the start of the proc's cast"
+    == [unit_news.CastStarted(start: proc_start)]
+    as "the map is told the start of the proc's cast, once"
   let #(_, after) = shredded(state: entered, caster:, at: 2100)
   assert support.refusal_results(effects: after) == []
     as "the proc's cast starts no global cooldown (globalCooldownEnum 3, 0x14046afc0), so Shred 100 ms later is not refused 14"
@@ -4906,7 +4903,6 @@ fn item_cast_holding_a_proc_on_an_ally() -> #(State, Caster) {
           cast_state.Lingering(
             spell:,
             root: spell.spell4_id,
-            audience: support.caster().audience,
             started_ms: 1000,
             primary_target: 7,
             nodes: dict.new(),

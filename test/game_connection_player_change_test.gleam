@@ -27,16 +27,13 @@ import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
 import genesis_prime/game/unit_properties.{type Source, Change, Source}
 import genesis_prime/game/world_entry
-import genesis_prime/step.{
-  type ConnectionId, type Effect, ConnectionId, Now, OwnEffect,
-}
+import genesis_prime/step.{type Effect, ConnectionId, Now, OwnEffect}
 import genesis_prime/table/id.{
   type Spell4Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import gleam/dict
 import gleam/list
 import gleam/result
-import gleam/set
 import map_support
 import owned_test
 import world_entry_support
@@ -49,11 +46,6 @@ fn address() -> PlayerAddress {
     unit_id: 40,
     stay: map_support.stay(count: ally_connection),
   )
-}
-
-/// The connections the caster told the cast's 0x7ff: its own and a viewer's.
-fn told_the_0x7ff() -> set.Set(ConnectionId) {
-  set.from_list([ConnectionId(1), ConnectionId(3)])
 }
 
 fn source() -> Source {
@@ -173,17 +165,15 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_that_players_connection_
       ],
     ),
     #(
-      "a went: one tell to the ally's connection for its stay, from the caster's own connection, with the cast id and the audience as the rule gave them",
+      "a went: one tell to the ally's connection for its stay, from the caster's own connection, with the cast id as the rule gave it",
       cast_state.OtherPlayerCastWent(
         address: address(),
         cast_id: source().cast_id,
-        audience: told_the_0x7ff(),
       ),
       [
         told_to_the_ally(change: PlayerCastWent(
           from:,
           cast_id: source().cast_id,
-          audience: told_the_0x7ff(),
         )),
       ],
     ),
@@ -215,7 +205,6 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_that_players_connection_
       cast_state.OtherPlayerCastWent(
         address: address(),
         cast_id: source().cast_id,
-        audience: told_the_0x7ff(),
       ),
     ])
     == []

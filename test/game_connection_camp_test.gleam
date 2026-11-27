@@ -45,7 +45,6 @@ import gleam/bit_array
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/set
 import owned_test
 import world_entry_support
 
@@ -833,7 +832,6 @@ pub fn a_camp_tells_the_creatures_the_ends_of_its_holdings_in_the_step_that_star
     cast_state.Lingering(
       spell: cast_support.exempt(),
       root: Spell4Id(7),
-      audience: set.new(),
       started_ms: 100,
       primary_target: 40,
       nodes: dict.from_list([

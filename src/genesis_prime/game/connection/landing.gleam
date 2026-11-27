@@ -29,14 +29,13 @@
 ////                         (properties.started, absorption.started), held for C
 ////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerChangeEnds(C, source))))
 ////                      ─▶ changed: the source taken off, when C holds it
-////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerCastWent(C, cast_id, audience))))
-////                      ─▶ cast_went: Tell(each viewer of T outside the audience, except C,
-////                         PeerNews(T, HeldCastStarted(0x7ff, 0x7f4))), after the rows
+////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerCastWent(C, cast_id))))
+////                      ─▶ cast_went: Tell(map, TellBroadcast(PeerNews(T, HeldCastStarted(0x7ff, 0x7f4)))), after the rows
 ////   the map's UnseenBy(C) ─▶ caster_unseen: C's sources with `EndsWhenUnseen` taken off
 ////   the map's Gone(C's unit) ─▶ caster_removed: every source of that unit taken off
 ////   T dies                ─▶ ended_at_death: every source T holds taken off
 ////   each of the three, once a cast has no source left
-////                         ─▶ Tell(each viewer, PeerNews(T, HeldCastEnded(cast_id))), after T's own writes
+////                         ─▶ Tell(map, TellBroadcast(PeerNews(T, HeldCastEnded(cast_id)))), after T's own writes
 //// ```
 ////
 //// ```
@@ -69,7 +68,8 @@
 ////   0x100 stays after its caster left T's sight. T's death clears the ledger
 ////   (`ended_at_death`), so a dead T holds none and takes no went. The start lists each effect
 ////   the ledger holds of the cast (`held_changes.cast_views`), at the clock the went is
-////   taken, and goes to each viewer outside the audience except the caster, whose client
+////   taken, and goes to the map, which relays it to each viewer; a viewer writes it only when its
+////   own ledger holds the cast in no state and the cast's caster is not its own unit, whose client
 ////   holds the cast from its own go (`opcode.0x7ff`).
 //// - **The tell carries what a create lists**: the cast's Spell4 id and the change's
 ////   effect with the go's own monotonic time as its start, which the ledger keeps
@@ -112,7 +112,6 @@ import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/set.{type Set}
 
 /// The heal rows of `strike` applied to the player `entered`, and the answer told to
 /// the caster's connection for the stay the strike names, before the player's own news.
@@ -247,14 +246,14 @@ pub fn changed(
         }
         Ok(_) | Error(Nil) -> Continue(session, [])
       }
-    held_changes.PlayerCastWent(from:, cast_id:, audience:) ->
-      cast_went(session:, now:, entered:, from:, cast_id:, audience:)
+    held_changes.PlayerCastWent(from:, cast_id:) ->
+      cast_went(session:, now:, entered:, from:, cast_id:)
   }
 }
 
 /// The go of the cast `cast_id` that the caster of connection `from` started has told the
-/// player its changes: the player tells each of its viewers outside `audience`, except
-/// the caster, the cast's start, built from the changes it holds of the cast. The ledger
+/// player its changes: the player tells the map the cast's start, built from the changes it
+/// holds of the cast, for the map to relay to its viewers. The ledger
 /// is the whole guard: a dead player holds nothing (`ended_at_death`).
 fn cast_went(
   session session: Session,
@@ -262,7 +261,6 @@ fn cast_went(
   entered entered: world_entry.Entered,
   from from: step.ConnectionId,
   cast_id cast_id: Int,
-  audience audience: Set(step.ConnectionId),
 ) -> client_connection.Handled(Session) {
   use <- bool.guard(
     when: !held_changes.holds_cast_from(held: entered.held, cast_id:, by: from),
@@ -285,14 +283,13 @@ fn cast_went(
           place: movement.place(entered.movement),
           now_ms: now.monotonic_ms,
         )
-      Continue(
-        session,
-        connection_state.news_to_viewers_but(
+      Continue(session, [
+        connection_state.broadcast(
+          session:,
           entered:,
-          left_out: set.insert(audience, from),
           news: unit_news.HeldCastStarted(start:, go:),
         ),
-      )
+      ])
     }
     Error(Nil) -> Continue(session, [])
   }
@@ -404,7 +401,7 @@ fn released_ended(
   }
 }
 
-/// The tell of `HeldCastEnded` to each viewer of the player for each cast of `sources` of
+/// The tell of `HeldCastEnded` to the map for each cast of `sources` of
 /// which the player holds no source any more, in cast id order, after the writes to the
 /// player's own client: the viewers that were listed the cast by the player's create and
 /// not told it by its caster end it themselves (genesis_prime/game/connection/viewers).
@@ -415,10 +412,11 @@ fn viewers_told_ended(
   case connection_state.entered_of(session.status) {
     None -> []
     Some(entered) ->
-      list.flat_map(
+      list.map(
         held_changes.casts_left(held: entered.held, released: sources),
         fn(cast_id) {
-          connection_state.news_to_viewers(
+          connection_state.broadcast(
+            session:,
             entered:,
             news: unit_news.HeldCastEnded(cast_id:),
           )

@@ -9,7 +9,7 @@
 ////                                  ─▶ started(by: C, source, .., spell4_id, effect)
 ////   Tell(T, TellPlayer(stay_T, Change(PlayerChangeEnds(C, source))))
 ////                                  ─▶ released(source)
-////   Tell(T, TellPlayer(stay_T, Change(PlayerCastWent(C, cast_id, audience))))
+////   Tell(T, TellPlayer(stay_T, Change(PlayerCastWent(C, cast_id))))
 ////                                  ─▶ holds_cast_from(cast_id, C), cast_views(T's unit, now)
 ////   the map's UnseenBy(C)          ─▶ released_unseen(C): the sources with `EndsWhenUnseen`
 ////   the map's Gone(C's unit)       ─▶ released_with_unit(unit): every source of that unit
@@ -44,7 +44,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/set.{type Set}
 
 /// What a caster's cast changes on a player that is not the caster, as it is told: a
 /// property modifier (the UnitPropertyModifier and UnitPropertyConversion rows, and the
@@ -114,11 +113,10 @@ pub type PlayerChange {
   /// is taken off.
   PlayerChangeEnds(from: ConnectionId, source: Source)
   /// The go of the cast `cast_id` that `from` started has told the player each of its
-  /// changes: the player starts the cast for each of its viewers outside `audience` (the
-  /// connections the caster told the cast's 0x7ff) except `from`, from what it holds of the
+  /// changes: the player starts the cast for its viewers, from what it holds of the
   /// cast. It names no stay: the player's own stay is fenced where it is taken, and the
   /// guard is the ledger's (`holds_cast_from`).
-  PlayerCastWent(from: ConnectionId, cast_id: Int, audience: Set(ConnectionId))
+  PlayerCastWent(from: ConnectionId, cast_id: Int)
 }
 
 /// What a player lists of a cast that holds a change on it: the cast's spell and the

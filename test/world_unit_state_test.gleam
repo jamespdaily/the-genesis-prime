@@ -412,11 +412,10 @@ fn refused(result result: Int) -> #(List(Int), List(Int)) {
   #([result], [0x07FC])
 }
 
-/// The Spell4 id of the cast the effects start (the 0x7ff the caster's audience is told).
+/// The Spell4 id of the cast the effects start (the 0x7ff the map is told).
 fn started_spell4_id(effects effects: List(cast_state.Effect)) -> Int {
-  let assert [unit_news.CastStarted(start:), ..] =
-    list.map(cast_support.tells(effects:), fn(tell) { tell.1 })
-    as "the press starts a cast, the first thing its audience is told"
+  let assert [unit_news.CastStarted(start:), ..] = cast_support.tells(effects:)
+    as "the press starts a cast, the first thing the map is told"
   start.spell4_id
 }
 

@@ -59,9 +59,8 @@
 ////   the player, the change stays, and its timer ends it, told from the go's address. A
 ////   later cast of the same stack group that no node of an earlier cast holds a change for
 ////   ends that cast's change first (`kept_pushed_off`). After its changes the go tells the
-////   player's connection one `OtherPlayerCastWent` for the cast, with the audience the
-////   caster told the cast's 0x7ff (`modifiers_armed`), so the player starts the cast for
-////   the viewers outside it. A Proc row the player holds is told the same way, as a change that
+////   player's connection one `OtherPlayerCastWent` for the cast (`modifiers_armed`), so the
+////   player starts the cast for its viewers that hold it in no state. A Proc row the player holds is told the same way, as a change that
 ////   applies nothing, and the caster keeps its entry for that player until the change ends.
 //// - **A press at oneself** puts a type 11 row aimed at the primary target on the caster
 ////   (`caster_rows`), a change of its own ended as any caster modifier is: Phantasmal Armor's
@@ -165,16 +164,16 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/state.{
   type Aimed, type Applied, type Caster, type CasterChange, type Due,
-  type Effect, type HeldRestriction, type Live, type OnCreature, type OnUnit,
-  type Reached, type Restricting, type State, type Struck, Applied,
+  type Effect, type HeldRestriction, type OnCreature, type OnUnit, type Reached,
+  type Restricting, type State, type Struck, Applied, Broadcast,
   CasterChangeStarts, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
   CreatureControlsEnd, CreatureDespawns, CreatureHoldsUnitStates, Deflected,
   Finish, ForcedMoveStart, ForcedMoveStarts, Go, HeldChange, HeldOnCreature,
   HeldOnPlayer, HeldRestriction, Hit, Immune, Look, ModifierEnd, ModifierStart,
   NodesEnd, OnCreature, OtherPlayerChangeStarts, PlayerChangeEnd, ProcDue,
   QuestAdvanceDue, RepeatHeld, Restricting, RestrictionEnd, Send, StartChild,
-  StartHeld, State, StateEnd, TargetChangeStarts, TargetModifierStart, Tell,
-  Tick, WindowEnd,
+  StartHeld, State, StateEnd, TargetChangeStarts, TargetModifierStart, Tick,
+  WindowEnd,
 } as cast_state
 import genesis_prime/game/crowd_control
 import genesis_prime/game/damage
@@ -191,16 +190,13 @@ import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
-import genesis_prime/step.{type ConnectionId}
 import genesis_prime/table/id.{type Spell4EffectsId}
-import genesis_prime/world_map/map
 import gleam/bool
 import gleam/dict
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/set.{type Set}
 
 /// The delay of a property modifier on a creature ran out: it starts on the creature
 /// (`TargetChangeStarts`) and the cast keeps it in `on_units` until an end of its
@@ -481,12 +477,11 @@ fn effect_named(kind kind: spell_plan.Kind) -> Result(String, Nil) {
 }
 
 /// The go's states on the caster, each with its instance id: the one a cast already holds
-/// for the effect, or the next of the caster's counter, held with the go's audience.
+/// for the effect, or the next of the caster's counter.
 pub fn restrictions_numbered(
   cast cast: State,
   caster caster: Caster,
   cast_id cast_id: Int,
-  live live: Live,
   applied applied: Applied,
 ) -> #(State, List(Restricting)) {
   list.fold(
@@ -513,11 +508,7 @@ pub fn restrictions_numbered(
               restrictions: dict.insert(
                 cast.restrictions,
                 source,
-                HeldRestriction(
-                  state: row.row.state,
-                  instance_id:,
-                  audience: live.audience,
-                ),
+                HeldRestriction(state: row.row.state, instance_id:),
               ),
               restrictions_told: told,
             ),
@@ -530,18 +521,17 @@ pub fn restrictions_numbered(
   )
 }
 
-/// 0x87f to the caster and to the audience of the go, for each state the go gave
+/// 0x87f to the caster and told to the map, for each state the go gave
 /// (`opcode.0x87f`); a state a cast already held is not told again. A Tether on the
 /// caster is told its anchor first, the caster's own unit, by a 0x881 to the caster
 /// alone: the message sets the anchor of the unit the receiving client controls and
-/// names no unit, so the audience, whose clients control other units, gets none
+/// names no unit, so the viewers, whose clients control other units, get none
 /// (`opcode.0x881`). That the anchor is the caster's own unit is a guess; no client
 /// value names it.
 pub fn restrictions_shown(
   restricting restricting: List(Restricting),
   cast_id cast_id: Int,
   caster caster: Caster,
-  live live: Live,
 ) -> List(Effect) {
   restricting
   |> list.filter(fn(one) { one.fresh })
@@ -562,16 +552,11 @@ pub fn restrictions_shown(
           state:,
           instance_id: one.instance_id,
         )),
-        ..list.map(map.sorted_connections(live.audience), fn(viewer) {
-          Tell(
-            to: viewer,
-            news: unit_news.CasterRestrictionApplied(
-              cast_id:,
-              state:,
-              instance_id: one.instance_id,
-            ),
-          )
-        })
+        Broadcast(news: unit_news.CasterRestrictionApplied(
+          cast_id:,
+          state:,
+          instance_id: one.instance_id,
+        )),
       ],
     ])
   })
@@ -610,7 +595,7 @@ pub fn restrictions_armed(
 }
 
 /// The state the effect `source` gave the caster ends with its row, ahead of its cast's
-/// node: 0x880 to the caster and the audience told of it. A state no longer held, because
+/// node: 0x880 to the caster and told to the map. A state no longer held, because
 /// the node ended or was taken off first, or the caster died or left, ends nothing.
 pub fn restriction_ended(
   cast cast: State,
@@ -625,7 +610,7 @@ pub fn restriction_ended(
   }
 }
 
-/// 0x880 to the caster and to the audience that was told the state, for each state the
+/// 0x880 to the caster and told to the map, for each state the
 /// cast `cast_id` held, in effect id order (`opcode.0x880`).
 pub fn restrictions_ended(
   held held: List(#(unit_properties.Source, HeldRestriction)),
@@ -644,16 +629,11 @@ pub fn restrictions_ended(
         cast_id:,
         instance_id: restriction.instance_id,
       )),
-      ..list.map(map.sorted_connections(restriction.audience), fn(viewer) {
-        Tell(
-          to: viewer,
-          news: unit_news.CasterRestrictionEnded(
-            state: restriction.state,
-            cast_id:,
-            instance_id: restriction.instance_id,
-          ),
-        )
-      })
+      Broadcast(news: unit_news.CasterRestrictionEnded(
+        state: restriction.state,
+        cast_id:,
+        instance_id: restriction.instance_id,
+      )),
     ]
   })
 }
@@ -703,9 +683,8 @@ pub fn controls_landed(
 /// does not last until removed ends on a timer after its delay and duration. A change told to
 /// another player ends on a timer at its row's life, which for a row that lasts until removed
 /// is the end of the aura the cast is (`started_ms`, `lasting.row_life`). After the rows
-/// the go tells a player, one `OtherPlayerCastWent` for each such player follows with the
-/// cast's `audience`, so the player holds every row of the go when it starts the cast for
-/// its viewers.
+/// the go tells a player, one `OtherPlayerCastWent` for each such player follows, so the
+/// player holds every row of the go when it starts the cast for its viewers.
 pub fn modifiers_armed(
   cast cast: State,
   cast_id cast_id: Int,
@@ -714,7 +693,6 @@ pub fn modifiers_armed(
   aimed aimed: Aimed,
   struck struck: List(Struck),
   spell spell: Spell,
-  audience audience: Set(ConnectionId),
   started_ms started_ms: Int,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect)) {
@@ -770,7 +748,7 @@ pub fn modifiers_armed(
     list.append(
       effects,
       list.map(told, fn(address) {
-        cast_state.OtherPlayerCastWent(address:, cast_id:, audience:)
+        cast_state.OtherPlayerCastWent(address:, cast_id:)
       }),
     ),
   )
@@ -1241,7 +1219,7 @@ pub fn struck_moves_armed(
 /// is removed.
 ///
 /// ```
-/// cast.went: Send(go 0x7f4), Tell(audience, CastWent)
+/// cast.went: Send(go 0x7f4), Broadcast(CastWent)
 ///   for each despawn row reached on a unit the round Hit as a creature (HitCreature):
 ///     CreatureDespawns(unit, life, went_at_ms = go time, delay_ms)
 ///   the connection tells the creature Despawn(delay_ms, went_at_ms), through its map
@@ -1297,7 +1275,7 @@ pub fn despawns_told(
 /// own state rows. All three are server guesses: the client reads no row of this type.
 ///
 /// ```
-/// cast.went: Send(go 0x7f4), Tell(audience, CastWent)
+/// cast.went: Send(go 0x7f4), Broadcast(CastWent)
 ///   for each creature the round Hit (HitCreature) that a unit state row reached:
 ///     CreatureHoldsUnitStates(unit, life, went_at_ms = go time,
 ///                             rows = Row(state, delay_ms, duration_ms) in row order)

@@ -14,7 +14,7 @@ import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as c
 import genesis_prime/game/spell_plan.{type Spell, LandsHit}
 import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
-import genesis_prime/step.{ConnectionId, LogWarning}
+import genesis_prime/step.{LogWarning}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -139,13 +139,13 @@ pub fn standing_changed_ends_a_lingering_spell_no_longer_wanted_with_its_0x7fe_a
   assert support.finished_ids(support.writes(effects: ended)) == [holder_cast]
     as "opcode.0x7fe: the spell no longer wanted ends with its 0x7fe to the caster"
   assert list.filter_map(support.tells(effects: ended), fn(told) {
-      case told.1 {
-        unit_news.CastFinished(cast_id:) -> Ok(#(told.0, cast_id))
+      case told {
+        unit_news.CastFinished(cast_id:) -> Ok(cast_id)
         _ -> Error(Nil)
       }
     })
-    == [#(ConnectionId(2), holder_cast), #(ConnectionId(3), holder_cast)]
-    as "and to the audience that was told its start"
+    == [holder_cast]
+    as "and to the map, once"
   assert support.caster_change_ends(effects: ended)
     == [
       unit_properties.Source(

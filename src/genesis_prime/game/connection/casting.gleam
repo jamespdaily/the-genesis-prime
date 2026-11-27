@@ -56,7 +56,7 @@
 ////   connection (cast rule)                         map                           creature
 ////   a toggle press, a landed blow on 83834 or a death moves the stealth
 ////     StealthChanged(s) ─▶ 0x8f5 {owner, s}         ─▶ the owner's client
-////                       ─▶ Tell(each viewer, Stealth(s))
+////                       ─▶ Tell(map, TellBroadcast(Stealth(s)))
 ////                       ─▶ Tell(map, TellStealthChanged(connection, s))
 ////                                                    ─▶ a change: Withdrew(connection) when s,
 ////                                                       Approached when not s ─────────────▶ near
@@ -950,7 +950,6 @@ pub fn caster_of(
     book: ability_book.book(tables:, loadout: entered.loadout, level:),
     surge_spell: spell_surge.spell(tables:),
     weapon: entered.gear.weapon,
-    audience: connection_state.viewer_connections(entered:),
     players_in_sight: player_address.in_sight(
       viewers: entered.viewers,
       picture: entered.shown,
@@ -1457,11 +1456,10 @@ fn carried_out(
       cast_state.Send(frame:), _ -> #(session, [
         connection_state.to_client(session, frame),
       ])
-      cast_state.Tell(to:, news:), Some(entered) -> #(
-        session,
-        connection_state.news_to_connection(entered:, connection: to, news:),
-      )
-      cast_state.Tell(..), None -> #(session, [])
+      cast_state.Broadcast(news:), Some(entered) -> #(session, [
+        connection_state.broadcast(session:, entered:, news:),
+      ])
+      cast_state.Broadcast(..), None -> #(session, [])
       cast_state.StartTimer(timer:, after_ms:), _ -> #(session, [
         OwnEffect(StartTimer(timer:, after_ms:)),
       ])
@@ -1608,19 +1606,15 @@ fn carried_out(
           ),
         ],
       )
-      cast_state.OtherPlayerCastWent(address:, cast_id:, audience:), Some(_) -> #(
-        session,
-        [
-          tells_the_player(
-            address:,
-            change: held_changes.PlayerCastWent(
-              from: client_connection.connection(session.link),
-              cast_id:,
-              audience:,
-            ),
+      cast_state.OtherPlayerCastWent(address:, cast_id:), Some(_) -> #(session, [
+        tells_the_player(
+          address:,
+          change: held_changes.PlayerCastWent(
+            from: client_connection.connection(session.link),
+            cast_id:,
           ),
-        ],
-      )
+        ),
+      ])
       cast_state.OtherPlayerChangeStarts(..), None
       | cast_state.OtherPlayerChangeEnds(..), None
       | cast_state.OtherPlayerCastWent(..), None

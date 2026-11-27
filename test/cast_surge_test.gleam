@@ -18,7 +18,6 @@ import cast_support as support
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/class_resource.{Payment}
 import genesis_prime/game/unit_news.{CastStarted}
-import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{type Spell4BaseId, Spell4BaseId}
 import gleam/list
 import owned_test
@@ -83,12 +82,11 @@ fn pressed(
   )
 }
 
-/// The Spell4 id each root cast the press starts, as its viewers are told.
+/// The Spell4 id each root cast the press starts, as the map is told.
 fn started(effects effects: List(Effect)) -> List(Int) {
   list.filter_map(support.tells(effects:), fn(tell) {
     case tell {
-      #(ConnectionId(2), CastStarted(start:)) if start.parent_spell4_id == 0 ->
-        Ok(start.spell4_id)
+      CastStarted(start:) if start.parent_spell4_id == 0 -> Ok(start.spell4_id)
       _ -> Error(Nil)
     }
   })

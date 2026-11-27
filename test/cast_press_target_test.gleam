@@ -1241,7 +1241,7 @@ fn ticks_written(effects effects: List(Effect)) -> List(SpellEffectTick) {
 /// The viewers told a tick in the effects.
 fn ticks_told(effects effects: List(Effect)) -> Int {
   list.count(support.tells(effects:), fn(tell) {
-    case tell.1 {
+    case tell {
       CastTicked(..) -> True
       _ -> False
     }

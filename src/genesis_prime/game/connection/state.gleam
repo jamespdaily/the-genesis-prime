@@ -4,7 +4,7 @@
 //// the tells of news to the players who see the player.
 
 import genesis_prime/client_connection.{
-  type Bucket, type Link, type Request, AskStore, Asking, Done, TellPeer,
+  type Bucket, type Link, type Request, AskStore, Asking, Done,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -564,13 +564,6 @@ pub fn level_of(entered entered: world_entry.Entered) -> Int {
   |> result.unwrap(1)
 }
 
-/// The connections whose players see the player.
-pub fn viewer_connections(
-  entered entered: world_entry.Entered,
-) -> Set(ConnectionId) {
-  set.from_list(dict.keys(entered.viewers))
-}
-
 /// Makes the connection's next ask, after the effects `before`, with the
 /// settings' deadline.
 pub fn ask(
@@ -713,37 +706,6 @@ pub fn saves_the_place(status: Status) -> Bool {
   }
 }
 
-/// The tell of news about the player's own unit to the connection of a player
-/// who sees it, for that player's stay.
-fn news_to(
-  entered entered: world_entry.Entered,
-  viewer viewer: #(ConnectionId, Stay),
-  news news: unit_news.News,
-) -> Effect(ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: step.Connection(viewer.0),
-    request: TellPeer(
-      stay: viewer.1,
-      news: unit_news.PeerNews(unit_id: entered.unit_id, news:),
-    ),
-  ))
-}
-
-/// The tell of news to the connection, when its player sees this one; none when
-/// it no longer does: its client was sent the unit's 0x355 and forgot the unit.
-pub fn news_to_connection(
-  entered entered: world_entry.Entered,
-  connection connection: ConnectionId,
-  news news: unit_news.News,
-) -> List(Effect(ConnectionEffect(Request))) {
-  case dict.get(entered.viewers, connection) {
-    Ok(viewer) -> [
-      news_to(entered:, viewer: #(connection, viewer.stay), news:),
-    ]
-    Error(Nil) -> []
-  }
-}
-
 /// The tell of `news` about the player's own unit to the run of its map, which relays it
 /// to each player whose relation with this one relays, in the map's order
 /// (genesis_prime/world_map/map `PlayerBroadcast`): the owner tells no viewer itself.
@@ -760,30 +722,6 @@ pub fn broadcast(
       news: unit_news.PeerNews(unit_id: entered.unit_id, news:),
     ),
   )
-}
-
-/// The tell of `news` about the player's own unit to each player who sees it, in
-/// connection order: the cast news, which the map does not relay.
-pub fn news_to_viewers(
-  entered entered: world_entry.Entered,
-  news news: unit_news.News,
-) -> List(Effect(ConnectionEffect(Request))) {
-  news_to_viewers_but(entered:, left_out: set.new(), news:)
-}
-
-/// The tell of `news` about the player's own unit to each player who sees it, in
-/// connection order, except the connections in `left_out`.
-pub fn news_to_viewers_but(
-  entered entered: world_entry.Entered,
-  left_out left_out: Set(ConnectionId),
-  news news: unit_news.News,
-) -> List(Effect(ConnectionEffect(Request))) {
-  list.filter(sorted_viewers(entered:), fn(viewer) {
-    !set.contains(left_out, viewer.0)
-  })
-  |> list.map(fn(viewer) {
-    news_to(entered:, viewer: #(viewer.0, { viewer.1 }.stay), news:)
-  })
 }
 
 /// The tell of `request` to the run of the player's map, which no answer follows

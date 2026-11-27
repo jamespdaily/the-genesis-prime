@@ -48,9 +48,7 @@ import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription,
 }
-import genesis_prime/step.{
-  type ConnectionId, type LogLevel, type TimerId, TimerId,
-}
+import genesis_prime/step.{type LogLevel, type TimerId, TimerId}
 import genesis_prime/table/id.{
   type Item2Id, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
 }
@@ -101,8 +99,6 @@ pub type Caster {
     surge_spell: Spell4Id,
     /// The item in the equipped slot 16, when there is one.
     weapon: Option(Item2Id),
-    /// The connections whose players see this one.
-    audience: Set(ConnectionId),
     /// The other players in the player's sight, by unit id, with what a tell to each is
     /// addressed by (genesis_prime/game/player_address): the units a press can name as
     /// its target.
@@ -189,8 +185,9 @@ pub type CasterChange {
 pub type Effect {
   /// Write a message to the caster's client.
   Send(frame: Frame)
-  /// Tell the connection of a player who sees the caster the news of a cast.
-  Tell(to: ConnectionId, news: News)
+  /// Tell the news of a cast to the map once, which relays it to each player whose relation
+  /// with the caster relays (`client_connection.TellBroadcast`).
+  Broadcast(news: News)
   StartTimer(timer: TimerId, after_ms: Int)
   CancelTimer(timer: TimerId)
   Log(level: LogLevel, text: String)
@@ -255,13 +252,9 @@ pub type Effect {
   /// that player (`OtherPlayerChangeStarts`), one tell per cast and player after the last:
   /// the connection tells that player's connection for the stay `address` names
   /// (genesis_prime/game/held_changes `PlayerCastWent`), which holds the cast in its ledger
-  /// and starts it for each of its viewers that is not in `audience`, the connections the
-  /// caster told the cast's 0x7ff.
-  OtherPlayerCastWent(
-    address: PlayerAddress,
-    cast_id: Int,
-    audience: Set(ConnectionId),
-  )
+  /// and tells its viewers that it holds it, each of which writes the start only when its
+  /// own ledger holds the cast in no state.
+  OtherPlayerCastWent(address: PlayerAddress, cast_id: Int)
   /// A property modifier of the caster's spell starts on the creature `unit_id` whose
   /// life the go struck (`HitCreature`): the connection tells the creature through its map
   /// (genesis_prime/world_map/relay `ModifierStarts`), which applies it to its own
@@ -1029,9 +1022,6 @@ pub type Live {
     /// The caster's pose when the cast started, which its 0x7fd or 0x7ff carries and the
     /// client stores once (`0x14053a210.held_position`).
     started_at: area.Pose,
-    /// The connections that see the caster: those told of the start and those that came
-    /// into sight since (`audience_joined`), which its go and finish go to.
-    audience: Set(ConnectionId),
     /// How many of its gos have been sent.
     gone: Int,
     /// How many of its gos have been asked: the pulse a channel's cost is paid at is
@@ -1090,9 +1080,6 @@ pub type Lingering {
     /// The spell the player pressed, as on its `Live` cast: the root of the children its
     /// periodic Proxies start.
     root: Spell4Id,
-    /// The connections that see the caster, as on its `Live` cast, which its 0x811 and
-    /// 0x7fe go to.
-    audience: Set(ConnectionId),
     /// The monotonic time the cast started at: a removal takes the oldest cast
     /// first, and the cast id wraps, so the age is this.
     started_ms: Int,
@@ -1287,14 +1274,10 @@ pub type Told {
   Told(life: Int, target: unit_casts.ViewTarget)
 }
 
-/// A crowd-control state the caster holds on itself: the state, the instance id the 0x87f
-/// named it by, and the connections that were told it, which its end is told to.
+/// A crowd-control state the caster holds on itself: the state and the instance id the 0x87f
+/// named it by, which its end names.
 pub type HeldRestriction {
-  HeldRestriction(
-    state: CrowdControlState,
-    instance_id: Int,
-    audience: Set(ConnectionId),
-  )
+  HeldRestriction(state: CrowdControlState, instance_id: Int)
 }
 
 /// The timer id the rule's first timer takes; the connection's own are below it.
@@ -1581,7 +1564,6 @@ pub type Holder {
     /// The spell the player pressed, which the children of a periodic Proxy take as their
     /// root.
     root: Spell4Id,
-    audience: Set(ConnectionId),
     started_ms: Int,
     primary_target: Int,
     nodes: Dict(Int, lasting.Node),
@@ -1610,7 +1592,6 @@ pub fn holder_of(
       Ok(Holder(
         spell: live.spell,
         root: live.root,
-        audience: live.audience,
         started_ms: live.started_ms,
         primary_target: live.primary_target,
         nodes: live.nodes,
@@ -1624,7 +1605,6 @@ pub fn holder_of(
       Ok(Holder(
         spell: lingering.spell,
         root: lingering.root,
-        audience: lingering.audience,
         started_ms: lingering.started_ms,
         primary_target: lingering.primary_target,
         nodes: lingering.nodes,
@@ -1733,67 +1713,6 @@ pub fn current_cast_id(cast cast: State) -> Int {
       }
     None -> 0
   }
-}
-
-/// The state with the connection told, from now on, of each cast a unit create of the
-/// unit `caster_unit_id` lists (`unit_casts.listed` over `views`): a viewer that comes into
-/// sight of the caster is written that cast's go, 0x811 and 0x7fe, since the client ends a
-/// cast only by what it is sent. Every other cast, and a crowd-control state the caster
-/// holds, keeps its audience: the viewer was never listed them, so it is told nothing of
-/// them (a 0x87f of a cast it does not hold would wait on the unit for ever).
-pub fn audience_joined(
-  cast cast: State,
-  viewer viewer: ConnectionId,
-  caster_unit_id caster_unit_id: Int,
-) -> State {
-  let listed =
-    unit_casts.listed(views: views(cast:, caster_unit_id:))
-    |> list.map(fn(view) { view.cast_id })
-  audiences_changed(
-    cast:,
-    of: fn(cast_id) { list.contains(listed, cast_id) },
-    change: fn(audience) { set.insert(audience, viewer) },
-  )
-}
-
-/// The state with the connection out of every audience: a viewer that stops seeing the
-/// caster has forgotten its casts, so none of their news goes to it.
-pub fn audience_left(cast cast: State, viewer viewer: ConnectionId) -> State {
-  State(
-    ..audiences_changed(cast:, of: fn(_) { True }, change: fn(audience) {
-      set.delete(audience, viewer)
-    }),
-    restrictions: dict.map_values(cast.restrictions, fn(_, restriction) {
-      HeldRestriction(
-        ..restriction,
-        audience: set.delete(restriction.audience, viewer),
-      )
-    }),
-  )
-}
-
-/// The state with `change` applied to the audience of each live and lingering cast whose
-/// id `of` accepts.
-fn audiences_changed(
-  cast cast: State,
-  of accepts: fn(Int) -> Bool,
-  change change: fn(Set(ConnectionId)) -> Set(ConnectionId),
-) -> State {
-  State(
-    ..cast,
-    casts: dict.map_values(cast.casts, fn(cast_id, live) {
-      case accepts(cast_id) {
-        True -> Live(..live, audience: change(live.audience))
-        False -> live
-      }
-    }),
-    lingering: dict.map_values(cast.lingering, fn(cast_id, lingering) {
-      case accepts(cast_id) {
-        True -> Lingering(..lingering, audience: change(lingering.audience))
-        False -> lingering
-      }
-    }),
-  )
 }
 
 /// Whether the cast `cast_id` is one of the player's standing spells' casts.
@@ -2031,7 +1950,7 @@ pub fn without_cancels(
     case effect {
       CancelTimer(timer:) -> !dict.has_key(kept, timer)
       Send(..)
-      | Tell(..)
+      | Broadcast(..)
       | StartTimer(..)
       | Log(..)
       | Strike(..)

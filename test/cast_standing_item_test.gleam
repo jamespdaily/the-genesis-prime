@@ -28,7 +28,6 @@ import genesis_prime/game/proc as event_proc
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Spell}
 import genesis_prime/game/unit_news.{CastStarted}
-import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4Id}
 import gleam/dict
 import gleam/list
@@ -154,11 +153,9 @@ pub fn a_worn_spells_start_tells_the_items_level_to_the_owner_and_to_every_viewe
       assert owner.caster_item_level == level
         as { why <> ": the owner's 0x7ff" }
       let told = support.tells(effects:)
-      assert list.map(told, fn(tell) { tell.0 })
-        == [ConnectionId(2), ConnectionId(3)]
-        as { why <> ": every connection in the audience is told" }
+      assert list.length(told) == 1 as { why <> ": the map is told once" }
       list.each(told, fn(tell) {
-        let assert CastStarted(start:) = tell.1 as why
+        let assert CastStarted(start:) = tell as why
         assert start.caster_item_level == level
           as { why <> ": the viewer's start" }
       })

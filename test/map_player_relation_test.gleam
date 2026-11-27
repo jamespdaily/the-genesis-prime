@@ -482,7 +482,6 @@ fn landings() -> List(#(String, relay.Landing)) {
       relay.CastWent(change: held_changes.PlayerCastWent(
         from: ConnectionId(1),
         cast_id: 5,
-        audience: set.new(),
       )),
     ),
     #(
