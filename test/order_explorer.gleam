@@ -318,16 +318,15 @@ fn walk_in_full(
 fn queues(
   mail mail: List(Mail(receiver, sender, input)),
 ) -> Set(#(receiver, sender, List(String))) {
-  list.fold(mail, dict.new(), fn(by_queue, mail: Mail(_, _, _)) {
-    let queue = #(mail.to, mail.from)
-    dict.insert(
-      by_queue,
-      queue,
-      list.append(dict.get(by_queue, queue) |> result.unwrap([]), [mail.name]),
+  by_queue(mail:)
+  |> dict.to_list
+  |> list.map(fn(entry) {
+    #(
+      entry.0.0,
+      entry.0.1,
+      list.map(entry.1, fn(mail: Mail(_, _, _)) { mail.name }),
     )
   })
-  |> dict.to_list
-  |> list.map(fn(entry) { #(entry.0.0, entry.0.1, entry.1) })
   |> set.from_list
 }
 
