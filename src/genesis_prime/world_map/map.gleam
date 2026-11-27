@@ -948,7 +948,8 @@ pub type Message {
     payload: Inbound,
   )
   /// The owner's snapshot of the sight `generation` that `viewer` has of the player of
-  /// connection `by`, in its stay `stay`: the picture the owner built when it took the
+  /// connection `by`, which is in its stay `stay` (a snapshot of an earlier stay of the
+  /// owner is dropped): the picture the owner built when it took the
   /// map's `SeenBy` of that generation, `burst` in the order the viewer's connection
   /// writes it (the 0x262 first, then what its client needs of the unit's live casts and
   /// state). A tell, from a connection. The map relays the burst when the pair holds
@@ -961,8 +962,9 @@ pub type Message {
     generation: Generation,
     burst: List(PeerNews),
   )
-  /// News of the unit of the player of connection `from`, in its stay `stay`, for every
-  /// viewer whose relation with it relays. A tell, from a connection. The news names the
+  /// News of the unit of the player of connection `from`, which is in its stay `stay` (news
+  /// of an earlier stay of the owner is dropped), for every viewer whose relation with it
+  /// relays. A tell, from a connection. The news names the
   /// unit it is about, and the map drops news that names another unit than the sender's;
   /// a move is no news (`unit_news.News` holds none), the mover tells its viewers
   /// itself. The map relays it to each relaying viewer in connection order
@@ -1598,6 +1600,19 @@ pub fn player_relation(
   |> option.from_result
 }
 
+/// The send of an owner's news to the connection of a viewer, for the stay its relation was
+/// made in: what the map relays of a creature's or a player's snapshot and news.
+fn news_relayed(
+  to to: ConnectionId,
+  stay stay: Stay,
+  news news: PeerNews,
+) -> Effect(ServiceEffect(Outgoing)) {
+  OwnEffect(Send(
+    to: Connection(to),
+    message: Relayed(stay:, delivered: relay.News(news:)),
+  ))
+}
+
 /// An owner's snapshot of a sight of its unit: relayed to the viewer, each item as
 /// `Relayed(stay, News(item))` in the order the owner built it, when the owner is in the
 /// stay the tell names, the viewer holds a relation of exactly that generation with it, the
@@ -1653,15 +1668,11 @@ fn player_snapshot_taken(
             ),
           ),
           Effects(
-            list.map(burst, fn(news) {
-              OwnEffect(Send(
-                to: Connection(viewer),
-                message: Relayed(
-                  stay: viewing_stay,
-                  delivered: relay.News(news:),
-                ),
-              ))
-            }),
+            list.map(burst, news_relayed(
+              to: viewer,
+              stay: viewing_stay,
+              news: _,
+            )),
           ),
         )
         _ -> #(
@@ -1706,16 +1717,7 @@ fn player_broadcast(
               case relation {
                 Relation(state: Relaying, stay: relation_stay, ..)
                   if viewing.stay == relation_stay
-                ->
-                  Ok(
-                    OwnEffect(Send(
-                      to: Connection(entry.0),
-                      message: Relayed(
-                        stay: relation_stay,
-                        delivered: relay.News(news:),
-                      ),
-                    )),
-                  )
+                -> Ok(news_relayed(to: entry.0, stay: relation_stay, news:))
                 Relation(state: Relaying, ..)
                 | Relation(state: AwaitingSnapshot, ..) -> Error(Nil)
               }
@@ -1817,14 +1819,7 @@ fn snapshot_taken(
           ),
         ),
       ),
-      Effects(
-        list.map(burst, fn(news) {
-          OwnEffect(Send(
-            to: Connection(by),
-            message: Relayed(stay:, delivered: relay.News(news:)),
-          ))
-        }),
-      ),
+      Effects(list.map(burst, news_relayed(to: by, stay:, news: _))),
     )
     Error(Nil) -> #(state, Effects([]))
   }
@@ -1850,13 +1845,7 @@ fn broadcast(
         case entry.1 {
           Relation(state: Relaying, stay:, ..) ->
             case in_current_stay(state:, connection: entry.0, stay:) {
-              True ->
-                Ok(
-                  OwnEffect(Send(
-                    to: Connection(entry.0),
-                    message: Relayed(stay:, delivered: relay.News(news:)),
-                  )),
-                )
+              True -> Ok(news_relayed(to: entry.0, stay:, news:))
               False -> Error(Nil)
             }
           Relation(state: AwaitingSnapshot, ..) -> Error(Nil)
