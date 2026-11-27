@@ -197,7 +197,7 @@ fn tests_named(text: String) -> List(String) {
 }
 
 /// The file of the module among the sources.
-fn file_of(
+pub fn file_of(
   sources sources: List(SourceFile),
   module module: String,
 ) -> Result(SourceFile, Nil) {

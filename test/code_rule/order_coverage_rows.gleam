@@ -617,9 +617,7 @@ pub fn families(
   sources sources: List(SourceFile),
 ) -> List(#(#(String, String), List(String))) {
   let variants = fn(module, type_name) {
-    case
-      list.find(sources, fn(file) { syntax.module_name(file.path) == module })
-    {
+    case order_coverage.file_of(sources:, module:) {
       Ok(file) -> syntax.variants_of(file:, type_names: [type_name])
       Error(Nil) -> []
     }
@@ -635,11 +633,7 @@ pub fn families(
       ],
       fn(type_) { #(type_, variants(type_.0, type_.1)) },
     )
-  let timers = case
-    list.find(sources, fn(file) {
-      syntax.module_name(file.path) == the_connection
-    })
-  {
+  let timers = case order_coverage.file_of(sources:, module: the_connection) {
     Ok(file) -> order_coverage.connection_timers(file:)
     Error(Nil) -> []
   }
