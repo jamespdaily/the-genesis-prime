@@ -5,7 +5,8 @@ Each heading is left out when it has nothing.
 - **Goal:** what a player or the client sees when it is done; the branch and its base.
 - **Read:** each artifact's `gh issue artifact view N <number>`, and the test list comment.
 - **Changed since the Design:** each later decision, who made it and why.
-- **Ask back if:** what returns to the coordinator or Jim instead of being chosen.
+- **Stop if:** a decision that is Jim's: a client frame changes, an acceptance condition weakens, or the evidence cannot settle it. Hand back; do not choose.
+- **Report if:** a judgement the coordinator checks after the build; go on, and list it under "Report-if met" with its evidence.
 - **Change / Leave alone:** the modules it may change; what is left out and who owns it.
 - **Reuse:** the investigator's map, on the base commit.
 - **Failure table** (for a shape, locks, timers or remote steps): each step of the flow, killed there, run twice at once, or timed out. A new mechanism gets its own test; a repeat names the test that covers it.
