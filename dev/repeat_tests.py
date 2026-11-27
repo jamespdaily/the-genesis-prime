@@ -36,8 +36,10 @@ tests, killed by a signal, a non-zero exit, no result line, still going at the r
 (`GENESIS_TEST_SEED_SALT=SEED gleam test -- FILE --seed SEED`), the text of the warnings the run logged before its
 "Failures:" section (a refusal the server logged is among them, and the section hides it) and the part of its output that
 says why. The output of every run is kept in the folder the failure names. The script exits 1 when a run's tests failed, a run crashed or a run was killed at the limit, 2 for a setting or a
-git answer it cannot use, and 0 otherwise, warnings included. It starts `erl` from PATH, so run it with the patched OTP first on PATH,
-as ./check does.
+git answer it cannot use, and 0 otherwise, warnings included. It starts `erl` from PATH, so run it in a shell that loaded the environment,
+`. setup_check/environment.sh`, which puts the patched OTP first on PATH, as ./check does, and sets
+ERL_AFLAGS to `+hmqd off_heap`, the flag every test VM runs with; without that flag the script prints
+why and exits 2, before it starts a run.
 """
 
 import concurrent.futures
@@ -62,6 +64,8 @@ DEFAULT_BUDGET_SECONDS = 450
 WARNING = "check WARNING:"
 # The variable test/fixed_seed.gleam reads: the salt every seed of a whole-server test is derived with.
 SALT_VARIABLE = "GENESIS_TEST_SEED_SALT"
+# The VM flag setup_check/environment.sh puts in ERL_AFLAGS for every VM that runs the tests.
+VM_FLAG = "+hmqd off_heap"
 
 # The variables ./check's gleam_test sets for its first test run (test/genesis_prime_test.gleam
 # reads them), less the literal peak file.
@@ -175,7 +179,7 @@ def execute(run: Run, logs: Path, seconds: int, without_tests: set[str], deadlin
 
 def repeat_command(run: Run) -> str:
     """The command that repeats the run: the same test order and the same dice."""
-    return "%s=%d gleam test -- %s --seed %d" % (SALT_VARIABLE, run.seed, run.file, run.seed)
+    return ". setup_check/environment.sh && %s=%d gleam test -- %s --seed %d" % (SALT_VARIABLE, run.seed, run.file, run.seed)
 
 
 def report_failure(outcome: Outcome) -> None:
@@ -268,6 +272,12 @@ def main(arguments: list[str]) -> int:
     if not files:
         print("no added or changed test file since the merge base with %s, so nothing to repeat" % base)
         return 0
+    if VM_FLAG not in os.environ.get("ERL_AFLAGS", ""):
+        print(
+            "ERL_AFLAGS lacks %r, which every test VM runs with; load the environment first: . setup_check/environment.sh"
+            % VM_FLAG
+        )
+        return 2
     if shutil.which("erl") is None:
         print("erl is not on PATH; put the patched OTP's bin first, as ./check does")
         return 2

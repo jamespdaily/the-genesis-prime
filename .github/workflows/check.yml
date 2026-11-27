@@ -330,7 +330,7 @@ jobs:
         if: steps.files.outputs.any == 'true'
         env:
           BASE_BRANCH: ${{ github.base_ref }}
-        run: PATH="$GENESIS_OTP_DIR/bin:$PATH" python3.13 -I dev/repeat_tests.py "origin/$BASE_BRANCH"
+        run: . setup_check/environment.sh && python3.13 -I dev/repeat_tests.py "origin/$BASE_BRANCH"
 
   # On a push to main whose check was skipped: the caches a pull request restores
   # are only those saved on main, so this builds and saves what the key says is
