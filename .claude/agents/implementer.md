@@ -38,6 +38,7 @@ Hand back once, as a comment on the step's issue, then return under 150 words: t
 - Self-review: <repeat found and what it now calls>, or none
 - Failure-table rows: <row> - <test>
 - Deviations from the brief: <what and why>
+- Report-if met: <clause> - what you found, its evidence and what you did, or none
 - Found outside the list: <failure, gap or question, with evidence>
 ```
 
