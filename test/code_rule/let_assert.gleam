@@ -6,10 +6,11 @@
 //// each file ──► its `let assert` statements (`syntax.let_asserts`)
 ////                 │ no `as`, or `as ""`          ─► breach at the statement
 ////                 │ more than the module's row   ─► breach at the first one
-////                 │                                 past the row
+////                 │                                 past the row, by line
 ////                 │ fewer than the row           ─► breach at the row's line
-//// the list ──► a row for a module that holds none, a row out of order or
-////              repeated, or more rows than `most_rows` ─► breach at the row
+//// the list ──► a row for a module that holds none or below 1, a row out of
+////              order or repeated, or a count of rows other than `most_rows`
+////              ─► breach at the row
 //// ```
 ////
 //// - The list (`list_path`) holds one `module ceiling` line per module that
@@ -18,8 +19,10 @@
 ////   a ceiling of 0.
 //// - A row equals its module's count, so a ceiling never stays above the count
 ////   as slack for a new assert: cutting an assert lowers its row.
-//// - The list holds at most `most_rows` rows, so a new module cannot join it
-////   without an existing row going.
+//// - The list holds exactly `most_rows` rows, so a new module cannot join it
+////   without an existing row going, and a gone row leaves no slack. A module
+////   split off one that holds some raises `most_rows` by one in the same
+////   change, and review checks that the moved count matches.
 //// - A row that is not two words, or whose ceiling is not an integer, stops
 ////   the test naming its line; no planted case can show that.
 ////
@@ -46,7 +49,8 @@ pub type Listed {
 /// The list of ceilings.
 pub const list_path = "test/code_rule/let_assert_ceilings.txt"
 
-/// The most rows the list may hold.
+/// The number of rows the list holds: cutting a module's last assert deletes
+/// its row and lowers this by one.
 pub const most_rows = 129
 
 /// The list as its file writes it: `module ceiling` on each line.
@@ -103,9 +107,10 @@ pub fn breaches(
   let at_rows =
     list.filter_map(listed, fn(entry) {
       let count = dict.get(counts, entry.module) |> result.unwrap(0)
-      case count < entry.ceiling {
-        False -> Error(Nil)
-        True -> Ok(below_row(entry, count))
+      case entry.ceiling < 1, count < entry.ceiling {
+        True, _ -> Ok(no_ceiling(entry))
+        False, True -> Ok(below_row(entry, count))
+        False, False -> Error(Nil)
       }
     })
   list.flatten([at_files, at_rows, list_breaches(listed:, most_rows:)])
@@ -119,6 +124,7 @@ fn found_in(file: SourceFile) -> List(Found) {
       byte_offsets: list.map(statements, fn(statement) { statement.start }),
     )
   list.map2(statements, lines, fn(statement, line) { Found(statement:, line:) })
+  |> list.sort(fn(a, b) { int.compare(a.line, b.line) })
 }
 
 fn message_breach(file: SourceFile, found: Found) -> Result(Breach, Nil) {
@@ -162,6 +168,15 @@ fn over_ceiling(
   }
 }
 
+fn no_ceiling(entry: Listed) -> Breach {
+  list_breach(
+    entry,
+    "has a ceiling of "
+      <> int.to_string(entry.ceiling)
+      <> ": write the module's count of `let assert`, or delete the row when it holds none",
+  )
+}
+
 fn below_row(entry: Listed, count: Int) -> Breach {
   let fix = case count {
     0 -> "delete the row"
@@ -185,16 +200,31 @@ fn list_breaches(
   listed listed: List(Listed),
   most_rows most_rows: Int,
 ) -> List(Breach) {
-  let too_many = case list.length(listed) > most_rows, list.last(listed) {
-    True, Ok(last) -> [
+  let rows = list.length(listed)
+  let wrong_count = case int.compare(rows, most_rows), list.last(listed) {
+    order.Gt, Ok(last) -> [
       list_breach(
         last,
         "is past the "
           <> int.to_string(most_rows)
-          <> " rows the list may hold: a new module cannot add a `let assert`",
+          <> " rows the list may hold: a new module cannot add a `let assert`;"
+          <> " a module split off one that holds some raises `most_rows` by one"
+          <> " in the same change, and review checks the moved count",
       ),
     ]
-    True, Error(Nil) | False, _ -> []
+    order.Lt, Ok(last) -> [
+      list_breach(
+        last,
+        "is the last of "
+          <> int.to_string(rows)
+          <> " rows, under the "
+          <> int.to_string(most_rows)
+          <> " the list may hold: lower `most_rows` to "
+          <> int.to_string(rows)
+          <> ", so a gone row is no slack for a new module",
+      ),
+    ]
+    order.Gt, Error(Nil) | order.Lt, Error(Nil) | order.Eq, _ -> []
   }
   let disordered =
     list.zip(listed, list.drop(listed, 1))
@@ -209,7 +239,7 @@ fn list_breaches(
           ))
       }
     })
-  list.append(too_many, disordered)
+  list.append(wrong_count, disordered)
 }
 
 fn list_breach(entry: Listed, what: String) -> Breach {

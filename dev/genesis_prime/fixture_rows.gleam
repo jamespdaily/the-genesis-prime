@@ -1232,8 +1232,10 @@ fn visit(
   selected selected: Selection,
   digests digests: Dict(String, Digest),
 ) -> Result(Selection, Refusal) {
-  let assert Ok(digest) = dict.get(digests, table)
-    as "the walk queues only tables the digests hold"
+  use digest <- result.try(
+    dict.get(digests, table)
+    |> result.replace_error(RootTableNotLoaded(table)),
+  )
   use <- bool.guard(
     when: !set.contains(digest.ids, id),
     return: Error(RootRowMissing(table:, id:)),

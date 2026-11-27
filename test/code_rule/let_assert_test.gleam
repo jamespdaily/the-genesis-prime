@@ -4,7 +4,7 @@
 //// listed has a ceiling of 0. A row above its module's count (or for a module
 //// that holds none or is gone) is a breach at the row's list line, so a stale
 //// row is never slack for a new assert. The list must be in order, one row per
-//// module, and hold at most `most_rows` rows. Every case is planted; the last
+//// module, and hold exactly `most_rows` rows. Every case is planted; the last
 //// test runs the rule over the real `src/` and `dev/` and the real list.
 //// A list row that is not two words or has no integer ceiling stops the test
 //// through an `as` message, so it is not a planted case.
