@@ -22,7 +22,7 @@ start(Module, Environment) ->
     Paths = fresh_node_ffi:project_paths(),
     Eval = "genesis_prime@@main:run(" ++ binary_to_list(Module) ++ ")",
     Port = open_port({spawn_executable, Erl},
-                     [{args, ["-noshell", "-pa" | Paths] ++ ["-eval", Eval]},
+                     [{args, ["-noshell", "+hmqd", "off_heap", "-pa" | Paths] ++ ["-eval", Eval]},
                       {env, fixed_seed_ffi:node_environment()
                             ++ database_support_ffi:environment(Environment)},
                       exit_status, stderr_to_stdout, binary]),
