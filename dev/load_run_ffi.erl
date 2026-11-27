@@ -8,13 +8,13 @@
 
 %% Starts a node of its own with this node's code, over standard_io, which needs
 %% no distribution, with the server's application running. The environment (the
-%% database, the game address, the table folder) is this node's. The peer keeps the
-%% VM's default message queue (+hmqd on_heap), as the release does, whatever flags the
+%% database, the game address, the table folder) is this node's. The peer keeps its
+%% message queues off its heap (+hmqd off_heap), as the release does, whatever flags the
 %% environment gives.
 start_peer() ->
     Paths = [Path || Path <- code:get_path(),
                      not lists:prefix(code:root_dir(), Path)],
-    Peer = case peer:start_link(#{connection => standard_io, args => ["+hmqd", "on_heap", "-pa" | Paths]}) of
+    Peer = case peer:start_link(#{connection => standard_io, args => ["+hmqd", "off_heap", "-pa" | Paths]}) of
                {ok, Started} -> Started;
                {ok, Started, _Node} -> Started
            end,

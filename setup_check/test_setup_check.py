@@ -641,7 +641,7 @@ class TestVmFlagsTest(unittest.TestCase):
 
     def test_the_release_names_its_own_message_queue_so_the_environment_cannot_change_it(self):
         lines = [line.strip() for line in (REPOSITORY / "release" / "vm.args").read_text().splitlines()]
-        self.assertIn("+hmqd on_heap", lines)
+        self.assertIn("+hmqd off_heap", lines)
 
 
 if __name__ == "__main__":
