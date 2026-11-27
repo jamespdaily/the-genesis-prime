@@ -126,6 +126,20 @@ pub fn describe_encode(error error: EncodeError) -> String {
   }
 }
 
+/// The bytes of an encode whose values the caller keeps within their fields.
+/// A failure is the server's bug, so it ends the process with the value as
+/// `string.inspect` writes it, then `describe_encode`'s sentence.
+pub fn must(
+  value value: a,
+  encode encode: fn(a) -> Result(BitArray, EncodeError),
+) -> BitArray {
+  case encode(value) {
+    Ok(bytes) -> bytes
+    Error(error) ->
+      panic as { string.inspect(value) <> ": " <> describe_encode(error:) }
+  }
+}
+
 /// A sentence that says why bytes are not a body, for the log.
 pub fn describe_decode(error error: DecodeError) -> String {
   case error {
