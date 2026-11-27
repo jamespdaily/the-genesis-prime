@@ -726,6 +726,8 @@ pub fn a_dash_message_is_one_3_bit_direction_test() -> Nil {
     encode: dash.encode,
     decode: dash.decode,
   )
+  assert dash.encode(Dash(direction: 8)) |> result.is_error
+    as "a direction of 8 does not fit the 3 bits the writer takes"
 }
 
 pub fn the_impact_severity_is_one_32_bit_float_test() -> Nil {
