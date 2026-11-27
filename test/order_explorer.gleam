@@ -6,23 +6,30 @@
 ////   any of them next. A delivery here is the head of one such queue (`heads`).
 //// - A delivery changes only its receiver's state, takes the head of a queue of that
 ////   receiver and puts mail in queues whose sender is that receiver. So two deliveries to
-////   different receivers commute, and two to the same receiver are the only dependent
-////   pair. An outcome is what each receiver took, in order: the scenes of two orders with
-////   the same outcome are the same scene. Each receiver keeps a clock of its own
-////   (`Clocks`), so a step's time does not depend on the other receivers' deliveries and
-////   the commuting is exact.
+////   different receivers commute. Two to the same receiver commute at a scene when taking
+////   them in either order from it is possible and ends in the same state of every process
+////   and the same mail in every queue (`independent` runs both orders and compares); they
+////   are dependent otherwise. Each receiver keeps a clock of its own (`Clocks`), so a
+////   step's time does not depend on the other receivers' deliveries.
 //// - `orders` walks the deliveries depth first with sleep sets (Godefroid): after a
 ////   delivery has been explored from a scene, it sleeps in the scenes of the later
-////   deliveries and is not taken again until a delivery to its receiver wakes it, since
-////   every order that takes it later is an order of its own subtree. The heads are taken
-////   in the order of their queues' names, a fixed order, so each outcome is reached by
-////   one walk. There is no cap on the walk and no sampling.
+////   deliveries. A sleeper passes on to the scene after a delivery only if it is still
+////   possible at the scene before it and commutes with that delivery there, checked at
+////   every scene on the walk; otherwise it wakes and is taken again. Whatever follows a
+////   sleeper's delivery then also follows it in the subtree that took it first, to the
+////   same state, so each state the deliveries can end in is reached at least once. A state
+////   reached by orders that commute is reached by one of them; the scenes of orders that
+////   differ only in what they took at a commuting pair are the same scene. The heads are
+////   taken in the order of their queues' names. There is no cap on the walk and no
+////   sampling.
+//// - `orders_by_receiver` counts every two deliveries to one receiver as dependent; it
+////   is the relation `orders` refines, kept so a test shows both end in the same states.
 //// - `orders_in_full` walks every state with no reduction, merging states by what each
 ////   receiver took and the mail in flight; it is the reference the reduced walk is
 ////   checked against.
 ////
 //// ```
-//// scheduler(mail, deliver, taken) ─▶ orders(scene) ─▶ one scene for each outcome
+//// scheduler(mail, deliver, taken, same_state) ─▶ orders(scene) ─▶ one scene for each state it ends in
 ////                                   orders_in_full(scene) ─▶ one scene for each outcome, unreduced
 //// ```
 
@@ -44,15 +51,21 @@ pub type Taken(receiver, sender) {
   Taken(by: receiver, from: sender, name: String)
 }
 
-/// What a scene gives the explorer: the mail in flight in the order it was sent, the
+/// What a scene gives the explorer: the mail a receiver may take now in the order it was
+/// sent, all the mail in flight (taken or not, which a receiver waiting for an answer does
+/// not take yet), the
 /// scene after a receiver takes one mail (the rule's step, and what it sends put in the
-/// mail behind what is there), what the receivers took so far in order, and the name of
-/// the queue a sender has at a receiver, which orders the walk.
+/// mail behind what is there), what the receivers took so far in order, whether two
+/// scenes hold the same state in every process (leaving out what was taken and the mail,
+/// which the explorer compares itself), and the name of the queue a sender has at a
+/// receiver, which orders the walk.
 pub type Scheduler(scene, receiver, sender, input) {
   Scheduler(
     mail: fn(scene) -> List(Mail(receiver, sender, input)),
+    in_flight: fn(scene) -> List(Mail(receiver, sender, input)),
     deliver: fn(scene, Mail(receiver, sender, input)) -> scene,
     taken: fn(scene) -> List(Taken(receiver, sender)),
+    same_state: fn(scene, scene) -> Bool,
     queue_name: fn(receiver, sender) -> String,
   )
 }
@@ -108,22 +121,110 @@ pub fn settle(
 }
 
 /// The scenes the deliveries can end in, one for each outcome, in the order the walk
-/// reaches them.
+/// reaches them. Two deliveries to one receiver are independent at a scene when they
+/// commute there (`Commuting`).
 pub fn orders(
   scheduler scheduler: Scheduler(scene, receiver, sender, input),
   scene scene: scene,
 ) -> List(scene) {
-  explore(scheduler:, scene:, asleep: [], finished: []) |> list.reverse
+  explore(scheduler:, relation: Commuting, scene:, asleep: [], finished: [])
+  |> list.reverse
 }
 
-/// A queue, by its receiver and its sender.
-type Queue(receiver, sender) =
-  #(receiver, sender)
+/// The scenes the deliveries can end in when every two deliveries to one receiver are
+/// dependent (`ByReceiver`): the relation `orders` refines, kept to show the two reach the
+/// same scenes.
+pub fn orders_by_receiver(
+  scheduler scheduler: Scheduler(scene, receiver, sender, input),
+  scene scene: scene,
+) -> List(scene) {
+  explore(scheduler:, relation: ByReceiver, scene:, asleep: [], finished: [])
+  |> list.reverse
+}
+
+/// Whether `orders` and `orders_by_receiver` end in the same scenes from `scene`: each
+/// ending of one is in the same state (`Scheduler.same_state`) as an ending of the other.
+pub fn relations_end_alike(
+  scheduler scheduler: Scheduler(scene, receiver, sender, input),
+  scene scene: scene,
+) -> Bool {
+  let finer = orders(scheduler:, scene:)
+  let coarser = orders_by_receiver(scheduler:, scene:)
+  let within = fn(scenes, ending) {
+    list.any(scenes, fn(other) { scheduler.same_state(ending, other) })
+  }
+  list.all(finer, within(coarser, _)) && list.all(coarser, within(finer, _))
+}
+
+/// When two deliveries are independent at a scene.
+type Relation {
+  /// Whenever their receivers differ.
+  ByReceiver
+  /// Whenever their receivers differ, or taking them in either order from the scene is
+  /// possible and gives the same state and the same mail.
+  Commuting
+}
+
+/// Whether two deliveries, both possible at `scene`, are independent there; `after_second`
+/// is the scene after the second.
+fn independent(
+  scheduler scheduler: Scheduler(scene, receiver, sender, input),
+  relation relation: Relation,
+  scene scene: scene,
+  first first: Mail(receiver, sender, input),
+  second second: Mail(receiver, sender, input),
+  after_second after_second: scene,
+) -> Bool {
+  case first.to == second.to, relation {
+    False, _ -> True
+    True, ByReceiver -> False
+    True, Commuting -> {
+      let after_first = scheduler.deliver(scene, first)
+      let possible = fn(after, mail) {
+        list.contains(heads(mail: scheduler.mail(after)), mail)
+      }
+      case possible(after_first, second), possible(after_second, first) {
+        True, True -> {
+          let first_then_second = scheduler.deliver(after_first, second)
+          let second_then_first = scheduler.deliver(after_second, first)
+          scheduler.same_state(first_then_second, second_then_first)
+          && same_mail(
+            scheduler.in_flight(first_then_second),
+            scheduler.in_flight(second_then_first),
+          )
+        }
+        _, _ -> False
+      }
+    }
+  }
+}
+
+/// Whether two mailboxes hold the same messages in each queue, in order.
+fn same_mail(
+  first: List(Mail(receiver, sender, input)),
+  second: List(Mail(receiver, sender, input)),
+) -> Bool {
+  by_queue(mail: first) == by_queue(mail: second)
+}
+
+fn by_queue(
+  mail mail: List(Mail(receiver, sender, input)),
+) -> Dict(#(receiver, sender), List(Mail(receiver, sender, input))) {
+  list.fold(list.reverse(mail), dict.new(), fn(by_queue, mail) {
+    let queue = #(mail.to, mail.from)
+    dict.insert(by_queue, queue, [
+      mail,
+      ..dict.get(by_queue, queue)
+      |> result.unwrap([])
+    ])
+  })
+}
 
 fn explore(
   scheduler scheduler: Scheduler(scene, receiver, sender, input),
+  relation relation: Relation,
   scene scene: scene,
-  asleep asleep: List(Queue(receiver, sender)),
+  asleep asleep: List(Mail(receiver, sender, input)),
   finished finished: List(scene),
 ) -> List(scene) {
   case heads(mail: scheduler.mail(scene)) {
@@ -135,21 +236,33 @@ fn explore(
           scheduler.queue_name(second.to, second.from),
         )
       })
-      |> list.filter(fn(mail) { !list.contains(asleep, #(mail.to, mail.from)) })
+      |> list.filter(fn(mail) { !list.contains(asleep, mail) })
       |> list.fold(#(finished, asleep), fn(so_far, mail) {
         let #(finished, asleep) = so_far
-        let woken =
-          list.filter(asleep, fn(queue: Queue(receiver, sender)) {
-            queue.0 != mail.to
+        // A sleeper stays asleep after `mail` only while it is still possible here and
+        // commutes with `mail` here; the check is made again at every scene.
+        let after_mail = scheduler.deliver(scene, mail)
+        let staying =
+          list.filter(asleep, fn(sleeper) {
+            list.contains(enabled, sleeper)
+            && independent(
+              scheduler:,
+              relation:,
+              scene:,
+              first: sleeper,
+              second: mail,
+              after_second: after_mail,
+            )
           })
         #(
           explore(
             scheduler:,
-            scene: scheduler.deliver(scene, mail),
-            asleep: woken,
+            relation:,
+            scene: after_mail,
+            asleep: staying,
             finished:,
           ),
-          [#(mail.to, mail.from), ..asleep],
+          [mail, ..asleep],
         )
       })
       |> fn(done) { done.0 }

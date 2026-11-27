@@ -706,8 +706,10 @@ fn sender_name(sender sender: Sender) -> String {
 fn scheduler() -> order_explorer.Scheduler(Scene, Receiver, Sender, Input) {
   order_explorer.Scheduler(
     mail: takeable,
+    in_flight: fn(scene: Scene) { scene.mail },
     deliver:,
     taken: fn(scene: Scene) { scene.taken },
+    same_state:,
     queue_name: fn(receiver, sender) {
       receiver_name(receiver:) <> " from " <> sender_name(sender:)
     },
@@ -737,6 +739,24 @@ pub fn deliverable(scene scene: Scene) -> List(Mail) {
 /// processes not ordered against each other (`order_explorer.orders`).
 pub fn orders(scene scene: Scene) -> List(Scene) {
   order_explorer.orders(scheduler: scheduler(), scene:)
+}
+
+/// The scenes of `orders` with every two deliveries to one receiver taken as dependent
+/// (`order_explorer.orders_by_receiver`).
+pub fn orders_by_receiver(scene scene: Scene) -> List(Scene) {
+  order_explorer.orders_by_receiver(scheduler: scheduler(), scene:)
+}
+
+/// Whether two scenes hold the same state in the map and every connection: the same map,
+/// connections, frames, timers, asks and clocks, whatever order was taken to reach them.
+pub fn same_state(first first: Scene, second second: Scene) -> Bool {
+  Scene(..first, mail: [], taken: []) == Scene(..second, mail: [], taken: [])
+}
+
+/// Whether the walk by commuting and the walk by receiver alone end in the same scenes
+/// from `scene` (`order_explorer.relations_end_alike`).
+pub fn relations_end_alike(scene scene: Scene) -> Bool {
+  order_explorer.relations_end_alike(scheduler: scheduler(), scene:)
 }
 
 /// The scenes of every order with no reduction (`order_explorer.orders_in_full`).

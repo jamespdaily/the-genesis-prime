@@ -93,6 +93,20 @@ fn relation(scene scene: scene.Scene) -> option.Option(map.Relation) {
   )
 }
 
+/// V's client moves out of C's sight and back (0x637 to x 3000, then to 0) while C's
+/// snapshot of the first sight is in flight to the map: V's connection tells the map each
+/// place, and the map takes C's snapshot before, between or after them.
+fn v_moves_out_and_back(entered entered: scene.Scene) -> scene.Scene {
+  list.fold([3000.0, 0.0], entered, fn(so_far, x) {
+    scene.client_sends(
+      scene: so_far,
+      connection: 2,
+      bytes: connection_support.a_move(x),
+      name: "0x637 of V to " <> float.to_string(x),
+    )
+  })
+}
+
 pub fn a_pair_is_shown_by_the_owners_snapshot_and_one_that_leaves_and_returns_is_two_generations_and_needs_a_new_snapshot_in_every_legal_order_test() -> Nil {
   use <- owned_test.run(10_000)
   let entered = two_players_entering()
@@ -105,15 +119,7 @@ pub fn a_pair_is_shown_by_the_owners_snapshot_and_one_that_leaves_and_returns_is
   // C's snapshot of that generation is in flight to the map while V's client moves out of
   // C's sight and back: V's connection tells the map each place, and the map takes C's
   // snapshot before, between or after them.
-  let moving =
-    list.fold([3000.0, 0.0], entered, fn(so_far, x) {
-      scene.client_sends(
-        scene: so_far,
-        connection: 2,
-        bytes: connection_support.a_move(x),
-        name: "0x637 of V to " <> float.to_string(x),
-      )
-    })
+  let moving = v_moves_out_and_back(entered:)
   let scenes = scene.orders(scene: moving)
   assert scenes != [] as "the scene has an order"
   list.each(scenes, fn(done) {
@@ -189,6 +195,19 @@ pub fn a_move_that_takes_a_viewer_out_of_sight_is_written_before_its_0x355_or_no
     as "both orders are legal and each has its own result: the unit is removed either way"
 }
 
+/// C leaves V's sight, comes back and goes on: three 0x637s of C's client, taken in order
+/// by C; their moves, the map's notices and its snapshots reach V in any legal order.
+fn c_leaves_and_returns(settled settled: scene.Scene) -> scene.Scene {
+  list.fold([3000.0, 1000.0, 1001.0], settled, fn(so_far, x) {
+    scene.client_sends(
+      scene: so_far,
+      connection: 1,
+      bytes: connection_support.a_move(x),
+      name: "0x637 of C to " <> float.to_string(x),
+    )
+  })
+}
+
 pub fn a_unit_that_leaves_and_returns_is_shown_in_its_new_generation_and_a_move_of_the_old_one_never_moves_it_test() -> Nil {
   use <- owned_test.run(10_000)
   // C leaves V's sight, comes back and goes on: three 0x637s of C's client, taken in
@@ -197,15 +216,7 @@ pub fn a_unit_that_leaves_and_returns_is_shown_in_its_new_generation_and_a_move_
   let assert Some(map.Relation(generation: first, ..)) =
     relation(scene: settled)
     as "the map holds the sight V has of C"
-  let moving =
-    list.fold([3000.0, 1000.0, 1001.0], settled, fn(so_far, x) {
-      scene.client_sends(
-        scene: so_far,
-        connection: 1,
-        bytes: connection_support.a_move(x),
-        name: "0x637 of C to " <> float.to_string(x),
-      )
-    })
+  let moving = c_leaves_and_returns(settled:)
   list.each(scene.orders(scene: moving), fn(done) {
     assert scene.check(scene: done, connection: 2) == Ok(Nil)
       as "no frame of C before its 0x262 or after its 0x355"
@@ -460,27 +471,30 @@ pub fn a_caster_that_dies_between_its_go_and_the_allys_start_writes_its_own_clie
   list.each(scene.orders(scene: dying), wrote_no_more_of_its_casts)
 }
 
+/// T moves to 1030, out of C's sight (1030 from it) and still in V's (30 from it), as C's go
+/// is taken, which finishes C's casts on it: C's finish and T's start of the casts it held
+/// both reach V through the map, in any legal order. (Out of V's sight too, T's start could
+/// never reach V and the order this test is about could not occur.)
+fn t_leaves_c_sight(pressed pressed: scene.Scene) -> scene.Scene {
+  scene.map_is_told(
+    scene: pressed,
+    from: scene.FromConnection(2),
+    event: step.OwnEvent(
+      step.Told(message: map.Moved(
+        connection: ConnectionId(2),
+        place: scene.at(x: 1030.0),
+        seq: 1,
+      )),
+    ),
+    name: "T moves out of C's sight",
+  )
+}
+
 pub fn a_cast_finished_at_a_viewer_before_the_allys_start_through_the_maps_relays_is_written_the_finish_and_no_start_in_both_orders_test() -> Nil {
   use <- owned_test.run(10_000)
   use tables <- with_the_armor
   let #(world, bag_index) = armor_world(tables:)
-  // T moves to 1030, out of C's sight (1030 from it) and still in V's (30 from it), as C's go
-  // is taken, which finishes C's casts on it: C's finish and T's start of the casts it held
-  // both reach V through the map, in any legal order. (Out of V's sight too, T's start could
-  // never reach V and the order this test is about could not occur.)
-  let leaving =
-    scene.map_is_told(
-      scene: pressed(world:, bag_index:),
-      from: scene.FromConnection(2),
-      event: step.OwnEvent(
-        step.Told(message: map.Moved(
-          connection: ConnectionId(2),
-          place: scene.at(x: 1030.0),
-          seq: 1,
-        )),
-      ),
-      name: "T moves out of C's sight",
-    )
+  let leaving = t_leaves_c_sight(pressed: pressed(world:, bag_index:))
   let judged = fn(done: scene.Scene) {
     let frames = scene.cast_frames(scene: done, connection: 3)
     assert list.contains(frames, 0x07FE) || list.contains(frames, 0x0811)
@@ -530,26 +544,29 @@ fn took(
   })
 }
 
+/// V moves to 1030, out of C's sight (1030 from it) and still in T's (1010 from it), as C's
+/// go is taken: the map's unseen of C at V and T's start of each of the two casts reach V
+/// in either order, and then the casts' nodes end on T.
+fn v_leaves_c_sight(pressed pressed: scene.Scene) -> scene.Scene {
+  scene.map_is_told(
+    scene: pressed,
+    from: scene.FromConnection(3),
+    event: step.OwnEvent(
+      step.Told(message: map.Moved(
+        connection: ConnectionId(3),
+        place: scene.at(x: 1030.0),
+        seq: 1,
+      )),
+    ),
+    name: "V moves out of C's sight",
+  )
+}
+
 pub fn a_viewer_that_leaves_the_casters_sight_between_its_go_and_the_allys_start_borrows_the_cast_on_the_ally_in_both_orders_test() -> Nil {
   use <- owned_test.run(10_000)
   use tables <- with_the_armor
   let #(world, bag_index) = armor_world(tables:)
-  // V moves to 1030, out of C's sight (1030 from it) and still in T's (1010 from it), as C's
-  // go is taken: the map's unseen of C at V and T's start of each of the two casts reach V
-  // in either order, and then the casts' nodes end on T.
-  let leaving =
-    scene.map_is_told(
-      scene: pressed(world:, bag_index:),
-      from: scene.FromConnection(3),
-      event: step.OwnEvent(
-        step.Told(message: map.Moved(
-          connection: ConnectionId(3),
-          place: scene.at(x: 1030.0),
-          seq: 1,
-        )),
-      ),
-      name: "V moves out of C's sight",
-    )
+  let leaving = v_leaves_c_sight(pressed: pressed(world:, bag_index:))
   let ended_of = fn(done) {
     scene.settle(scene: scene.fire_timers(scene: done, within_ms: 12_000))
   }
@@ -1029,6 +1046,30 @@ fn position_of(
   |> result.map(fn(entry) { entry.1 })
 }
 
+/// H camps and enters again while the heal is on its way: its client camps and picks the
+/// character again, and its connection asks the map to leave and to join.
+fn h_camps_and_enters_again(healing healing: scene.Scene) -> scene.Scene {
+  healing
+  |> scene.client_sends(
+    connection: 1,
+    bytes: connection_support.camp_request_message(True),
+    name: "camp of 1 starts",
+  )
+  |> scene.client_sends(
+    connection: 1,
+    bytes: connection_support.camp_finished_message(),
+    name: "camp of 1 finishes",
+  )
+  |> scene.client_selects(
+    connection: 1,
+    character: scene.character_of(
+      class_id: medic,
+      level: 1,
+      place: scene.at(x: 20.0),
+    ),
+  )
+}
+
 pub fn a_heal_the_map_accepted_before_its_caster_left_sight_is_applied_and_one_for_a_stay_the_player_left_after_the_map_accepted_it_is_dropped_at_the_connection_test() -> Nil {
   use <- owned_test.run(10_000)
   use tables <- with_the_heal
@@ -1063,26 +1104,7 @@ pub fn a_heal_the_map_accepted_before_its_caster_left_sight_is_applied_and_one_f
   // H camps and enters again while the heal is on its way: its client camps and picks the
   // character again, its connection asks the map to leave and to join, and the map takes
   // the heal, or H's leave, first. Then E's strike timer fires.
-  let camping =
-    healing
-    |> scene.client_sends(
-      connection: 1,
-      bytes: connection_support.camp_request_message(True),
-      name: "camp of 1 starts",
-    )
-    |> scene.client_sends(
-      connection: 1,
-      bytes: connection_support.camp_finished_message(),
-      name: "camp of 1 finishes",
-    )
-    |> scene.client_selects(
-      connection: 1,
-      character: scene.character_of(
-        class_id: medic,
-        level: 1,
-        place: scene.at(x: 20.0),
-      ),
-    )
+  let camping = h_camps_and_enters_again(healing:)
   let outcomes =
     list.map(scene.orders(scene: camping), fn(done) {
       scene.settle(scene: scene.timer_fires(
@@ -1170,8 +1192,9 @@ pub fn the_explorer_matches_the_full_walk_on_every_scene_small_enough_to_walk_in
   use <- owned_test.run(10_000)
   use tables <- with_the_armor
   let #(world, bag_index) = armor_world(tables:)
-  // The scenes of the move that takes a viewer out of sight (34 states at the shape) and of
-  // the ally's start (1,175 states there): each walked in full and reduced.
+  // The scenes of the move that takes a viewer out of sight and of the ally's start: each
+  // walked in full and reduced. The reduced walk leaves out an order that ends in a state
+  // another order ended in.
   let rows = [
     #("a move out of sight", c_moves_out_of_v_sight()),
     #("the ally's start", pressed(world:, bag_index:)),
@@ -1181,14 +1204,68 @@ pub fn the_explorer_matches_the_full_walk_on_every_scene_small_enough_to_walk_in
     let outcomes = fn(scenes: List(scene.Scene)) {
       list.map(scenes, fn(done) { order_explorer.outcome(taken: done.taken) })
     }
-    let reduced = outcomes(scene.orders(scene: start))
-    let full = outcomes(scene.orders_in_full(scene: start))
-    assert set.from_list(reduced) == set.from_list(full)
+    let walked = scene.orders(scene: start)
+    let full_scenes = scene.orders_in_full(scene: start)
+    let reduced = outcomes(walked)
+    assert set.is_subset(
+      set.from_list(reduced),
+      set.from_list(outcomes(full_scenes)),
+    )
+      as { name <> ": the reduced walk reaches only outcomes of the full walk" }
+    assert list.all(full_scenes, fn(ending) {
+      list.any(walked, fn(done) {
+        scene.same_state(first: ending, second: done)
+      })
+    })
       as {
         name
-        <> ": the reduced walk reaches the outcomes of the full walk, and no other"
+        <> ": every state the full walk ends in is a state the reduced walk ends in"
       }
     assert list.length(reduced) == set.size(set.from_list(reduced))
       as { name <> ": the reduced walk reaches each outcome once" }
   })
+}
+
+pub fn the_walk_by_commuting_ends_in_the_same_states_as_the_walk_by_receiver_alone_on_every_scene_that_finishes_in_both_test() -> Nil {
+  // deadline: 15 s measured: it walks seven scenes twice, by commuting and by receiver alone
+  use <- owned_test.run(60_000)
+  use tables <- with_the_armor
+  let #(world, bag_index) = armor_world(tables:)
+  let rows = [
+    #(
+      "V moves out and back while C's snapshot is in flight",
+      v_moves_out_and_back(entered: two_players_entering()),
+    ),
+    #("C moves out of V's sight", c_moves_out_of_v_sight()),
+    #("C leaves and returns", c_leaves_and_returns(settled: two_players())),
+    #("the ally's start", pressed(world:, bag_index:)),
+    #(
+      "T out of C's sight",
+      t_leaves_c_sight(pressed: pressed(world:, bag_index:)),
+    ),
+    #(
+      "V out of C's sight",
+      v_leaves_c_sight(pressed: pressed(world:, bag_index:)),
+    ),
+  ]
+  list.each(rows, fn(row) {
+    let #(name, start) = row
+    assert scene.relations_end_alike(scene: start)
+      as {
+        name
+        <> ": each state the walk by receiver alone ends in is one the walk by commuting ends in, and the other way round"
+      }
+  })
+  // H camps and enters again while E's heal is on its way: a connection that waits for the
+  // map's answer takes none of its other mail, so mail in flight is not all takeable.
+  use tables <- with_the_heal
+  let #(world, bag_index) = heal_world(tables:)
+  assert scene.relations_end_alike(
+    scene: h_camps_and_enters_again(healing: heal_pressed(
+      world:,
+      bag_index:,
+      target: 1,
+    )),
+  )
+    as "H camps and enters again while the heal is on its way: each state the walk by receiver alone ends in is one the walk by commuting ends in, and the other way round"
 }

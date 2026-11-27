@@ -41,8 +41,18 @@ fn leading_to(
 }
 
 fn scheduler() -> order_explorer.Scheduler(Scene, String, String, Sends) {
+  scheduler_with(same_state: fn(first: Scene, second: Scene) {
+    first.taken == second.taken
+  })
+}
+
+/// The scheduler whose scenes are the same state when `same_state` says so.
+fn scheduler_with(
+  same_state same_state: fn(Scene, Scene) -> Bool,
+) -> order_explorer.Scheduler(Scene, String, String, Sends) {
   Scheduler(
     mail: fn(scene: Scene) { scene.mail },
+    in_flight: fn(scene: Scene) { scene.mail },
     deliver: fn(scene: Scene, mail: Mail(String, String, Sends)) {
       Scene(
         mail: list.append(
@@ -55,6 +65,7 @@ fn scheduler() -> order_explorer.Scheduler(Scene, String, String, Sends) {
       )
     },
     taken: fn(scene: Scene) { scene.taken },
+    same_state:,
     queue_name: fn(receiver, sender) { receiver <> " from " <> sender },
   )
 }
@@ -143,4 +154,48 @@ pub fn the_explorer_reaches_every_outcome_of_two_senders_to_one_receiver_and_one
     assert list.all(scenes, fn(scene) { scene.mail == [] })
       as { name <> ": every scene delivers all of its mail" }
   })
+}
+
+/// A receiver's state after what it took: "from B" counts as "from A", so A's and B's
+/// messages commute and neither commutes with "from C".
+fn state_of(scene scene: Scene) -> List(String) {
+  list.map(scene.taken, fn(taken) {
+    case taken.name {
+      "from B" -> "from A"
+      name -> name
+    }
+  })
+}
+
+pub fn two_deliveries_to_one_receiver_that_commute_at_a_scene_are_taken_in_one_order_and_ones_that_do_not_in_both_test() -> Nil {
+  use <- owned_test.run(5000)
+  let scheduler =
+    scheduler_with(same_state: fn(first: Scene, second: Scene) {
+      state_of(scene: first) == state_of(scene: second)
+    })
+  let start =
+    Scene(
+      mail: [
+        plain(to: "R", from: "A", name: "from A"),
+        plain(to: "R", from: "B", name: "from B"),
+        plain(to: "R", from: "C", name: "from C"),
+      ],
+      taken: [],
+    )
+  let commuting = order_explorer.orders(scheduler:, scene: start)
+  let by_receiver = order_explorer.orders_by_receiver(scheduler:, scene: start)
+  assert list.length(by_receiver) == 6
+    as "counting every two deliveries to R as dependent, the three senders are taken in all six orders"
+  let states = fn(scenes) {
+    list.map(scenes, fn(scene) { state_of(scene:) }) |> set.from_list
+  }
+  assert states(commuting)
+    == set.from_list([
+      ["from C", "from A", "from A"],
+      ["from A", "from C", "from A"],
+      ["from A", "from A", "from C"],
+    ])
+    as "C taken first, between A and B, or last: three states, whichever of A and B is first"
+  assert list.length(commuting) < 6
+    as "A and B commute, so the orders that differ only in theirs are walked once"
 }
