@@ -17,7 +17,7 @@
 ////   communicator's refresh `0x1405fccb0`, which walks the quests with Quest2 flags 4 held
 ////   Botched (4), Mentioned (5) or Abandoned (6).
 //// - `opcode.0x364`, `0x1405fcb80`: a tracked flag of a quest of the active list, no answer.
-//// - `opcode.0x35e` and Jim's answer: the client sends it for Abandoned or Mentioned
+//// - `opcode.0x35e` and the server's choice: the client sends it for Abandoned or Mentioned
 ////   quests (bit 1) and for Ignored ones (bit 0) and changes no state itself, so the
 ////   server answers 0x35C: state 7 for bit 1, state 5 (Mentioned) for bit 0.
 //// - `0x1405a8d40` (marks the interaction kinds of a creature, `MarkQuestInteractionKinds`)

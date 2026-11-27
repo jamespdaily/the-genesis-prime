@@ -17,7 +17,7 @@
 //// - `Spell4Effects.targetFlags.load`: the client refuses only 0.
 //// - `Spell4Effects.targetFlags.combined` (a guess): 3, 5 and 7 hold the union of their
 ////   bits. `Spell4Effects.targetFlags.bit8` (a guess): bit 8 is not read.
-//// - `spell_plan.spell_hits_foes` (the server's choice, Jim's decision of 2026-11-15): a
+//// - `spell_plan.spell_hits_foes` (the server's choice): a
 ////   spell hits foes when a damage or crowd-control row of it has flags 2 to 7.
 
 import client_tables

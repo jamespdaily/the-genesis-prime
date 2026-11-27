@@ -11,7 +11,7 @@
 ////   34766 and 209967 for 79679 (the rows of effectType 73 the go lists, as the existing
 ////   release test's 80979 for 34722 is).
 //// - The costs: Spell4.76002's innate cost (19, 25) and Spell4Thresholds 129's row cost
-////   (19, 25), which is paid at the press that opens the charge (Jim, 2026-11-15), so a
+////   (19, 25), which is paid at the press that opens the charge (the server's choice), so a
 ////   press under the open threshold and its release pay nothing more. Spell Power is slot 4
 ////   of the Spellslinger (max 100), written as 0x935 of stat 6 (`opcode.0x935`,
 ////   `opcode.0x262.resource_stats`).

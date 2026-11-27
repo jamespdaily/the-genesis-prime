@@ -55,7 +55,7 @@ pub fn entity_type(unit_type unit_type: CreatureUnitType) -> Int {
 /// Whether a creature moves: a Turret never does, whatever its display's run
 /// speed, and a NonPlayer placed as part of a map object (`world_object_id` not 0,
 /// the spawn row's `active_prop_id`) never does either, as a bush, a burrow or a
-/// nest does not (Jim's decision on this rule, a server choice with no client
+/// nest does not (a server choice with no client
 /// source: the client has no rooted flag and its display of such a creature carries
 /// a run speed; the world database places each as a fixed object with no spline).
 pub fn can_move(

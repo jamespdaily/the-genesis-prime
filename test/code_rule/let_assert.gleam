@@ -29,6 +29,7 @@
 //// What the rule does not read: whether a message is true (review does), plain
 //// `assert`, `panic` and `.erl` files.
 
+import code_rule/list_file
 import code_rule/source.{type Breach, type SourceFile, Breach}
 import code_rule/syntax
 import glance
@@ -55,16 +56,13 @@ pub const most_rows = 127
 
 /// The list as its file writes it: `module ceiling` on each line.
 pub fn parse_list(text text: String) -> List(Listed) {
-  text
-  |> string.split("\n")
-  |> list.index_map(fn(row, index) { #(row, index + 1) })
-  |> list.filter(fn(entry) { string.trim(entry.0) != "" })
+  list_file.rows(text)
   |> list.map(fn(entry) {
     let #(row, line) = entry
-    let assert [module, ceiling] = string.split(string.trim(row), " ")
-      as { "line " <> int.to_string(line) <> " of the list is not two words" }
+    let assert [module, ceiling] = string.split(row, " ")
+      as list_file.bad_row(line:, what: "is not two words")
     let assert Ok(ceiling) = int.parse(ceiling)
-      as { "line " <> int.to_string(line) <> " of the list has no ceiling" }
+      as list_file.bad_row(line:, what: "has no ceiling")
     Listed(module:, ceiling:, line:)
   })
 }
@@ -227,18 +225,14 @@ fn list_breaches(
     order.Gt, Error(Nil) | order.Lt, Error(Nil) | order.Eq, _ -> []
   }
   let disordered =
-    list.zip(listed, list.drop(listed, 1))
-    |> list.filter_map(fn(pair) {
-      let #(before, row) = pair
-      case string.compare(before.module, row.module) {
-        order.Lt -> Error(Nil)
-        order.Eq | order.Gt ->
-          Ok(list_breach(
-            row,
-            "is out of order or repeated: keep one row per module, sorted",
-          ))
-      }
-    })
+    list_file.disordered(
+      rows: listed,
+      compare: fn(before, row) { string.compare(before.module, row.module) },
+      path: list_path,
+      line: fn(row) { row.line },
+      name: fn(row) { row.module },
+      what: "is out of order or repeated: keep one row per module, sorted",
+    )
   list.append(wrong_count, disordered)
 }
 

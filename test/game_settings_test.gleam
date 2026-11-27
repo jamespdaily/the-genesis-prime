@@ -1,6 +1,6 @@
 //// The game's settings (`genesis_prime/game_settings`), read from variables a
 //// test supplies as a list. Expected values come from these places.
-//// - The camp countdown's default, 10,000 ms: Jim's choice, with no retail
+//// - The camp countdown's default, 10,000 ms: the server's choice, with no retail
 ////   record and none in the client (opcode.0x92.countdown_source).
 //// - The countdown's range, 0 to 59,999 ms: the exit window shows whole
 ////   seconds as `00:SS` with no minutes field, and a countdown of 0 is a camp
@@ -25,7 +25,7 @@ pub fn no_variables_give_the_defaults_test() -> Nil {
       character_slots: 2,
       dev_commands: False,
     ))
-    as "10 s is Jim's choice for the camp, and 2 slots is the client's count for an account with no entitlement"
+    as "10 s is the server's choice for the camp, and 2 slots is the client's count for an account with no entitlement"
   assert game_settings.defaults()
     == GameSettings(
       camp_countdown_ms: 10_000,

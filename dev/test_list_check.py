@@ -29,7 +29,7 @@ or the path of a draft file (the whole file), and each backticked listed test al
 is printed as `NAME: already at FILE, write it plainly` (a list backticks only the tests its step adds),
 unless a line of the list that names it also says "row": a new row of an existing table test, printed as
 `NAME: a new row of FILE`. A test list is sized by the decisions a step adds, and a decision that fits an
-existing table test is a row there, not a new function (Jim, 2026-11-22).
+existing table test is a row there, not a new function (the running-a-step skill).
 Exit 1 when a test is printed as already there, 0 when none is, 2 when the list names no test.
 """
 

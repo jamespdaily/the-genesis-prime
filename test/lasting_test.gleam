@@ -10,7 +10,7 @@
 //// - `Spell4Effects.effectType.80`: the selector (1 a spell group, 2 a Spell4, 3 a
 ////   Spell4Base) and the count of stacks removed; the oldest first is the server's
 ////   choice.
-//// - Jim's decision on stacking (`Spell4StackGroup.stackCap`):
+//// - The server's choice on stacking (`Spell4StackGroup.stackCap`):
 ////   a caster keeps at most the group's cap of its own casts of the group on a
 ////   unit, and a new one at the cap takes the oldest off; a cap of 0 keeps one per
 ////   spell.
@@ -549,7 +549,7 @@ fn drawn_cast() -> qcheck.Generator(#(Int, Int, Int, Int)) {
 
 pub fn the_casts_the_stack_rule_names_are_each_taken_off_by_their_node_or_ended_by_their_kept_change_and_never_by_both_test() -> Nil {
   use <- owned_test.run(30_000)
-  // Jim's decision on stacking (`lasting.stack_pushed_off`): a caster's casts of one group on a
+  // The server's choice on stacking (`lasting.stack_pushed_off`): a caster's casts of one group on a
   // unit count together against the cap, whether a node or a change kept after the caster lost
   // sight of the player holds them. The two paths that end a pushed cast, the node's
   // (`lasting.pushed_off`) and the kept change's (`lasting.kept_pushed_off`), must split the

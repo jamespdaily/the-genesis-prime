@@ -221,7 +221,7 @@ pub fn a_medic_struck_and_spending_actuators_is_refilled_to_4_three_seconds_afte
     )
   assert resource_frames_support.resource_timers_started(released)
     == [#(class_resource.refill_timer, 3000)]
-    as "the combat flag clears: the refill starts, 3 seconds (Jim's choice at the design)"
+    as "the combat flag clears: the refill starts, 3 seconds (the server's choice)"
   assert resource_frames_support.changes_written(released) == []
   let #(state, refilled) =
     game_connection_support.feed(

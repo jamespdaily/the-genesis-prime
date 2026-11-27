@@ -3,7 +3,7 @@
 //// - A creature that gives or receives a quest none of whose objectives counts it stays:
 ////   Creature2's questIdGiven00 to 24 and questIdReceive00 to 24 name them
 ////   (`spawn.quest_ids`), and no client code makes a person vanish when an objective
-////   counts it (Jim, 2026-11-21). A creature that gives and receives only quests whose
+////   counts it (the server's choice). A creature that gives and receives only quests whose
 ////   objectives count it is those quests' own object and is released as before (the
 ////   coordinator, 2026-11-21); the rescue cage 38508 gives 7732 and 7733 and both count it.
 //// - Creature2 73491 is the tutorial's Dorian, who gives 10525 (Creature2 questIdGiven00

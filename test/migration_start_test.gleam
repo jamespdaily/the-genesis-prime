@@ -10,7 +10,7 @@
 //// - A database that is down when the server starts is logged as unreachable
 ////   and asked again; once it answers, it is checked as at start: all present
 ////   prints the ready line then, and a missing migration ends the node with
-////   status 1 naming it (Jim's decision on the readiness card).
+////   status 1 naming it (the server's choice).
 //// - A node that ends because `main` stopped ends with status 1
 ////   (`genesis_prime/application`, `sigterm_test`), and prints its ready line
 ////   only when the server can serve (`genesis_prime/readiness`).

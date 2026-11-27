@@ -10,7 +10,7 @@
 ////   health by class and level (0x1404585c0), so the player's own record carries
 ////   the health it enters with as stat 0 (`with_integer_stat`, `opcode.0x262`),
 ////   which the connection works out from the level's Base Health plus the worn
-////   items' (genesis_prime/game/gear `max_health`, Jim's decision on goal 274).
+////   items' (genesis_prime/game/gear `max_health`).
 //// - **Gear:** the unit holds none. `create` writes the body and the level only;
 ////   the worn items' gear comes through `with_gear` (genesis_prime/game/gear): the
 ////   properties 7 (Base Health), 35 and 36 (Assault Rating and Support Rating), 41
