@@ -778,9 +778,7 @@ pub fn wrapped(
   inner inner: Frame,
   cipher cipher: Cipher,
 ) -> BitArray {
-  let assert Ok(bytes) = encrypted_frame.wrap(wrapper, inner, cipher)
-    as "a message the rule writes is far below the size limit"
-  bytes
+  encrypted_frame.must_wrap(wrapper:, inner:, cipher:)
 }
 
 /// The ids of the messages every connection that takes the client's wrapper

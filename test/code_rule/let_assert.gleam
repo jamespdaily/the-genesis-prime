@@ -52,7 +52,7 @@ pub const list_path = "test/code_rule/let_assert_ceilings.txt"
 
 /// The number of rows the list holds: cutting a module's last assert deletes
 /// its row and lowers this by one.
-pub const most_rows = 118
+pub const most_rows = 116
 
 /// The list as its file writes it: `module ceiling` on each line.
 pub fn parse_list(text text: String) -> List(Listed) {

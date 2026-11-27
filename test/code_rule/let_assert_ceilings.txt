@@ -34,7 +34,6 @@ dev/scripted_client 7
 dev/tutorial_bot 4
 genesis_prime 4
 genesis_prime/account_session 1
-genesis_prime/client_connection 1
 genesis_prime/connection/cipher 1
 genesis_prime/content 2
 genesis_prime/game/amp_spec 2
@@ -49,7 +48,7 @@ genesis_prime/game/class_resource 2
 genesis_prime/game/click_objective 1
 genesis_prime/game/communicator 1
 genesis_prime/game/connection 1
-genesis_prime/game/connection/casting 10
+genesis_prime/game/connection/casting 9
 genesis_prime/game/connection/dev_command 2
 genesis_prime/game/connection/effects 1
 genesis_prime/game/connection/interaction 1
@@ -59,10 +58,9 @@ genesis_prime/game/connection/objective 1
 genesis_prime/game/connection/properties 1
 genesis_prime/game/connection/quest 1
 genesis_prime/game/connection/quest_turn_in 1
-genesis_prime/game/connection/state 1
 genesis_prime/game/connection/vendor_purchase 1
 genesis_prime/game/connection/vendor_sale 1
-genesis_prime/game/connection/viewers 3
+genesis_prime/game/connection/viewers 1
 genesis_prime/game/currency 1
 genesis_prime/game/departures 3
 genesis_prime/game/dev_command 3
