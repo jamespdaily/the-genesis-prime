@@ -1652,6 +1652,26 @@ pub fn a_sale_past_the_buyback_cap_drops_the_oldest_entries_and_sends_a_0xbd_for
   })
 }
 
+/// The server's buyback list and the client's list of ids after one more sale: the client
+/// applies each 0xBA (appends) and 0xBD (removes the id) the sale sent, in order.
+fn after_sale(
+  cap cap: Int,
+  state state: #(world_entry.Buyback, List(Int)),
+  stacks stacks: Int,
+) -> #(world_entry.Buyback, List(Int)) {
+  let #(buyback, client) = state
+  let #(buyback, effects) = sold_within(cap:, buyback:, stacks:)
+  #(
+    buyback,
+    list.fold(list_changes(effects:), client, fn(client, change) {
+      case change {
+        #(id, True) -> list.append(client, [id])
+        #(id, False) -> list.filter(client, fn(held) { held != id })
+      }
+    }),
+  )
+}
+
 pub fn the_buyback_list_the_client_builds_from_the_sale_frames_equals_the_servers_after_any_run_of_sales_test() -> Nil {
   use <- owned_test.run(10_000)
   qcheck.given(
@@ -1667,19 +1687,7 @@ pub fn the_buyback_list_the_client_builds_from_the_sale_frames_equals_the_server
         list.fold(
           sales,
           #(Buyback(next_id: 1, entries: []), []),
-          fn(state, stacks) {
-            let #(buyback, client) = state
-            let #(buyback, effects) = sold_within(cap:, buyback:, stacks:)
-            #(
-              buyback,
-              list.fold(list_changes(effects:), client, fn(client, change) {
-                case change {
-                  #(id, True) -> list.append(client, [id])
-                  #(id, False) -> list.filter(client, fn(held) { held != id })
-                }
-              }),
-            )
-          },
+          fn(state, stacks) { after_sale(cap:, state:, stacks:) },
         )
       assert client == entry_ids(buyback: server)
         as "the client's list is the server's, in the same order"

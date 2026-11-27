@@ -8,7 +8,7 @@
 ////                                       ├─ refused ─▶ Refused([Log, Refuse(code)])   nothing asked, nothing changed
 ////                                       └─ accepted ─▶ Asks(sale) ─▶ the connection asks the store (request(..))
 //// the store's answer ─▶ answered(sale, items, currencies, buyback, answer)
-////                       Sold(amount, words): items, the currency paid and buyback list updated; 0x919, 0xDD, then per stack 0x148 / 0x17F and 0xBA
+////                       Sold(amount, words): items, the currency paid and buyback list updated; a 0xBD per entry dropped off the list, 0x919, 0xDD, then per stack 0x148 / 0x17F and 0xBA
 ////                       ItemsNotSaved:   Warning, 0x106 5, nothing changed
 ////                       SaveRefused(c):  Error naming c, 0x106 5, nothing changed
 //// the connection then ─▶ inventory.regeared: a changed worn set sends 0x933, LookChanged and 0x93a
@@ -73,6 +73,13 @@
 ////   with: a buy back (genesis_prime/game/vendor_purchase) takes one off, a vendor window
 ////   opening sends the whole of it (0xBC), and the Holocrypt's join keeps it
 ////   (`world_entry.Joining`). It lives in the connection: a play starts it empty.
+//// - **The list's cap** is `buyback_cap`, the most entries one 0xBC carries inside a wrapper
+////   (the server's guess: the client holds any number, `opcode.0xba.price`). A sale that
+////   takes the list over it drops the oldest entries off the front, and the client is
+////   sent a 0xBD for each (`opcode.0xbd`: the handler 0x1403b88d0 removes the entry of that
+////   id and raises BuybackItemsUpdated), before the sale's own frames. A dropped id is
+////   never given again, so the client cannot ask to buy it back (`vendor_purchase`
+////   refuses an id not on the list).
 ////
 //// | Point | What happens |
 //// |---|---|
@@ -83,6 +90,7 @@
 //// | the connection ends while the store works | the store finishes or rolls back; the next login loads whichever |
 
 import genesis_prime/client_connection
+import genesis_prime/connection/encrypted_frame
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/interaction
@@ -102,6 +110,8 @@ import genesis_prime/gap
 import genesis_prime/message/bit_stream
 import genesis_prime/message/buyback_added
 import genesis_prime/message/buyback_entry
+import genesis_prime/message/buyback_list.{BuybackList}
+import genesis_prime/message/buyback_removed
 import genesis_prime/message/float32
 import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/vendor_sale as vendor_sale_message
@@ -115,6 +125,7 @@ import genesis_prime/table/item2
 import genesis_prime/table/loader/formula_requirement
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_path
+import gleam/bit_array
 import gleam/bool
 import gleam/dict
 import gleam/float
@@ -677,9 +688,36 @@ pub fn request(
   ))
 }
 
-/// The most entries the buyback list holds.
+/// The most entries the buyback list holds: the most that one 0xBC carries inside a
+/// wrapper (`encrypted_frame.largest_inner_body`), whose bits come from the schema's
+/// `buyback_entry` (`opcode.0xbc`). The client has no limit (`opcode.0xba.price`) and a
+/// 0xBC over the wrapper cannot be sent, so the server holds the oldest sales off the list
+/// past it; the number is the server's guess.
 pub fn buyback_cap() -> Int {
-  0
+  let listing = fn(count) {
+    bit_array.byte_size(bit_stream.must(
+      BuybackList(entries: list.repeat(
+        buyback_entry_message(entry: sample_entry()),
+        count,
+      )),
+      buyback_list.encode,
+    ))
+  }
+  // 8 entries are a whole number of bytes, so the bytes they add are one entry's bits.
+  let entry_bits = listing(8) - listing(0)
+  { encrypted_frame.largest_inner_body() * 8 - listing(0) * 8 } / entry_bits
+}
+
+/// An entry to measure the codec's size with.
+fn sample_entry() -> BuybackEntry {
+  BuybackEntry(
+    buyback_id: 0,
+    item2_id: Item2Id(0),
+    quantity: 0,
+    words: store.plain_words,
+    currency_type_id: 0,
+    amount: 0,
+  )
 }
 
 /// What the store's answer leaves: the items, the amounts held, the buyback list and the
@@ -701,9 +739,13 @@ pub fn answered(
   )
 }
 
-/// `answered` with the buyback list held to `cap` entries.
+/// `answered` with the buyback list held to `cap` entries. A sold stack is appended to the
+/// list, then the oldest entries drop off the front while the list is over `cap`: the
+/// client is sent a 0xBD (`opcode.0xbd`) for each dropped entry it holds, before the sale's
+/// other frames, and no 0xBA for a stack of the sale that is itself dropped. An id is never
+/// given twice.
 pub fn answered_within(
-  cap _cap: Int,
+  cap cap: Int,
   sale sale: Sale,
   items items: List(HeldItem),
   currencies currencies: Currencies,
@@ -727,6 +769,12 @@ pub fn answered_within(
             amount: stack.paid,
           )
         })
+      let held = list.length(buyback.entries)
+      let over = int.max(0, held + list.length(entries) - cap)
+      let #(dropped, left) =
+        list.split(list.append(buyback.entries, entries), over)
+      // The first `over - held` entries of the sale are dropped before the client hears of them.
+      let unheard = int.max(0, over - held)
       #(
         sold_from(items:, stacks:),
         currency.with_amount(
@@ -734,11 +782,11 @@ pub fn answered_within(
           currency_type_id: sale.currency_type_id,
           total: amount,
         ),
-        Buyback(
-          next_id: buyback.next_id + list.length(stacks),
-          entries: list.append(buyback.entries, entries),
-        ),
-        list.append(
+        Buyback(next_id: buyback.next_id + list.length(stacks), entries: left),
+        list.flatten([
+          list.map(list.take(dropped, held), fn(entry) {
+            Send(removed_frame(buyback_id: entry.buyback_id))
+          }),
           list.map(
             currency.total_frames(
               currency_type_id: sale.currency_type_id,
@@ -747,11 +795,19 @@ pub fn answered_within(
             ),
             Send,
           ),
-          list.flat_map(list.zip(stacks, entries), fn(pair) {
-            let #(stack, entry) = pair
-            [Send(stack_frame(stack:)), Send(buyback_frame(entry:))]
-          }),
-        ),
+          list.flat_map(
+            list.index_map(list.zip(stacks, entries), fn(pair, position) {
+              #(pair.0, pair.1, position >= unheard)
+            }),
+            fn(heard) {
+              let #(stack, entry, listed) = heard
+              case listed {
+                True -> [Send(stack_frame(stack:)), Send(buyback_frame(entry:))]
+                False -> [Send(stack_frame(stack:))]
+              }
+            },
+          ),
+        ]),
       )
     }
     ItemsNotSaved -> #(
@@ -823,6 +879,16 @@ fn buyback_frame(entry entry: BuybackEntry) -> Frame {
       buyback_added.encode,
     )
   frame.Frame(message_id: buyback_added.message_id, body:)
+}
+
+/// The 0xBD that takes an entry off the client's Buyback list (`opcode.0xbd`).
+pub fn removed_frame(buyback_id buyback_id: Int) -> Frame {
+  let body =
+    bit_stream.must(
+      buyback_removed.BuybackRemoved(buyback_id:),
+      buyback_removed.encode,
+    )
+  frame.Frame(message_id: buyback_removed.message_id, body:)
 }
 
 /// An entry of the buyback list as the client's 0xBA and 0xBC carry it: the amount paid is

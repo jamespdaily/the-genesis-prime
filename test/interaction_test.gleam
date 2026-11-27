@@ -1017,7 +1017,7 @@ pub fn opening_a_vendor_sends_the_buyback_list_oldest_first_test() -> Nil {
 }
 
 pub fn a_vendor_window_opened_with_a_full_buyback_list_sends_the_whole_list_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   // One item sold at a time fills the list to the most one 0xBC carries (`opcode.0xbc`,
   // 1154 entries by `vendor_sale_test`); the window opened then writes the 0xBC in its
   // wrapper, which `heard` opens, and the connection goes on.

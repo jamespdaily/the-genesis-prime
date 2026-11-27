@@ -11534,10 +11534,10 @@ grade = "guess"
 gap = "Only the id, the Item2 id and the quantity are named, from GetBuybackItems 0x14065b2b0; the price fields and the rest need GetBuybackItems' keys mapped to the entry offsets."
 
 ["opcode.0xbd"]
-statement = "Message 0xbd (189), game server to client: remove a buyback entry. Body: the 32-bit buyback id. An unknown id is an error and nothing changes."
-proof = "Handler 0x1403b88d0 (saved C): finds the entry by id in game+0x6330 and removes it; returns an error when not found."
+statement = "Message 0xbd (189), game server to client: remove a buyback entry. Body: the 32-bit buyback id. An unknown id is an error and nothing changes. A removal raises BuybackItemsUpdated, which the Vendor window answers by refreshing its Buyback tab and redrawing."
+proof = "Handler 0x1403b88d0 (saved C): finds the entry by id in game+0x6330 (0x100 bytes each), shifts the rest down, stores the new count at game+0x6338 and calls RaiseUiEvent(game+0x7340, \"BuybackItemsUpdated\") before it returns 0; with no entry of that id it returns 0x80004005 and changes nothing. UI/Vendor/Vendor.lua registers OnBuybackItemsUpdated for the event (line 75); it returns when the vendor window is not open, else calls RefreshBuyBackTab and Redraw (line 189)."
 grade = "fairly sure"
-gap = "Whether it raises BuybackItemsUpdated after the removal is not read."
+gap = "Read from the saved C and the Vendor addon; the client list has no count limit, so the server's cap is its own."
 
 ["opcode.0x14d"]
 statement = "Message 0x14d (333), game server to client: repair done. Empty body; it raises an event. Repair (client message 0x14c, three 64-bit values) is outside this system's scope."
