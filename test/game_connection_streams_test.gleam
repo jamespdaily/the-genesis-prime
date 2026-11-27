@@ -210,6 +210,12 @@ pub fn a_heals_answer_precedes_the_targets_own_news_in_the_maps_stream_test() ->
       )),
     ]
     as "the answer to the caster, then the target's own Shield and Health news, all to the map in one stream: the map relays them in that order"
-  assert support.peer_tells(taken) == [] && support.player_answers(taken) == []
+  assert list.filter(support.tells(taken), fn(told) {
+      case told.0 {
+        step.Connection(..) -> True
+        _ -> False
+      }
+    })
+    == []
     as "and nothing is told to another player's connection directly"
 }

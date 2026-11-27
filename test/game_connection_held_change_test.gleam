@@ -73,6 +73,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
@@ -1950,10 +1951,12 @@ fn events_told(
   list.filter_map(support.tells(taken), fn(told) {
     case told {
       #(
-        step.Connection(connection: ConnectionId(caster)),
-        client_connection.TellPlayer(
-          stay:,
-          tell: client_connection.Event(event:),
+        _,
+        client_connection.TellLanding(
+          to: ConnectionId(caster),
+          to_stay: stay,
+          landing: relay.AllyEvent(event:),
+          ..,
         ),
       ) -> Ok(#(caster, stay, event))
       _ -> Error(Nil)
@@ -2217,8 +2220,8 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
     list.filter(rule_support.effects_of(taken), fn(effect) {
       case effect {
         OwnEffect(step.Tell(
-          request: client_connection.TellPlayer(
-            tell: client_connection.Event(..),
+          request: client_connection.TellLanding(
+            landing: relay.AllyEvent(..),
             ..,
           ),
           ..,

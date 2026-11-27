@@ -5,11 +5,11 @@
 ////
 //// ```
 //// caster's connection C                                holder's connection T
-////   Tell(T, TellPlayer(stay_T, Change(PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect))))
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, ChangeStart(PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect))))
 ////                                  ─▶ started(by: C, source, .., spell4_id, effect)
-////   Tell(T, TellPlayer(stay_T, Change(PlayerChangeEnds(C, source))))
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, ChangeEnd(PlayerChangeEnds(C, source))))
 ////                                  ─▶ released(source)
-////   Tell(T, TellPlayer(stay_T, Change(PlayerCastWent(C, cast_id))))
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, CastWent(PlayerCastWent(C, cast_id))))
 ////                                  ─▶ holds_cast_from(cast_id, C), cast_views(T's unit, now)
 ////   the map's UnseenBy(C)          ─▶ released_unseen(C): the sources with `EndsWhenUnseen`
 ////   the map's Gone(C's unit)       ─▶ released_with_unit(unit): every source of that unit

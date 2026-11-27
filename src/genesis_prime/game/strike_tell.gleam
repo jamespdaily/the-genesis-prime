@@ -22,14 +22,15 @@
 ////   (each SentByFoe travels for the player's stay: ForStay(stay, SentByFoe(..)))
 ////
 //// caster's connection C                                     healed player's connection T
-////   Tell(Connection(T), TellPlayer(stay_T, Strike(PlayerStrike(key, C, stay_C, outgoing, heals))))
-////                                                            ─▶ each heal row on T's life, in order
-////   SentByPlayer(Answer(PlayerAnswered(key, outcome))) ◀─ Tell(Connection(C), TellPlayer(stay_C, Answer(..))),
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, HealStrike(PlayerStrike(key, C, stay_C, outgoing, heals))))
+////                                                            ─▶ the map: Relayed(stay_T, Landed(..)), then
+////                                                               each heal row on T's life, in order
+////   SentByPlayer(Answer(PlayerAnswered(key, outcome))) ◀─ the map ◀─ Tell(map, TellLanding(T, stay_T, C, stay_C, HealAnswer(..))),
 ////                                                 then T's own news
 ////
 //// caster's connection C                                     ally's connection T (holds C's Proc row)
 ////   a creature's blow lands on T, T alive, C among T's viewers
-////   SentByPlayer(Event(PlayerEvent(T's unit, events))) ◀─ Tell(Connection(C), TellPlayer(stay_C, Event(..))),
+////   SentByPlayer(Event(PlayerEvent(T's unit, events))) ◀─ the map ◀─ Tell(map, TellLanding(T, stay_T, C, stay_C, AllyEvent(..))),
 ////                                                 the events C's Proc rows on T wait for, never asked
 ////   ─▶ C raises each event with T's unit as its holder, draws the chances from its own
 ////      seed, and fires the rows C holds on T: the child cast of the row's spell

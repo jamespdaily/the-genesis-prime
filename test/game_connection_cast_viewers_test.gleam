@@ -179,9 +179,13 @@ fn told_in(
             )
           })
         OwnEffect(step.Tell(
-          to: step.Connection(ConnectionId(to)),
-          request: client_connection.TellPlayer(tell:, ..),
-        )) -> [Change(to:, change: tell)]
+          request: client_connection.TellLanding(
+            to: ConnectionId(to),
+            landing:,
+            ..,
+          ),
+          ..,
+        )) -> [Change(to:, change: client_connection.player_tell_of(landing:))]
         _ -> []
       }
     })

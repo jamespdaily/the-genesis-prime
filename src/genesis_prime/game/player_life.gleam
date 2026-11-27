@@ -30,7 +30,7 @@
 ////                             ─▶ dead: PlayerDead, no row
 ////                                alive: each heal row in order on P's life (`heals_taken`)
 ////                                                                          ─▶ the same 0x938, 0x92f and viewers' news as P's own heal
-////                                Tell(Connection(H), TellPlayer(stay_H, Answer(PlayerAnswered(key, outcome))))
+////                                Tell(map, TellLanding(P, stay_P, H, stay_H, HealAnswer(PlayerAnswered(key, outcome))))
 //// ```
 ////
 //// Health and shield regenerate on two timers this rule asks for as effects, as the

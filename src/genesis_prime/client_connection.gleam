@@ -175,15 +175,10 @@ pub type Request {
     life: Int,
     payload: Inbound,
   )
-  /// What a `Tell` effect sends the connection of another player (genesis_prime/step
-  /// `Connection`): what its cast does to this connection's player, or the answer to
-  /// what this connection's player did to it (`PlayerTell`). `stay` is the told
-  /// player's stay, which fences the tell. Never asked, and never told to a map.
-  TellPlayer(stay: Stay, tell: PlayerTell)
 }
 
-/// What one connection tells the connection of another player, as `TellPlayer`
-/// carries it and `SentByPlayer` delivers it.
+/// What a player's connection lands on the connection of another player, or answers it,
+/// as the map relays it (`Landed`) and the connection takes it as `SentByPlayer`.
 pub type PlayerTell {
   /// The heal rows the caster's cast applies to the told player's life
   /// (genesis_prime/game/connection/landing); the strike holds the caster's stay.
@@ -895,7 +890,6 @@ pub fn told_to_the_map(request request: Request) -> Result(map.Message, Nil) {
     | TellMove(..)
     | TellChat(..)
     | TellLine(..)
-    | TellPlayer(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -911,7 +905,6 @@ pub fn told_to_a_connection(request request: Request) -> Result(Message, Nil) {
   case request {
     TellPeer(stay:, news:) -> Ok(ForStay(stay:, sent: SentByPeer(news:)))
     TellMove(stay:, move:) -> Ok(ForStay(stay:, sent: SentByMove(move:)))
-    TellPlayer(stay:, tell:) -> Ok(ForStay(stay:, sent: SentByPlayer(tell:)))
     TellLine(stay:, tell:) -> Ok(ForStay(stay:, sent: SentByLine(tell:)))
     TellChat(tell:) -> Ok(SentByChat(tell:))
     TellMoved(..)
@@ -930,5 +923,18 @@ pub fn told_to_a_connection(request request: Request) -> Result(Message, Nil) {
     | AskSessions(..)
     | AskMap(..)
     | AskMapRun(..) -> Error(Nil)
+  }
+}
+
+/// The tell a landing is delivered to the told player's connection as, when the map relays
+/// it (`Relayed(Landed)`).
+pub fn player_tell_of(landing landing: relay.Landing) -> PlayerTell {
+  case landing {
+    relay.HealStrike(strike:) -> Strike(strike:)
+    relay.HealAnswer(answered:) -> Answer(answered:)
+    relay.ChangeStart(change:)
+    | relay.ChangeEnd(change:)
+    | relay.CastWent(change:) -> Change(change:)
+    relay.AllyEvent(event:) -> Event(event:)
   }
 }

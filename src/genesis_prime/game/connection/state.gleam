@@ -724,6 +724,30 @@ pub fn broadcast(
   )
 }
 
+/// The tell of `landing` to the run of the player's map, for the player of connection `to`
+/// in its stay `to_stay`: what the player's cast lands on that player, or its answer to
+/// one. The map admits it by the kind's checks and relays it to `to`
+/// (genesis_prime/world_map/map `TellLanding`), in the order this connection told it
+/// beside its broadcasts; the player tells no other player itself.
+pub fn tells_the_landing(
+  session session: Session,
+  entered entered: world_entry.Entered,
+  to to: ConnectionId,
+  to_stay to_stay: Stay,
+  landing landing: relay.Landing,
+) -> Effect(ConnectionEffect(Request)) {
+  tells_the_map(
+    entered:,
+    request: client_connection.TellLanding(
+      connection: client_connection.connection(session.link),
+      stay: entered.stay,
+      to:,
+      to_stay:,
+      landing:,
+    ),
+  )
+}
+
 /// The tell of `request` to the run of the player's map, which no answer follows
 /// (`step.Tell`): the player's move, its readiness or its stealth, each of which the
 /// map takes in the order this connection sent it.

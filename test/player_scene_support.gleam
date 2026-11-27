@@ -476,7 +476,6 @@ pub fn request_name(request request: client_connection.Request) -> String {
     client_connection.TellSnapshot(..) -> "TellSnapshot"
     client_connection.TellLanding(..) -> "TellLanding"
     client_connection.TellSay(..) -> "TellSay"
-    client_connection.TellPlayer(..) -> "TellPlayer"
     client_connection.TellLine(..) -> "TellLine"
     client_connection.TellChat(..) -> "TellChat"
     client_connection.TellReady(..) -> "TellReady"

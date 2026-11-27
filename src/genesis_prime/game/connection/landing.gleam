@@ -6,11 +6,11 @@
 ////
 //// ```
 //// caster's connection C                        this connection T (the healed player)
-////   Tell(Connection(T), TellPlayer(stay_T, Strike(PlayerStrike(key, C, stay_C, outgoing, heals))))
-////                      ─▶ ForStay(stay_T, SentByPlayer(Strike(strike)))   (the stay fence; held through an ask)
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, HealStrike(PlayerStrike(key, C, stay_C, outgoing, heals))))
+////                      ─▶ the map: Relayed(stay_T, Landed(..)) ─▶ ForStay(stay_T, SentByPlayer(Strike(strike)))   (the stay fence; held through an ask)
 ////                      ─▶ player_life.heals_taken: each row in order on the life the one before left
 ////   ForStay(stay_C, SentByPlayer(Answer(PlayerAnswered(key, HealsLanded(splits) | PlayerDead))))
-////                      ◀─ Tell(Connection(C), TellPlayer(stay_C, Answer(answered))), then T's own news
+////                      ◀─ Tell(map, TellLanding(T, stay_T, C, stay_C, HealAnswer(answered))), then T's own news
 //// ```
 ////
 //// - **The answer is told before T's own news**, in the order a creature answers a strike
@@ -23,13 +23,14 @@
 ////
 //// ```
 //// caster's connection C                        this connection T (the ally)
-////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect))))
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, ChangeStart(PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect))))
+////                      ─▶ the map (T in stay_T and C in stay_C): Relayed(stay_T, Landed(..))
 ////                      ─▶ ForStay(stay_T, SentByPlayer(Change(..)))   (the stay fence; held through an ask)
 ////                      ─▶ changed: the change through the function the player's own cast uses
 ////                         (properties.started, absorption.started), held for C
-////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerChangeEnds(C, source))))
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, ChangeEnd(PlayerChangeEnds(C, source))))
 ////                      ─▶ changed: the source taken off, when C holds it
-////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerCastWent(C, cast_id))))
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, CastWent(PlayerCastWent(C, cast_id))))
 ////                      ─▶ cast_went: Tell(map, TellBroadcast(PeerNews(T, HeldCastStarted(0x7ff, 0x7f4)))), after the rows
 ////   the map's UnseenBy(C) ─▶ caster_unseen: C's sources with `EndsWhenUnseen` taken off
 ////   the map's Gone(C's unit) ─▶ caster_removed: every source of that unit taken off
@@ -40,7 +41,7 @@
 ////
 //// ```
 //// a creature's blow lands on T, T alive, C among T's viewers and waiting for an event it raises
-////   Tell(Connection(C), TellPlayer(stay_C, Event(PlayerEvent(T's unit, the events C waits for))))
+////   Tell(map, TellLanding(T, stay_T, C, stay_C, AllyEvent(PlayerEvent(T's unit, the events C waits for))))
 ////                      ◀─ events_told: after T's own procs are raised, one tell per waiting caster
 //// ```
 ////
@@ -105,9 +106,8 @@ import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/gap
-import genesis_prime/step.{
-  type ConnectionEffect, type Effect, type Now, OwnEffect,
-}
+import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import genesis_prime/world_map/relay
 import gleam/bool
 import gleam/dict
 import gleam/list
@@ -130,16 +130,16 @@ pub fn struck(
   let #(session, news) =
     life_effect.life_changed(session:, now:, change: fn(_) { #(life, effects) })
   let answer: Effect(ConnectionEffect(Request)) =
-    OwnEffect(step.Tell(
-      to: step.Connection(connection: strike.from),
-      request: client_connection.TellPlayer(
-        stay: strike.stay,
-        tell: client_connection.Answer(answered: strike_tell.PlayerAnswered(
-          key: strike.key,
-          outcome:,
-        )),
-      ),
-    ))
+    connection_state.tells_the_landing(
+      session:,
+      entered:,
+      to: strike.from,
+      to_stay: strike.stay,
+      landing: relay.HealAnswer(answered: strike_tell.PlayerAnswered(
+        key: strike.key,
+        outcome:,
+      )),
+    )
   Continue(session, [answer, ..news])
 }
 
@@ -327,6 +327,7 @@ pub fn caster_removed(
 /// one of them gets one tell with the stay it holds the viewer by, the player's unit and the
 /// events it waits for in the order they were raised. A dead player tells nobody.
 pub fn events_told(
+  session session: Session,
   entered entered: world_entry.Entered,
   events events: List(proc.Event),
 ) -> List(Effect(ConnectionEffect(Request))) {
@@ -340,18 +341,16 @@ pub fn events_told(
       list.filter(events, fn(event) { list.contains(triggers, event.trigger) })
     case dict.get(entered.viewers, caster), waited_for {
       Ok(viewer), [_, ..] ->
-        Ok(
-          OwnEffect(step.Tell(
-            to: step.Connection(connection: caster),
-            request: client_connection.TellPlayer(
-              stay: viewer.stay,
-              tell: client_connection.Event(event: strike_tell.PlayerEvent(
-                unit_id: entered.unit_id,
-                events: waited_for,
-              )),
-            ),
+        Ok(connection_state.tells_the_landing(
+          session:,
+          entered:,
+          to: caster,
+          to_stay: viewer.stay,
+          landing: relay.AllyEvent(event: strike_tell.PlayerEvent(
+            unit_id: entered.unit_id,
+            events: waited_for,
           )),
-        )
+        ))
       Ok(_), [] | Error(Nil), _ -> Error(Nil)
     }
   })

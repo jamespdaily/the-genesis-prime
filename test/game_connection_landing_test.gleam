@@ -27,8 +27,9 @@ import genesis_prime/message/player_health.{type PlayerHealth, PlayerHealth}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{type UnitStatChanged}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
-import genesis_prime/step.{type ConnectionStep, ConnectionId, OwnEffect}
+import genesis_prime/step.{type ConnectionStep, ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId}
+import genesis_prime/world_map/relay
 import gleam/list
 import owned_test
 import strike_support
@@ -124,12 +125,12 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
     as "one answer, to the caster's connection for the caster's stay, with the key unchanged and each row's split"
   assert list.first(rule_support.effects_of(taken))
     == Ok(
-      OwnEffect(step.Tell(
-        to: step.Connection(connection: ConnectionId(3)),
-        request: client_connection.TellPlayer(
-          stay: support.viewer_stay(3),
-          tell: client_connection.Answer(answered:),
-        ),
+      support.map_tell(client_connection.TellLanding(
+        connection: ConnectionId(1),
+        stay: support.own_stay(),
+        to: ConnectionId(3),
+        to_stay: support.viewer_stay(3),
+        landing: relay.HealAnswer(answered:),
       )),
     )
     as "the answer is the first effect, before the player's own news, as a creature's is"

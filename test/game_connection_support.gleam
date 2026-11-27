@@ -1577,7 +1577,6 @@ pub fn mapped_logging(
     | client_connection.TellSnapshot(..)
     | client_connection.TellLanding(..)
     | client_connection.TellSay(..)
-    | client_connection.TellPlayer(..)
     | client_connection.TellLine(..)
     | TellChat(..) ->
       panic as "the step ends in an ask of the map: a store, hand-off or Sessions ask, or a tell, is none"
@@ -2878,37 +2877,39 @@ pub fn tells(taken: ConnectionStep(Request)) -> List(#(step.Address, Request)) {
   })
 }
 
-/// The heal strikes a step tells the connections of players: the address, the stay the
-/// strike is told for and the strike, in the order told.
+/// The heal strikes a step tells the map for the connections of players: the address of
+/// the told player's connection, the stay the strike is told for and the strike, in the
+/// order told.
 pub fn player_strikes(
   taken: ConnectionStep(Request),
 ) -> List(#(step.Address, Stay, strike_tell.PlayerStrike)) {
   list.filter_map(tells(taken), fn(told) {
     case told.1 {
-      client_connection.TellPlayer(
-        stay:,
-        tell: client_connection.Strike(strike:),
-      ) -> Ok(#(told.0, stay, strike))
+      client_connection.TellLanding(
+        to:,
+        to_stay:,
+        landing: relay.HealStrike(strike:),
+        ..,
+      ) -> Ok(#(step.Connection(to), to_stay, strike))
       _ -> Error(Nil)
     }
   })
 }
 
-/// The answers a step tells the connections of casters: the caster's connection, the
-/// stay the answer is told for and the answer, in the order told.
+/// The answers a step tells the map for the connections of casters: the caster's
+/// connection, the stay the answer is told for and the answer, in the order told.
 pub fn player_answers(
   taken: ConnectionStep(Request),
 ) -> List(#(Int, Stay, strike_tell.PlayerAnswered)) {
   list.filter_map(tells(taken), fn(told) {
-    case told {
-      #(
-        step.Connection(ConnectionId(caster)),
-        client_connection.TellPlayer(
-          stay:,
-          tell: client_connection.Answer(answered:),
-        ),
-      ) -> Ok(#(caster, stay, answered))
-      #(_, _) -> Error(Nil)
+    case told.1 {
+      client_connection.TellLanding(
+        to: ConnectionId(caster),
+        to_stay:,
+        landing: relay.HealAnswer(answered:),
+        ..,
+      ) -> Ok(#(caster, to_stay, answered))
+      _ -> Error(Nil)
     }
   })
 }

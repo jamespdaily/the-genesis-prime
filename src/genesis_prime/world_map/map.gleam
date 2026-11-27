@@ -1744,17 +1744,37 @@ fn player_broadcast(
 }
 
 /// One player's landing on another: admitted by the kind's destination and source checks
-/// (`relay.landing_kind_of`) and sent as `Relayed(to_stay, Landed(landing))`. The map
-/// delivers nothing.
+/// (`relay.landing_kind_of`) and sent as `Relayed(to_stay, Landed(landing))`; a tell that
+/// fails a check is dropped.
 fn landing_told(
   state state: State,
-  from _from: ConnectionId,
-  stay _stay: Stay,
-  to _to: ConnectionId,
-  to_stay _to_stay: Stay,
-  landing _landing: Landing,
+  from from: ConnectionId,
+  stay stay: Stay,
+  to to: ConnectionId,
+  to_stay to_stay: Stay,
+  landing landing: Landing,
 ) -> #(State, ServiceStep(Outgoing)) {
-  #(state, Effects([]))
+  let relay.LandingKind(destination: relay.TellsCurrentStay, source:) =
+    relay.landing_kind_of(landing:)
+  let destination_admits =
+    in_current_stay(state:, connection: to, stay: to_stay)
+  let source_admits = case source {
+    relay.NoLandingSourceCheck -> True
+    relay.SenderStayIsCurrent ->
+      in_current_stay(state:, connection: from, stay:)
+  }
+  case destination_admits && source_admits {
+    True -> #(
+      state,
+      Effects([
+        OwnEffect(Send(
+          to: Connection(to),
+          message: Relayed(stay: to_stay, delivered: relay.Landed(landing:)),
+        )),
+      ]),
+    )
+    False -> #(state, Effects([]))
+  }
 }
 
 /// A local chat line: relayed to each relaying viewer of the speaker, in connection

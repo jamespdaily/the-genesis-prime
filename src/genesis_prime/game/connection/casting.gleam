@@ -1582,8 +1582,10 @@ fn carried_out(
         Some(entered)
       -> #(session, [
         tells_the_player(
+          session:,
+          entered:,
           address:,
-          change: held_changes.PlayerChangeStarts(
+          landing: relay.ChangeStart(change: held_changes.PlayerChangeStarts(
             from: client_connection.connection(session.link),
             from_stay: entered.stay,
             source:,
@@ -1591,30 +1593,37 @@ fn carried_out(
             sight:,
             spell4_id:,
             effect:,
-          ),
+          )),
         ),
       ])
-      cast_state.OtherPlayerChangeEnds(address:, source:), Some(_) -> #(
+      cast_state.OtherPlayerChangeEnds(address:, source:), Some(entered) -> #(
         session,
         [
           tells_the_player(
+            session:,
+            entered:,
             address:,
-            change: held_changes.PlayerChangeEnds(
+            landing: relay.ChangeEnd(change: held_changes.PlayerChangeEnds(
               from: client_connection.connection(session.link),
               source:,
-            ),
+            )),
           ),
         ],
       )
-      cast_state.OtherPlayerCastWent(address:, cast_id:), Some(_) -> #(session, [
-        tells_the_player(
-          address:,
-          change: held_changes.PlayerCastWent(
-            from: client_connection.connection(session.link),
-            cast_id:,
+      cast_state.OtherPlayerCastWent(address:, cast_id:), Some(entered) -> #(
+        session,
+        [
+          tells_the_player(
+            session:,
+            entered:,
+            address:,
+            landing: relay.CastWent(change: held_changes.PlayerCastWent(
+              from: client_connection.connection(session.link),
+              cast_id:,
+            )),
           ),
-        ),
-      ])
+        ],
+      )
       cast_state.OtherPlayerChangeStarts(..), None
       | cast_state.OtherPlayerChangeEnds(..), None
       | cast_state.OtherPlayerCastWent(..), None
@@ -1800,20 +1809,22 @@ fn procs_fired(
 /// The bytes of a chance draw: one 32-bit word (`random.words`).
 const proc_word_bytes = 4
 
-/// The change `change` told to the connection of the player `address` names, for the stay
-/// it names, through the registry: the player's connection applies
-/// it and holds it for this connection.
+/// The change `change` of a cast, told to the player `address` names for the stay it names,
+/// through the map: the map admits it by the kind's checks and relays it to that player's
+/// connection, which applies it and holds it for this connection.
 fn tells_the_player(
+  session session: Session,
+  entered entered: world_entry.Entered,
   address address: player_address.PlayerAddress,
-  change change: held_changes.PlayerChange,
+  landing landing: relay.Landing,
 ) -> Effect(ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: step.Connection(connection: address.connection),
-    request: client_connection.TellPlayer(
-      stay: address.stay,
-      tell: client_connection.Change(change:),
-    ),
-  ))
+  connection_state.tells_the_landing(
+    session:,
+    entered:,
+    to: address.connection,
+    to_stay: address.stay,
+    landing:,
+  )
 }
 
 /// The throw of the creature `unit_id` of `life`, told through the player's map as a
@@ -2102,14 +2113,13 @@ fn strike_carried_out(
           payload: relay.Strike(tell:),
         ),
       ])
-      strike.TellPlayerStrike(address:, strike:), Some(_) -> #(session, [
-        OwnEffect(step.Tell(
-          to: step.Connection(connection: address.connection),
-          request: client_connection.TellPlayer(
-            stay: address.stay,
-            tell: client_connection.Strike(strike:),
-          ),
-        )),
+      strike.TellPlayerStrike(address:, strike:), Some(entered) -> #(session, [
+        tells_the_player(
+          session:,
+          entered:,
+          address:,
+          landing: relay.HealStrike(strike:),
+        ),
       ])
       strike.StartTimer(timer:, after_ms:), Some(_) -> #(session, [
         OwnEffect(StartTimer(timer:, after_ms:)),

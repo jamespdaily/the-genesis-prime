@@ -106,8 +106,8 @@ import genesis_prime/client_connection.{
   SentByChat, SentByFoe, SentByKill, SentByLine, SentByMap, SentByPeer,
   SentByPlayer, SentBySessions, SentByTarget, TellBroadcast, TellChat,
   TellCreature, TellLanding, TellLifeChanged, TellLine, TellMove, TellMoved,
-  TellPeer, TellPlayer, TellReady, TellReleased, TellSay, TellSnapshot,
-  TellStealthChanged, TellVisibilityChanged,
+  TellPeer, TellReady, TellReleased, TellSay, TellSnapshot, TellStealthChanged,
+  TellVisibilityChanged,
 }
 import genesis_prime/connection/closer
 import genesis_prime/connection/listener.{Listener}
@@ -379,8 +379,7 @@ fn directory(settings: Settings) -> Directory {
       | TellBroadcast(..)
       | TellSnapshot(..)
       | TellLanding(..)
-      | TellSay(..)
-      | TellPlayer(..) -> Error(Nil)
+      | TellSay(..) -> Error(Nil)
     }
   }
 }
@@ -492,7 +491,6 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
     | TellSnapshot(..)
     | TellLanding(..)
     | TellSay(..)
-    | TellPlayer(..)
     | AskStore(..)
     | AskHandOff(..)
     | AskSessions(..)
@@ -532,8 +530,7 @@ pub fn tell_the_run(
 /// a `ZoneChannel`): news of a player's unit (`TellPeer`) goes through the
 /// registry as `SentByPeer` for the viewer's stay (`ForStay`), a player's move
 /// (`TellMove`) as `SentByMove`, a tell to another
-/// connection's player (`TellPlayer`: a caster's heal rows, its held change or the
-/// healed player's answer) as `SentByPlayer`, a chat line (`TellLine`) as `SentByLine`, each for the stay the request
+/// connection's player as `SentByPlayer` (a map's `Relayed(Landed)`), a chat line (`TellLine`) as `SentByLine`, each for the stay the request
 /// names, and any other chat tell (`TellChat`) as `SentByChat`, by the
 /// same reach the services' sends take (`connection_reach`). Any other request is no
 /// tell to a connection: a rule that sends one has a bug, logged as an error, and nothing
@@ -632,7 +629,10 @@ pub fn relayed_message(
   case delivered {
     relay.News(news:) -> ForStay(stay:, sent: SentByPeer(news:))
     relay.Landed(landing:) ->
-      ForStay(stay:, sent: SentByPlayer(tell: player_tell_of(landing:)))
+      ForStay(
+        stay:,
+        sent: SentByPlayer(tell: client_connection.player_tell_of(landing:)),
+      )
     relay.Said(tell:) -> ForStay(stay:, sent: SentByLine(tell:))
     relay.Tell(payload: relay.Struck(answered:)) ->
       ForStay(stay:, sent: SentByTarget(answered))
@@ -640,21 +640,6 @@ pub fn relayed_message(
       ForStay(stay:, sent: SentByKill(credit))
     relay.Tell(payload: relay.Fight(told:)) ->
       ForStay(stay:, sent: SentByFoe(told))
-  }
-}
-
-/// The tell of a player's connection a landing is delivered to the told player's
-/// connection as.
-fn player_tell_of(
-  landing landing: relay.Landing,
-) -> client_connection.PlayerTell {
-  case landing {
-    relay.HealStrike(strike:) -> client_connection.Strike(strike:)
-    relay.HealAnswer(answered:) -> client_connection.Answer(answered:)
-    relay.ChangeStart(change:)
-    | relay.ChangeEnd(change:)
-    | relay.CastWent(change:) -> client_connection.Change(change:)
-    relay.AllyEvent(event:) -> client_connection.Event(event:)
   }
 }
 
