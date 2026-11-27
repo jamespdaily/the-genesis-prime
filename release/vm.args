@@ -3,8 +3,10 @@
 ## The server runs as one node and uses no Erlang distribution: this file sets
 ## no -name and no -sname, and ./setup-check refuses one that does.
 
-## The VM's default message queue, kept on the process heap whatever ERL_AFLAGS says.
-+hmqd on_heap
+## Every process keeps its message queue off its heap, whatever ERL_AFLAGS says: the VM's
+## abort in major_collection follows move_msgs_to_heap, a step only an on-heap queue takes.
+## The paired load run at 150 walkers measured no cost (reductions per move, memory, delay).
++hmqd off_heap
 
 ## No Erlang shell: the server is started by a host, not by a person.
 -noshell

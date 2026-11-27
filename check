@@ -109,7 +109,7 @@
 #                  script (`gleam test`, dev/repeat_tests.py) runs after
 #                  `. setup_check/environment.sh`, as CI's repeat step does;
 #                  dev/repeat_tests.py refuses to start without the flag. The release
-#                  (release/vm.args) and the load runs' peer name `+hmqd on_heap` themselves.
+#                  (release/vm.args) and the load runs' peer name `+hmqd off_heap` themselves.
 #                  No tag but serial, world_data, real_start, real_tables and client_rows is
 #                  skipped, so the first run also runs the tests tagged code_rule
 #                  (the tests of test/code_rule) and registry (each one comparing a

@@ -33,8 +33,8 @@ fi
 # servers) keeps each process's message queue off its heap (+hmqd off_heap): the VM's abort
 # in major_collection after move_msgs_to_heap is a step only a process with an on-heap
 # queue takes. ERL_AFLAGS goes before a command line's own flags, so a VM that names +hmqd
-# itself keeps its own: the release (release/vm.args) and the load-run server set on_heap
-# until the load run decides. A child VM (a peer, a port) inherits it.
+# itself keeps its own: the release (release/vm.args) and the load-run server name
+# off_heap too. A child VM (a peer, a port) inherits it.
 ERL_AFLAGS="+hmqd off_heap${ERL_AFLAGS:+ $ERL_AFLAGS}"
 export ERL_AFLAGS
 unset genesis_home
