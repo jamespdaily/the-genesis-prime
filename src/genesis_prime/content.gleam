@@ -16,9 +16,8 @@
 ////
 //// - **Where a row comes from.** Every content table has `source` (a row of the
 ////   `content_source` table: `world_database`, `retail_record`, `server_choice`,
-////   `game_master`, `client`), `source_row` (the row's id in its source file) and `reason`,
-////   and the checks that a world-database row names its source row and any other
-////   row states its reason (migration 0008).
+////   `game_master`, `client`), and `source_row` (the row's id in its source file),
+////   and the check that a world-database row names its source row (migration 0008).
 //// - **How rows get in.** A world-database row comes through the import tool
 ////   (`genesis_prime/import_world_data`), which has one importer for each file
 ////   and records each import in `content_import`; a server choice is seeded by a

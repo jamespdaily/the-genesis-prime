@@ -23,7 +23,7 @@ const content_tables =
   "select c.table_name from information_schema.columns c where c.table_schema = 'public' and c.column_name = 'source' and exists (select 1 from pg_constraint k where k.conrelid = format('public.%I', c.table_name)::regclass and k.conname = c.table_name || '_source_is_a_content_source') order by 1"
 
 pub fn the_migrations_leave_no_reason_column_on_a_content_table_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let database = database_support.new_database(on: database_support.shared())
   let tables =
     content_support.psql(database:, sql: content_tables)
@@ -55,7 +55,7 @@ type Row {
 }
 
 pub fn a_server_choice_row_is_stored_with_only_its_source_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let database = database_support.new_database(on: database_support.shared())
   let rows = [
     Row(

@@ -1,8 +1,7 @@
 //// The numbers the server chooses for a fight, as the content load checks them:
 //// the rows of the game_number table (genesis_prime/content/game_number), each a
 //// name, a value and its unit, selected into one record the maps and creatures
-//// read. The client holds none of them; each row's reason names why its value is
-//// what it is (migration 0010).
+//// read. The client holds none of them; each row is a server choice (migration 0010).
 ////
 //// ```
 //// game_number rows ─▶ select(rows, sight range)
@@ -34,12 +33,12 @@
 //// - **The refill time of Interrupt Armor** is a whole number of milliseconds above 0, held
 ////   by the table (`game_number_interrupt_armor_refill_ms_is_a_whole_positive_ms`,
 ////   migration 0016): the creature starts a timer of that many, and the client holds no
-////   value for it, so it is a server choice that states its reason.
+////   value for it, so it is a server choice.
 //// - **A kill's experience** is the fraction of the creature's level's base quest
 ////   experience, above 0 and at most 1, times a level-difference multiplier of 0 or more
 ////   (`game_number_kill_experience_fraction_is_above_0_up_to_1`,
 ////   `game_number_kill_experience_multiplier_is_not_negative`, migration 0022). The
-////   client holds no kill formula, so each is a server choice that states its reason,
+////   client holds no kill formula, so each is a server choice,
 ////   and the creature's Creature2Difficulty `clusterContributionValueDifficulty` that
 ////   weighs it is a client value no client code shows feeding experience.
 //// - **The quest reset times** are the server's choice, since the client holds no
@@ -58,8 +57,7 @@
 ////   0024).
 //// - **The release time of a used object** is a whole number of milliseconds above 0, held
 ////   by the table (`game_number_used_object_release_ms_is_a_whole_positive_ms`,
-////   migration 0033): the client holds no value, so it is a server choice that states
-////   its reason.
+////   migration 0033): the client holds no value, so it is a server choice.
 //// - **The unit of each name** is the table's: `game_number_name_has_its_unit`, a
 ////   foreign key to `game_number_name`, refuses a row whose unit is not its name's
 ////   and a name nobody listed (migration 0014).

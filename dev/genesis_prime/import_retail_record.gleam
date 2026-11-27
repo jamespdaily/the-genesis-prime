@@ -30,7 +30,8 @@
 ////
 //// - **It owns every `retail_record` row of the two tables, and deletes none.** A row the
 ////   rule no longer produces is retired: its `retired_by_import` is the run's id, and the
-////   content load reads only rows no run has retired. A changed row is retired and written
+////   content load reads only rows no run has retired. A row is the same when its creature,
+////   spell, order and (for a special) cooldown are; a changed row is retired and written
 ////   again. Rows of any other source (`server_choice`, `world_database`) are never touched,
 ////   and a row of another source that holds the same creature and spell, or the same place
 ////   in the creature's list, makes the table refuse the write, so nothing is written.

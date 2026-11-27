@@ -230,7 +230,7 @@ fn on_each_table(case_: fn(Table) -> Nil) -> Nil {
 }
 
 pub fn a_row_written_again_unchanged_is_counted_unchanged_and_nothing_is_retired_or_written_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use table <- on_each_table
   let database = database_support.new_database(on: database_support.shared())
   let rows = the_migrated_rows(database:, table:)
@@ -246,7 +246,7 @@ pub fn a_row_written_again_unchanged_is_counted_unchanged_and_nothing_is_retired
 }
 
 pub fn a_row_with_another_order_is_counted_changed_retired_and_written_again_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use table <- on_each_table
   let database = database_support.new_database(on: database_support.shared())
   let changed = the_row_the_case_changes(table)
@@ -322,7 +322,7 @@ pub fn a_row_with_another_order_is_counted_changed_retired_and_written_again_tes
 }
 
 pub fn a_special_with_another_cooldown_is_counted_changed_and_written_again_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let database = database_support.new_database(on: database_support.shared())
   let changed = the_row_the_case_changes(Specials)
   let slower = Spell(..changed, cooldown_ms: 12_000)
@@ -367,7 +367,7 @@ pub fn a_special_with_another_cooldown_is_counted_changed_and_written_again_test
 }
 
 pub fn a_row_the_import_no_longer_writes_is_counted_retired_and_retired_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use table <- on_each_table
   let database = database_support.new_database(on: database_support.shared())
   let dropped = the_row_the_case_changes(table)
@@ -398,7 +398,7 @@ pub fn a_row_the_import_no_longer_writes_is_counted_retired_and_retired_test() -
 }
 
 pub fn a_new_creature_and_spell_is_counted_inserted_and_written_as_a_retail_record_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use table <- on_each_table
   let database = database_support.new_database(on: database_support.shared())
   let cooldown = case table {
@@ -435,7 +435,7 @@ pub fn a_new_creature_and_spell_is_counted_inserted_and_written_as_a_retail_reco
 }
 
 pub fn a_row_of_another_source_is_never_counted_or_retired_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use table <- on_each_table
   let database = database_support.new_database(on: database_support.shared())
   let #(creature_id, columns, values) = case table {
