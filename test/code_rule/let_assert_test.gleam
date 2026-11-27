@@ -49,7 +49,7 @@ fn message_breaches(body: List(String)) -> List(Int) {
   planted.lines(let_assert.breaches(
     files: [file],
     listed: [Listed("planted", held, 1)],
-    most_rows: 100,
+    most_rows: 1,
   ))
 }
 
@@ -181,14 +181,55 @@ pub fn a_let_assert_with_an_empty_message_is_a_breach_and_a_stated_one_passes_te
 pub fn a_module_over_its_ceiling_is_one_breach_at_the_assert_that_crossed_it_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  let file = messaged("src/planted.gleam", 3)
-  assert planted.lines(let_assert.breaches(
-      files: [file],
-      listed: [Listed("planted", 2, 1)],
-      most_rows: 100,
-    ))
-    == [4]
-    as "the third assert is the one past a ceiling of 2"
+  let stated = "let assert Ok(_) = g() as \"x\""
+  list.each(
+    [
+      #(
+        messaged("src/planted.gleam", 3),
+        2,
+        [4],
+        "the third assert is the one past a ceiling of 2",
+      ),
+      #(
+        planted.file("src/planted.gleam", [
+          "pub fn old() {",
+          "  " <> stated,
+          "  1",
+          "}",
+          "pub fn new() {",
+          "  " <> stated,
+          "  1",
+          "}",
+        ]),
+        1,
+        [6],
+        "an assert in a function below the one that holds the ceiling is the one that crossed it",
+      ),
+      #(
+        planted_file([
+          "  {",
+          "    " <> stated,
+          "    1",
+          "  }",
+          "  " <> stated,
+          "  1",
+        ]),
+        1,
+        [6],
+        "an assert in the body below a block that holds one is the one that crossed it",
+      ),
+    ],
+    fn(row) {
+      let #(file, ceiling, lines, reason) = row
+      assert planted.lines(let_assert.breaches(
+          files: [file],
+          listed: [Listed("planted", ceiling, 1)],
+          most_rows: 1,
+        ))
+        == lines
+        as reason
+    },
+  )
 }
 
 pub fn a_module_at_its_ceiling_or_with_no_assert_and_no_row_passes_test() -> Nil {
@@ -201,7 +242,12 @@ pub fn a_module_at_its_ceiling_or_with_no_assert_and_no_row_passes_test() -> Nil
     ],
     fn(row) {
       let #(files, listed, reason) = row
-      assert let_assert.breaches(files:, listed:, most_rows: 100) == []
+      assert let_assert.breaches(
+          files:,
+          listed:,
+          most_rows: list.length(listed),
+        )
+        == []
         as reason
     },
   )
@@ -213,7 +259,7 @@ pub fn a_module_with_asserts_and_no_row_is_a_breach_at_its_first_assert_test() -
   assert planted.lines(let_assert.breaches(
       files: [messaged("src/planted.gleam", 2)],
       listed: [],
-      most_rows: 100,
+      most_rows: 0,
     ))
     == [2]
     as "a module with no row has a ceiling of 0"
@@ -233,7 +279,7 @@ pub fn a_row_above_its_modules_count_is_a_breach_at_its_list_line_test() -> Nil 
         let_assert.breaches(
           files: [messaged("src/planted.gleam", count)],
           listed: [Listed("planted", ceiling, 7)],
-          most_rows: 100,
+          most_rows: 1,
         )
       assert planted.lines(breaches) == [7] as reason
       assert list.all(breaches, fn(breach) {
@@ -248,12 +294,28 @@ pub fn a_row_above_its_modules_count_is_a_breach_at_its_list_line_test() -> Nil 
 pub fn a_row_for_a_module_that_is_gone_is_a_breach_at_its_list_line_test() -> Nil {
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
-  assert planted.lines(let_assert.breaches(
-      files: [],
-      listed: [Listed("gone", 2, 3)],
-      most_rows: 100,
-    ))
-    == [3]
+  list.each(
+    [
+      #([], Listed("gone", 2, 3), "a row of 2 for a module that is gone"),
+      #([], Listed("gone", 0, 3), "a row of 0 for a module that is gone"),
+      #([], Listed("gone", -2, 3), "a row below 0 for a module that is gone"),
+      #(
+        [messaged("src/planted.gleam", 0)],
+        Listed("planted", 0, 3),
+        "a row of 0 for a module that holds none",
+      ),
+    ],
+    fn(row) {
+      let #(files, entry, reason) = row
+      assert planted.lines(let_assert.breaches(
+          files:,
+          listed: [entry],
+          most_rows: 1,
+        ))
+        == [3]
+        as reason
+    },
+  )
 }
 
 pub fn a_row_out_of_order_or_repeated_or_past_the_most_rows_is_a_breach_test() -> Nil {
@@ -266,21 +328,21 @@ pub fn a_row_out_of_order_or_repeated_or_past_the_most_rows_is_a_breach_test() -
       #(
         [first],
         [Listed("a", 1, 1), Listed("a", 1, 2)],
-        100,
+        2,
         [2],
         "a repeated row",
       ),
       #(
         [first, second],
         [Listed("b", 1, 1), Listed("a", 1, 2)],
-        100,
+        2,
         [2],
         "out of order",
       ),
       #(
         [first, second],
         [Listed("a", 1, 1), Listed("b", 1, 2)],
-        100,
+        2,
         [],
         "in order",
       ),
@@ -297,6 +359,13 @@ pub fn a_row_out_of_order_or_repeated_or_past_the_most_rows_is_a_breach_test() -
         2,
         [],
         "at the most rows",
+      ),
+      #(
+        [first, second],
+        [Listed("a", 1, 1), Listed("b", 1, 2)],
+        3,
+        [2],
+        "fewer rows than the most rows",
       ),
     ],
     fn(row_case) {
