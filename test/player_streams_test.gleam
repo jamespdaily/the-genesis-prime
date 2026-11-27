@@ -260,6 +260,14 @@ fn with_the_armor(body body: fn(table_store.Tables) -> Nil) -> Nil {
 /// the spell's target range) and the control viewer V (connection 3, at x 1000), all in sight
 /// of each other, settled; and the bag index of Phantasmal Armor.
 fn armor_world(tables tables: table_store.Tables) -> #(scene.Scene, Int) {
+  armor_world_with_v_at(tables:, x: 1000.0)
+}
+
+/// `armor_world` with the control viewer V (connection 3) at `x`.
+fn armor_world_with_v_at(
+  tables tables: table_store.Tables,
+  x x: Float,
+) -> #(scene.Scene, Int) {
   let world =
     scene.new(tables:)
     |> scene.enter(
@@ -278,7 +286,7 @@ fn armor_world(tables tables: table_store.Tables) -> #(scene.Scene, Int) {
       connection: 3,
       class_id: medic,
       level: 1,
-      place: scene.at(x: 1000.0),
+      place: scene.at(x:),
     )
     |> scene.settle
   #(
@@ -421,7 +429,12 @@ pub fn a_viewer_that_arrives_mid_cast_holds_the_live_casts_from_its_create_and_o
 pub fn a_caster_that_dies_between_its_go_and_the_allys_start_writes_its_own_client_nothing_of_it_and_another_viewer_the_start_test() -> Nil {
   use <- owned_test.run(10_000)
   use tables <- with_the_armor
-  let #(world, bag_index) = armor_world(tables:)
+  // V stands at x -1010: 1010 from C, in C's sight, and 1030 from T, out of T's. Every order
+  // of the mail then ends in four states and the walk takes under a second; with V in T's
+  // sight too, the map's relays of C's and T's news to V queue in either order and the walk
+  // of every order has no end within a minute. V is told T's start in no order of this scene
+  // (test 23 states that, with V in T's sight).
+  let #(world, bag_index) = armor_world_with_v_at(tables:, x: -1010.0)
   // C is struck dead by a creature as its go is taken: its own client is written no start
   // of the cast it already holds, whichever of its death and T's start it takes first.
   let gone = pressed(world:, bag_index:)
