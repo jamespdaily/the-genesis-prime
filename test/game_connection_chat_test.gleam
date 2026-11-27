@@ -388,7 +388,7 @@ pub fn support_and_instance_are_logged_as_unhandled_once_for_each_channel_on_a_c
     list.filter(support.logs(taken), fn(line) { line.level == step.LogWarning })
   }
   assert list.length(warnings(first)) == 1
-    as "Jim, 2026-11-03: the channel is named in a warning"
+    as "the channel is named in a warning (the server's choice)"
   assert warnings(second) == [] as "once for each channel on a connection"
   assert list.length(warnings(instance)) == 1
     as "another channel is another line"

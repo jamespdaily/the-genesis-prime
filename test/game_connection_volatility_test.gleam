@@ -5,7 +5,7 @@
 ////   slot 1 is stat 3 (`opcode.0x262.resource_stats`); Spell4Effects 95337 gives +15 of
 ////   vital 6 in the hidden 42148 behind prerequisite 903 (`Spell4.42148`); Electrocute
 ////   costs 8 of vital 6 (Spell4 41276).
-//// - Jim's decisions of 2026-11-06 (issue 419): the opener gives 15 too, and Volatility
+//// - The server's choices: the opener gives 15 too, and Volatility
 ////   empties 5000 ms after the combat flag clears.
 //// - The creature's order: its answer to a strike goes before its `Threatened`, and it
 ////   answers the damage spell's later strikes after both (genesis_prime/world_map/creature
@@ -238,7 +238,7 @@ pub fn the_pulse_blast_that_opens_a_fight_gives_15_volatility_and_it_empties_5_s
     == [
       UnitFloatStatChanged(unit_id:, stat_id: 3, value: float32.to_bits(15.0)),
     ]
-    as "the opener gives 15 (Jim's decision): 42148's +15 of slot 1 (Spell4Effects 95337, behind 903) comes with the damage spell's last go, when the first strike's threat has put the player in combat, one 0x935 of stat 3 to the player's own client"
+    as "the opener gives 15 (the server's choice): 42148's +15 of slot 1 (Spell4Effects 95337, behind 903) comes with the damage spell's last go, when the first strike's threat has put the player in combat, one 0x935 of stat 3 to the player's own client"
   assert started(pressed) == [] as "in combat the Volatility waits for nothing"
   let #(state, released) =
     game_connection_support.at(
@@ -328,7 +328,7 @@ pub fn electrocute_drops_the_volatility_bar_at_each_pulse_and_ends_when_it_canno
       blasts: 2,
       volatility: [22.0, 14.0, 6.0],
       went: 3,
-      reason: "two in-combat blasts give 30 (Spell4Effects 95337, +15 each); Electrocute (Spell4 41276: 8 a pulse) pays at three gos, 30 - 8 each, and the 6 left cannot pay the fourth, which ends the channel (Jim's decision; opcode.0x935: one 0x935 of slot 1, stat 3, each)",
+      reason: "two in-combat blasts give 30 (Spell4Effects 95337, +15 each); Electrocute (Spell4 41276: 8 a pulse) pays at three gos, 30 - 8 each, and the 6 left cannot pay the fourth, which ends the channel (the server's choice; opcode.0x935: one 0x935 of slot 1, stat 3, each)",
     ),
     Channel(
       name: "8.3",

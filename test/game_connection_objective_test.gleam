@@ -1589,8 +1589,8 @@ fn saved_through_the_store(
 
 pub fn a_relogged_player_using_the_same_spawn_again_counts_nothing_test() -> Nil {
   use <- owned_test.run(10_000)
-  // Jim, 2026-11-25: an object a quest counted counts once for the objective, also after a
-  // relog. Quest 6723's objective 10383 is type 23 on Creature2 30826 and 30827, count 15
+  // The server's choice: an object a quest counted counts once for the objective, also after a
+  // relog (the client keeps no per-object record). Quest 6723's objective 10383 is type 23 on Creature2 30826 and 30827, count 15
   // (the client keeps no per-object record, `0x1405517a0`). Spawn 40 is used, the place is
   // saved with the real store, and the next login uses spawn 40 again, then spawn 41.
   let stored = account_store_support.stored_holding(worn: [], items: [])
@@ -1639,7 +1639,7 @@ pub fn a_relogged_player_using_a_placed_spawn_again_counts_nothing_test() -> Nil
   // The same as for a stored spawn, for objects the server placed at the markers of quest
   // 6723's objective 10383 (type 23 on Creature2 30826 and 30827, count 15): their spawn
   // ids are from 1,000,000,000 up, which the settings' ids hold (the load puts the placed
-  // ids in the term). Jim, 2026-11-25: an object a quest counted counts once for the
+  // ids in the term). The server's choice: an object a quest counted counts once for the
   // objective, also after a relog.
   let stored = account_store_support.stored_holding(worn: [], items: [])
   let placed = 1_000_000_040
@@ -1821,7 +1821,7 @@ pub fn a_use_of_a_shown_static_object_that_credits_a_type_12_objective_tells_the
 // Supply Crate, counts for quest 3741's objective 4813, type 32, count 6), and the client
 // keeps no record of a crate it used and offers it again until the objective is done
 // (`QuestObjective.type.32.repeat_use`), so the once and the release are the server's
-// choice (Jim, 2026-11-16: a used quest object vanishes for everyone). Creature2 12919's
+// choice (a used quest object vanishes for everyone). Creature2 12919's
 // activate spell 1817 has castTime 2000 and range 5.0, so a press goes at 2000 ms.
 
 /// The connection of a player whose log holds quest 3741 with nothing done, which sees

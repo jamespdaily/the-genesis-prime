@@ -5,7 +5,7 @@
 ////   values, the amount the client adds to its experience, the rest experience used, a
 ////   third amount, the source kind and the source unit. The kind is 2 for a kill
 ////   (`CombatFloater.CodeEnumExpReason`, KillCreature).
-//// - The amount is the server's choice (Jim, 2026-11-08): `round(XpPerLevel.
+//// - The amount is the server's choice: `round(XpPerLevel.
 ////   baseQuestXpPerLevel[creature level, at most 50] x 0.25 x Creature2Difficulty.
 ////   clusterContributionValueDifficulty x the multiplier of the creature's level minus the
 ////   player's, clamped to -4..4)`, the multipliers being 0, 0.25, 0.5, 0.75, 1, 1.1, 1.2,

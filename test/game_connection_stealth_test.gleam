@@ -115,7 +115,7 @@ pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_view
   let #(state, entering) = stealthed()
   assert support.told_the_map_decisions(entering)
     == [stealth_told(stealthed: True)]
-    as "the toggle press that enters stealth tells the run of the player's map once: Jim's decision on issue 483, so no creature aggroes a stealthed player it is not fighting"
+    as "the toggle press that enters stealth tells the run of the player's map once, the server's choice, so no creature aggroes a stealthed player it is not fighting"
   assert_the_change_comes_before_the_map_tell(taken: entering)
   assert list.contains(support.news_broadcast(entering), Stealth(True))
     as "each viewer is told too (Spell4Effects.effectType.83, opcode.0x8f5)"

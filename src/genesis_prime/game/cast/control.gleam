@@ -10,7 +10,7 @@
 ////   longest effect, kept on the live cast; a type 80 effect takes the matching nodes of the caster's casts off the
 ////   unit, oldest cast first, each written 0x811 (`opcode.0x811`); and a cast that
 ////   gives a unit a node it holds none on takes off the caster's oldest casts of its
-////   stack at the stack's cap (Jim's decision, `Spell4StackGroup.stackCap`). A cast
+////   stack at the stack's cap (`Spell4StackGroup.stackCap`; taking them off is the server's choice). A cast
 ////   pushed off a creature while its node holds crowd-control states ends them there
 ////   (`creature_controls_ended`), since the client ends a state only with a 0x880
 ////   (`cc_state.end`).
