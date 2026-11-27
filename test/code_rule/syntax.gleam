@@ -601,6 +601,41 @@ pub fn argument(
   }
 }
 
+/// A `let assert` statement: the byte offset of its `let` and its `as`
+/// message, `None` when it has none.
+pub type LetAssert {
+  LetAssert(start: Int, message: Option(Expression))
+}
+
+/// Every `let assert` in the module's functions, in the order the walk finds
+/// them: a function's own statements first, then those of each `Block` and
+/// `fn` body inside it. A `let assert` is a statement, so it is found in a
+/// statement list only.
+pub fn let_asserts(module: glance.Module) -> List(LetAssert) {
+  list.flat_map(module.functions, fn(definition) {
+    let body = definition.definition.body
+    let nested =
+      list.flat_map(from_statements(body), fn(expression) {
+        case expression {
+          glance.Block(statements:, ..) -> let_asserts_of(statements)
+          glance.Fn(body:, ..) -> let_asserts_of(body)
+          _ -> []
+        }
+      })
+    list.append(let_asserts_of(body), nested)
+  })
+}
+
+fn let_asserts_of(statements: List(Statement)) -> List(LetAssert) {
+  list.filter_map(statements, fn(statement) {
+    case statement {
+      glance.Assignment(kind: glance.LetAssert(message:), location:, ..) ->
+        Ok(LetAssert(start: location.start, message:))
+      _ -> Error(Nil)
+    }
+  })
+}
+
 /// Every expression in the module's functions, each followed by the
 /// expressions inside it.
 pub fn expressions(module: glance.Module) -> List(Expression) {

@@ -350,6 +350,18 @@ fn fixture_rows_of_folder() -> Result(
 }
 
 // 5
+pub fn a_root_in_a_table_the_server_does_not_load_is_refused_by_the_walk_test() -> Nil {
+  use <- owned_test.run(5000)
+  let reach = fixture_tables.reach()
+  let roots = [#("NoSuchTable", 1)]
+  assert fixture_rows.reached(reach:, roots:)
+    == Error(fixture_rows.RootTableNotLoaded("NoSuchTable"))
+    as "reached refuses a root in a table the server does not load"
+  assert fixture_rows.closure_of(reach:, roots:)
+    == Error(fixture_rows.RootTableNotLoaded("NoSuchTable"))
+    as "closure_of refuses a root in a table the server does not load"
+}
+
 pub fn a_row_that_is_not_a_root_fails_with_the_fix_test() -> Nil {
   use <- owned_test.run(5000)
   let roots = fixture_tables.roots()
