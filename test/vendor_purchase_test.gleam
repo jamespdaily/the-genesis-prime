@@ -41,6 +41,7 @@ import genesis_prime/game/player_life.{type Life}
 import genesis_prime/game/shown
 import genesis_prime/game/vendor
 import genesis_prime/game/vendor_purchase.{type Taken, Asks, Purchase, Refused}
+import genesis_prime/game/vendor_sale
 import genesis_prime/game/vendor_trade.{
   type Effect, Log, NotDecoded, Refuse, Send,
 }
@@ -1097,6 +1098,25 @@ pub fn a_buy_back_of_an_id_not_in_the_list_is_refused_with_unknown_item_test() -
     )
   assert vendor_support.codes(effects: refused_back(scene: empty).0) == [14]
     as "an empty list holds no id"
+  // A list of 2 entries held to 2 by a sale of one stack: entry 1 dropped off the front
+  // (`opcode.0xbd`), so the client no longer lists it and cannot ask for it.
+  let #(sale, answer) = vendor_support.sale_of_stacks(stacks: 1)
+  let #(_, _, dropped, _) =
+    vendor_sale.answered_within(
+      cap: 2,
+      sale:,
+      items: [],
+      currencies: vendor_support.credits(total: 100),
+      buyback: vendor_support.buyback_listing(first_id: 1, count: 2),
+      answer:,
+    )
+  assert vendor_support.codes(
+      effects: refused_back(
+        scene: Scene(..buying_back(buyback_id: 1), buyback: dropped),
+      ).0,
+    )
+    == [14]
+    as "an entry the cap dropped off the list is refused as any unknown id is"
 }
 
 pub fn a_buy_back_over_the_credits_held_or_the_room_left_is_refused_test() -> Nil {

@@ -3,6 +3,10 @@
     "deny": [
       "Edit(~/Projects/the-eldan-experiment/**)",
       "Edit(//Users/jimd/Projects/the-eldan-experiment/**)"
+    ],
+    "allow": [
+      "Bash(source setup_check/environment.sh:*)",
+      "Bash(. setup_check/environment.sh:*)"
     ]
   },
   "hooks": {

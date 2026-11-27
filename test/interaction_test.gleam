@@ -42,6 +42,7 @@ import genesis_prime/game/unit_news.{
   CreatureAppeared, LookChanged, PropertiesChanged,
 }
 import genesis_prime/game/vendor
+import genesis_prime/game/vendor_sale
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/buyback_removed
 import genesis_prime/message/currency_changed.{CurrencyChanged}
@@ -70,6 +71,7 @@ import gleam/list
 import gleam/option.{None}
 import gleam/set
 import gleam/string
+import number_support
 import owned_test
 import planted_table.{Integer}
 import quest_support
@@ -773,6 +775,11 @@ pub fn a_buy_the_store_cannot_answer_ends_the_connection_with_reason_8_test() ->
 /// Dorian Walker's window open on a connection that holds 100 credits and, besides the Novice
 /// set, 5 of Item2 20791 (guid 500, inventory slot 0).
 fn selling_state() -> game_connection.State {
+  selling_state_holding(count: 5)
+}
+
+/// `selling_state` with `count` of Item2 20791 held.
+fn selling_state_holding(count count: Int) -> game_connection.State {
   let #(state, _) =
     connection_support.feed(
       state: connection_support.in_world_stocking_holding(
@@ -784,7 +791,7 @@ fn selling_state() -> game_connection.State {
             item2_id: id.Item2Id(20_791),
             location: 1,
             bag_index: 0,
-            stack_count: 5,
+            stack_count: count,
             words: store.ItemWords(
               random_stats: 0,
               charges: 0,
@@ -1008,6 +1015,26 @@ pub fn opening_a_vendor_sends_the_buyback_list_oldest_first_test() -> Nil {
   let #(_, again) = buyback_listed(state:)
   assert again == listed
     as "a second opening sends the same list: the list belongs to the player, not the window"
+}
+
+pub fn a_vendor_window_opened_with_a_full_buyback_list_sends_the_whole_list_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // One item sold at a time fills the list to the most one 0xBC carries (`opcode.0xbc`,
+  // 1154 entries by `vendor_sale_test`); the window opened then writes the 0xBC in its
+  // wrapper, which `heard` opens, and the connection goes on.
+  let cap = vendor_sale.buyback_cap()
+  let state =
+    list.fold(
+      number_support.counting(from: 1, count: cap),
+      selling_state_holding(count: 5000),
+      fn(state, n) { sold(state:, quantity: 1, credits: 100 + n) },
+    )
+  let #(_, listed) = buyback_listed(state:)
+  assert list.length(listed) == 1154
+    as "opcode.0xbc: the whole list of 1154 entries is sent"
+  assert list.map(listed, fn(entry) { entry.0 })
+    == number_support.counting(from: 1, count: 1154)
+    as "the entries are the sales' ids, oldest first"
 }
 
 pub fn the_buyback_list_survives_a_world_change_and_is_empty_after_entering_the_world_again_test() -> Nil {

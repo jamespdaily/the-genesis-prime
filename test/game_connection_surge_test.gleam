@@ -52,6 +52,7 @@ import genesis_prime/step.{type ConnectionStep, OwnEvent}
 import genesis_prime/table/id.{ClassId}
 import gleam/list
 import gleam/option.{None}
+import number_support
 import owned_test
 import server_proxy_support
 
@@ -222,7 +223,7 @@ fn quick_draws(
   count count: Int,
 ) -> #(game_connection.State, List(List(ConnectionStep(Request)))) {
   list.fold(
-    list.index_map(list.repeat(Nil, count), fn(_, index) { index + 1 }),
+    number_support.counting(from: 1, count:),
     #(state, []),
     fn(so_far, number) {
       let #(state, presses) = so_far

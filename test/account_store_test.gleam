@@ -68,6 +68,7 @@ import gleam/result
 import gleam/string
 import limited_action_set_support
 import login_support
+import number_support
 import open_wait
 import owned_test
 import place_support
@@ -578,7 +579,7 @@ pub fn the_table_refuses_a_name_that_breaks_text_rule_0_by_character_name_follow
   })
   // Every other character of Latin-1 and Latin Extended-A and -B is refused: the
   // client's list is these 53 letters and no more.
-  list.each(character_support.numbers(0x24F), fn(number) {
+  list.each(number_support.counting(from: 1, count: 0x24F), fn(number) {
     use <- bool.guard(number < 0x80, Nil)
     let assert Ok(codepoint) = string.utf_codepoint(number)
     let character = string.from_utf_codepoints([codepoint])
@@ -1224,7 +1225,7 @@ pub fn two_creates_at_once_for_an_account_with_one_slot_make_one_character_test(
       })
   })
   let received =
-    list.map(character_support.numbers(4), fn(_) {
+    list.map(number_support.counting(from: 1, count: 4), fn(_) {
       open_wait.received(from: answers, what: "every create to be answered")
     })
   assert list.count(received, is_created) == 1
@@ -1260,8 +1261,8 @@ pub fn the_table_refuses_a_look_whose_labels_and_values_differ_in_number_and_a_t
   assert insert([1, 2], [1], []) == Error("character_look_pairs")
     as "a look is label and value pairs"
   assert insert(
-      character_support.numbers(28),
-      character_support.numbers(28),
+      number_support.counting(from: 1, count: 28),
+      number_support.counting(from: 1, count: 28),
       [],
     )
     == Error("character_look_pairs")
@@ -1270,8 +1271,8 @@ pub fn the_table_refuses_a_look_whose_labels_and_values_differ_in_number_and_a_t
     == Error("character_bones_at_most_48")
     as "opcode.0x25b.counts: at most 48 bone values"
   assert insert(
-      character_support.numbers(27),
-      character_support.numbers(27),
+      number_support.counting(from: 1, count: 27),
+      number_support.counting(from: 1, count: 27),
       list.repeat(0, 48),
     )
     == Ok(Nil)
