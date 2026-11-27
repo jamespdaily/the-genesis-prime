@@ -219,12 +219,18 @@ jobs:
         if: ${{ env.GENESIS_NO_CLIENT != '1' && (matrix.fast || needs.scope.outputs.light != 'true') }}
         continue-on-error: true
         run: |
+          # llvm-18 comes from Ubuntu's own repositories; the runner's Microsoft one
+          # can answer 403 and stop apt-get update.
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends llvm-18
           echo "GENESIS_LLVM_OBJDUMP=/usr/lib/llvm-18/bin/llvm-objdump" >> "$GITHUB_ENV"
       - name: Install llvm-objdump again
         if: ${{ steps.llvm.outcome == 'failure' }}
         run: |
+          # llvm-18 comes from Ubuntu's own repositories; the runner's Microsoft one
+          # can answer 403 and stop apt-get update.
+          sudo rm -f /etc/apt/sources.list.d/microsoft-prod.list
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends llvm-18
           echo "GENESIS_LLVM_OBJDUMP=/usr/lib/llvm-18/bin/llvm-objdump" >> "$GITHUB_ENV"
