@@ -202,14 +202,13 @@ pub fn every_gate_line_of_the_load_runs_calls_the_judged_count_test() -> Nil {
   })
   // The events the rule expects are the events the shared module has.
   let variants =
-    syntax.parse(source.SourceFile(
-      path: "src/load_judged.gleam",
-      text: source.read("dev/genesis_prime/load_judged.gleam"),
-    )).custom_types
-    |> list.filter(fn(definition) { definition.definition.name == "Event" })
-    |> list.flat_map(fn(definition) {
-      list.map(definition.definition.variants, fn(variant) { variant.name })
-    })
+    syntax.variants_of(
+      file: source.SourceFile(
+        path: "src/load_judged.gleam",
+        text: source.read("dev/genesis_prime/load_judged.gleam"),
+      ),
+      type_names: ["Event"],
+    )
   assert list.sort(variants, by: string.compare)
     == list.sort(list.flat_map(gates, fn(gate) { gate.1 }), by: string.compare)
     as "every event of the shared module is a gate of one of the runs"
