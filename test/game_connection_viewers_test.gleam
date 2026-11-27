@@ -2428,19 +2428,14 @@ fn own_target(
   )
 }
 
-/// A viewer's coming into sight of the Medic or leaving it, at a time.
-type Move {
-  Comes(at_ms: Int)
-  Goes(at_ms: Int)
-}
-
-/// The news the Medic's connection tells the viewer 3 after Discharge, pressed at 1000 ms
-/// with the connection 2 watching, as the viewer comes and goes by `moves`, and the casts
-/// the watcher 2 was told started. Discharge's first go, 410 ms in, starts a Power Charge
-/// (Spell4 42569) that no go of Discharge ends: its cast lingers until its buff ends.
-fn discharge_told_to_a_viewer(
-  moves moves: List(Move),
-) -> #(List(spell_started.SpellStarted), List(unit_news.News)) {
+/// The news the Medic's connection tells the map after Discharge, pressed at 1000 ms with
+/// the connection 2 watching, run to the end of its casts, and the casts the watcher 2 was
+/// told started. Discharge's first go, 410 ms in, starts a Power Charge (Spell4 42569) that no
+/// go of Discharge ends: its cast lingers until its buff ends.
+fn discharge_told_to_the_map() -> #(
+  List(spell_started.SpellStarted),
+  List(unit_news.News),
+) {
   let tables = character_tables.shared()
   let #(state, _, bag_index) =
     game_connection_support.entered_with_server_proxies(
@@ -2457,52 +2452,14 @@ fn discharge_told_to_a_viewer(
       ms: 1000,
       until_ms: 1000,
     )
-  let #(state, pending, steps) =
-    list.fold(
-      moves,
-      #(state, game_connection_support.cast_timers(steps: pressed, ms: 1000), [
-        pressed,
-      ]),
-      fn(held, move) {
-        let #(state, pending, steps) = held
-        let #(state, pending, ran) =
-          game_connection_support.casts_left(
-            state:,
-            pending:,
-            until_ms: move.at_ms,
-            steps: [],
-          )
-        let notice = case move {
-          Comes(..) ->
-            SeenBy(
-              by: ConnectionId(3),
-              stay: game_connection_support.viewer_stay(3),
-              unit_id: game_connection_support.viewer_unit_id(3),
-              generation: game_connection_support.viewer_sight(3),
-            )
-          Goes(..) ->
-            UnseenBy(
-              by: ConnectionId(3),
-              generation: game_connection_support.viewer_sight(3),
-            )
-        }
-        let #(state, moved) =
-          game_connection_support.at(
-            state:,
-            ms: move.at_ms,
-            event: game_connection_support.sent_by_the_map(notice),
-          )
-        #(state, pending, list.append(steps, [ran, [moved]]))
-      },
-    )
   let #(_, ran) =
     game_connection_support.casts_run(
       state:,
-      pending:,
+      pending: game_connection_support.cast_timers(steps: pressed, ms: 1000),
       until_ms: 100_000,
       steps: [],
     )
-  let steps = list.flatten([list.flatten(steps), ran])
+  let steps = list.append(pressed, ran)
   #(
     list.flat_map(steps, fn(taken) {
       game_connection_support.cast_starts(
@@ -2608,9 +2565,8 @@ pub fn a_player_that_comes_into_sight_lists_its_buffs_test() -> Nil {
 /// state 2 (bit 1) until its first go and state 3 (bit 0) after; a cast that is no longer
 /// the current cast and holds no node is not listed, and one that holds a node with a
 /// listed effect still is (a Discharge's lingering Power Charge). And
-/// `cast.target_node_end`: a viewer is then told the later news of the casts it was
-/// listed and of no other (a 0x87f of a cast it does not hold would wait on the unit for
-/// ever), and one that left sight is told nothing of the casts it saw before.
+/// `cast.target_node_end`: the caster tells the map Discharge's finish and the end of the
+/// Power Charge it left, once each, for the viewers' ledgers to judge.
 pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
   use <- owned_test.run(60_000)
   let none =
@@ -2697,44 +2653,33 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
       }
     },
   )
-  list.each(
-    [
-      #(
-        "a viewer that comes into sight after Discharge's first go is told its finish and the end of the Power Charge the first go left, which its create listed",
-        [Comes(1500)],
-      ),
-      #(
-        "a viewer that saw the Power Charge start, left and came back is told the Power Charge's end once: it was listed it again",
-        [Comes(1100), Goes(1500), Comes(1600)],
-      ),
-    ],
-    fn(row) {
-      let #(name, moves) = row
-      let #(started, told) = discharge_told_to_a_viewer(moves:)
-      let assert [discharge, ..] = started
-      let assert Ok(power_charge) =
-        list.find(started, fn(start) { start.spell4_id == 42_569 })
-        as "the first go starts a Power Charge"
-      assert discharge.spell4_id == 58_832 as name
-      assert list.contains(told, CastFinished(cast_id: discharge.cast_id))
-        as name
-      assert told_of(told:, cast_id: power_charge.cast_id) as name
-      assert list.count(told, fn(news) {
-          list.any([False, True], fn(destroyed) {
-            news
-            == unit_news.CastTargetsRemoved(
-              removed: spell_targets_removed.SpellTargetsRemoved(
-                cast_id: power_charge.cast_id,
-                unit_ids: [game_connection_support.own_unit_id],
-              ),
-              destroyed:,
-            )
-          })
-        })
-        == 1
-        as name
-    },
-  )
+  // The caster tells the map each news of Discharge's life once, whoever is in sight; which of
+  // them a viewer writes is its ledger's decision, stated by the ledger rows of
+  // `a_cast_finished_at_the_viewer_before_the_allys_start_is_written_no_start_and_the_start_first_is_dropped_then_the_finish_written_test`.
+  let #(started, told) = discharge_told_to_the_map()
+  let assert [discharge, ..] = started
+  let assert Ok(power_charge) =
+    list.find(started, fn(start) { start.spell4_id == 42_569 })
+    as "the first go starts a Power Charge"
+  assert discharge.spell4_id == 58_832
+  assert list.contains(told, CastFinished(cast_id: discharge.cast_id))
+    as "Discharge's finish is told to the map"
+  assert told_of(told:, cast_id: power_charge.cast_id)
+    as "the Power Charge's end is told to the map"
+  assert list.count(told, fn(news) {
+      list.any([False, True], fn(destroyed) {
+        news
+        == unit_news.CastTargetsRemoved(
+          removed: spell_targets_removed.SpellTargetsRemoved(
+            cast_id: power_charge.cast_id,
+            unit_ids: [game_connection_support.own_unit_id],
+          ),
+          destroyed:,
+        )
+      })
+    })
+    == 1
+    as "and told once"
 }
 
 /// `opcode.0x262.casts` and `cast.target_node_end`: the casts a viewer's ledger holds are those

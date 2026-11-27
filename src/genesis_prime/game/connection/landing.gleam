@@ -472,7 +472,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A caster that comes back into the sight of a player that still holds its kept change is shown no buff on it, since no rule of the caster stands behind the entry (`proc.nodes_left`, `unit_removed`). The entry names the holder as the cast's primary and only target, which is wrong for a cast whose primary target is another unit (a child Barrier's Proxy started on an ally, whose area found others around that ally).",
+      missing: "A viewer its caster told a cast's start, whose client held no copy of the player when the caster's go reached it, is shown no buff on the player until the caster's next go, because the caster's 0x7f4 skips a unit the client lacks and the viewer's ledger holds the cast from the caster's start, so it drops the start the player tells; a viewer that comes into sight of the player after the player took a cast's changes and before it took the cast's go is shown the changes the player's create listed, and the player's start of the cast is then dropped by the viewer's ledger; and a caster that comes back into the sight of a player that still holds its kept change is shown no buff on it, since no rule of the caster stands behind the entry (`proc.nodes_left`, `unit_removed`). The entry names the holder as the cast's primary and only target, which is wrong for a cast whose primary target is another unit (a child Barrier's Proxy started on an ally, whose area found others around that ally).",
     ),
     gap.Entry(
       area: "Casting",

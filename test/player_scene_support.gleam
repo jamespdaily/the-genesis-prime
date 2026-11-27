@@ -645,7 +645,8 @@ fn outgoing_name(message message: map.Outgoing) -> String {
   case message {
     map.Noticed(notice: map.SeenBy(..), ..) -> "SeenBy"
     map.Noticed(notice: map.UnseenBy(..), ..) -> "UnseenBy"
-    map.Noticed(notice: map.PlayerUnseen(..), ..) -> "PlayerUnseen"
+    map.Noticed(notice: map.PlayerUnseen(unit_id:, ..), ..) ->
+      "PlayerUnseen " <> int_name(unit_id)
     map.Noticed(notice: map.Gone(..), ..) -> "Gone"
     map.Noticed(..) -> "a notice"
     map.Relayed(

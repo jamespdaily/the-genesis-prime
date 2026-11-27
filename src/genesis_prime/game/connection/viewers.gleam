@@ -1178,7 +1178,10 @@ fn unit_departed(
 
 /// The map ended the sight of `by`, the player's viewer, at `generation`: `by` leaves the
 /// copy, and the sources `by` put on the player that end
-/// with its sight end. The removal of the player's unit at `by` is the map's `PlayerUnseen`.
+/// with its sight end. The removal of the player's unit at `by` is the map's `PlayerUnseen`,
+/// which ends the same sources first (`unit_departed`, so that their writes follow the unit's
+/// 0x355), and then this finds none. Both stay: the rule takes either notice alone, and the
+/// map's order of the two is not the rule's to assume.
 fn viewer_unseen(
   session session: Session,
   now now: Now,

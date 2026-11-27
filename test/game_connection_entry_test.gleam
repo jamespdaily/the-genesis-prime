@@ -24,6 +24,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/start_place.{Facing}
+import genesis_prime/game/unit_news
 import genesis_prime/hand_off.{Kept}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/disconnect_reason.{
@@ -138,9 +139,14 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
       case effect {
         OwnEffect(step.Write(..)) -> False
         // The entry's passive cast tells the map each cast's news; the map relays it to the
-        // viewers (none here), and the cast's own tests hold it.
-        OwnEffect(step.Tell(request: client_connection.TellBroadcast(..), ..)) ->
-          False
+        // viewers (none here), and the cast's own tests hold it. Any other broadcast stays.
+        OwnEffect(step.Tell(
+          request: client_connection.TellBroadcast(
+            news: unit_news.PeerNews(news:, ..),
+            ..,
+          ),
+          ..,
+        )) -> !is_a_cast_news(news:)
         OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
           True
       }
@@ -162,6 +168,22 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
     as "the connection watches the run of the map that holds its player, after the burst, joins its groups, the save timer starts and the quest reset timer starts for Friday 2025-04-25 10:00 UTC, 48,800,000 ms after the entry"
   assert support.asked(taken) == None
   assert !support.stops(taken)
+}
+
+/// Whether the news is one of a cast's life: its start, go, misses, ticks, stack, targets
+/// taken off, finish or interruption.
+fn is_a_cast_news(news news: unit_news.News) -> Bool {
+  case news {
+    unit_news.CastStarted(..)
+    | unit_news.CastWent(..)
+    | unit_news.CastMissed(..)
+    | unit_news.CastTicked(..)
+    | unit_news.CastTargetsRemoved(..)
+    | unit_news.CastStackRemoved(..)
+    | unit_news.CastFinished(..)
+    | unit_news.CastInterrupted(..) -> True
+    _ -> False
+  }
 }
 
 /// A character whose load holds an item with no charges recorded: the connection asks the

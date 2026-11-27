@@ -211,6 +211,18 @@ fn limits() -> List(Limit) {
     Limit(
       connection_landing.gaps(),
       "Casting",
+      ["its caster told", "next go"],
+      "a viewer its caster told a cast's start, whose client held no copy of the player at the go, is shown no buff on the player until the caster's next go",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
+      ["took a cast's changes", "create listed"],
+      "a viewer that comes into sight of the player between its taking a cast's changes and its taking the cast's go is shown the changes the player's create listed, and the player's start is dropped",
+    ),
+    Limit(
+      connection_landing.gaps(),
+      "Casting",
       ["comes back", "kept change"],
       "a caster that comes back into the sight of a player that still holds its kept change is shown no buff on it",
     ),

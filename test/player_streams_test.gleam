@@ -16,10 +16,13 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection
 import genesis_prime/game/effect_kind
 import genesis_prime/game/held_changes
+import genesis_prime/game/move_stamp
 import genesis_prime/game/strike
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts.{EndsAt, HeldEffect}
 import genesis_prime/game/unit_properties.{Source}
+import genesis_prime/message/movement_mode
+import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_create_player
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
@@ -409,6 +412,24 @@ pub fn a_viewer_that_arrives_mid_cast_holds_the_live_casts_from_its_create_and_o
       as "a viewer that arrived while T holds the casts has them listed by T's create, in every order"
     assert scene.cast_frames(scene: done, connection: 4) == []
       as "and is written no start of them, in every order: it holds them from the create"
+    // The casts end when C's connection ends (the armor outlasts C's sight, so only its
+    // end tells T): a viewer that holds a cast from a create is written its end once.
+    let ended =
+      scene.settle(scene: scene.map_is_told(
+        scene: scene.settle(scene: done),
+        from: scene.FromConnection(1),
+        event: step.WatchEnded(step.WatchId(1)),
+        name: "C's connection ends",
+      ))
+    let listed =
+      listed_casts(scene: done, connection: 4, unit_id: unit_of(connection: 2))
+    list.each(listed, fn(cast_id) {
+      assert list.contains(
+        [[0x07FE], [0x0811]],
+        scene.cast_frames_of(scene: ended, connection: 4, cast_ids: [cast_id]),
+      )
+        as "a cast the create listed is written its end, the 0x7fe or the 0x811 naming T, once"
+    })
   })
   assert listed_casts(
       scene: ended,
@@ -841,6 +862,32 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
     as "the answer closed E's round: its go names H"
 }
 
+/// C's connection tells T's a move, as mail of C's queue to T, to be taken in any order
+/// against the map's notices to T.
+fn c_tells_t_a_move(
+  scene scene: scene.Scene,
+  stay stay: stay.Stay,
+  move move: move_stamp.Move,
+) -> scene.Scene {
+  let assert Ok(message) =
+    client_connection.told_to_a_connection(request: client_connection.TellMove(
+      stay:,
+      move:,
+    ))
+    as "a move is a tell to a connection"
+  scene.Scene(
+    ..scene,
+    mail: list.append(scene.mail, [
+      order_explorer.Mail(
+        to: scene.ConnectionProcess(2),
+        from: scene.FromConnection(1),
+        input: scene.ToConnection(step.OwnEvent(step.Woken(message))),
+        name: "tell of 1 to 2: TellMove",
+      ),
+    ]),
+  )
+}
+
 /// The moves the connection `from` has told the connection `to` so far (`TellMove`).
 fn moves_told(scene scene: scene.Scene, from from: Int, to to: Int) -> Int {
   list.count(scene.taken, fn(taken) {
@@ -875,6 +922,44 @@ pub fn an_unseen_ends_a_real_cast_the_departed_ally_is_relayed_nothing_after_it_
       ),
       name: "T moves out of C's sight",
     )
+  // A move of C of the sight T held, sent to T itself, is in flight with T's leaving: it
+  // reaches T before the map's notice that the sight ended or after it.
+  let assert Some(map.Relation(generation: sight, stay: t_stay, ..)) =
+    map.player_relation(
+      state: held.map,
+      owner: ConnectionId(1),
+      viewer: ConnectionId(2),
+    )
+    as "the map holds the sight T has of C"
+  let late_move =
+    c_tells_t_a_move(
+      scene: leaving,
+      stay: t_stay,
+      move: move_stamp.Move(
+        unit_id: unit_of(connection: 1),
+        generation: sight,
+        server_time_ms: 0,
+        commands: [relayed_movement.Mode(movement_mode.MovementMode(mode: 0))],
+      ),
+    )
+  let without_the_move = scene.settle(scene: leaving)
+  let after_the_unseen =
+    list.filter(scene.orders(scene: late_move), fn(done) {
+      let assert [unseen] =
+        took(scene: done, connection: 2, part: "PlayerUnseen 1")
+      let assert [moved] = took(scene: done, connection: 2, part: "TellMove")
+      unseen < moved
+    })
+  assert after_the_unseen != []
+    as "the move reaches T after the unseen in some orders"
+  assert list.length(after_the_unseen)
+    < list.length(scene.orders(scene: late_move))
+    as "and before it in others"
+  list.each(after_the_unseen, fn(done) {
+    assert scene.connection_state(scene: done, connection: 2)
+      == scene.connection_state(scene: without_the_move, connection: 2)
+      as "a move of the sight that ended, taken after its unseen, is dropped by the tombstone: T holds nothing of it"
+  })
   list.each(scene.orders(scene: leaving), fn(done) {
     assert scene.check(scene: done, connection: 2) == Ok(Nil)
       as "the departed ally is relayed nothing of C after its 0x355"
@@ -1097,6 +1182,61 @@ pub fn at_the_ally_a_change_start_then_the_casters_unseen_ends_or_keeps_it_by_it
   })
 }
 
+/// A change C tells T before T took the map's notice that C sees it is applied, in every order
+/// the messages are taken in: the map sends T the notice (`SeenBy`) before any landing of C,
+/// from one queue, so T holds C among its viewers when the change arrives.
+pub fn a_change_told_to_a_player_before_it_took_the_notice_of_its_caster_is_applied_in_every_order_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // C (connection 1) and T (connection 2) have joined and neither has taken the map's notice
+  // of the other. C's tell of its absorb pool on T goes to the map, which relays it to T.
+  let entering = two_players_entering()
+  let source = Source(cast_id: 100, effect_id: Spell4EffectsId(62_024))
+  let told =
+    scene.map_is_told(
+      scene: entering,
+      from: scene.FromConnection(1),
+      event: step.OwnEvent(
+        step.Told(message: map.TellLanding(
+          from: ConnectionId(1),
+          stay: map_support.stay(count: 1),
+          to: ConnectionId(2),
+          to_stay: map_support.stay(count: 1),
+          landing: relay.ChangeStart(change: held_changes.PlayerChangeStarts(
+            from: ConnectionId(1),
+            from_stay: map_support.stay(count: 1),
+            source:,
+            change: held_changes.Applies(held_changes.Absorb(
+              amount: 300,
+              mask: 7,
+            )),
+            sight: held_changes.EndsWhenUnseen,
+            spell4_id: Spell4Id(54_806),
+            effect: HeldEffect(
+              effect_id: Spell4EffectsId(62_024),
+              starts_ms: 1000,
+              ends: EndsAt(ms: 11_000),
+            ),
+          )),
+        )),
+      ),
+      name: "C's start of its change on T",
+    )
+  let absorptions = fn(done: scene.Scene) {
+    list.count(scene.frames_of(scene: done, connection: 2), fn(frame) {
+      frame.message_id == 0x0938
+    })
+  }
+  let before = absorptions(scene.settle(scene: entering))
+  let scenes = scene.orders(scene: told)
+  assert scenes != [] as "the scene has an order"
+  list.each(scenes, fn(done) {
+    assert absorptions(done) == before + 1
+      as "T is written the pool in every order: the map's notice of C reaches T before the landing"
+    assert scene.direct_news(scene: done, from: 1, to: 2) == []
+      as "C told T nothing itself"
+  })
+}
+
 /// The positions of the name in the names.
 fn positions_of(names names: List(String), name name: String) -> List(Int) {
   list.index_map(names, fn(found, index) { #(found, index) })
@@ -1201,14 +1341,12 @@ pub fn a_heal_the_map_accepted_before_its_caster_left_sight_is_applied_and_one_f
       name: "map Relayed heal strike to 1",
     )
   }
+  // H's last `Joined` is its entry to the second stay: its first is the entry to the first.
   let after = fn(done: scene.Scene, name: String) {
-    let assert Ok(position) =
-      position_of(
-        names: scene.order_at(scene: done, receiver: scene.ConnectionProcess(1)),
-        name:,
-      )
-      as { "H took " <> name }
-    position
+    last_position_of(
+      names: scene.order_at(scene: done, receiver: scene.ConnectionProcess(1)),
+      name:,
+    )
   }
   list.each(outcomes, fn(done) {
     let answered =

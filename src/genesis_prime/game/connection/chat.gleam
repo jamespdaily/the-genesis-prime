@@ -310,16 +310,24 @@ pub fn chat_effects(
           OwnEffect(step.Tell(to:, request: TellChat(tell))),
           ..written
         ])
-        chat.TellSay(connection:, stay:, said:) -> #(session, [
-          OwnEffect(step.Tell(
-            to: step.Map(
-              map: said.speaker.map,
-              incarnation: said.speaker.incarnation,
-            ),
-            request: TellSay(connection:, stay:, said:),
-          )),
-          ..written
-        ])
+        chat.TellSay(connection:, stay:, said:) ->
+          case connection_state.entered_of(session.status) {
+            Some(entered) -> #(session, [
+              connection_state.tells_the_map(
+                entered:,
+                request: TellSay(connection:, stay:, said:),
+              ),
+              ..written
+            ])
+            None -> #(session, [
+              connection_state.log(
+                session:,
+                level: step.LogError,
+                text: "a line was said with no player in the world, so it is not told to the map",
+              ),
+              ..written
+            ])
+          }
         chat.TellWatched(watch:, tell:) -> #(session, [
           OwnEffect(step.TellWatched(watch:, request: TellChat(tell))),
           ..written
