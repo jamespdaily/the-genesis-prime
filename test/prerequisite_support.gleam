@@ -8,7 +8,8 @@ import genesis_prime/game/prerequisite.{
   type Checker, type FirstUnit, type Player, type Prerequisite, type Subject,
   Checker, Player, Subject,
 }
-import genesis_prime/game/quest_log.{type Quest, type QuestRowError}
+import genesis_prime/shared/quest_row.{type Quest, type QuestRowError}
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/store.{type HeldItem, HeldItem}
 import genesis_prime/table/id.{Item2Id, PrerequisiteId, Spell4BaseId, Spell4Id}
 import genesis_prime/table/positional_requirement
@@ -94,7 +95,7 @@ pub fn load_from(
 /// The Quest2 lookup of a planted table that holds no quest: every quest is unknown to
 /// the client.
 pub fn no_quests() -> fn(Int) -> Result(Quest, QuestRowError) {
-  fn(_) { Error(quest_log.NoQuestRow) }
+  fn(_) { Error(quest_row.NoQuestRow) }
 }
 
 /// The same, whose type 108 conditions find their PositionalRequirement rows among
@@ -288,7 +289,7 @@ pub fn struck(
   first first: option.Option(Pose),
   second second: Pose,
   player player: Player,
-  quests quests: quest_log.QuestLog,
+  quests quests: QuestView,
 ) -> Subject {
   prerequisite.of_struck(
     first:,

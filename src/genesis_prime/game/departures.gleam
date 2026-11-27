@@ -79,10 +79,11 @@
 //// | The client lacks a terminal's Creature2, QuestObjective, Quest2 or WorldLocation2 row | The table load fails at start | `requirements` |
 
 import genesis_prime/game/objective_kind
-import genesis_prime/game/quest_log.{type Quest, type QuestLog}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/game/tutorial
+import genesis_prime/shared/quest_row.{type Quest}
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
@@ -162,7 +163,7 @@ pub fn owns(timer candidate: TimerId) -> Bool {
 }
 
 /// The states of a quest in the client's log that the terminal's prerequisite tests with
-/// its type 6 conditions (`quest_log.state`): achieved and completed.
+/// its type 6 conditions (`quest_view.state`): achieved and completed.
 const achieved = 2
 
 const completed = 3
@@ -180,7 +181,7 @@ fn quest_of(
   tables tables: table_store.Tables,
   terminal terminal: Terminal,
 ) -> Quest {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: terminal.quest_id)
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: terminal.quest_id)
     as "the load checked the terminal's quest and its objectives"
   quest
 }
@@ -203,15 +204,15 @@ fn checked_index_of(quest quest: Quest, objective_id objective_id: Int) -> Int {
 }
 
 /// Whether the terminal's travel objective is open in the log: the quest is in the
-/// active list, the travel is not done and its talk is (`quest_log.objective_open`).
+/// active list, the travel is not done and its talk is (`quest_view.objective_open`).
 fn travel_open(
   tables tables: table_store.Tables,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   terminal terminal: Terminal,
 ) -> Bool {
   let quest = quest_of(tables:, terminal:)
-  quest_log.objective_open(
-    log: quests,
+  quest_view.objective_open(
+    view: quests,
     quest:,
     index: checked_index_of(quest:, objective_id: terminal.travel_objective_id),
   )
@@ -221,13 +222,13 @@ fn travel_open(
 /// active list.
 fn choice_done(
   tables tables: table_store.Tables,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   terminal terminal: Terminal,
 ) -> Bool {
   let quest = quest_of(tables:, terminal:)
-  list.contains(quest_log.active_ids(log: quests), terminal.quest_id)
-  && quest_log.objective_done(
-    log: quests,
+  list.contains(quest_view.active_ids(view: quests), terminal.quest_id)
+  && quest_view.objective_done(
+    view: quests,
     quest:,
     index: checked_index_of(quest:, objective_id: terminal.choice_objective_id),
   )
@@ -260,14 +261,14 @@ fn place_of(
 /// is achieved (state 2) or completed (state 3). The WorldLocation2 row's place.
 pub fn landing(
   tables tables: table_store.Tables,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   creature_id creature_id: Creature2Id,
 ) -> Result(Place, Refusal) {
   use terminal <- result.try(
     terminal_of(creature_id:) |> result.replace_error(NotATerminal),
   )
   let quest_state =
-    quest_log.state(log: quests, quest: quest_of(tables:, terminal:))
+    quest_view.state(view: quests, quest: quest_of(tables:, terminal:))
   case
     travel_open(tables:, quests:, terminal:)
     || quest_state == achieved
@@ -303,7 +304,7 @@ pub fn is_terminal(creature_id creature_id: Creature2Id) -> Bool {
 /// and the move), the saved place otherwise.
 pub fn recovered(
   tables tables: table_store.Tables,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   place place: Place,
 ) -> Place {
   use <- bool.guard(
@@ -390,7 +391,7 @@ pub fn requirements() -> List(table_store.Requirement) {
       to_table: "Quest2",
       missing: fn(tables) {
         list.filter(terminals, fn(terminal) {
-          quest_log.quest_of(tables:, id: terminal.quest_id)
+          quest_row.quest_of(tables:, id: terminal.quest_id)
           |> result.map(fn(quest) {
             result.is_error(index_of(
               quest:,

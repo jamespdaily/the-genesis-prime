@@ -28,7 +28,7 @@ fn struck_subject(first_unit first_unit: prerequisite.FirstUnit) -> Subject {
     first: Some(origin),
     second: origin,
     player: support.player(),
-    quests: quest_support.log_of(rows: []),
+    quests: quest_support.view_of(rows: []),
   )
   |> support.of_unit(unit: first_unit)
 }

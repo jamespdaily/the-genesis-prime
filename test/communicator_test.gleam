@@ -266,7 +266,7 @@ pub fn row_quest_state_reads_as_the_client_test() -> Nil {
   // objective (n - 0xe) not done.
   let holds = fn(tables, rows, quest_id, wanted) {
     communicator.quest_state_holds(
-      log: quest_support.log_of(rows:),
+      view: quest_support.view_of(rows:),
       quest_id:,
       wanted:,
       tables:,

@@ -20,6 +20,7 @@ import genesis_prime/content/refusal.{type Refusal, Refusal, RowId}
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
+import genesis_prime/shared/quest_row
 import genesis_prime/table/id.{QuestObjectiveId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest_objective
@@ -32,7 +33,7 @@ import gleam/string
 /// The rules a table's rule breaks for the objective at `index` of the quest: none when it
 /// holds.
 pub type Broken =
-  fn(table_store.Tables, quest_log.Quest, Int, quest_log.Objective) ->
+  fn(table_store.Tables, quest_row.Quest, Int, quest_row.Objective) ->
     List(String)
 
 /// The QuestObjective ids of a table's rows, or every row the load refuses.
@@ -67,7 +68,7 @@ pub fn select(
 fn rules_broken(
   objective_id objective_id: Int,
   tables tables: table_store.Tables,
-  listed listed: Dict(Int, List(#(quest_log.Quest, Int, quest_log.Objective))),
+  listed listed: Dict(Int, List(#(quest_row.Quest, Int, quest_row.Objective))),
   broken broken: Broken,
 ) -> List(String) {
   case quest_objective.get(tables:, id: QuestObjectiveId(objective_id)) {
@@ -118,7 +119,7 @@ pub fn marker_broken(
 /// pane lacks.
 pub fn pane_broken(
   tables tables: table_store.Tables,
-  objective objective: quest_log.Objective,
+  objective objective: quest_row.Objective,
   action action: String,
   wanted wanted: fn(Int) -> Bool,
   missing missing: String,

@@ -42,11 +42,11 @@
 import genesis_prime/content/refusal
 import genesis_prime/game/activate.{type Link, OpenLink}
 import genesis_prime/game/objective_kind
-import genesis_prime/game/quest_log
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/top_zone
 import genesis_prime/game/tutorial
+import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
   type Creature2Id, Creature2Id, QuestObjectiveId, WorldLocation2Id,
@@ -266,7 +266,7 @@ fn faction_broken(
 ) -> List(String) {
   let holder =
     list.find(quest2.all(tables), fn(quest_row) {
-      quest_log.quest_of(tables:, id: quest_row.id)
+      quest_row.quest_of(tables:, id: quest_row.id)
       |> result.map(fn(quest) {
         list.any(quest.objectives, fn(objective) {
           objective.objective_id == row.objective_id

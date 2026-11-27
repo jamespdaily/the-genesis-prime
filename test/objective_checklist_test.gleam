@@ -20,6 +20,8 @@ import fixture_tables
 import genesis_prime/game/objective.{Advanced, ReleaseUnit, SendProgress, Used}
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view
 import genesis_prime/store.{ActiveQuest, ActiveRow}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Faction2Id}
@@ -90,9 +92,13 @@ fn shown(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
 ) -> Int {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: quest_id)
     as "the fixture holds the quest"
-  quest_log.objective_progress(log:, quest:, index: 0)
+  quest_view.objective_progress(
+    view: quest_log.view(log: log),
+    quest:,
+    index: 0,
+  )
 }
 
 pub fn activating_a_checklist_target_sets_its_bit_test() -> Nil {
@@ -122,7 +128,7 @@ pub fn activating_a_checklist_target_sets_its_bit_test() -> Nil {
 pub fn a_checklist_is_done_when_its_bit_count_reaches_its_count_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: checklist_quest)
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: checklist_quest)
     as "the fixture holds the quest"
   let count = fn(log, index) {
     objective.advance(
@@ -136,18 +142,30 @@ pub fn a_checklist_is_done_when_its_bit_count_reaches_its_count_test() -> Nil {
   }
 
   let two = list.fold([0, 1], fresh_log(), count)
-  assert !quest_log.objective_done(log: two, quest:, index: 0)
+  assert !quest_view.objective_done(
+    view: quest_log.view(log: two),
+    quest:,
+    index: 0,
+  )
     as "two bits of a count of 3 leave the objective open"
   assert shown(log: two, tables:, quest_id: checklist_quest) == 2
 
   let three = count(two, 2)
-  assert quest_log.objective_done(log: three, quest:, index: 0)
+  assert quest_view.objective_done(
+    view: quest_log.view(log: three),
+    quest:,
+    index: 0,
+  )
     as "the third bit reaches the count"
   assert shown(log: three, tables:, quest_id: checklist_quest) == 3
   assert stored(log: three, quest_id: checklist_quest) == [7, 0, 0, 0, 0]
 
   let apart = list.fold([31, 0, 17], fresh_log(), count)
-  assert quest_log.objective_done(log: apart, quest:, index: 0)
+  assert quest_view.objective_done(
+    view: quest_log.view(log: apart),
+    quest:,
+    index: 0,
+  )
     as "any three bits do, bit 31 among them"
   assert stored(log: apart, quest_id: checklist_quest)
     == [0x80020001, 0, 0, 0, 0]

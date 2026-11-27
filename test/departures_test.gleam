@@ -21,8 +21,8 @@ import departures_support
 import fixture_tables
 import genesis_prime/game/activate.{type Link, ClosedLink, OpenLink}
 import genesis_prime/game/departures.{NotATerminal, TravelClosed}
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/start_place
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
@@ -41,8 +41,8 @@ const levian_bay = 74_773
 const crimson_isle = 74_772
 
 /// The Exile's log after the talk (objective 0 of Quest2 10528).
-fn exile_after_the_talk() -> QuestLog {
-  quest_support.log_of(rows: [
+fn exile_after_the_talk() -> QuestView {
+  quest_support.view_of(rows: [
     quest_support.active(
       quest_id: 10_528,
       state: 1,
@@ -55,8 +55,8 @@ fn exile_after_the_talk() -> QuestLog {
 }
 
 /// The Dominion's log after the talk (objective 0 of Quest2 10530).
-fn dominion_after_the_talk() -> QuestLog {
-  quest_support.log_of(rows: [
+fn dominion_after_the_talk() -> QuestView {
+  quest_support.view_of(rows: [
     quest_support.active(
       quest_id: 10_530,
       state: 1,
@@ -70,7 +70,7 @@ fn dominion_after_the_talk() -> QuestLog {
 
 /// The link of a creature's right-click for a player holding this log, as the rule that
 /// reads it gives it (`objective_link.of`).
-fn link_of(quests quests: QuestLog, creature_id creature_id: Int) -> Link {
+fn link_of(quests quests: QuestView, creature_id creature_id: Int) -> Link {
   departures_support.link_of(quests:, creature_id:)
 }
 
@@ -149,7 +149,7 @@ pub fn a_terminal_with_travel_open_is_an_open_link_test() -> Nil {
 pub fn a_player_without_bon_voyage_meets_a_closed_terminal_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
-  let log = quest_support.log_of(rows: [])
+  let log = quest_support.view_of(rows: [])
   assert link_of(quests: log, creature_id: northern_wilds) == ClosedLink
     as "Prerequisite 41793: a log without the quest has no open objective and no state 2 or 3"
   assert departures.landing(
@@ -165,7 +165,7 @@ pub fn the_talk_not_done_closes_the_terminal_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
   let log =
-    quest_support.log_of(rows: [
+    quest_support.view_of(rows: [
       quest_support.accepted(quest_id: 10_528, progress: [0, 0, 0, 0, 0]),
     ])
   assert link_of(quests: log, creature_id: northern_wilds) == ClosedLink
@@ -184,7 +184,7 @@ pub fn travel_already_done_keeps_the_terminal_offered_test() -> Nil {
   let tables = character_tables.shared()
   // The talk, the travel and the Northern Wilds choice done: mask 0b111, state 2.
   let log =
-    quest_support.log_of(rows: [
+    quest_support.view_of(rows: [
       quest_support.active(
         quest_id: 10_528,
         state: 2,
@@ -211,7 +211,7 @@ pub fn a_completed_quest_keeps_the_terminal_offered_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
   let log =
-    quest_support.log_of(rows: [
+    quest_support.view_of(rows: [
       quest_support.completed(quest_id: 10_530, at: 7),
     ])
   assert link_of(quests: log, creature_id: levian_bay) == OpenLink
@@ -242,7 +242,7 @@ pub fn a_creature_outside_the_table_keeps_its_own_link_test() -> Nil {
   let tables = character_tables.shared()
   // Creature2 4989's questAnim columns name quest 2020, objective index 1 (flags 1).
   let log =
-    quest_support.log_of(rows: [
+    quest_support.view_of(rows: [
       quest_support.accepted(quest_id: 2020, progress: [0, 0, 0, 0, 0, 0]),
     ])
   assert link_of(quests: log, creature_id: 4989) == OpenLink
@@ -260,7 +260,7 @@ pub fn a_landing_is_refused_once_the_quest_is_gone_test() -> Nil {
   use <- owned_test.run(60_000)
   let tables = character_tables.shared()
   // The window was opened with the quest open; the quest is abandoned before the yes.
-  let abandoned = quest_support.log_of(rows: [])
+  let abandoned = quest_support.view_of(rows: [])
   assert departures.landing(
       tables:,
       quests: abandoned,

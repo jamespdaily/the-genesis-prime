@@ -30,7 +30,6 @@ import genesis_prime/game/player_state.{type PlayerState}
 import genesis_prime/game/prerequisite
 import genesis_prime/game/proc
 import genesis_prime/game/quest_advance
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_effect
@@ -49,6 +48,7 @@ import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription,
 }
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{type LogLevel, type TimerId, TimerId}
 import genesis_prime/table/id.{
   type Item2Id, type Spell4BaseId, type Spell4EffectsId, type Spell4Id,
@@ -141,9 +141,9 @@ pub type Caster {
     /// vital reads of it, with which the go works out the amount and overheal it tells
     /// the client (genesis_prime/game/heal_split).
     heal_scaling: heal_split.Scaling,
-    /// The player's quest log, which the quest conditions of a prerequisite (types 6,
-    /// 68, 43 and 22 to 36) read: the client reads the checking player's own log.
-    quests: QuestLog,
+    /// A snapshot of the player's quest log, which the quest conditions of a prerequisite
+    /// (types 6, 68, 43 and 22 to 36) read: the client reads the checking player's own log.
+    quests: QuestView,
     /// The player's race, class, path, gender, level, World and zones, which the
     /// prerequisite types on the player (1, 2, 3, 10, 26, 39, 52 and 109) read.
     player: prerequisite.Player,

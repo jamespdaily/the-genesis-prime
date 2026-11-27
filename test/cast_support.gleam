@@ -580,7 +580,7 @@ pub fn caster() -> Caster {
     stats: attacker_support.fresh(),
     vitals: damage.Vitals(health: 0, max_health: 0, shield: 0, max_shield: 0),
     heal_scaling: heal_split.unscaled,
-    quests: quest_support.log_of(rows: []),
+    quests: quest_support.view_of(rows: []),
     player: prerequisite.Player(
       race_id: 1,
       class_id: 1,

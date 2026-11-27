@@ -11,8 +11,8 @@
 
 import character_tables
 import genesis_prime/game/prerequisite.{type Prerequisite, Subject}
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/visibility
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/id.{PrerequisiteId}
 import gleam/option.{Some}
 import gleam/set
@@ -35,7 +35,7 @@ fn start_arrow() -> Prerequisite {
 }
 
 /// A player whose quest log is this.
-fn player_with(log log: QuestLog) -> prerequisite.Subject {
+fn player_with(log log: QuestView) -> prerequisite.Subject {
   Subject(
     ..prerequisite_support.holding(held: [], second_unit: option.None),
     quests: Some(log),
@@ -51,7 +51,7 @@ pub fn a_type_47_visibility_condition_is_not_decided_test() -> Nil {
   // (issue 818).
   let gated =
     prerequisite_support.single(id: 13_046, condition: #(47, 2, 0, 12_156))
-  let subject = player_with(log: quest_support.log_of(rows: []))
+  let subject = player_with(log: quest_support.view_of(rows: []))
   assert prerequisite.check(prerequisite: gated, subject:) == prerequisite.Fails
     as "a cast behind type 47 fails"
   assert prerequisite.check_for_visibility(prerequisite: gated, subject:)
@@ -65,7 +65,7 @@ pub fn visibility_hides_a_failing_prerequisite_and_shows_a_passing_or_unread_one
   use <- owned_test.run(60_000)
   let arrow = start_arrow()
   let open_objective_3 =
-    quest_support.log_of(rows: [
+    quest_support.view_of(rows: [
       quest_support.active(
         quest_id: 10_527,
         state: 1,
@@ -80,7 +80,7 @@ pub fn visibility_hides_a_failing_prerequisite_and_shows_a_passing_or_unread_one
     as "quest 10527 with objective 3 open passes Prerequisite 41803 (type 43 on quest 10527 value 3), so the unit is shown"
   assert visibility.hidden(
       [arrow],
-      player_with(log: quest_support.log_of(rows: [])),
+      player_with(log: quest_support.view_of(rows: [])),
     )
     == set.from_list([PrerequisiteId(41_803)])
     as "neither quest in the log fails Prerequisite 41803 (type 43 needs the objective in the active list), so the unit is hidden"
@@ -89,7 +89,7 @@ pub fn visibility_hides_a_failing_prerequisite_and_shows_a_passing_or_unread_one
   let unread = prerequisite_support.single(id: 7, condition: #(117, 1, 0, 0))
   assert visibility.hidden(
       [unread],
-      player_with(log: quest_support.log_of(rows: [])),
+      player_with(log: quest_support.view_of(rows: [])),
     )
     == set.new()
     as "a type-117 condition reads as not read, which does not hide the unit"

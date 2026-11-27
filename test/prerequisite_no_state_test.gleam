@@ -42,7 +42,7 @@ fn every_builder() -> List(#(String, Subject)) {
         in_combat: False,
         target: origin,
         caster: origin,
-        quests: quest_support.log_of(rows: []),
+        quests: quest_support.view_of(rows: []),
         creature_id: 15_727,
         checker: prerequisite_support.empty_checker(),
       ),
@@ -53,7 +53,7 @@ fn every_builder() -> List(#(String, Subject)) {
         first: Some(origin),
         second: origin,
         player: prerequisite_support.player(),
-        quests: quest_support.log_of(rows: []),
+        quests: quest_support.view_of(rows: []),
       ),
     ),
     #(

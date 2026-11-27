@@ -63,6 +63,8 @@ import genesis_prime/message/quest_ignore
 import genesis_prime/message/quest_mention
 import genesis_prime/message/quest_retry
 import genesis_prime/message/quest_track
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{type LogLevel}
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/creature2.{type Creature2}
@@ -139,6 +141,11 @@ pub type Asker {
     log: QuestLog,
     checker: prerequisite.Checker,
   )
+}
+
+/// The asker's quest log as the read-only snapshot the communicator's conditions read.
+pub fn quests_of(asker asker: Asker) -> QuestView {
+  quest_log.view(log: asker.log)
 }
 
 /// A table row a check needs and the client's tables lack.
@@ -406,7 +413,7 @@ fn receive_shown(
     Ok(row) -> {
       let state = derived_state(tables:, asker:, quest_id:)
       use <- bool.guard(when: state == 1 || state == 2, return: Ok(True))
-      case has_flag(row.flags, receivable_flag) {
+      case quest_row.has_flag(flags: row.flags, flag: receivable_flag) {
         True -> refused(tables:, asker:, row:) |> result.map(bool.negate)
         False -> Ok(False)
       }
@@ -435,7 +442,10 @@ fn gives_dialog(
   quest_id quest_id: Int,
   row row: Quest2,
 ) -> Result(Bool, CheckError) {
-  use <- bool.guard(when: has_flag(row.flags, instant_flag), return: Ok(False))
+  use <- bool.guard(
+    when: quest_row.has_flag(flags: row.flags, flag: instant_flag),
+    return: Ok(False),
+  )
   use waits <- result.try(waits_for_mention(tables:, asker:, quest_id:, row:))
   use <- bool.guard(when: waits, return: Ok(False))
   let state = derived_state(tables:, asker:, quest_id:)
@@ -452,7 +462,7 @@ fn waits_for_mention(
   row row: Quest2,
 ) -> Result(Bool, CheckError) {
   use <- bool.guard(
-    when: !has_flag(row.flags, needs_mention_flag)
+    when: !quest_row.has_flag(flags: row.flags, flag: needs_mention_flag)
       || in_second_list(state: state_of(asker:, quest_id:)),
     return: Ok(False),
   )
@@ -483,18 +493,14 @@ fn derived_state(
   asker asker: Asker,
   quest_id quest_id: Int,
 ) -> Int {
-  quest_log.quest_of(tables:, id: quest_id)
-  |> result.map(fn(quest) { quest_log.state(log: asker.log, quest:) })
+  quest_row.quest_of(tables:, id: quest_id)
+  |> result.map(fn(quest) { quest_view.state(view: quests_of(asker:), quest:) })
   |> result.unwrap(state_of(asker:, quest_id:))
 }
 
 fn refuse_when(when when: Bool, code code: Int) -> Result(Nil, Stop) {
   use <- bool.guard(when:, return: Error(Refuse(code:)))
   Ok(Nil)
-}
-
-fn has_flag(flags: Int, flag: Int) -> Bool {
-  int.bitwise_and(flags, flag) != 0
 }
 
 fn state_of(asker asker: Asker, quest_id quest_id: Int) -> Int {
@@ -508,7 +514,8 @@ fn in_second_list(state state: Int) -> Bool {
 
 /// Whether a completed quest may be taken again: it repeats or has a period.
 pub fn takes_again(quest quest: Quest2) -> Bool {
-  has_flag(quest.flags, repeats_flag) || quest.quest_repeat_period_enum != 0
+  quest_row.has_flag(flags: quest.flags, flag: repeats_flag)
+  || quest.quest_repeat_period_enum != 0
 }
 
 /// Check 11: a quest that needs a mention is taken only once the log holds a state
@@ -516,7 +523,7 @@ pub fn takes_again(quest quest: Quest2) -> Bool {
 fn mentioned(quest quest: Quest2, asker asker: Asker) -> Result(Nil, Stop) {
   let state = state_of(asker:, quest_id: quest.id)
   refuse_when(
-    when: has_flag(quest.flags, needs_mention_flag)
+    when: quest_row.has_flag(flags: quest.flags, flag: needs_mention_flag)
       && !in_second_list(state:)
       && !{ state == 3 && takes_again(quest:) },
     code: not_mentioned,
@@ -592,10 +599,13 @@ fn episode_allows(
         Error(Nil) -> Error(Broken(NoEpisodeRow(episode_id: first)))
         Ok(row) ->
           refuse_when(
-            when: !has_flag(row.flags, episode_open_flag)
+            when: !quest_row.has_flag(flags: row.flags, flag: episode_open_flag)
               && !list.any(rows, fn(member) {
               member.episode_id == first
-              && !has_flag(member.flags, episode_left_out_flag)
+              && !quest_row.has_flag(
+                flags: member.flags,
+                flag: episode_left_out_flag,
+              )
               && {
                 member.quest_id == quest.id
                 || state_of(asker:, quest_id: member.quest_id) != 3
@@ -628,12 +638,16 @@ fn level_and_quests(
   let met = case required {
     [] -> True
     _ ->
-      case has_flag(quest.preq_flags, any_quest_flag) {
+      case quest_row.has_flag(flags: quest.preq_flags, flag: any_quest_flag) {
         True -> list.any(required, completed)
         False -> list.all(required, completed)
       }
   }
-  case has_flag(quest.preq_flags, joined_flag) && level_asked && quests_asked {
+  case
+    quest_row.has_flag(flags: quest.preq_flags, flag: joined_flag)
+    && level_asked
+    && quests_asked
+  {
     True -> refuse_when(when: too_low && !met, code: level_low)
     False -> {
       use Nil <- result.try(refuse_when(
@@ -662,7 +676,9 @@ fn exclusions(quest quest: Quest2, asker asker: Asker) -> Result(Nil, Stop) {
     [] -> Ok(Nil)
     _ ->
       refuse_when(
-        when: case has_flag(quest.preq_flags, all_excluded_flag) {
+        when: case
+          quest_row.has_flag(flags: quest.preq_flags, flag: all_excluded_flag)
+        {
           True -> list.all(named_ids, taken)
           False -> list.any(named_ids, taken)
         },
@@ -777,7 +793,7 @@ pub fn prerequisite_holds(
             player: asker.player,
             checker: asker.checker,
           ),
-          quests: Some(asker.log),
+          quests: Some(quests_of(asker:)),
         )
       case prerequisite.check(prerequisite: loaded, subject:) {
         prerequisite.Passes -> Ok(Nil)
@@ -826,7 +842,7 @@ fn log_has_room(
     Error(Nil) -> default_quest_limit
   }
   refuse_when(
-    when: !has_flag(quest.flags, contract_flag)
+    when: !quest_row.has_flag(flags: quest.flags, flag: contract_flag)
       && quest_log.active_count(log: asker.log, tables:) >= limit,
     code: log_full,
   )
@@ -887,7 +903,7 @@ fn periodic_group(
 /// not have.
 fn contract(quest quest: Quest2) -> Result(Nil, Stop) {
   use <- bool.guard(
-    when: has_flag(quest.flags, contract_flag),
+    when: quest_row.has_flag(flags: quest.flags, flag: contract_flag),
     return: Error(Unread(Contract)),
   )
   Ok(Nil)
@@ -977,7 +993,7 @@ pub type Taken {
 /// Why a request is answered with nothing.
 type Declined {
   UnknownQuest(quest_id: Int)
-  BadQuestRow(quest_id: Int, error: quest_log.QuestRowError)
+  BadQuestRow(quest_id: Int, error: quest_row.QuestRowError)
   NotBotched(quest_id: Int, state: Int)
   BotchedAccepted(quest_id: Int)
   NoSource(quest_id: Int)
@@ -1129,13 +1145,13 @@ fn answer(
 fn read_quest(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
-) -> Result(#(quest_log.Quest, Quest2), Declined) {
+) -> Result(#(quest_row.Quest, Quest2), Declined) {
   use quest <- result.try(
-    quest_log.quest_of(tables:, id: quest_id)
+    quest_row.quest_of(tables:, id: quest_id)
     |> result.map_error(fn(error) {
       case error {
-        quest_log.NoQuestRow -> UnknownQuest(quest_id:)
-        quest_log.NoObjectiveRow(..) -> BadQuestRow(quest_id:, error:)
+        quest_row.NoQuestRow -> UnknownQuest(quest_id:)
+        quest_row.NoObjectiveRow(..) -> BadQuestRow(quest_id:, error:)
       }
     }),
   )
@@ -1147,10 +1163,10 @@ fn read_quest(
 /// Whether `CanAbandonQuest` (`0x140552930`) lets a quest in this state, with these
 /// Quest2 flags, be abandoned.
 fn can_abandon(state state: Int, flags flags: Int) -> Bool {
-  case state, has_flag(flags, no_abandon_flag) {
+  case state, quest_row.has_flag(flags: flags, flag: no_abandon_flag) {
     4, _ -> True
     _, True -> False
-    2, False -> !has_flag(flags, kept_when_achieved_flag)
+    2, False -> !quest_row.has_flag(flags: flags, flag: kept_when_achieved_flag)
     1, False -> True
     _, False -> False
   }
@@ -1163,7 +1179,7 @@ fn abandoned(
   tables tables: table_store.Tables,
 ) -> Result(#(List(Effect), QuestLog), Declined) {
   use #(quest, row) <- result.try(read_quest(tables:, quest_id:))
-  let state = quest_log.state(log: asker.log, quest:)
+  let state = quest_view.state(view: quests_of(asker:), quest:)
   case can_abandon(state:, flags: row.flags) {
     False -> Error(NotAbandonable(quest_id:, state:))
     True ->
@@ -1189,7 +1205,8 @@ fn mentioned_by(
   let state = state_of(asker:, quest_id:)
   let sent = case wish, state {
     True, 0 -> True
-    False, 4 | False, 5 | False, 6 -> has_flag(row.flags, communicator_flag)
+    False, 4 | False, 5 | False, 6 ->
+      quest_row.has_flag(flags: row.flags, flag: communicator_flag)
     _, _ -> False
   }
   case sent {
@@ -1339,7 +1356,7 @@ fn has_source(
 /// Whether the quest comes by the communicator and the log holds a state of 4 to 7
 /// for it.
 fn called(quest quest: Quest2, asker asker: Asker) -> Bool {
-  has_flag(quest.flags, communicator_flag)
+  quest_row.has_flag(flags: quest.flags, flag: communicator_flag)
   && in_second_list(state: state_of(asker:, quest_id: quest.id))
 }
 
@@ -1470,8 +1487,8 @@ fn describe_declined(
       <> of(quest_id)
       <> ", whose rows are not whole: "
       <> case error {
-        quest_log.NoQuestRow -> "no Quest2 row"
-        quest_log.NoObjectiveRow(objective_id:) ->
+        quest_row.NoQuestRow -> "no Quest2 row"
+        quest_row.NoObjectiveRow(objective_id:) ->
           "the table QuestObjective has no row " <> int.to_string(objective_id)
       }
     NotBotched(quest_id:, state:) ->

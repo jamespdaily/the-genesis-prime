@@ -34,13 +34,15 @@ import genesis_prime/game/connection/casting
 import genesis_prime/game/prerequisite.{
   type Prerequisite, type Subject, type Verdict, Fails, NotRead, Passes, Subject,
 }
-import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/game/quest_log
 import genesis_prime/game/spell_plan.{
   type Plans, CastGate, GatedOnCasterAndTarget, Proxy, Spell,
 }
 import genesis_prime/game/spend
 import genesis_prime/game/world_entry
 import genesis_prime/message/spell_started
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/id.{PrerequisiteId, Spell4EffectsId}
 import gleam/dict
@@ -70,7 +72,7 @@ fn gate(condition condition: #(Int, Int, Int, Int)) -> Prerequisite {
 }
 
 /// A subject of a player whose quest log this is.
-fn player_with(log log: QuestLog) -> Subject {
+fn player_with(log log: QuestView) -> Subject {
   Subject(
     ..prerequisite_support.holding(held: [], second_unit: None),
     quests: Some(log),
@@ -79,13 +81,13 @@ fn player_with(log log: QuestLog) -> Subject {
 
 fn verdict(
   condition condition: #(Int, Int, Int, Int),
-  log log: QuestLog,
+  log log: QuestView,
 ) -> Verdict {
   prerequisite.check(prerequisite: gate(condition:), subject: player_with(log:))
 }
 
-fn log_of(rows rows: List(QuestRow)) -> QuestLog {
-  quest_support.log_of(rows:)
+fn log_of(rows rows: List(QuestRow)) -> QuestView {
+  quest_support.view_of(rows:)
 }
 
 /// A quest in the active list, accepted, with this done mask and these progress values.
@@ -107,7 +109,7 @@ fn accepted(
 /// The numbers from 0 to `up_to` for which the condition the function builds passes.
 fn passing(
   condition condition: fn(Int) -> #(Int, Int, Int, Int),
-  log log: QuestLog,
+  log log: QuestView,
   up_to up_to: Int,
 ) -> List(Int) {
   int.range(from: 0, to: up_to + 1, with: [], run: fn(numbers, number) {
@@ -120,17 +122,17 @@ fn passing(
 }
 
 /// The state type 6 reads for the quest: the one value of 0 to 7 that comparison 1 passes.
-fn state_of(quest quest: Int, log log: QuestLog) -> List(Int) {
+fn state_of(quest quest: Int, log log: QuestView) -> List(Int) {
   passing(condition: fn(value) { #(6, 1, quest, value) }, log:, up_to: 7)
 }
 
 /// The objective indexes 0 to 5 of the quest that type 68 reads done.
-fn done_indexes(quest quest: Int, log log: QuestLog) -> List(Int) {
+fn done_indexes(quest quest: Int, log log: QuestView) -> List(Int) {
   passing(condition: fn(index) { #(68, 1, quest, index) }, log:, up_to: 5)
 }
 
 /// The objective indexes 0 to 5 of the quest that type 43 reads open.
-fn open_indexes(quest quest: Int, log log: QuestLog) -> List(Int) {
+fn open_indexes(quest quest: Int, log log: QuestView) -> List(Int) {
   passing(condition: fn(index) { #(43, 1, quest, index) }, log:, up_to: 5)
 }
 
@@ -149,7 +151,7 @@ fn type_of_index(index index: Int) -> Int {
 fn progress_of(
   index index: Int,
   quest quest: Int,
-  log log: QuestLog,
+  log log: QuestView,
 ) -> List(Int) {
   passing(
     condition: fn(value) { #(type_of_index(index:), 1, quest, value) },
@@ -510,7 +512,7 @@ pub fn a_percent_objective_of_count_one_or_less_still_scales_its_raw_progress_te
     id: quest_support.ordinary_objective,
     with: [#("count", Integer(0))],
   )
-  let assert Ok(counting_nothing) = quest_log.quest_of(tables:, id: quest)
+  let assert Ok(counting_nothing) = quest_row.quest_of(tables:, id: quest)
     as "the edited tables hold the quest"
   let assert Ok(log) =
     quest_log.from_rows(
@@ -518,7 +520,11 @@ pub fn a_percent_objective_of_count_one_or_less_still_scales_its_raw_progress_te
       tables:,
     )
     as "the log is one the client takes"
-  assert quest_log.objective_progress(log:, quest: counting_nothing, index: 0)
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: log),
+      quest: counting_nothing,
+      index: 0,
+    )
     == 0
     as "a count of 0 needs 0: raw 1000 scales to trunc(0 x 1) = 0"
 }
@@ -554,7 +560,7 @@ pub fn an_entry_placeholder_replaces_the_quests_type_31_slot_test() -> Nil {
 
 /// The struck unit as a target-side check holds it: the caster's quest log, and the
 /// checklist index its 0x262 carried when it has a creature.
-fn struck_with(log log: QuestLog, index index: option.Option(Int)) -> Subject {
+fn struck_with(log log: QuestView, index index: option.Option(Int)) -> Subject {
   let subject =
     prerequisite_support.struck(
       first: Some(prerequisite_support.pose(x: 0.0, z: 0.0, yaw: 0.0)),
@@ -671,7 +677,7 @@ pub fn the_load_resolves_each_quest_and_refuses_a_missing_objective_row_test() -
     as "the unknown quest is state 0"
   // A type 28 objective whose PathSoldierActivate row is missing loads as not a checklist.
   let assert Ok(missing_soldier) =
-    quest_log.quest_of(tables:, id: quest_support.soldier_row_missing)
+    quest_row.quest_of(tables:, id: quest_support.soldier_row_missing)
     as "quest 8256 has a Quest2 row and a QuestObjective row for each slot"
   assert list.map(missing_soldier.objectives, fn(objective) {
       objective.checklist
@@ -679,7 +685,7 @@ pub fn the_load_resolves_each_quest_and_refuses_a_missing_objective_row_test() -
     == [False, False]
     as "PathSoldierActivate row 159 is not in the client's table, so objective 14973 is not a checklist (0x1405517a0), and 14987 is type 32"
   let assert Ok(soldier) =
-    quest_log.quest_of(tables:, id: quest_support.soldier_checklist)
+    quest_row.quest_of(tables:, id: quest_support.soldier_checklist)
     as "quest 5261 has its rows"
   assert list.map(soldier.objectives, fn(objective) { objective.checklist })
     == [True]
@@ -692,7 +698,7 @@ pub fn the_load_resolves_each_quest_and_refuses_a_missing_objective_row_test() -
       quests:,
     )
     as "a condition on that quest loads"
-  assert quest_log.quest_of(tables:, id: 999_999) == Error(quest_log.NoQuestRow)
+  assert quest_row.quest_of(tables:, id: 999_999) == Error(quest_row.NoQuestRow)
     as "no Quest2 row is the lookup's own answer"
   // A QuestObjective row the quest names but the table lacks fails the load.
   let assert Ok(rows) =
@@ -704,8 +710,8 @@ pub fn the_load_resolves_each_quest_and_refuses_a_missing_objective_row_test() -
     as "the fixture holds QuestObjective 2073"
   let assert Ok(without) = fixture_tables.load(rows:)
     as "the tables load without the one objective row: nothing else requires it"
-  assert quest_log.quest_of(tables: without, id: quest_support.skipped_first)
-    == Error(quest_log.NoObjectiveRow(objective_id: 2073))
+  assert quest_row.quest_of(tables: without, id: quest_support.skipped_first)
+    == Error(quest_row.NoObjectiveRow(objective_id: 2073))
     as "quest 1949 names objective 2073, which the table lacks"
   assert prerequisite_support.load_with(
       id: 1,
@@ -722,7 +728,10 @@ pub fn the_load_resolves_each_quest_and_refuses_a_missing_objective_row_test() -
 pub fn a_cast_gate_reads_the_caster_quest_log_test() -> Nil {
   use <- owned_test.run(60_000)
   let quest = quest_support.skipped_first
-  let in_log = log_of(rows: [accepted(quest:, done_mask: 0, progress: [0, 0])])
+  let in_log =
+    quest_support.log_of(rows: [
+      accepted(quest:, done_mask: 0, progress: [0, 0]),
+    ])
   // The player's cast rule is given the entered log.
   let #(_, entered) =
     world_entry_support.entry(
@@ -733,13 +742,14 @@ pub fn a_cast_gate_reads_the_caster_quest_log_test() -> Nil {
       tables: character_tables.shared(),
       entered: world_entry.Entered(..entered, quests: in_log),
     ).quests
-    == in_log
+    == quest_log.view(log: in_log)
     as "the caster carries the quest log of the entered player"
   assert casting.caster_of(tables: character_tables.shared(), entered:).quests
-    == entered.quests
+    == quest_log.view(log: entered.quests)
     as "and the log it holds when none was changed"
   // A caster-side gate.
-  let accepted_caster = cast_state.Caster(..support.caster(), quests: in_log)
+  let accepted_caster =
+    cast_state.Caster(..support.caster(), quests: quest_log.view(log: in_log))
   let empty_caster =
     cast_state.Caster(..support.caster(), quests: log_of(rows: []))
   assert refusals_of_press(caster: accepted_caster) == []

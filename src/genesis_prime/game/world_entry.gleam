@@ -975,7 +975,12 @@ fn joining_a_play(
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> Loaded {
-  let place = departures.recovered(tables:, quests:, place: saved_place)
+  let place =
+    departures.recovered(
+      tables:,
+      quests: quest_log.view(log: quests),
+      place: saved_place,
+    )
   let movement = movement.entered(place:, session_epoch:)
   case
     experience.entering(
@@ -1577,7 +1582,7 @@ fn joining(
       tables:,
       character:,
       place:,
-      quests:,
+      quests: quest_log.view(log: quests),
       health: entering_health(tables:, character:, items:, saved_health:),
     )
   #(

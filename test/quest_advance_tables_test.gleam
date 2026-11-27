@@ -9,9 +9,9 @@ import genesis_prime/game/activate
 import genesis_prime/game/item_property
 import genesis_prime/game/objective
 import genesis_prime/game/objective_action
-import genesis_prime/game/quest_log
 import genesis_prime/game/spell_plan
 import genesis_prime/game/target_group
+import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Faction2Id}
 import genesis_prime/table/loader/store.{type Tables}
@@ -110,7 +110,7 @@ pub fn every_type_42_row_is_applied_dropped_or_left_out_by_a_named_reason_test()
   // quest's objectives and 1 a quest with no row (the fact `Spell4Effects.effectType.42`).
   let naming =
     list.count(rows, fn(effect) {
-      case quest_log.quest_of(tables:, id: effect.data_bits00) {
+      case quest_row.quest_of(tables:, id: effect.data_bits00) {
         Ok(quest) ->
           effect.data_bits01 >= 0
           && effect.data_bits01 < list.length(quest.objectives)
@@ -166,7 +166,7 @@ pub fn no_activate_spell_is_refused_for_a_type_42_row_and_the_use_rule_counts_th
   let categories =
     list.filter_map(rows, fn(effect) {
       use creatures <- result_try(dict.get(holders, effect.spell_id))
-      use quest <- result_try(quest_log.quest_of(
+      use quest <- result_try(quest_row.quest_of(
         tables:,
         id: effect.data_bits00,
       ))
@@ -260,7 +260,7 @@ pub fn no_ability_a_player_holds_names_an_objective_left_open_test() -> Nil {
   let named =
     quest2.all(tables)
     |> list.flat_map(fn(row) {
-      case quest_log.quest_of(tables:, id: row.id) {
+      case quest_row.quest_of(tables:, id: row.id) {
         Ok(quest) ->
           list.index_map(quest.objectives, fn(objective, index) {
             #(quest.id, index, objective)

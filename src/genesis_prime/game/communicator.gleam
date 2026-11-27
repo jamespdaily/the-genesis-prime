@@ -33,8 +33,9 @@
 
 import genesis_prime/game/faction_level
 import genesis_prime/game/quest
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/gap
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/communicator_messages.{type CommunicatorMessages}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Quest2Id}
@@ -169,7 +170,7 @@ pub fn receivers_of(
 /// of a quest that repeats), 0xc is held 1 or 2, 0xd is held 2 or 3, and any other state
 /// must be the held one.
 pub fn quest_state_holds(
-  log log: QuestLog,
+  view view: QuestView,
   quest_id quest_id: Int,
   wanted wanted: Int,
   tables tables: table_store.Tables,
@@ -178,32 +179,32 @@ pub fn quest_state_holds(
   // A quest with no Quest2 row, or one the client's quest reader refuses, has no record
   // in the client (FindQuestById gives none), so its state is never the wanted one.
   case
-    quest_log.quest_of(tables:, id: quest_id),
+    quest_row.quest_of(tables:, id: quest_id),
     quest2.get(tables:, id: Quest2Id(quest_id))
   {
-    Ok(known), Ok(row) -> state_holds(log:, known:, row:, wanted:)
+    Ok(known), Ok(row) -> state_holds(view:, known:, row:, wanted:)
     _, _ -> False
   }
 }
 
 fn state_holds(
-  log log: QuestLog,
-  known known: quest_log.Quest,
+  view view: QuestView,
+  known known: quest_row.Quest,
   row row: Quest2,
   wanted wanted: Int,
 ) -> Bool {
-  let state = quest_log.state(log:, quest: known)
+  let state = quest_view.state(view:, quest: known)
   let held = case state >= 5 && state <= 7 {
     True -> 0
     False -> state
   }
-  let active = list.contains(quest_log.active_ids(log:), known.id)
+  let active = list.contains(quest_view.active_ids(view:), known.id)
   let repeats = quest.takes_again(quest: row)
   case wanted {
     _ if active && wanted >= 5 && wanted <= 10 ->
-      quest_log.objective_done(log:, quest: known, index: wanted - 5)
+      quest_view.objective_done(view:, quest: known, index: wanted - 5)
     _ if active && wanted >= 0xe && wanted <= 0x13 ->
-      !quest_log.objective_done(log:, quest: known, index: wanted - 0xe)
+      !quest_view.objective_done(view:, quest: known, index: wanted - 0xe)
     0xb -> held == 0 || held == 4 || { held == 3 && repeats }
     0xc -> held == 1 || held == 2
     0xd -> held == 2 || held == 3
@@ -231,7 +232,11 @@ pub fn turn_in(
   asker asker: quest.Asker,
   tables tables: table_store.Tables,
 ) -> Result(Nil, Refusal) {
-  let held = list.contains(quest_log.active_ids(log: asker.log), subject.id)
+  let held =
+    list.contains(
+      quest_view.active_ids(view: quest.quests_of(asker:)),
+      subject.id,
+    )
   let by_row = int.bitwise_and(subject.flags, by_row_flag) != 0
   let by_receiver = int.bitwise_and(subject.flags, by_receiver_flag) != 0
   let receivers = receivers_of(tables:, quest_id: subject.id)
@@ -348,7 +353,7 @@ fn verdict(
       0xb,
       list.all(states, fn(pair) {
         quest_state_holds(
-          log: asker.log,
+          view: quest.quests_of(asker:),
           quest_id: pair.0,
           wanted: pair.1,
           tables:,
@@ -423,12 +428,12 @@ fn creature(
   tables tables: table_store.Tables,
   receivers receivers: List(#(Int, Int)),
 ) -> Verdict {
-  let assert Ok(known) = quest_log.quest_of(tables:, id: subject.id)
+  let assert Ok(known) = quest_row.quest_of(tables:, id: subject.id)
     as "a quest the turn-in checked has rows the client's reader accepts"
   case
     int.bitwise_and(subject.flags, by_row_flag) == 0,
     list.any(receivers, fn(receiver) { receiver.0 == row.creature_id }),
-    quest_log.state(log: asker.log, quest: known) == 1
+    quest_view.state(view: quest.quests_of(asker:), quest: known) == 1
   {
     True, _, _ -> Fails(code: 0xf)
     False, False, _ -> Fails(code: 0x10)

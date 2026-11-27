@@ -68,7 +68,7 @@ pub fn used(
     Some(entered) ->
       departures.landing(
         tables: session.settings.tables,
-        quests: entered.quests,
+        quests: quest_log.view(log: entered.quests),
         creature_id: target.creature_id,
       )
   }

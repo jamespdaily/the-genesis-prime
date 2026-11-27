@@ -32,7 +32,6 @@ import genesis_prime/game/effect_kind
 import genesis_prime/game/item_use
 import genesis_prime/game/passed_in_value
 import genesis_prime/game/prerequisite
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/target_group
 import genesis_prime/game/unit_news.{CastStarted}
@@ -41,6 +40,7 @@ import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_use.{ItemUse} as use_message
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/id.{Creature2Id, Faction2Id, Item2Id, UnitRaceId}
 import genesis_prime/table/loader/store as table_store
@@ -89,7 +89,7 @@ fn tables() -> table_store.Tables {
 fn throwing() -> cast_state.Caster {
   standing(
     level: 20,
-    quests: quest_support.log_of(rows: [
+    quests: quest_support.view_of(rows: [
       quest_support.accepted(quest_id: grenade_quest, progress: [0, 0, 0, 0]),
     ]),
   )
@@ -98,7 +98,7 @@ fn throwing() -> cast_state.Caster {
 /// The caster stands at a place of exactly representable numbers.
 pub fn standing(
   level level: Int,
-  quests quests: QuestLog,
+  quests quests: QuestView,
 ) -> cast_state.Caster {
   let caster = support.caster()
   cast_state.Caster(
@@ -569,7 +569,7 @@ pub fn a_checklist_item_at_another_players_unit_is_refused_28_test() -> Nil {
       state: cast_state.new(),
       caster: standing(
         level: 20,
-        quests: quest_support.log_of(rows: [
+        quests: quest_support.view_of(rows: [
           quest_support.accepted(quest_id: 1823, progress: [0]),
         ]),
       ),
@@ -583,7 +583,7 @@ pub fn a_checklist_item_at_another_players_unit_is_refused_28_test() -> Nil {
 
 pub fn a_spell_with_no_cast_group_at_a_creature_with_flags_bit_0_is_refused_89_test() -> Nil {
   use <- owned_test.run(10_000)
-  let caster = standing(level: 20, quests: quest_support.log_of(rows: []))
+  let caster = standing(level: 20, quests: quest_support.view_of(rows: []))
   assert refusal_of(taken: use_item_at(
       state: cast_state.new(),
       caster:,
@@ -621,7 +621,7 @@ pub fn a_creature_whose_activate_spell_is_the_items_spell_passes_the_cast_group_
   let assert Ok(#(_, flagged)) =
     use_item_at(
       state: cast_state.new(),
-      caster: standing(level: 20, quests: quest_support.log_of(rows: [])),
+      caster: standing(level: 20, quests: quest_support.view_of(rows: [])),
       item: generic_item,
       target: own(1545, a_slaver_shack),
       at: 1000,
@@ -690,7 +690,7 @@ pub fn an_item_check_refusal_carries_the_items_spell_test() -> Nil {
   use <- owned_test.run(10_000)
   assert refusal_of(taken: use_item_at(
       state: cast_state.new(),
-      caster: standing(level: 20, quests: quest_support.log_of(rows: [])),
+      caster: standing(level: 20, quests: quest_support.view_of(rows: [])),
       item: grenade,
       target: shown(creature_id: a_slaver_shack, metres: 10.0),
       at: 1000,
@@ -854,7 +854,7 @@ fn used_as(
 
 pub fn the_generic_quest_spell_item_at_a_farmhand_starts_within_5_m_test() -> Nil {
   use <- owned_test.run(10_000)
-  let caster = standing(level: 20, quests: quest_support.log_of(rows: []))
+  let caster = standing(level: 20, quests: quest_support.view_of(rows: []))
   let assert Ok(#(_, effects)) =
     use_item_at(
       state: cast_state.new(),
@@ -939,7 +939,7 @@ pub fn an_item_use_spends_only_when_its_cast_starts_test() -> Nil {
       Refusing(
         ..grenade_row("a charged item holding none is 25", 25, activate.Unseen),
         held: Some(charged_item),
-        caster: standing(level: 50, quests: quest_support.log_of(rows: [])),
+        caster: standing(level: 50, quests: quest_support.view_of(rows: [])),
         charges: 0,
         refused: #(1274, 25),
       ),
@@ -970,7 +970,7 @@ pub fn an_item_use_spends_only_when_its_cast_starts_test() -> Nil {
           activate.Unseen,
         ),
         held: Some(a_spell_at_a_unit_with_no_rows),
-        caster: standing(level: 50, quests: quest_support.log_of(rows: [])),
+        caster: standing(level: 50, quests: quest_support.view_of(rows: [])),
         refused: #(28, 285),
       ),
     ],
@@ -1238,7 +1238,7 @@ pub const a_chua = 20_794
 pub fn railgunner() -> cast_state.Caster {
   standing(
     level: 50,
-    quests: quest_support.log_of(rows: [
+    quests: quest_support.view_of(rows: [
       quest_support.accepted(quest_id: 3769, progress: [0]),
     ]),
   )
@@ -1379,7 +1379,7 @@ type Drink {
 }
 
 fn drinker(level level: Int) -> cast_state.Caster {
-  standing(level:, quests: quest_support.log_of(rows: []))
+  standing(level:, quests: quest_support.view_of(rows: []))
 }
 
 fn after(earlier earlier: Earlier) -> State {
