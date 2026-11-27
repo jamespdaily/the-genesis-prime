@@ -17,9 +17,12 @@
 ////   keeps it on damage (dataBits02 1) for a caster that holds Spell4 59389, which the
 ////   test of the kept stealth gives it by an edit (`with_stealth_kept_on_damage`). A second
 ////   press starts Stealth Cancel 38783 (107793, behind Prerequisite 8127: stealthed).
-//// - The server's choices, in the viewers and cast modules: the order of a blow is the
-////   health's news, the damage taken, then the death; the stealth change is the last of
-////   the input that moved it; creatures' sight of a stealthed player is left as it was.
+//// - The server's choices, in the viewers, cast and map modules: the order of a blow is
+////   the health's news, the damage taken, then the death; the stealth change is the last
+////   of the input that moved it, and the map is told it after the 0x8f5 and the viewers'
+////   news; a stealthed player stands in no creature's ring, so no creature aggroes a
+////   stealthed player it is not fighting (the client holds no rule,
+////   `UnitProperty2.stealth_detection`).
 
 import cast_support
 import connection_rule_support
@@ -115,7 +118,7 @@ pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_view
   let #(state, entering) = stealthed()
   assert support.told_the_map_decisions(entering)
     == [stealth_told(stealthed: True)]
-    as "the toggle press that enters stealth tells the run of the player's map once: Jim's decision on issue 483, so no creature aggroes a stealthed player it is not fighting"
+    as "the toggle press that enters stealth tells the run of the player's map once, the server's choice, so no creature aggroes a stealthed player it is not fighting"
   assert_the_change_comes_before_the_map_tell(taken: entering)
   assert list.contains(support.news_broadcast(entering), Stealth(True))
     as "each viewer is told too (Spell4Effects.effectType.83, opcode.0x8f5)"

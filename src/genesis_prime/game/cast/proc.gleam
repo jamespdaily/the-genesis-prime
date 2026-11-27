@@ -1345,7 +1345,7 @@ fn struck_by(
 
 /// A node the go gives a unit its cast holds none on yet makes a new cast on that
 /// unit, which pushes the caster's oldest casts of its stack off the unit at the cap
-/// (Jim's decision, `lasting.pushed_off`); a unit the cast holds a node on already is a
+/// (the server's choice, `lasting.pushed_off`); a unit the cast holds a node on already is a
 /// later go of the same cast, which pushes nothing. A pushed cast whose node holds
 /// crowd-control states on a creature takes them with it
 /// (`cast_control.creature_controls_ended`).
