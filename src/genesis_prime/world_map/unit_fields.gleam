@@ -25,6 +25,7 @@ import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
 import genesis_prime/message/unit_stat_float.{UnitStatFloat}
 import genesis_prime/message/unit_stat_integer.{UnitStatInteger}
 import genesis_prime/message/unit_stat_value
+import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -50,6 +51,10 @@ pub const interrupt_armor_stat = 21
 /// The stat the client keeps a unit's absorption in, what Unit:GetAbsorptionValue returns:
 /// set by the create's stat list and by a 0x938 (`opcode.0x938`, `0x14064fb40`).
 pub const absorption_stat = 22
+
+/// The stat that sets whether a new unit's weapon is shown sheathed: 15, read only
+/// in the integer form (`unit.weapon_sheathed`).
+pub const sheathed_stat = 15
 
 /// The UnitProperty2 id of Base Health, the property Unit:GetMaxHealth reads
 /// (0x1404584b0).
@@ -83,6 +88,28 @@ pub fn stat(
 /// shield are read in (0x140096230, 0x140458140).
 pub fn integer_stat(stat_id stat_id: Int, value value: Int) -> UnitStat {
   UnitStat(stat_id:, value: unit_stat_value.Integer(UnitStatInteger(value:)))
+}
+
+/// The stat that creates a unit with its weapon sheathed: stat 15 at the integer 1.
+/// The client starts every unit drawn, and only a non-zero integer in a 0x262's list
+/// sets it sheathed with no animation; a float reads 0 and no stat leaves it drawn
+/// (`unit.weapon_sheathed`, 0x140458302). The client then draws it on a 0x89A of 1
+/// and sheathes it on a 0x89A of 0. A unit already in combat is created without it,
+/// because a viewer is sent no 0x89A when a unit comes into sight.
+pub fn sheathed() -> UnitStat {
+  integer_stat(stat_id: sheathed_stat, value: 1)
+}
+
+/// The tail with the sheathed stat (`sheathed`) in its stat list, in stat id order,
+/// unless the unit is in combat.
+pub fn with_sheathed(
+  tail tail: UnitCreateTail,
+  in_combat in_combat: Bool,
+) -> UnitCreateTail {
+  use <- bool.guard(when: in_combat, return: tail)
+  let #(before, after) =
+    list.split_while(tail.stats, fn(held) { held.stat_id < sheathed_stat })
+  UnitCreateTail(..tail, stats: list.flatten([before, [sheathed()], after]))
 }
 
 /// The stat that sets resource slot `slot` (0 to 7) of a new unit: stat slot + 2,

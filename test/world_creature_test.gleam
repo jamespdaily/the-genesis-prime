@@ -3787,7 +3787,7 @@ pub fn a_dead_or_returning_creature_is_created_sheathed_test() -> Nil {
     beast_shown_to_a_second_player(before: fn(run, pid, unit_id) {
       struck_from(run:, connection: 1, unit_id:, x: 12.0, damage: 1, cast_id: 1)
       driven_time.settled(pid)
-      move_to(run:, connection: 1, x: 12.0 +. 40.0)
+      move_to(run:, connection: 1, x: far)
       driven_time.settled(run.pid)
       driven_time.settled(pid)
     })

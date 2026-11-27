@@ -60,13 +60,14 @@ const vendor_flag = 4
 
 /// Message 0x262 for the creature at `spawn` as unit `unit_id` with `health` and its
 /// current Interrupt Armor when it has any above 0, stamped with `server_time_estimate_start`, the map's server time
-/// (`map.server_time`).
+/// (`map.server_time`). It carries the sheathed stat (`unit_fields.sheathed`) unless the
+/// creature is `in_combat`.
 pub fn create(
   spawn spawn: Spawn,
   unit_id unit_id: Int,
   health health: Int,
   interrupt_armor interrupt_armor: Option(Int),
-  in_combat _in_combat: Bool,
+  in_combat in_combat: Bool,
   server_time_estimate_start server_time_estimate_start: Int,
 ) -> UnitCreateCreature {
   let Creature2Id(creature_id) = spawn.creature_id
@@ -74,26 +75,29 @@ pub fn create(
     unit_id:,
     creature_id:,
     checklist_index: spawn.checklist_index,
-    tail: unit_fields.spawned_tail(
-      create_flags: case spawn.vendor {
-        True -> vendor_flag
-        False -> 0
-      },
-      health: Some(health),
-      level: Some(spawn.level),
-      interrupt_armor:,
-      base_health: unit_fields.sent_base_health(
-        max_health: spawn.health,
-        health_source: spawn.health_source,
+    tail: unit_fields.with_sheathed(
+      in_combat:,
+      tail: unit_fields.spawned_tail(
+        create_flags: case spawn.vendor {
+          True -> vendor_flag
+          False -> 0
+        },
+        health: Some(health),
+        level: Some(spawn.level),
+        interrupt_armor:,
+        base_health: unit_fields.sent_base_health(
+          max_health: spawn.health,
+          health_source: spawn.health_source,
+        ),
+        standing: player_unit.standing(place: spawn.place),
+        faction_id: spawn.faction_id,
+        base_faction_id: spawn.base_faction_id,
+        world_object_id: 0,
+        world_socket_id: 0,
+        display_info_id: spawn.display_info_id,
+        outfit_info_id: spawn.outfit_info_id,
+        server_time_estimate_start:,
       ),
-      standing: player_unit.standing(place: spawn.place),
-      faction_id: spawn.faction_id,
-      base_faction_id: spawn.base_faction_id,
-      world_object_id: 0,
-      world_socket_id: 0,
-      display_info_id: spawn.display_info_id,
-      outfit_info_id: spawn.outfit_info_id,
-      server_time_estimate_start:,
     ),
   )
 }

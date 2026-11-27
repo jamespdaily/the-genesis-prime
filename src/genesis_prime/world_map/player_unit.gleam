@@ -186,6 +186,7 @@ pub fn create(
           stat_id: unit_fields.level_stat,
           value: character.level,
         ),
+        unit_fields.sheathed(),
       ],
       movement_commands: {
         let #(position, rotation) = standing(place:)

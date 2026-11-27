@@ -1784,7 +1784,8 @@ fn creature_casts_kept(
 /// (`opcode.0x938`) and its Interrupt Armor as stat 21 while it is above 0
 /// (`opcode.0x938.interrupt_armor`: the create's stat list sets it) and its absorption as
 /// stat 22 while it is above 0 (`opcode.0x938`, `0x14064fb40`: the create's stat list sets
-/// it), without its class resource and its Focus: the stat and the ResourceMax
+/// it) and the sheathed stat (`unit_fields.sheathed`) unless the player is in combat, since
+/// the viewer is sent no 0x89A for a unit already fighting, without its class resource and its Focus: the stat and the ResourceMax
 /// property of the player's own 0x262, and stat 1, are left out, since a 0x935 goes to the
 /// player alone (`opcode.0x262.resource_stats`); property 5, the Focus maximum, stays, a gear
 /// property like the rest that 0x93a keeps current; stamped from the map's clock,
@@ -1805,6 +1806,7 @@ fn appearance(
   let shield = player_life.shield(life: entered.life)
   let armor = player_life.interrupt_armor(life: entered.life)
   let absorption = player_life.absorption(life: entered.life)
+  let in_combat = player_life.in_combat(life: entered.life)
   let slot = class_resource.slot(resources: entered.resources)
   let resource_stat = unit_fields.resource_stat_id(slot:)
   let focus_stat = unit_fields.resource_stat_id(slot: class_resource.focus_slot)
@@ -1833,6 +1835,7 @@ fn appearance(
             id if id == unit_fields.shield_stat ->
               Ok(unit_fields.integer_stat(stat_id: id, value: shield))
             id if id == resource_stat || id == focus_stat -> Error(Nil)
+            id if id == unit_fields.sheathed_stat && in_combat -> Error(Nil)
             _ -> Ok(stat)
           }
         }),

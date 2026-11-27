@@ -55,8 +55,9 @@ pub fn a_creature_is_created_as_the_clients_vector_of_a_battle_beast_is_test() -
       context: spawn_support.loaded_beast().context,
       checklist_index: 0,
     )
+  // The vector holds no stat 15, which a creature in combat is created without.
   assert unit_create_creature.encode(creature_unit.create(
-      in_combat: False,
+      in_combat: True,
       spawn: beast,
       unit_id: 0x1001,
       health: 52,

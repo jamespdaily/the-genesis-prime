@@ -149,7 +149,7 @@ fn ghost_created_frame(
         guild_ids: [],
         bone_values: player.bone_values,
         title_id: player.title_id,
-        tail: UnitCreateTail(..player.tail, stats: []),
+        tail: UnitCreateTail(..player.tail, stats: [unit_fields.sheathed()]),
       ),
       unit_create_ghost.encode,
     )
