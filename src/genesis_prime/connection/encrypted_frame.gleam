@@ -58,6 +58,23 @@ pub fn wrap(
   }
 }
 
+/// The largest body an inner frame can have and still fit a wrapper: the outer
+/// frame's size limit less the header of the outer frame and of the inner one
+/// (WriteMessageFrame 0x1403355e0 refuses a frame over the limit 0x140335ec0).
+pub fn largest_inner_body() -> Int {
+  frame.size_limit - 2 * frame.header_size
+}
+
+/// The bytes of `wrap` for an inner frame the caller keeps within
+/// `largest_inner_body`.
+pub fn must_wrap(
+  wrapper _wrapper: Wrapper,
+  inner _inner: Frame,
+  cipher _cipher: Cipher,
+) -> BitArray {
+  <<>>
+}
+
 /// The inner frame inside a wrapper frame: reads the inner length, decrypts the
 /// bytes after it and parses the inner frame. The wrapper's own message id is
 /// checked, and the inner length must account for the whole outer body.
