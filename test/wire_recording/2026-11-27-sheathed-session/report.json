@@ -1,11 +1,11 @@
 {
-  "nMaxHealth": 1336,
-  "nTime": 1795195707,
+  "nMaxHealth": 1514,
+  "nTime": 1795813318,
   "strName": "Grozim Vroc",
   "tPos": {
-    "y": -702.9343872070312,
-    "x": 4009.021484375,
-    "z": -5319.6328125
+    "y": -735.9951171875,
+    "x": 4059.818115234375,
+    "z": -5470.037109375
   },
   "arAddonsWithoutInfo": [
     "GroupFrame",
@@ -18,12 +18,12 @@
   "bModelLoaded": true,
   "bControlled": true,
   "nPolls": 15,
-  "nHealth": 1336,
+  "nHealth": 1514,
   "bCharacterLoaded": true,
   "bPlayerUnit": true,
   "bReported": true,
-  "nLevel": 5,
-  "nReportedAt": 1795195707,
+  "nLevel": 6,
+  "nReportedAt": 1795813318,
   "tAddonErrors": {},
   "bDead": false,
   "tLuaErrorEvents": {},

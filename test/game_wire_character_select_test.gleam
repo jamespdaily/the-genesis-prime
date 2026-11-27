@@ -74,6 +74,7 @@ import genesis_prime/server
 import genesis_prime/store.{type AccountId, AccountId}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
+import genesis_prime/world_map/unit_fields
 import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/erlang/process
@@ -408,6 +409,11 @@ pub fn a_created_character_is_stored_at_its_start_place_answered_with_create_ok_
     && player.realm_id == 1
     && player.unit_id == 1
     as "0x262 is the character, in the realm of the settings, as the first unit of its map"
+  assert list.contains(
+    player.tail.stats,
+    unit_fields.integer_stat(stat_id: 15, value: 1),
+  )
+    as "unit.weapon_sheathed: the entering player is created sheathed, stat 15 in the integer form"
   game_client.close(game:)
   login_support.stop(started)
 }
