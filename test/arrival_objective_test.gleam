@@ -12,7 +12,7 @@
 ////   6589 (quest 4748) by Item2 12448; 9659 (quest 6296, type 12) is linked by Creature2
 ////   27768; 16132 (quest 6296, flags 8) is hidden; 1962 (quest 1859, no marker) is a script
 ////   with no marker.
-//// - Migration 0038: 42 rows, each a `server_choice` with its reason.
+//// - Migration 0038: 42 rows, each a `server_choice`.
 
 import character_tables
 import content_support
@@ -147,27 +147,19 @@ pub fn the_arrival_table_refuses_bad_rows_test() -> Nil {
   list.each(
     [
       #(
-        "insert into arrival_objective (objective_id, source, reason) values (1, 'nobody', 'x')",
+        "insert into arrival_objective (objective_id, source) values (1, 'nobody')",
         "arrival_objective_source_is_a_content_source",
       ),
       #(
-        "insert into arrival_objective (objective_id, source, reason) values (1, 'server_choice', '   ')",
-        "arrival_objective_reason_says_something",
-      ),
-      #(
-        "insert into arrival_objective (objective_id, source) values (1, 'server_choice')",
-        "arrival_objective_other_source_states_its_reason",
-      ),
-      #(
-        "insert into arrival_objective (objective_id, source, reason) values (4770, 'server_choice', 'x')",
+        "insert into arrival_objective (objective_id, source) values (4770, 'server_choice')",
         "arrival_objective_pkey",
       ),
       #(
-        "insert into arrival_objective (objective_id, source, reason) values (0, 'server_choice', 'x')",
+        "insert into arrival_objective (objective_id, source) values (0, 'server_choice')",
         "arrival_objective_id_is_positive",
       ),
       #(
-        "insert into arrival_objective (objective_id, source, source_row, reason) values (1, 'server_choice', 5, 'x')",
+        "insert into arrival_objective (objective_id, source, source_row) values (1, 'server_choice', 5)",
         "arrival_objective_world_database_row_has_a_source_row",
       ),
     ],
@@ -196,8 +188,8 @@ pub fn the_arrival_migrations_seed_50_server_choice_rows_test() -> Nil {
     as "migration 0038 seeds 42 rows and migration 0043 adds 8"
   assert content_support.count(
       database:,
-      sql: "select count(*) from arrival_objective where source = 'server_choice' and reason is not null and source_row is null",
+      sql: "select count(*) from arrival_objective where source = 'server_choice' and source_row is null",
     )
     == 50
-    as "each row is the server's choice and states its reason"
+    as "each row is the server's choice"
 }

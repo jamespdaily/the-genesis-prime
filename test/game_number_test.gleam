@@ -256,10 +256,10 @@ pub fn a_migrated_database_holds_the_seeded_numbers_test() -> Nil {
     as "migration 0010's four rows, migration 0015's two, migration 0016's refill time, migration 0021's two quest reset times and migration 0022's kill experience fraction and nine multipliers and migration 0024's starting credits and migration 0033's object release time, in name order"
   assert content_support.count(
       database:,
-      sql: "select count(*) from game_number where source = 'server_choice' and reason is not null",
+      sql: "select count(*) from game_number where source = 'server_choice'",
     )
     == 21
-    as "each is a server choice that states its reason"
+    as "each is a server choice"
 }
 
 pub fn the_release_time_is_a_server_choice_row_loaded_at_start_test() -> Nil {
@@ -274,10 +274,10 @@ pub fn the_release_time_is_a_server_choice_row_loaded_at_start_test() -> Nil {
     as "the row's 30 s is the release time the map is given"
   assert content_support.count(
       database:,
-      sql: "select count(*) from game_number where name = 'used_object_release_ms' and unit = 'ms' and source = 'server_choice' and reason is not null",
+      sql: "select count(*) from game_number where name = 'used_object_release_ms' and unit = 'ms' and source = 'server_choice'",
     )
     == 1
-    as "a server choice in milliseconds that states its reason"
+    as "a server choice in milliseconds"
 }
 
 pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil {
@@ -298,28 +298,20 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
   list.each(
     [
       #(
-        "insert into game_number (name, value, unit, source, reason) values ('Evade', 1, 'units', 'server_choice', 'x')",
+        "insert into game_number (name, value, unit, source) values ('Evade', 1, 'units', 'server_choice')",
         "game_number_name_is_snake_case",
       ),
       #(
-        "insert into game_number (name, value, unit, source, reason) values ('evade', 'NaN', 'units', 'server_choice', 'x')",
+        "insert into game_number (name, value, unit, source) values ('evade', 'NaN', 'units', 'server_choice')",
         "game_number_value_is_finite",
       ),
       #(
-        "insert into game_number (name, value, unit, source, reason) values ('evade', 1, 'metres', 'server_choice', 'x')",
+        "insert into game_number (name, value, unit, source) values ('evade', 1, 'metres', 'server_choice')",
         "game_number_unit_is_known",
       ),
       #(
-        "insert into game_number (name, value, unit, source, reason) values ('evade', 1, 'units', 'nobody', 'x')",
+        "insert into game_number (name, value, unit, source) values ('evade', 1, 'units', 'nobody')",
         "game_number_source_is_a_content_source",
-      ),
-      #(
-        "insert into game_number (name, value, unit, source) values ('evade', 1, 'units', 'server_choice')",
-        "game_number_other_source_states_its_reason",
-      ),
-      #(
-        "insert into game_number (name, value, unit, source, reason) values ('evade', 1, 'units', 'server_choice', ' ')",
-        "game_number_reason_says_something",
       ),
       #(
         "insert into game_number (name, value, unit, source, source_row) values ('evade', 1, 'units', 'world_database', null)",
@@ -334,15 +326,15 @@ pub fn the_database_refuses_each_bad_row_under_its_own_constraint_test() -> Nil 
         "game_number_source_row_is_unique",
       ),
       #(
-        "insert into game_number (name, value, unit, source, reason) values ('aggro_range', 1, 'units', 'server_choice', 'x')",
+        "insert into game_number (name, value, unit, source) values ('aggro_range', 1, 'units', 'server_choice')",
         "game_number_pkey",
       ),
       #(
-        "insert into game_number (name, value, unit, source, reason) values ('evade', 1, 'ms', 'server_choice', 'x')",
+        "insert into game_number (name, value, unit, source) values ('evade', 1, 'ms', 'server_choice')",
         "game_number_name_has_its_unit",
       ),
       #(
-        "insert into game_number (name, value, unit, source, reason) values ('nobody_listed', 1, 'units', 'server_choice', 'x')",
+        "insert into game_number (name, value, unit, source) values ('nobody_listed', 1, 'units', 'server_choice')",
         "game_number_name_has_its_unit",
       ),
       #(

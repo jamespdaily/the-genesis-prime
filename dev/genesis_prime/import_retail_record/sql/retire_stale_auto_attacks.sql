@@ -8,10 +8,9 @@ where source = 'retail_record'
   and retired_by_import is null
   and not exists (
     select 1
-    from unnest($2::int[], $3::int[], $4::smallint[], $5::text[])
-      as incoming (creature_id, spell4_id, order_index, reason)
+    from unnest($2::int[], $3::int[], $4::smallint[])
+      as incoming (creature_id, spell4_id, order_index)
     where incoming.creature_id = creature_auto_attack.creature_id
       and incoming.spell4_id = creature_auto_attack.spell4_id
       and incoming.order_index = creature_auto_attack.order_index
-      and incoming.reason = creature_auto_attack.reason
   );

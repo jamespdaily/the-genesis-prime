@@ -4,7 +4,7 @@
 //// visible one that no creature links by a stand-in or, for a listed place, by arrival
 //// (`objective.script_of`), except the ones only an instance run or a PvP match could
 //// complete; no client table or code says which those are, so each is a row the table
-//// states with its reason.
+//// states as a server choice.
 ////
 //// ```
 //// content.load: ids ─▶ select(ids, tables) ─▶ Set(objective id) | refusals (the load stops)

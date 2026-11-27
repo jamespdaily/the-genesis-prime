@@ -5,7 +5,7 @@
 //// client's Spell4 descriptions mark a creature's auto-attacks (`[AUTO-ATTACK]`,
 //// "Auto-Attack #1", "#2") but no client table links a creature to a spell
 //// (`creature.ai_data`), so each row is a server choice from a retail record, and the
-//// order of several marked a guess in the row's `reason`.
+//// order of several a guess.
 ////
 //// ```
 //// creature_auto_attack rows ─▶ refusal_of(row, tables, creatures_with_a_kind_row) ─▶ Refusal(table: "creature_auto_attack", row: RowId(creature_id), rule)

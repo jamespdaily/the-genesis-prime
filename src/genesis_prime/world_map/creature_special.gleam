@@ -3,7 +3,7 @@
 //// checks, and what the kind holds of them (genesis_prime/world_map/creature_kind
 //// `Kind.specials`). The client lists no spell for a creature and no cadence
 //// (`creature.ai_data`), so each row is a server choice from a retail record, and its
-//// cooldown a guess, both marked in the row's `reason`.
+//// cooldown a guess.
 ////
 //// ```
 //// creature_special rows ─▶ refusal_of(row, tables, sources) ─▶ Refusal(table: "creature_special", row: RowId(creature_id), rule)

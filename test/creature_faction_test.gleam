@@ -8,8 +8,6 @@
 ////   and Faction2 holds no row 16000; the 0x262 faction field is 14 bits
 ////   (opcode.0x262), so 16000 would fit the message and still be a faction the client
 ////   does not have.
-//// - Migration 0009's pattern: a source other than the world database states its
-////   reason, in a constraint of its own (creature_kind_other_source_states_its_reason).
 
 import content_support
 import database_support
@@ -74,24 +72,4 @@ pub fn a_faction_the_client_lacks_is_refused_test() -> Nil {
     as "Faction2 holds no row 16000"
   assert string.contains(rule, "16000")
     as "the refusal names the faction the client lacks"
-}
-
-pub fn a_server_choice_row_without_a_reason_is_refused_by_the_database_test() -> Nil {
-  use <- owned_test.run(60_000)
-  let database = database_support.new_database(on: database_support.shared())
-  let assert Error(failed) =
-    database_support.psql(
-      with: database_support.settings(),
-      database:,
-      arguments: [
-        "-c",
-        "insert into creature_faction (creature_id, faction_id, source) values (73464, 233, 'server_choice')",
-      ],
-    )
-    as "the database refuses a server choice with no reason"
-  assert string.contains(
-    failed.output,
-    "creature_faction_other_source_states_its_reason",
-  )
-    as "the refusal names its constraint"
 }

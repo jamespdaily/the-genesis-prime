@@ -16,8 +16,7 @@
 //// ```
 ////
 //// - **A row** names an ability by its Spell4Base, one of its goes by index, and the
-////   spell cast on the caster at that go. It is a server choice, with its reason
-////   (the table's `reason`), until a retail recording says otherwise.
+////   spell cast on the caster at that go. It is a server choice, until a retail recording says otherwise.
 //// - **The Proxy goes with the last go of the spell that strikes.** The Proxy is planted
 ////   into the first spell the row's go starts at once on the caster with no gate, which is
 ////   the spell that strikes when the go is a Proxy to its damage spell (Pulse Blast's

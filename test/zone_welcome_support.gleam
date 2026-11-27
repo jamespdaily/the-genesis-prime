@@ -15,7 +15,7 @@ pub fn none() -> ZoneWelcomes {
 
 /// The rows of the welcomes the four landings and the Settler's Reach walk reach, each a
 /// zone of the client's WorldZone table with the Tutorial row whose first page title
-/// names it, as the seed of the zone_welcome table states in each row's reason: zone 35
+/// names it: zone 35
 /// and the zones 590 and 596 below it show Tutorial 332 (the Northern Wilds), zone 593
 /// shows 233 (Settler's Reach), 1414 shows 331 (Everstar Grove), 1304 shows 330 (Levian
 /// Bay) and 622 shows 329 (Crimson Isle).
