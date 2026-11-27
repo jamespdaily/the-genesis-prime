@@ -677,9 +677,33 @@ pub fn request(
   ))
 }
 
+/// The most entries the buyback list holds.
+pub fn buyback_cap() -> Int {
+  0
+}
+
 /// What the store's answer leaves: the items, the amounts held, the buyback list and the
 /// effects, in order.
 pub fn answered(
+  sale sale: Sale,
+  items items: List(HeldItem),
+  currencies currencies: Currencies,
+  buyback buyback: Buyback,
+  answer answer: ItemsAnswer,
+) -> #(List(HeldItem), Currencies, Buyback, List(Effect)) {
+  answered_within(
+    cap: buyback_cap(),
+    sale:,
+    items:,
+    currencies:,
+    buyback:,
+    answer:,
+  )
+}
+
+/// `answered` with the buyback list held to `cap` entries.
+pub fn answered_within(
+  cap _cap: Int,
   sale sale: Sale,
   items items: List(HeldItem),
   currencies currencies: Currencies,
