@@ -31,7 +31,7 @@
 //// It exits with 2 when no folder is given and 1 when no recording reads.
 
 import argv
-import genesis_prime/client_connection
+import genesis_prime/connection/frame
 import genesis_prime/coverage/engine
 import genesis_prime/dev_exit
 import genesis_prime/login/sts_connection
@@ -164,7 +164,7 @@ fn line(unhandled: Unhandled) -> String {
   string.join(
     [
       string.pad_start(int.to_string(unhandled.count), 7, " "),
-      client_connection.message_text(message_id: unhandled.message_id),
+      frame.message_text(message_id: unhandled.message_id),
       option.unwrap(group_of(unhandled.message_id), "no group"),
       option.unwrap(unhandled.name, "no decoder"),
     ],

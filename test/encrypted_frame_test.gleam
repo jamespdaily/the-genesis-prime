@@ -236,9 +236,9 @@ pub fn must_wrap_of_an_inner_body_past_the_wrapper_bound_crashes_naming_both_ids
       Nil
     })
   let text = ask_support.panic_message(ask_support.raised(ended))
-  assert string.contains(text, "0x244")
+  assert string.contains(text, "0x0244")
     as { "the crash names the wrapper id; it says: " <> text }
-  assert string.contains(text, "0xABC")
+  assert string.contains(text, "0x0ABC")
     as { "the crash names the inner id; it says: " <> text }
   assert string.contains(text, int.to_string(length))
     as { "the crash names the body length; it says: " <> text }
@@ -251,4 +251,17 @@ pub fn must_wrap_of_an_inner_body_past_the_wrapper_bound_crashes_naming_both_ids
     as {
       "the crash holds no body; it is " <> int.to_string(string.length(text))
     }
+}
+
+pub fn must_wrap_of_a_negative_inner_id_crashes_naming_it_in_decimal_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let ended =
+    ask_support.ended_running(fn() {
+      let _bytes =
+        encrypted_frame.must_wrap(GameWrapper, Frame(-1, <<>>), base_cipher())
+      Nil
+    })
+  let text = ask_support.panic_message(ask_support.raised(ended))
+  assert string.contains(text, "message -1") && !string.contains(text, "0x-")
+    as { "the crash names the inner id plainly; it says: " <> text }
 }

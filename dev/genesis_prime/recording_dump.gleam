@@ -43,7 +43,7 @@
 //// reads.
 
 import argv
-import genesis_prime/client_connection
+import genesis_prime/connection/frame
 import genesis_prime/dev_exit
 import genesis_prime/login/sts_connection
 import genesis_prime/message/client_message
@@ -538,7 +538,7 @@ fn text(entry: Entry) -> String {
     None -> "-"
   }
   let opcode = case entry.message_id, has_no_opcode(entry) {
-    Some(message_id), _ -> client_connection.message_text(message_id:)
+    Some(message_id), _ -> frame.message_text(message_id:)
     None, True -> "-"
     None, False -> "sts"
   }

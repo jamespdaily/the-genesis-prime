@@ -219,7 +219,7 @@ pub fn must_encode_of_a_negative_id_crashes_naming_it_in_decimal_test() -> Nil {
 pub fn must_encode_of_a_body_past_the_size_limit_crashes_without_printing_the_body_test() -> Nil {
   use <- owned_test.run(10_000)
   let text = crash_of_must_encode(0x0244, zeroes(131_071 - frame.header_size))
-  assert string.contains(text, "0x244")
+  assert string.contains(text, "0x0244")
     as { "the crash names the id; it says: " <> string.slice(text, 0, 200) }
   assert string.contains(text, "131071")
     as {

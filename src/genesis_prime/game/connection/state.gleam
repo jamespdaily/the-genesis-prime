@@ -545,7 +545,7 @@ pub fn misrouted(
     session:,
     now:,
     text: "the routing table sent "
-      <> client_connection.message_text(inner.message_id)
+      <> frame.message_text(inner.message_id)
       <> " to a feature that does not take it here",
   )
 }

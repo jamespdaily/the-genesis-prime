@@ -79,10 +79,10 @@ pub fn must_wrap(
     Ok(bytes) -> bytes
     Error(error) ->
       panic as {
-        "wrapper 0x"
-        <> int.to_base16(message_id(wrapper:))
-        <> " around message 0x"
-        <> int.to_base16(inner.message_id)
+        "wrapper "
+        <> frame.message_text(message_id: message_id(wrapper:))
+        <> " around message "
+        <> frame.message_text(message_id: inner.message_id)
         <> " with a body of "
         <> int.to_string(bit_array.byte_size(inner.body))
         <> " bytes: "

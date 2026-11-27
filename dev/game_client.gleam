@@ -13,7 +13,6 @@
 //// every message from the server arrives inside 0x3DC under it.
 
 import frame_reader
-import genesis_prime/client_connection
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{ClientWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
@@ -1025,9 +1024,7 @@ pub fn read_message(
   message_id message_id: Int,
 ) -> #(Frame, BitArray) {
   open_wait.named(
-    "message "
-      <> client_connection.message_text(message_id:)
-      <> " from the game server",
+    "message " <> frame.message_text(message_id:) <> " from the game server",
     fn() { read_message_from(game:, have:, message_id:) },
   )
 }
