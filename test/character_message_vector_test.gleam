@@ -128,6 +128,7 @@ pub fn the_character_list_is_the_clients_1372_bits_test() -> Nil {
       free_level_50_available: 1,
     ),
     encode: character_list.encode,
+    must_encode: character_list.must_encode,
     decode: character_list.decode,
   )
 }
@@ -155,6 +156,7 @@ pub fn a_character_list_with_no_characters_and_empty_lists_is_395_bits_test() ->
       free_level_50_available: 0,
     ),
     encode: character_list.encode,
+    must_encode: character_list.must_encode,
     decode: character_list.decode,
   )
 }
@@ -175,6 +177,7 @@ pub fn create_character_is_the_clients_379_bits_test() -> Nil {
       bone_values: [0x3F800000, 0xBF000000],
     ),
     encode: create_character.encode,
+    must_encode: create_character.must_encode,
     decode: create_character.decode,
   )
 }
@@ -195,6 +198,7 @@ pub fn create_character_with_no_customisation_or_bones_is_187_bits_test() -> Nil
       bone_values: [],
     ),
     encode: create_character.encode,
+    must_encode: create_character.must_encode,
     decode: create_character.decode,
   )
 }
@@ -210,6 +214,7 @@ pub fn create_character_result_is_the_clients_102_bits_test() -> Nil {
       result: create_result.CreateOk,
     ),
     encode: create_character_result.encode,
+    must_encode: create_character_result.must_encode,
     decode: create_character_result.decode,
   )
 }
@@ -267,6 +272,7 @@ pub fn play_character_is_one_64_bit_id_test() -> Nil {
     body: message_support.hex("0807060504030201"),
     value: PlayCharacter(character_id: 0x0102030405060708),
     encode: play_character.encode,
+    must_encode: play_character.must_encode,
     decode: play_character.decode,
   )
 }
@@ -278,6 +284,7 @@ pub fn delete_character_is_written_as_play_character_is_test() -> Nil {
     body: message_support.hex("0807060504030201"),
     value: DeleteCharacter(character_id: 0x0102030405060708),
     encode: delete_character.encode,
+    must_encode: delete_character.must_encode,
     decode: delete_character.decode,
   )
 }
@@ -289,6 +296,7 @@ pub fn rename_character_is_the_clients_152_bits_test() -> Nil {
     body: message_support.hex("08070605040302010a45006600200047006800"),
     value: RenameCharacter(character_id: 0x0102030405060708, name: "Ef Gh"),
     encode: rename_character.encode,
+    must_encode: rename_character.must_encode,
     decode: rename_character.decode,
   )
 }
@@ -300,6 +308,7 @@ pub fn choose_realm_is_one_32_bit_realm_id_test() -> Nil {
     body: message_support.hex("99000000"),
     value: ChooseRealm(realm_id: 0x99),
     encode: choose_realm.encode,
+    must_encode: choose_realm.must_encode,
     decode: choose_realm.decode,
   )
 }
@@ -311,6 +320,7 @@ pub fn delete_character_result_is_the_clients_38_bits_test() -> Nil {
     body: message_support.hex("008d040000"),
     value: DeleteCharacterResult(result: delete_result.DeleteOk, data: 0x1234),
     encode: delete_character_result.encode,
+    must_encode: delete_character_result.must_encode,
     decode: delete_character_result.decode,
   )
 }
@@ -412,6 +422,7 @@ pub fn rename_character_result_is_the_clients_158_bits_test() -> Nil {
       name: "Cd Ef",
     ),
     encode: rename_character_result.encode,
+    must_encode: rename_character_result.must_encode,
     decode: rename_character_result.decode,
   )
 }
@@ -423,6 +434,7 @@ pub fn play_character_refused_is_one_3_bit_value_test() -> Nil {
     body: message_support.hex("05"),
     value: PlayCharacterRefused(result: play_refusal.Other(5)),
     encode: play_character_refused.encode,
+    must_encode: play_character_refused.must_encode,
     decode: play_character_refused.decode,
   )
 }
@@ -434,6 +446,7 @@ pub fn unit_is_player_is_two_32_bit_values_test() -> Nil {
     body: message_support.hex("0110000002200000"),
     value: UnitIsPlayer(unit_id: 0x1001, unread_2: 0x2002),
     encode: unit_is_player.encode,
+    must_encode: unit_is_player.must_encode,
     decode: unit_is_player.decode,
   )
 }
@@ -453,6 +466,7 @@ pub fn player_path_is_a_path_four_experiences_the_unlocked_paths_and_a_float_tes
       last_path_change_days: 0xBF800000,
     ),
     encode: player_path.encode,
+    must_encode: player_path.must_encode,
     decode: player_path.decode,
   )
 }
@@ -464,6 +478,7 @@ pub fn player_entered_world_has_an_empty_body_test() -> Nil {
     body: <<>>,
     value: PlayerEnteredWorld,
     encode: player_entered_world.encode,
+    must_encode: player_entered_world.must_encode,
     decode: player_entered_world.decode,
   )
 }
@@ -475,6 +490,7 @@ pub fn terrain_loaded_is_the_clients_15_bits_test() -> Nil {
     body: message_support.hex("3412"),
     value: TerrainLoaded(world_zone_id: 0x1234),
     encode: terrain_loaded.encode,
+    must_encode: terrain_loaded.must_encode,
     decode: terrain_loaded.decode,
   )
 }
@@ -486,6 +502,7 @@ pub fn unit_destroyed_is_a_32_bit_unit_id_and_one_bit_test() -> Nil {
     body: message_support.hex("0110000001"),
     value: UnitDestroyed(unit_id: 0x1001, chest_world_object_delay: 1),
     encode: unit_destroyed.encode,
+    must_encode: unit_destroyed.must_encode,
     decode: unit_destroyed.decode,
   )
 }
@@ -497,6 +514,7 @@ pub fn max_character_level_is_one_32_bit_value_test() -> Nil {
     body: message_support.hex("03000000"),
     value: MaxCharacterLevel(highest_level: 3),
     encode: max_character_level.encode,
+    must_encode: max_character_level.must_encode,
     decode: max_character_level.decode,
   )
 }
@@ -549,6 +567,7 @@ pub fn unit_create_player_is_the_clients_907_bits_test() -> Nil {
       ),
     ),
     encode: unit_create_player.encode,
+    must_encode: unit_create_player.must_encode,
     decode: unit_create_player.decode,
   )
 }
@@ -615,6 +634,7 @@ pub fn a_player_with_a_position_command_is_the_clients_801_bits_test() -> Nil {
     ),
     value: minimal_player(),
     encode: unit_create_player.encode,
+    must_encode: unit_create_player.must_encode,
     decode: unit_create_player.decode,
   )
 }
@@ -637,6 +657,7 @@ pub fn a_player_with_health_and_base_health_is_the_clients_912_bits_test() -> Ni
       ),
     ),
     encode: unit_create_player.encode,
+    must_encode: unit_create_player.must_encode,
     decode: unit_create_player.decode,
   )
 }
@@ -648,6 +669,7 @@ pub fn client_control_granted_is_a_value_a_bit_and_a_unit_id_test() -> Nil {
     body: message_support.hex("000000000300000000"),
     value: ClientControlGranted(echo_value: 0, reset_movement: 1, unit_id: 1),
     encode: client_control_granted.encode,
+    must_encode: client_control_granted.must_encode,
     decode: client_control_granted.decode,
   )
 }
@@ -659,6 +681,7 @@ pub fn client_control_echoed_is_one_32_bit_value_test() -> Nil {
     body: message_support.hex("00000000"),
     value: ClientControlEchoed(echo_value: 0),
     encode: client_control_echoed.encode,
+    must_encode: client_control_echoed.must_encode,
     decode: client_control_echoed.decode,
   )
 }
@@ -874,6 +897,7 @@ pub fn disconnect_notice_is_the_clients_5_bits_test() -> Nil {
         body: message_support.hex(case_.0),
         value: DisconnectNotice(reason: case_.1),
         encode: disconnect_notice.encode,
+        must_encode: disconnect_notice.must_encode,
         decode: disconnect_notice.decode,
       )
     },
@@ -910,6 +934,7 @@ pub fn camp_countdown_is_a_countdown_a_cancel_bit_and_the_signature_bonuses_test
       account_currencies: amounts(first: 0x0200000000000100, count: 19),
     ),
     encode: camp_countdown.encode,
+    must_encode: camp_countdown.must_encode,
     decode: camp_countdown.decode,
   )
 }
@@ -921,6 +946,7 @@ pub fn leave_world_is_a_bit_and_a_reason_of_5_bits_test() -> Nil {
     body: <<0x01>>,
     value: LeaveWorld(returning: 1, reason: 0),
     encode: leave_world.encode,
+    must_encode: leave_world.must_encode,
     decode: leave_world.decode,
   )
   message_support.assert_vector(
@@ -928,6 +954,7 @@ pub fn leave_world_is_a_bit_and_a_reason_of_5_bits_test() -> Nil {
     body: <<0x1e>>,
     value: LeaveWorld(returning: 0, reason: 15),
     encode: leave_world.encode,
+    must_encode: leave_world.must_encode,
     decode: leave_world.decode,
   )
   message_support.assert_vector(
@@ -935,6 +962,7 @@ pub fn leave_world_is_a_bit_and_a_reason_of_5_bits_test() -> Nil {
     body: <<0x3f>>,
     value: LeaveWorld(returning: 1, reason: 31),
     encode: leave_world.encode,
+    must_encode: leave_world.must_encode,
     decode: leave_world.decode,
   )
 }
@@ -960,6 +988,7 @@ pub fn camp_request_is_one_bit_and_camp_finished_has_an_empty_body_test() -> Nil
     body: <<>>,
     value: CampFinished,
     encode: camp_finished.encode,
+    must_encode: camp_finished.must_encode,
     decode: camp_finished.decode,
   )
 }
@@ -974,4 +1003,10 @@ pub fn the_camp_messages_hold_the_clients_message_numbers_test() -> Nil {
     as "opcode.0x92: registered at 0x14006c290, 0x140079809 mov edx, 0x92"
   assert leave_world.message_id == 0x0594
     as "opcode.0x594: registered at 0x14006c290, 0x14006d858 mov edx, 0x594"
+}
+
+pub fn must_encode_of_a_message_with_no_fields_is_an_empty_body_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert player_entered_world.must_encode(PlayerEnteredWorld) == <<>>
+    as "opcode.0x61: the message has no fields, so its body is empty"
 }

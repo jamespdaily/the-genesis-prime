@@ -9,6 +9,7 @@
 //// `(0xFF, 4) -> 0f`). The properties of each field kind are in
 //// `bit_stream_property_test`.
 
+import ask_support
 import genesis_prime/message/bit_stream.{Endpoint}
 import gleam/bit_array
 import gleam/int
@@ -500,4 +501,59 @@ fn result_value(result: Result(#(a, bit_stream.Reader), e)) -> Result(a, e) {
     Ok(#(value, _reader)) -> Ok(value)
     Error(error) -> Error(error)
   }
+}
+
+pub fn must_returns_the_bytes_of_an_ok_result_test() -> Nil {
+  use <- owned_test.run(5000)
+  let bytes = <<1, 2, 3>>
+  assert bit_stream.must(Ok(bytes), "any_message") == bytes
+    as "`finish` gives Ok(bytes) and `must` hands those bytes on untouched"
+  assert bit_stream.must(Ok(<<>>), "any_message") == <<>>
+    as "an empty body is an Ok of no bytes"
+}
+
+/// One error of each variant. The function after the list matches every
+/// variant, so a new `EncodeError` variant fails to compile until it joins.
+fn every_encode_error() -> List(bit_stream.EncodeError) {
+  let errors = [
+    bit_stream.ValueDoesNotFit(field: "a", bits: 8, value: 300),
+    bit_stream.WrongByteCount(field: "b", expected: 16, actual: 3),
+    bit_stream.TextTooLong(field: "c", units: 200, limit: 127),
+    bit_stream.TextHoldsZero(field: "d"),
+    bit_stream.InnerFrameDisagrees(field: "e"),
+    bit_stream.ItemCountDisagrees(field: "f", expected: 2, actual: 5),
+    bit_stream.ValueAtOrAboveLimit(field: "g", limit: 19, value: 20),
+    bit_stream.ValueBelowMinimum(field: "h", minimum: 0.00001, value: 0),
+  ]
+  list.each(errors, fn(error) {
+    case error {
+      bit_stream.ValueDoesNotFit(..)
+      | bit_stream.WrongByteCount(..)
+      | bit_stream.TextTooLong(..)
+      | bit_stream.TextHoldsZero(..)
+      | bit_stream.InnerFrameDisagrees(..)
+      | bit_stream.ItemCountDisagrees(..)
+      | bit_stream.ValueAtOrAboveLimit(..)
+      | bit_stream.ValueBelowMinimum(..) -> Nil
+    }
+  })
+  errors
+}
+
+pub fn must_crash_text_is_the_message_name_then_describe_encode_for_every_variant_test() -> Nil {
+  use <- owned_test.run(10_000)
+  list.each(every_encode_error(), fn(error) {
+    let ended =
+      ask_support.ended_running(fn() {
+        let _ = bit_stream.must(Error(error), "planted_message")
+        Nil
+      })
+    assert ask_support.panic_message(ask_support.raised(ended))
+      == "planted_message: " <> bit_stream.describe_encode(error:)
+      as {
+        "the crash of "
+        <> string.inspect(error)
+        <> " names the message, then the sentence `describe_encode` gives"
+      }
+  })
 }

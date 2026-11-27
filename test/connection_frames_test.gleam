@@ -5,6 +5,7 @@
 //// float bits as IEEE 754 binary32 (1.0 is 0x3F800000, 2.0 0x40000000, -3.0 0xC0400000,
 //// 4.0 0x40800000, 5.0 0x40A00000, 6.0 0x40C00000 and 1.5 0x3FC00000).
 
+import ask_support
 import creature_path_support as support
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection/frames
@@ -37,6 +38,7 @@ import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import gleam/string
 import owned_test
 import place_support
 import world_entry_support
@@ -659,4 +661,21 @@ pub fn a_resource_frame_of_slot_minus_1_is_0x935_of_stat_1_and_slots_0_to_7_keep
         value: float32.to_bits(35.0),
       ))
   })
+}
+
+pub fn unit_removed_frame_past_32_bits_crashes_naming_unit_destroyed_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let ended =
+    ask_support.ended_running(fn() {
+      let _ = frames.unit_removed_frame(unit_id: 4_294_967_296)
+      Nil
+    })
+  let text = ask_support.panic_message(ask_support.raised(ended))
+  assert string.contains(text, "unit_destroyed")
+    as {
+      "the crash names the message (schema row unit_destroyed); it says: "
+      <> text
+    }
+  assert string.contains(text, "unit_id")
+    as { "the crash names the 32-bit field; it says: " <> text }
 }

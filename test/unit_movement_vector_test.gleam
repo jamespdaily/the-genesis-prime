@@ -44,6 +44,7 @@ pub fn unit_movement_is_the_clients_275_bits_test() -> Nil {
       ],
     ),
     encode: unit_movement.encode,
+    must_encode: unit_movement.must_encode,
     decode: unit_movement.decode,
   )
 }
