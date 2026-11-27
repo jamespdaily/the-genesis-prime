@@ -1090,3 +1090,44 @@ pub fn a_schema_message_with_gaps_generates_a_gaps_function_with_exactly_those_e
       }
   })
 }
+
+/// The kind of one field of one message of the schema.
+fn field_kind(
+  schema: message_schema.Schema,
+  message message_name: String,
+  field field_name: String,
+) -> Result(message_schema.Kind, Nil) {
+  let _ = #(schema, message_name, field_name)
+  Error(Nil)
+}
+
+pub fn a_value_the_client_sends_and_the_server_writes_back_has_one_width_both_ways_test() -> Nil {
+  use <- owned_test.run(5000)
+  let assert Ok(text) = simplifile.read(schema_path)
+    as "the schema file could not be read"
+  let assert Ok(schema) = message_schema.parse(text)
+    as "the schema file is a schema"
+  // A value the client sent is written back at the width it was read with, so
+  // the server's `bit_stream.must` of it cannot fail on length (#1463's trace).
+  let pairs = [
+    #("send_chat_line", "text", "chat_line", "text"),
+    #("send_whisper", "target_name", "whisper_failed", "target_name"),
+    #("rename_character", "name", "rename_character_result", "name"),
+    #("action_set_save", "amp_ids", "action_set_amps", "amp_ids"),
+  ]
+  list.each(pairs, fn(pair) {
+    let #(sent, sent_field, written, written_field) = pair
+    let assert Ok(sent_kind) = field_kind(schema, sent, sent_field)
+      as { sent <> "." <> sent_field <> " is a field of the schema" }
+    assert field_kind(schema, written, written_field) == Ok(sent_kind)
+      as {
+        written
+        <> "."
+        <> written_field
+        <> " has the width of "
+        <> sent
+        <> "."
+        <> sent_field
+      }
+  })
+}
