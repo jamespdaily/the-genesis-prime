@@ -18,6 +18,7 @@
 ////   18, count 1).
 
 import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/shared/quest_view
 import gleam/option.{Some}
 import owned_test
 import quest_support
@@ -166,8 +167,8 @@ pub fn counted_below_needed_undoes_the_objective_and_the_achieved_quest_test() -
     as "the done bit is cleared (0x1406115a0)"
   assert below.moved == quest_log.BecameAccepted
     as "and the Achieved quest returns to Accepted (0x1405fb830)"
-  assert quest_log.state(
-      log: below.log,
+  assert quest_view.state(
+      view: quest_log.view(log: below.log),
       quest: quest_support.quest_of(id: collect_three),
     )
     == 1

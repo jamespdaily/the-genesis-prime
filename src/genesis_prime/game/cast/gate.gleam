@@ -37,11 +37,11 @@ import genesis_prime/game/cast/state.{
 import genesis_prime/game/class_resource
 import genesis_prime/game/lasting
 import genesis_prime/game/prerequisite
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/spell_area
 import genesis_prime/game/spell_effect
 import genesis_prime/game/spell_plan.{type Proxy, type Spell}
 import genesis_prime/game/strike_tell
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import gleam/bool
@@ -885,7 +885,7 @@ pub fn struck_gates_applied(
 pub fn entering_subject(
   player player: prerequisite.Player,
   factions factions: prerequisite.Factions,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   health health: Option(prerequisite.Vital),
 ) -> prerequisite.Subject {
   let full = prerequisite.Vital(current: 1.0, maximum: 1.0)

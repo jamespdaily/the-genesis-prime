@@ -121,7 +121,6 @@ import genesis_prime/game/passed_in_value
 import genesis_prime/game/player_address
 import genesis_prime/game/player_life
 import genesis_prime/game/prerequisite
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/rating
 import genesis_prime/game/shown
 import genesis_prime/game/spell_area
@@ -430,8 +429,11 @@ pub fn activate_unit_message(
       unit_of: used_unit(
         tables:,
         picture: entered.shown,
-        quests: entered.quests,
-        scripts: session.settings.script_rows,
+        use_targets: objective.use_targets(
+          log: entered.quests,
+          tables:,
+          scripts: session.settings.script_rows,
+        ),
         link_of: link_of(
           tables:,
           activations: connection_state.activations_of(session:),
@@ -461,12 +463,11 @@ pub fn activate_unit_message(
 fn used_unit(
   tables tables: table_store.Tables,
   picture picture: shown.Picture,
-  quests quests: QuestLog,
-  scripts scripts: objective.ScriptRows,
+  use_targets use_targets: fn(target_group.Unit, Int, objective.SpawnedUnit) ->
+    Bool,
   link_of link_of: fn(Int, creature2.Creature2, Int) -> activate.Link,
   now_ms now_ms: Int,
 ) -> fn(Int) -> Result(cast_state.UsedUnit, Nil) {
-  let use_targets = objective.use_targets(log: quests, tables:, scripts:)
   fn(unit_id) {
     use one <- result.try(dict.get(picture, unit_id))
     use #(unit, alive, body) <- result.try(case one {
@@ -991,7 +992,7 @@ pub fn caster_of(
     stats: stats_of(tables:, entered:),
     vitals: player_life.vitals(life:),
     heal_scaling: heal_split.scaling_of(properties: entered.properties),
-    quests: entered.quests,
+    quests: connection_state.quests_of(entered:),
     player: prerequisite_player.of(tables:, entered:),
     checker: prerequisite_player.checker_of(entered:),
   )

@@ -47,6 +47,8 @@ import genesis_prime/message/quest_abandon.{QuestAbandon}
 import genesis_prime/message/quest_ignore.{QuestIgnore}
 import genesis_prime/message/quest_mention.{QuestMention}
 import genesis_prime/message/quest_track.{QuestTrack}
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{type HeldItem, type QuestRow, HeldItem}
 import genesis_prime/table/id.{Item2Id, Quest2Id}
@@ -346,9 +348,9 @@ pub fn abandon_keeps_the_quest_abandoned_and_acceptable_test() -> Nil {
   assert accepted_again.effects
     == [SendState(quest_id: 2417, state: 1, objective_id: 0)]
     as "the abandoned quest is taken again from the item it starts from"
-  assert quest_log.state(
-      log: accepted_again.log,
-      quest: quest_log.Quest(id: 2417, objectives: []),
+  assert quest_view.state(
+      view: quest_log.view(log: accepted_again.log),
+      quest: quest_row.Quest(id: 2417, objectives: []),
     )
     == 2
     as "a quest with no objective is achieved at once (0x1405fbc40), so the entry is the active one"

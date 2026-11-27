@@ -22,8 +22,8 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/objective_link
-import genesis_prime/game/quest_log
 import genesis_prime/message/client_activate_unit.{ClientActivateUnit}
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
@@ -274,7 +274,7 @@ fn market_terminal_used(progress progress: Int) -> List(Effect) {
   used_by(
     caster: cast_state.Caster(
       ..standing(),
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.accepted(quest_id: market_quest, progress: [progress]),
       ]),
     ),
@@ -317,7 +317,7 @@ pub fn a_client_activate_unit_picks_with_the_checklist_bit_of_the_unit_test() ->
 /// quest 3244's objective 0, gives a caster whose quest log is this one, when the server
 /// offers the unit by another objective's count: the link is read by the rule that reads
 /// it (genesis_prime/game/objective_link `of`).
-fn linked_creature_used(quests quests: quest_log.QuestLog) -> List(Effect) {
+fn linked_creature_used(quests quests: QuestView) -> List(Effect) {
   let tables = fixture_tables.shared()
   let caster = cast_state.Caster(..standing(), quests:)
   let assert Ok(row) =
@@ -360,7 +360,7 @@ fn linked_creature_used(quests quests: quest_log.QuestLog) -> List(Effect) {
 pub fn a_use_of_a_creature_with_no_open_link_is_refused_test() -> Nil {
   use <- owned_test.run(10_000)
   assert linked_creature_used(
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.accepted(quest_id: 3244, progress: [0]),
       ]),
     )
@@ -376,7 +376,7 @@ pub fn a_use_of_a_creature_with_no_open_link_is_refused_test() -> Nil {
     as "quest 3244 is Accepted with its objective 4242 open: the link is open, and a creature with no activate spell is used at once"
   let text =
     linked_creature_used(
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.active(
           quest_id: 3244,
           state: 2,

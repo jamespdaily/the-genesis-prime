@@ -107,6 +107,8 @@ import genesis_prime/game/objective.{
 import genesis_prime/game/quest_log
 import genesis_prime/game/start_place
 import genesis_prime/game/target_group
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view
 import genesis_prime/store.{ActiveQuest, ActiveRow, HeldItem}
 import genesis_prime/table/id.{
   Creature2Id, Faction2Id, Item2Id, Spell4Id, UnitRaceId,
@@ -317,12 +319,16 @@ pub fn a_use_advances_each_open_type_12_objective_naming_the_creature_test() -> 
     )
     == Advanced(log: waiting, effects: [])
     as "9428's objective 1 has flag 2 and waits for objective 0, so it takes nothing (0x140553790)"
-  assert quest_log.state(log: used.log, quest: quest_of(id: 9428, tables:)) == 2
+  assert quest_view.state(
+      view: quest_log.view(log: used.log),
+      quest: quest_of(id: 9428, tables:),
+    )
+    == 2
     as "the state the client computes agrees"
 }
 
-fn quest_of(id id: Int, tables tables: table_store.Tables) -> quest_log.Quest {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id:)
+fn quest_of(id id: Int, tables tables: table_store.Tables) -> quest_row.Quest {
+  let assert Ok(quest) = quest_row.quest_of(tables:, id:)
     as "the fixture holds the quest's rows"
   quest
 }
@@ -780,8 +786,8 @@ pub fn a_second_kill_of_the_same_group_member_counts_nothing_test() -> Nil {
     as "one creature counts once: the second Raken is no new member, and Elja is the second of three"
   assert kill_masks_of(log: after, quest_id: strange_brew) == [3, 0, 0, 0, 0, 0]
     as "the mask stays 0b011"
-  assert quest_log.objective_progress(
-      log: after,
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: after),
       quest: quest_of(id: strange_brew, tables:),
       index: 0,
     )
@@ -864,8 +870,8 @@ pub fn a_completed_quest_holds_no_group_mask_test() -> Nil {
   let log = quest_support.log_of(rows: [quest_support.untouched(strange_brew)])
   let #(achieved, _) =
     slain_in_turn(log:, tables:, creatures: [raken, elja, meloth])
-  assert quest_log.state(
-      log: achieved,
+  assert quest_view.state(
+      view: quest_log.view(log: achieved),
       quest: quest_of(id: strange_brew, tables:),
     )
     == 2
@@ -1377,8 +1383,8 @@ pub fn a_second_use_of_the_same_type_32_unit_counts_nothing_test() -> Nil {
       event: a_use_of(creature: collectible, unit: ref(40)),
     )
   assert again.effects == [] as "the same crate again counts nothing"
-  assert quest_log.objective_progress(
-      log: again.log,
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: again.log),
       quest: quest_of(id: 3741, tables:),
       index: 0,
     )
@@ -1768,8 +1774,8 @@ pub fn a_counted_finish_objective_stays_done_when_its_quest_is_taken_again_test(
   let after = settled(log:, tables:, items: [], zones: [])
   assert after.effects == []
     as "10503 is Active again: the objective is not lowered and nothing is told"
-  assert quest_log.objective_progress(
-      log: after.log,
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: after.log),
       quest: quest_of(id: 10_502, tables:),
       index: 0,
     )
@@ -2294,15 +2300,31 @@ pub fn travel_done_leaves_bon_voyage_achieved_test() -> Nil {
   let quest = quest_of(id: 10_528, tables:)
   assert quest_log.stored_state(log: used.log, quest_id: 10_528) == 2
     as "the travel done makes Bon Voyage Achieved (0x35c state 2)"
-  assert quest_log.objective_done(log: used.log, quest:, index: 1)
+  assert quest_view.objective_done(
+    view: quest_log.view(log: used.log),
+    quest:,
+    index: 1,
+  )
     as "the travel is done"
-  assert quest_log.objective_done(log: used.log, quest:, index: 2)
+  assert quest_view.objective_done(
+    view: quest_log.view(log: used.log),
+    quest:,
+    index: 2,
+  )
     as "the Northern Wilds choice is done"
-  assert !quest_log.objective_done(log: used.log, quest:, index: 4)
+  assert !quest_view.objective_done(
+    view: quest_log.view(log: used.log),
+    quest:,
+    index: 4,
+  )
     as "the optional objective is not"
-  assert quest_log.objective_open(log: used.log, quest:, index: 4)
+  assert quest_view.objective_open(
+    view: quest_log.view(log: used.log),
+    quest:,
+    index: 4,
+  )
     as "the optional objective is still open in the Achieved quest"
-  assert quest_log.active_ids(log: used.log) == [10_528]
+  assert quest_view.active_ids(view: quest_log.view(log: used.log)) == [10_528]
     as "the quest is still in the active list, not completed"
 }
 
@@ -2348,7 +2370,12 @@ pub fn a_second_use_of_the_same_unit_counts_nothing_test() -> Nil {
     as "the first use of the unit counts one"
   let second = used_by(log: first.log, tables:, event: use_of_unit_7)
   assert second.effects == [] as "the same unit again counts nothing"
-  assert quest_log.objective_progress(log: second.log, quest:, index: 0) == 1
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: second.log),
+      quest:,
+      index: 0,
+    )
+    == 1
     as "the progress stays 1"
 }
 
@@ -2442,7 +2469,12 @@ pub fn a_spawn_counts_once_for_an_objective_and_each_use_counts_where_the_object
           scripts: objective.no_rows(),
         ).log
       })
-    assert quest_log.objective_progress(log:, quest:, index: 0) == row.progress
+    assert quest_view.objective_progress(
+        view: quest_log.view(log: log),
+        quest:,
+        index: 0,
+      )
+      == row.progress
       as row.why
     assert quest_support.used_of(log:, quest_id: row.quest_id) == row.kept
       as row.why
@@ -2463,7 +2495,12 @@ pub fn a_summoned_spawn_counts_each_use_and_is_never_remembered_test() -> Nil {
     )
   let first = used_by(log: fresh(quest_id: 6723), tables:, event: summoned)
   let second = used_by(log: first.log, tables:, event: summoned)
-  assert quest_log.objective_progress(log: second.log, quest:, index: 0) == 2
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: second.log),
+      quest:,
+      index: 0,
+    )
+    == 2
     as "the same summoned spawn counts at each use"
   assert quest_support.used_of(log: second.log, quest_id: 6723) == []
     as "and none is remembered"
@@ -2486,18 +2523,30 @@ pub fn units_of_one_creature_each_count_test() -> Nil {
     ).log
   }
   let progress = fn(log) {
-    quest_log.objective_progress(log:, quest:, index: 0)
+    quest_view.objective_progress(
+      view: quest_log.view(log: log),
+      quest:,
+      index: 0,
+    )
   }
   let one = use_unit(fresh(quest_id: 6607), 7)
   let two = use_unit(one, 8)
   let three = use_unit(two, 9)
   assert [progress(one), progress(two), progress(three)] == [1, 2, 3]
     as "each unit of the creature counts one"
-  assert !quest_log.objective_done(log: three, quest:, index: 0)
+  assert !quest_view.objective_done(
+    view: quest_log.view(log: three),
+    quest:,
+    index: 0,
+  )
     as "3 of 4 is not done"
   let four = use_unit(three, 10)
   assert progress(four) == 4 as "the fourth unit counts the fourth"
-  assert quest_log.objective_done(log: four, quest:, index: 0)
+  assert quest_view.objective_done(
+    view: quest_log.view(log: four),
+    quest:,
+    index: 0,
+  )
     as "the objective is done at its count of 4 (0x361)"
 }
 
@@ -2712,7 +2761,12 @@ pub fn a_second_use_of_the_same_unit_counts_nothing_for_type_12_test() -> Nil {
       event: a_use_of(creature: survivor, unit: ref(224)),
     )
   assert again.effects == [] as "the same unit again counts nothing"
-  assert quest_log.objective_progress(log: again.log, quest:, index: 0) == 1
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: again.log),
+      quest:,
+      index: 0,
+    )
+    == 1
     as "and the progress stays 1"
   let other =
     used_by(
@@ -2826,10 +2880,18 @@ pub fn a_type_23_use_counts_nothing_for_another_type_on_the_same_group_test() ->
       ]
       as "only the type 23 objective counts the use"
     assert list.map([0, 1, 3, 4], fn(index) {
-        quest_log.objective_progress(log: used.log, quest:, index:)
+        quest_view.objective_progress(
+          view: quest_log.view(log: used.log),
+          quest:,
+          index:,
+        )
       })
       == list.map([0, 1, 3, 4], fn(index) {
-        quest_log.objective_progress(log:, quest:, index:)
+        quest_view.objective_progress(
+          view: quest_log.view(log: log),
+          quest:,
+          index:,
+        )
       })
       as "the other objectives' progress is as it was"
   }
@@ -2877,7 +2939,12 @@ pub fn a_targeted_cast_counts_only_a_unit_in_the_reward_pane_test() -> Nil {
     )
   assert outside.effects == []
     as "a unit of the cast group that the pane lacks counts nothing"
-  assert quest_log.objective_progress(log: outside.log, quest:, index: 0) == 0
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: outside.log),
+      quest:,
+      index: 0,
+    )
+    == 0
     as "the progress stays 0"
   let inside =
     used_by(
@@ -2951,7 +3018,11 @@ pub fn a_pane_only_row_counts_its_pane_unit_test() -> Nil {
     SendProgress(quest_id: 8539, objective_index: 1, progress: 1),
   )
     as "the pane's unit counts one"
-  assert quest_log.objective_done(log: counted.log, quest:, index: 1)
+  assert quest_view.objective_done(
+    view: quest_log.view(log: counted.log),
+    quest:,
+    index: 1,
+  )
     as "the objective is done at its count of 1"
 }
 
@@ -2992,7 +3063,12 @@ pub fn a_second_cast_at_the_same_unit_counts_nothing_test() -> Nil {
     as "the first cast at the unit counts one"
   let second = used_by(log: first.log, tables:, event: cast)
   assert second.effects == [] as "the same unit again counts nothing"
-  assert quest_log.objective_progress(log: second.log, quest:, index: 0) == 1
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: second.log),
+      quest:,
+      index: 0,
+    )
+    == 1
     as "the progress stays 1"
 }
 
@@ -3007,7 +3083,11 @@ pub fn casts_at_two_units_of_one_creature_each_count_test() -> Nil {
     used_by(log:, tables:, event: cast_at(spell: 7103, creature: 9369, unit:)).log
   }
   let progress = fn(log) {
-    quest_log.objective_progress(log:, quest:, index: 0)
+    quest_view.objective_progress(
+      view: quest_log.view(log: log),
+      quest:,
+      index: 0,
+    )
   }
   let one = cast_in(fresh(quest_id: 3145), first_run)
   let two = cast_in(one, quest_support.unit_ref(unit_id: 901))
@@ -3024,7 +3104,12 @@ pub fn an_abandoned_and_retaken_quest_forgets_its_cast_units_test() -> Nil {
   let quest = quest_of(id: 3145, tables:)
   let cast = cast_at_unit(spell: 7103, creature: 9369, unit_id: 900)
   let first = used_by(log: fresh(quest_id: 3145), tables:, event: cast)
-  assert quest_log.objective_progress(log: first.log, quest:, index: 0) == 1
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: first.log),
+      quest:,
+      index: 0,
+    )
+    == 1
     as "the cast counts one"
   let retaken =
     quest_log.accept(
@@ -3353,7 +3438,12 @@ pub fn a_second_use_of_the_same_type_5_unit_counts_nothing_test() -> Nil {
     as "the first use of unit 7 counts one"
   let again = used_by(log: first.log, tables:, event: use_of(7))
   assert again.effects == [] as "the same unit again counts nothing"
-  assert quest_log.objective_progress(log: again.log, quest:, index: 0) == 1
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: again.log),
+      quest:,
+      index: 0,
+    )
+    == 1
     as "and the progress stays 1"
   assert used_by(log: again.log, tables:, event: use_of(8)).effects
     == [

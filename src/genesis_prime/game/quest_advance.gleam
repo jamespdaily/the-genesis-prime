@@ -26,6 +26,8 @@
 
 import genesis_prime/game/objective.{type Advanced, Advanced}
 import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
@@ -48,7 +50,7 @@ pub fn advance(
   now_ms now_ms: Int,
 ) -> Advanced {
   list.fold(
-    quest_log.active_ids(log:),
+    quest_view.active_ids(view: quest_log.view(log: log)),
     Advanced(log:, effects: []),
     fn(so_far, quest_id) {
       let named =
@@ -59,7 +61,7 @@ pub fn advance(
       case named {
         [] -> so_far
         [_, ..] -> {
-          let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
+          let assert Ok(quest) = quest_row.quest_of(tables:, id: quest_id)
             as "a quest of the player's log has its rows in the tables"
           quest_advanced(
             so_far:,
@@ -80,7 +82,7 @@ pub fn advance(
 fn quest_advanced(
   so_far so_far: Advanced,
   tables tables: table_store.Tables,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   advances advances: List(Advance),
   with with: Option(objective.Event),
   now_ms now_ms: Int,
@@ -126,7 +128,7 @@ fn quest_advanced(
 /// one the cast's own event counts.
 fn takes_the_advance(
   tables tables: table_store.Tables,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   one one: Advance,
   with with: Option(objective.Event),
 ) -> Bool {

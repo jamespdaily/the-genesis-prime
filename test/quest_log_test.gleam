@@ -26,6 +26,8 @@ import genesis_prime/game/quest_log
 import genesis_prime/game/world_entry
 import genesis_prime/message/quest_completed.{type QuestCompleted}
 import genesis_prime/message/quest_log as quest_message
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view
 import genesis_prime/step.{LogError, Now}
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -315,9 +317,9 @@ pub fn the_login_log_marks_a_periodic_quest_done_only_when_completed_in_its_curr
 
 /// Quest 6723 (QuestObjective 10383, type 23 on TargetGroup 3568, count 15) as the tests'
 /// tables hold it.
-fn the_use_quest() -> quest_log.Quest {
+fn the_use_quest() -> quest_row.Quest {
   let assert Ok(quest) =
-    quest_log.quest_of(tables: character_tables.shared(), id: 6723)
+    quest_row.quest_of(tables: character_tables.shared(), id: 6723)
     as "the fixture holds quest 6723's rows"
   quest
 }
@@ -413,7 +415,7 @@ pub fn used_counts_each_unit_of_an_objective_once_and_refuses_a_closed_one_test(
   // unit counts again never reach it (`objective.advance`). An objective that is done is
   // not open, so its unit counts nothing (`quest_log.objective_open`).
   let tables = character_tables.shared()
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: 3480)
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: 3480)
     as "the fixture holds quest 3480's rows"
   let unit = SpawnId(7)
   let fresh =
@@ -449,7 +451,7 @@ pub fn the_used_set_of_a_type_12_objective_is_dropped_when_it_is_done_test() -> 
   // Objective 4470 (quest 3480, type 12, count 3) is done by its third unit, and
   // `remember_used` drops the set then, as it does for a type 23 objective.
   let tables = character_tables.shared()
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: 3480)
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: 3480)
     as "the fixture holds quest 3480's rows"
   let units = [7, 8, 9] |> list.map(SpawnId)
   let counted =
@@ -463,7 +465,12 @@ pub fn the_used_set_of_a_type_12_objective_is_dropped_when_it_is_done_test() -> 
         counted.log
       },
     )
-  assert quest_log.objective_progress(log: counted, quest:, index: 0) == 3
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: counted),
+      quest:,
+      index: 0,
+    )
+    == 3
     as "the objective is at 3 of 3"
   assert list.all(units, fn(unit) {
     !quest_log.is_used(log: counted, quest:, index: 0, unit:)
@@ -477,7 +484,7 @@ pub fn the_used_set_of_a_type_32_objective_is_dropped_when_it_is_done_test() -> 
   // done by its sixth crate, and `remember_used` drops the set then; a relog empties it
   // too (the server's choice), so no crate is remembered after the objective is done.
   let tables = character_tables.shared()
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: 3741)
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: 3741)
     as "the fixture holds quest 3741's rows"
   let units = [7, 8, 9, 10, 11, 12] |> list.map(SpawnId)
   let counted =
@@ -491,10 +498,35 @@ pub fn the_used_set_of_a_type_32_objective_is_dropped_when_it_is_done_test() -> 
         counted.log
       },
     )
-  assert quest_log.objective_progress(log: counted, quest:, index: 0) == 6
+  assert quest_view.objective_progress(
+      view: quest_log.view(log: counted),
+      quest:,
+      index: 0,
+    )
+    == 6
     as "the objective is at 6 of 6"
   assert list.all(units, fn(unit) {
     !quest_log.is_used(log: counted, quest:, index: 0, unit:)
   })
     as "no crate is remembered once the objective is done"
+}
+
+pub fn a_quest_view_is_a_snapshot_a_later_change_to_the_log_does_not_reach_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let quest = the_use_quest()
+  let before = quest_support.log_of(rows: [])
+  let old_view = quest_log.view(log: before)
+  assert quest_view.state(view: old_view, quest:) == 0
+    as "a quest not in the log reads state 0"
+  let accepted =
+    quest_log.accept(log: before, quest:, max_time_ms: 0, now_ms: 0)
+  let new_view = quest_log.view(log: accepted)
+  assert quest_view.state(view: new_view, quest:) == 1
+    as "a view built after the accept reads the quest Accepted (0x1405fbc40)"
+  assert quest_view.active_ids(view: new_view) == [quest.id]
+    as "and holds it in the active list"
+  assert quest_view.state(view: old_view, quest:) == 0
+    as "the view built before the accept still reads state 0"
+  assert quest_view.active_ids(view: old_view) == []
+    as "and still holds no active quest"
 }

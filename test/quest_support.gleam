@@ -16,6 +16,8 @@ import genesis_prime/game/prerequisite
 import genesis_prime/game/quest.{type Asker, Asker}
 import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/target_group
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/store.{
   type HeldItem, type QuestRow, Accepted, ActiveQuest, ActiveRow, CompletedRow,
   KnownRow, UsedSpawn,
@@ -104,6 +106,12 @@ pub fn log_of(rows rows: List(QuestRow)) -> QuestLog {
     quest_log.from_rows(rows:, tables: character_tables.shared())
     as "the rows are ones the client takes"
   log
+}
+
+/// The read-only view of the log of these rows (`log_of`), as the modules of the units
+/// read quests.
+pub fn view_of(rows rows: List(QuestRow)) -> QuestView {
+  quest_log.view(log: log_of(rows:))
 }
 
 /// The unit of this id of the picture, standing at the spawn of the same number.
@@ -371,7 +379,7 @@ pub fn logged(
   quest_id quest_id: Int,
   done done: List(Int),
 ) -> QuestLog {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: quest_id)
     as "the tables hold the quest"
   let progress =
     list.index_map(quest.objectives, fn(objective, index) {
@@ -401,9 +409,9 @@ pub fn logged(
 }
 
 /// The quest `id` as the fixture's tables hold it.
-pub fn quest_of(id id: Int) -> quest_log.Quest {
+pub fn quest_of(id id: Int) -> quest_row.Quest {
   let assert Ok(quest) =
-    quest_log.quest_of(tables: character_tables.shared(), id:)
+    quest_row.quest_of(tables: character_tables.shared(), id:)
     as "the fixture holds the quest's rows"
   quest
 }
@@ -422,8 +430,8 @@ pub fn objective_at(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
   index index: Int,
-) -> quest_log.Objective {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
+) -> quest_row.Objective {
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: quest_id)
     as "the fixture holds the quest"
   let assert Ok(found) = list.drop(quest.objectives, index) |> list.first
     as "the quest has an objective at the index"

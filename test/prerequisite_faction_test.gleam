@@ -89,7 +89,7 @@ pub fn type_243_fails_for_every_subject_comparison_and_value_test() -> Nil {
       first: None,
       second: origin,
       player: prerequisite_support.player(),
-      quests: quest_support.log_of(rows: []),
+      quests: quest_support.view_of(rows: []),
     ),
     prerequisite.of_difficulty(difficulty: 1),
   ]
@@ -212,7 +212,7 @@ pub fn a_subject_that_holds_no_factions_leaves_types_4_and_250_not_read_test() -
       first: Some(origin),
       second: origin,
       player: prerequisite_support.player(),
-      quests: quest_support.log_of(rows: []),
+      quests: quest_support.view_of(rows: []),
     )
   list.each(
     [

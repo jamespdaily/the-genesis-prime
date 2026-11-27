@@ -25,12 +25,13 @@ import genesis_prime/game/item_use.{
   Declined, NotSentByClient, UnreadPrerequisite,
 }
 import genesis_prime/game/prerequisite
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/message/cast_result.{
   ItemCharges, ItemObjectiveComplete, ItemQuestRequirementsNotMet,
   ItemTooHighLevel, SpellPreRequisites,
 }
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/id.{type Spell4Id, Item2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
@@ -58,8 +59,8 @@ fn no_second_item() -> ItemPlace {
   ItemPlace(location: 300, bag_index: 0xffffffff)
 }
 
-fn grenade_quest_accepted() -> QuestLog {
-  quest_support.log_of(rows: [
+fn grenade_quest_accepted() -> QuestView {
+  quest_support.view_of(rows: [
     quest_support.accepted(quest_id: grenade_quest, progress: [0, 0, 0, 0]),
   ])
 }
@@ -70,8 +71,8 @@ fn grenade_quest_accepted() -> QuestLog {
 fn security_log(
   done_mask done_mask: Int,
   progress progress: List(Int),
-) -> QuestLog {
-  quest_support.log_of(rows: [
+) -> QuestView {
+  quest_support.view_of(rows: [
     quest_support.active(
       quest_id: security_quest,
       state: 1,
@@ -87,7 +88,7 @@ fn used(
   tables tables: table_store.Tables,
   item item: Int,
   level level: Int,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   target target: option.Option(Int),
 ) -> Result(id.Spell4Id, item_use.Refusal) {
   item_use.check(
@@ -123,7 +124,7 @@ pub fn an_item_casts_the_spell_its_item_special_names_test() -> Nil {
       tables:,
       item: generic_item,
       level: 20,
-      quests: quest_support.log_of(rows: []),
+      quests: quest_support.view_of(rows: []),
       target: Some(0),
     )
     == Ok(Spell4Id(1545))
@@ -147,7 +148,7 @@ pub fn the_grenade_is_refused_29_once_its_quest_is_achieved_or_completed_test() 
   use <- owned_test.run(10_000)
   let tables = character_tables.shared()
   let achieved =
-    quest_support.log_of(rows: [
+    quest_support.view_of(rows: [
       quest_support.active(
         quest_id: grenade_quest,
         state: 2,
@@ -157,8 +158,8 @@ pub fn the_grenade_is_refused_29_once_its_quest_is_achieved_or_completed_test() 
         progress: [7, 1, 1, 1],
       ),
     ])
-  assert quest_log.state(
-      log: achieved,
+  assert quest_view.state(
+      view: achieved,
       quest: quest_of(tables:, id: grenade_quest),
     )
     == 2
@@ -176,7 +177,7 @@ pub fn the_grenade_is_refused_29_once_its_quest_is_achieved_or_completed_test() 
     ))
     as "state 2 gives 29"
   let completed =
-    quest_support.log_of(rows: [
+    quest_support.view_of(rows: [
       quest_support.completed(quest_id: grenade_quest, at: 1000),
     ])
   assert used(
@@ -193,8 +194,8 @@ pub fn the_grenade_is_refused_29_once_its_quest_is_achieved_or_completed_test() 
     as "state 3 gives 29"
 }
 
-fn quest_of(tables tables: table_store.Tables, id id: Int) -> quest_log.Quest {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id:)
+fn quest_of(tables tables: table_store.Tables, id id: Int) -> quest_row.Quest {
+  let assert Ok(quest) = quest_row.quest_of(tables:, id:)
     as "the fixture holds the quest"
   quest
 }
@@ -205,7 +206,7 @@ pub fn the_grenade_is_refused_28_when_its_quest_is_not_active_test() -> Nil {
       tables: character_tables.shared(),
       item: grenade,
       level: 20,
-      quests: quest_support.log_of(rows: []),
+      quests: quest_support.view_of(rows: []),
       target: Some(0),
     )
     == Error(Declined(
@@ -237,7 +238,7 @@ pub fn an_objective_item_is_refused_28_when_its_objective_is_not_open_test() -> 
       tables: character_tables.shared(),
       item: objective_item,
       level: 50,
-      quests: quest_support.log_of(rows: []),
+      quests: quest_support.view_of(rows: []),
       target: None,
     )
     == Error(Declined(
@@ -266,7 +267,7 @@ pub fn an_item_that_names_no_quest_makes_no_quest_check_test() -> Nil {
       tables: character_tables.shared(),
       item: generic_item,
       level: 19,
-      quests: quest_support.log_of(rows: []),
+      quests: quest_support.view_of(rows: []),
       target: Some(-1),
     )
     == Ok(Spell4Id(1545))
@@ -469,7 +470,7 @@ pub fn a_charged_item_is_refused_25_only_at_0_charges_test() -> Nil {
           item: Item2Id(charged_item),
           charges: row.charges,
           player_level: row.level,
-          quests: quest_support.log_of(rows: []),
+          quests: quest_support.view_of(rows: []),
           second_item: no_second_item(),
           target_checklist_index: None,
           prerequisite: fn(_) { row.prerequisite },
@@ -486,7 +487,7 @@ pub fn an_item_with_no_charges_is_not_refused_for_them_test() -> Nil {
       tables: character_tables.shared(),
       item: generic_item,
       level: 20,
-      quests: quest_support.log_of(rows: []),
+      quests: quest_support.view_of(rows: []),
       target: None,
     )
     == Ok(Spell4Id(1545))
@@ -537,7 +538,7 @@ pub fn an_item_with_no_prerequisite_is_not_judged_test() -> Nil {
       item: Item2Id(generic_item),
       charges: 0,
       player_level: 20,
-      quests: quest_support.log_of(rows: []),
+      quests: quest_support.view_of(rows: []),
       second_item: no_second_item(),
       target_checklist_index: None,
       prerequisite: fn(_) { prerequisite.Fails },

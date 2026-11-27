@@ -27,8 +27,8 @@
 
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/prerequisite.{type Prerequisite, type Subject}
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/store.{type Character}
 import genesis_prime/table/id.{type PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
@@ -63,7 +63,7 @@ pub fn hidden_at_entry(
   tables tables: table_store.Tables,
   character character: Character,
   place place: Place,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   health health: Option(prerequisite.Vital),
 ) -> Set(PrerequisiteId) {
   let player =

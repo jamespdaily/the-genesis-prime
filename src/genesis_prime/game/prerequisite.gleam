@@ -227,13 +227,12 @@
 
 import genesis_prime/game/area.{type Pose}
 import genesis_prime/game/lasting
-import genesis_prime/game/quest_log.{
-  type Quest, type QuestLog, type QuestRowError,
-}
 import genesis_prime/game/top_zone
 import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/random
+import genesis_prime/shared/quest_row.{type Quest, type QuestRowError}
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/store.{type Character, type HeldItem}
 import genesis_prime/table/id.{
   type PrerequisiteId, type Spell4BaseId, type Spell4Id, PrerequisiteId,
@@ -639,7 +638,7 @@ pub type Subject {
     /// The quest log of the player whose client runs the check, which only a player's
     /// cast rule holds: `None` for a creature's side, so types 6, 68, 43 and 22 to 36
     /// are not read for it (`Prerequisite.prerequisiteTypeId.6`, `.68`, `.43`, `.22`).
-    quests: Option(QuestLog),
+    quests: Option(QuestView),
     /// The checklist index of the check's creature (`0x262`), which only a struck unit
     /// holds: `None` when the check has no creature, as type 94 reads it
     /// (`Prerequisite.prerequisiteTypeId.94`).
@@ -711,7 +710,7 @@ pub fn of_struck(
   first first: Option(Pose),
   second second: Pose,
   player player: Player,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   unit unit: FirstUnit,
   caster_unit caster_unit: Int,
   under under: List(lasting.Held),
@@ -754,7 +753,7 @@ pub fn of_target(
   in_combat in_combat: Bool,
   target target: Pose,
   caster caster: Pose,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   creature_id creature_id: Int,
   checker checker: Checker,
 ) -> Subject {
@@ -977,7 +976,7 @@ pub fn table_arcs(
 pub fn table_quests(
   tables tables: table_store.Tables,
 ) -> fn(Int) -> Result(Quest, QuestRowError) {
-  fn(quest_id) { quest_log.quest_of(tables:, id: quest_id) }
+  fn(quest_id) { quest_row.quest_of(tables:, id: quest_id) }
 }
 
 /// The prerequisite with this id as the client keeps it (`0x1404a5190`), from the
@@ -1213,8 +1212,8 @@ fn quest_named(
 ) -> Result(Option(Quest), LoadError) {
   case quests(object_id) {
     Ok(quest) -> Ok(Some(quest))
-    Error(quest_log.NoQuestRow) -> Ok(None)
-    Error(quest_log.NoObjectiveRow(objective_id:)) ->
+    Error(quest_row.NoQuestRow) -> Ok(None)
+    Error(quest_row.NoObjectiveRow(objective_id:)) ->
       Error(NoQuestObjectiveRow(objective_id:))
   }
 }
@@ -2181,9 +2180,9 @@ fn condition_decided(
     })
     QuestState(comparison:, value:, quest:) -> #(
       rolls,
-      with_quest_log(subject:, prerequisite_type: 6, decide: fn(log) {
+      with_quest_log(subject:, prerequisite_type: 6, decide: fn(view) {
         let state = case quest {
-          Some(quest) -> quest_log.state(log:, quest:)
+          Some(quest) -> quest_view.state(view:, quest:)
           None -> 0
         }
         // The client counts the states 4 to 7 as 0 (Unknown).
@@ -2200,9 +2199,9 @@ fn condition_decided(
     )
     ObjectiveDone(comparison:, index:, quest:) -> #(
       rolls,
-      with_quest_log(subject:, prerequisite_type: 68, decide: fn(log) {
+      with_quest_log(subject:, prerequisite_type: 68, decide: fn(view) {
         let done = case quest {
-          Some(quest) -> quest_log.objective_done(log:, quest:, index:)
+          Some(quest) -> quest_view.objective_done(view:, quest:, index:)
           None -> False
         }
         asked(comparison:, holds: done)
@@ -2210,9 +2209,9 @@ fn condition_decided(
     )
     ObjectiveOpen(comparison:, index:, quest:) -> #(
       rolls,
-      with_quest_log(subject:, prerequisite_type: 43, decide: fn(log) {
+      with_quest_log(subject:, prerequisite_type: 43, decide: fn(view) {
         let open = case quest {
-          Some(quest) -> quest_log.objective_open(log:, quest:, index:)
+          Some(quest) -> quest_view.objective_open(view:, quest:, index:)
           None -> False
         }
         asked(comparison:, holds: open)
@@ -2222,11 +2221,11 @@ fn condition_decided(
       rolls,
       case subject.creature_index, quest {
         Some(creature_index), Some(quest) ->
-          with_quest_log(subject:, prerequisite_type: 94, decide: fn(log) {
+          with_quest_log(subject:, prerequisite_type: 94, decide: fn(view) {
             asked(
               comparison:,
-              holds: quest_log.is_marked(
-                log:,
+              holds: quest_view.is_marked(
+                view:,
                 quest:,
                 index:,
                 bit: creature_index,
@@ -2244,9 +2243,9 @@ fn condition_decided(
     )
     ObjectiveProgress(prerequisite_type:, relation:, index:, value:, quest:) -> #(
       rolls,
-      with_quest_log(subject:, prerequisite_type:, decide: fn(log) {
+      with_quest_log(subject:, prerequisite_type:, decide: fn(view) {
         let progress = case quest {
-          Some(quest) -> quest_log.objective_progress(log:, quest:, index:)
+          Some(quest) -> quest_view.objective_progress(view:, quest:, index:)
           None -> 0
         }
         verdict_of(compare(relation:, measured: progress, value:))
@@ -2346,7 +2345,7 @@ fn condition_decided(
 fn with_quest_log(
   subject subject: Subject,
   prerequisite_type prerequisite_type: Int,
-  decide decide: fn(QuestLog) -> Verdict,
+  decide decide: fn(QuestView) -> Verdict,
 ) -> Verdict {
   case subject.quests {
     Some(log) -> decide(log)

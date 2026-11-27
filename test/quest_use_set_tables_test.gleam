@@ -19,6 +19,7 @@ import genesis_prime/game/objective.{
 }
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
+import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Faction2Id, TargetGroupId}
 import genesis_prime/table/loader/store as table_store
@@ -132,7 +133,7 @@ fn counts_once(
   row row: quest_objective.QuestObjective,
   creature creature: creature2.Creature2,
 ) -> Bool {
-  let assert Ok(quest) = quest_log.quest_of(tables:, id: quest_id)
+  let assert Ok(quest) = quest_row.quest_of(tables:, id: quest_id)
     as "the quest's rows are in the tables"
   let assert Ok(#(index, _)) =
     list.index_map(quest.objectives, fn(objective, index) {

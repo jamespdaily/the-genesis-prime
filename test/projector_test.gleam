@@ -9,8 +9,8 @@ import departures_support
 import genesis_prime/content/refusal.{type Refusal, RowId}
 import genesis_prime/game/activate.{type Link, ClosedLink, OpenLink}
 import genesis_prime/game/projector.{NotAProjector, NotOffered, Row}
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/id.{Creature2Id}
 import gleam/list
 import gleam/string
@@ -37,7 +37,7 @@ const dominion = 166
 
 /// The link of a creature's right-click for a player holding this log, as the rule that
 /// reads it gives it (`objective_link.of`).
-fn link_of(quests quests: QuestLog, creature_id creature_id: Int) -> Link {
+fn link_of(quests quests: QuestView, creature_id creature_id: Int) -> Link {
   departures_support.link_of(quests:, creature_id:)
 }
 
@@ -68,8 +68,8 @@ fn assert_place(
 /// The Exile's Combat Simulation quest (Quest2 10527) with the objectives before its
 /// last, the use of the projector, done: 21321, 21324 and 21323 (the skipped 21322 is
 /// not asked for), so mask 0b1101.
-fn exile_before_the_combat_projector() -> QuestLog {
-  quest_support.log_of(rows: [
+fn exile_before_the_combat_projector() -> QuestView {
+  quest_support.view_of(rows: [
     quest_support.active(
       quest_id: 10_527,
       state: 1,
@@ -163,11 +163,11 @@ pub fn a_creature_that_is_not_a_projector_moves_no_one_test() -> Nil {
 
 pub fn the_combat_projector_is_closed_without_its_objective_or_quest_test() -> Nil {
   use <- owned_test.run(5000)
-  assert link_of(quests: quest_support.log_of(rows: []), creature_id: combat)
+  assert link_of(quests: quest_support.view_of(rows: []), creature_id: combat)
     == ClosedLink
     as "Prerequisite 43088 of Creature2 73735: no quest 10527 or 10532 held, so no open objective 4 and no state 2 or 3"
   assert link_of(
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.accepted(quest_id: 10_527, progress: [0, 0, 0, 0, 0]),
       ]),
       creature_id: combat,
@@ -189,7 +189,7 @@ pub fn the_combat_projector_opens_on_its_objective_test() -> Nil {
 pub fn the_combat_projector_stays_offered_in_state_2_test() -> Nil {
   use <- owned_test.run(5000)
   let log =
-    quest_support.log_of(rows: [
+    quest_support.view_of(rows: [
       quest_support.active(
         quest_id: 10_527,
         state: 2,
@@ -205,11 +205,11 @@ pub fn the_combat_projector_stays_offered_in_state_2_test() -> Nil {
 
 pub fn the_housing_projector_is_open_while_its_quest_is_held_test() -> Nil {
   use <- owned_test.run(5000)
-  assert link_of(quests: quest_support.log_of(rows: []), creature_id: housing)
+  assert link_of(quests: quest_support.view_of(rows: []), creature_id: housing)
     == ClosedLink
     as "Prerequisite 41955: neither quest 10525 nor 10526 is held, so both states are 0"
   assert link_of(
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.accepted(quest_id: 10_525, progress: [0, 0, 0, 0, 0, 0]),
       ]),
       creature_id: housing,
@@ -221,7 +221,7 @@ pub fn the_housing_projector_is_open_while_its_quest_is_held_test() -> Nil {
 pub fn the_mission_projector_opens_on_its_store_objective_test() -> Nil {
   use <- owned_test.run(5000)
   assert link_of(
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.accepted(quest_id: 10_540, progress: [0, 0, 0]),
       ]),
       creature_id: mission,
@@ -229,7 +229,7 @@ pub fn the_mission_projector_opens_on_its_store_objective_test() -> Nil {
     == OpenLink
     as "Prerequisite 41956's type 43 condition: objective 2 of Quest2 10540 (21372, flags 0x28) is open and reachable"
   assert link_of(
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.active(
           quest_id: 10_540,
           state: 1,
@@ -243,7 +243,7 @@ pub fn the_mission_projector_opens_on_its_store_objective_test() -> Nil {
     )
     == ClosedLink
     as "with objective 2 done, the quest is in state 1, not 2 or 3: closed"
-  assert link_of(quests: quest_support.log_of(rows: []), creature_id: mission)
+  assert link_of(quests: quest_support.view_of(rows: []), creature_id: mission)
     == ClosedLink
     as "no quest held"
 }
@@ -377,11 +377,11 @@ pub fn an_objective_of_the_other_faction_fails_the_load_test() -> Nil {
 
 pub fn the_cryo_projector_is_closed_without_its_objective_or_quest_test() -> Nil {
   use <- owned_test.run(5000)
-  assert link_of(quests: quest_support.log_of(rows: []), creature_id: cryo)
+  assert link_of(quests: quest_support.view_of(rows: []), creature_id: cryo)
     == ClosedLink
     as "Prerequisite 43094 of Creature2 73745: neither quest 10520 nor 10523 is held, so no open objective 4 and no state 2 or 3"
   assert link_of(
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.accepted(quest_id: 10_520, progress: [0, 0, 0, 0, 0]),
       ]),
       creature_id: cryo,
@@ -389,7 +389,7 @@ pub fn the_cryo_projector_is_closed_without_its_objective_or_quest_test() -> Nil
     == ClosedLink
     as "Prerequisite 41957: objective 21298 of the Exile's quest 10520 is open only once 21294, 21297 and 21295 are done"
   assert link_of(
-      quests: quest_support.log_of(rows: [
+      quests: quest_support.view_of(rows: [
         quest_support.accepted(quest_id: 10_523, progress: [0, 0, 0, 0, 0]),
       ]),
       creature_id: cryo,
@@ -397,7 +397,7 @@ pub fn the_cryo_projector_is_closed_without_its_objective_or_quest_test() -> Nil
     == ClosedLink
     as "Prerequisite 43093: objective 21311 of the Dominion's quest 10523 is open only once 21307, 21309 and 21308 are done"
   let before_the_use = fn(quest_id) {
-    quest_support.log_of(rows: [
+    quest_support.view_of(rows: [
       quest_support.active(
         quest_id:,
         state: 1,

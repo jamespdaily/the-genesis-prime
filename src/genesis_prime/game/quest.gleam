@@ -63,6 +63,8 @@ import genesis_prime/message/quest_ignore
 import genesis_prime/message/quest_mention
 import genesis_prime/message/quest_retry
 import genesis_prime/message/quest_track
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{type LogLevel}
 import genesis_prime/store.{type HeldItem}
 import genesis_prime/table/creature2.{type Creature2}
@@ -139,6 +141,11 @@ pub type Asker {
     log: QuestLog,
     checker: prerequisite.Checker,
   )
+}
+
+/// The asker's quest log as the read-only snapshot the communicator's conditions read.
+pub fn quests_of(asker asker: Asker) -> QuestView {
+  quest_log.view(log: asker.log)
 }
 
 /// A table row a check needs and the client's tables lack.
@@ -483,8 +490,8 @@ fn derived_state(
   asker asker: Asker,
   quest_id quest_id: Int,
 ) -> Int {
-  quest_log.quest_of(tables:, id: quest_id)
-  |> result.map(fn(quest) { quest_log.state(log: asker.log, quest:) })
+  quest_row.quest_of(tables:, id: quest_id)
+  |> result.map(fn(quest) { quest_view.state(view: quests_of(asker:), quest:) })
   |> result.unwrap(state_of(asker:, quest_id:))
 }
 
@@ -777,7 +784,7 @@ pub fn prerequisite_holds(
             player: asker.player,
             checker: asker.checker,
           ),
-          quests: Some(asker.log),
+          quests: Some(quests_of(asker:)),
         )
       case prerequisite.check(prerequisite: loaded, subject:) {
         prerequisite.Passes -> Ok(Nil)
@@ -977,7 +984,7 @@ pub type Taken {
 /// Why a request is answered with nothing.
 type Declined {
   UnknownQuest(quest_id: Int)
-  BadQuestRow(quest_id: Int, error: quest_log.QuestRowError)
+  BadQuestRow(quest_id: Int, error: quest_row.QuestRowError)
   NotBotched(quest_id: Int, state: Int)
   BotchedAccepted(quest_id: Int)
   NoSource(quest_id: Int)
@@ -1129,13 +1136,13 @@ fn answer(
 fn read_quest(
   tables tables: table_store.Tables,
   quest_id quest_id: Int,
-) -> Result(#(quest_log.Quest, Quest2), Declined) {
+) -> Result(#(quest_row.Quest, Quest2), Declined) {
   use quest <- result.try(
-    quest_log.quest_of(tables:, id: quest_id)
+    quest_row.quest_of(tables:, id: quest_id)
     |> result.map_error(fn(error) {
       case error {
-        quest_log.NoQuestRow -> UnknownQuest(quest_id:)
-        quest_log.NoObjectiveRow(..) -> BadQuestRow(quest_id:, error:)
+        quest_row.NoQuestRow -> UnknownQuest(quest_id:)
+        quest_row.NoObjectiveRow(..) -> BadQuestRow(quest_id:, error:)
       }
     }),
   )
@@ -1163,7 +1170,7 @@ fn abandoned(
   tables tables: table_store.Tables,
 ) -> Result(#(List(Effect), QuestLog), Declined) {
   use #(quest, row) <- result.try(read_quest(tables:, quest_id:))
-  let state = quest_log.state(log: asker.log, quest:)
+  let state = quest_view.state(view: quests_of(asker:), quest:)
   case can_abandon(state:, flags: row.flags) {
     False -> Error(NotAbandonable(quest_id:, state:))
     True ->
@@ -1470,8 +1477,8 @@ fn describe_declined(
       <> of(quest_id)
       <> ", whose rows are not whole: "
       <> case error {
-        quest_log.NoQuestRow -> "no Quest2 row"
-        quest_log.NoObjectiveRow(objective_id:) ->
+        quest_row.NoQuestRow -> "no Quest2 row"
+        quest_row.NoObjectiveRow(objective_id:) ->
           "the table QuestObjective has no row " <> int.to_string(objective_id)
       }
     NotBotched(quest_id:, state:) ->

@@ -40,7 +40,6 @@
 
 import genesis_prime/game/item_property
 import genesis_prime/game/prerequisite
-import genesis_prime/game/quest_log.{type QuestLog}
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/target_mechanic
 import genesis_prime/gap
@@ -49,6 +48,8 @@ import genesis_prime/message/cast_result.{
   ItemQuestRequirementsNotMet, ItemTooHighLevel, SpellPreRequisites,
 }
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/id.{
   type Item2Id, type Spell4Id, ItemSpecialId, Spell4Id,
 }
@@ -90,7 +91,7 @@ pub fn check(
   item item: Item2Id,
   charges charges: Int,
   player_level player_level: Int,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   second_item second_item: ItemPlace,
   target_checklist_index target_checklist_index: Option(Int),
   prerequisite prerequisite: fn(Int) -> prerequisite.Verdict,
@@ -167,19 +168,19 @@ pub fn spell_of(
 fn quest_check(
   tables tables: table_store.Tables,
   row row: item2.Item2,
-  quests quests: QuestLog,
+  quests quests: QuestView,
   unit unit: Option(Int),
 ) -> Result(Nil, CastResult) {
   case row.quest2_id_activation_required {
     0 -> Ok(Nil)
     quest_id ->
-      case quest_log.quest_of(tables:, id: quest_id) {
+      case quest_row.quest_of(tables:, id: quest_id) {
         // A quest the client has no row for is in no log.
         Error(_) -> Error(ItemQuestRequirementsNotMet)
         Ok(quest) ->
           case row.quest_objective_activation_required {
             index if index < 0 ->
-              case quest_log.state(log: quests, quest:) {
+              case quest_view.state(view: quests, quest:) {
                 2 | 3 -> Error(ItemObjectiveComplete)
                 1 -> Ok(Nil)
                 _ -> Error(ItemQuestRequirementsNotMet)
@@ -192,25 +193,25 @@ fn quest_check(
 
 /// The checks of one objective of the quest: done, open, and for a checklist the unit.
 fn objective_check(
-  quests quests: QuestLog,
-  quest quest: quest_log.Quest,
+  quests quests: QuestView,
+  quest quest: quest_row.Quest,
   index index: Int,
   unit unit: Option(Int),
 ) -> Result(Nil, CastResult) {
   use <- bool.guard(
-    when: quest_log.objective_done(log: quests, quest:, index:),
+    when: quest_view.objective_done(view: quests, quest:, index:),
     return: Error(ItemObjectiveComplete),
   )
   use <- bool.guard(
-    when: !quest_log.objective_open(log: quests, quest:, index:),
+    when: !quest_view.objective_open(view: quests, quest:, index:),
     return: Error(ItemQuestRequirementsNotMet),
   )
   case is_checklist(quest:, index:), unit {
     True, Some(checklist_index) ->
       case
         checklist_index < 0
-        || quest_log.is_marked(
-          log: quests,
+        || quest_view.is_marked(
+          view: quests,
           quest:,
           index:,
           bit: checklist_index,
@@ -223,7 +224,7 @@ fn objective_check(
   }
 }
 
-fn is_checklist(quest quest: quest_log.Quest, index index: Int) -> Bool {
+fn is_checklist(quest quest: quest_row.Quest, index index: Int) -> Bool {
   case list.drop(quest.objectives, index) {
     [objective, ..] -> objective.checklist
     [] -> False

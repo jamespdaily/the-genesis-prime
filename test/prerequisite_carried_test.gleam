@@ -90,7 +90,7 @@ pub fn a_struck_subject_decides_types_130_and_50_but_not_129_test() -> Nil {
       first: Some(origin),
       second: origin,
       player: support.player(),
-      quests: quest_support.log_of(rows: []),
+      quests: quest_support.view_of(rows: []),
       unit: prerequisite.UnknownUnit,
       caster_unit: 7,
       under: [

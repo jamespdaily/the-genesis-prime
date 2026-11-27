@@ -40,6 +40,8 @@
 
 import genesis_prime/game/objective_kind
 import genesis_prime/game/quest_log.{type QuestLog}
+import genesis_prime/shared/quest_row
+import genesis_prime/shared/quest_view
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/id.{Creature2Id}
 import gleam/int
@@ -99,7 +101,11 @@ pub fn progress_adds_and_marks_the_objective_done_at_its_count_test() -> Nil {
     ))
     == 0
     as "1 of 5 is not done: types 12 need their raw count of 5, not a percentage"
-  assert !quest_log.objective_done(log: first.log, quest: counted, index: 0)
+  assert !quest_view.objective_done(
+    view: quest_log.view(log: first.log),
+    quest: counted,
+    index: 0,
+  )
     as "the objective is not done below its count"
 
   let log =
@@ -116,7 +122,11 @@ pub fn progress_adds_and_marks_the_objective_done_at_its_count_test() -> Nil {
     ))
     == 0b1
     as "the done bit of index 0 is set at the needed count (0x1406115a0)"
-  assert quest_log.objective_done(log: last.log, quest: counted, index: 0)
+  assert quest_view.objective_done(
+    view: quest_log.view(log: last.log),
+    quest: counted,
+    index: 0,
+  )
     as "the log reads the objective done"
 
   let assert Ok(capped) =
@@ -269,7 +279,8 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
   assert quest_log.stored_state(log: only.log, quest_id: skipped_then_gated)
     == 2
     as "the stored state becomes Achieved"
-  assert quest_log.state(log: only.log, quest: skipped) == 2
+  assert quest_view.state(view: quest_log.view(log: only.log), quest: skipped)
+    == 2
     as "the state the client computes agrees with the stored one"
   assert quest_support.state_of(quest_support.saved_row(
       log: only.log,
@@ -299,7 +310,7 @@ pub fn the_last_open_objective_makes_the_quest_achieved_test() -> Nil {
   assert used.became_achieved as "the last open objective achieves the quest"
   assert quest_log.stored_state(log: used.log, quest_id: talk_then_use) == 2
     as "the stored state becomes Achieved"
-  assert quest_log.state(log: used.log, quest: pair) == 2
+  assert quest_view.state(view: quest_log.view(log: used.log), quest: pair) == 2
     as "the state the client computes agrees with the stored one"
   assert done_mask_of(row: quest_support.saved_row(
       log: used.log,
@@ -353,7 +364,8 @@ fn an_achieved_quest_takes_progress_on_its_optional_objectives() -> Nil {
         progress: [0, 1, 1],
       ),
     ])
-  assert quest_log.state(log: achieved, quest: optional) == 2
+  assert quest_view.state(view: quest_log.view(log: achieved), quest: optional)
+    == 2
     as "objectives 1 and 2 are done, so 5622 is Achieved without objective 0"
   let assert Ok(late) =
     quest_log.progressed(
@@ -394,9 +406,9 @@ fn an_achieved_quest_takes_progress_on_its_optional_objectives() -> Nil {
 
 /// The one-objective quest `one_kill` with this type 2 objective: the rule's input for
 /// each count of the sweep, in the log's entry of that quest.
-fn kill_objective(count count: Int) -> quest_log.Quest {
-  quest_log.Quest(id: one_kill, objectives: [
-    quest_log.Objective(
+fn kill_objective(count count: Int) -> quest_row.Quest {
+  quest_row.Quest(id: one_kill, objectives: [
+    quest_row.Objective(
       objective_id: 0,
       kind: objective_kind.KillCreature(creature2_id: Creature2Id(5006)),
       flags: 0,
@@ -420,7 +432,7 @@ fn fresh(quest_id quest_id: Int, slots slots: Int) -> QuestLog {
 /// which is taken.
 fn killed(
   log log: QuestLog,
-  quest quest: quest_log.Quest,
+  quest quest: quest_row.Quest,
   kills kills: Int,
 ) -> quest_log.Progressed {
   let assert Ok(first) =
@@ -463,7 +475,11 @@ pub fn a_percent_kill_stores_thousandths_and_finishes_on_its_count_test() -> Nil
     == 1
     as "the done bit is set on the third kill (0x1406115a0 compares the shown progress with the needed 100)"
   assert list.map([first, second, third], fn(counted) {
-      quest_log.objective_progress(log: counted.log, quest: three, index: 0)
+      quest_view.objective_progress(
+        view: quest_log.view(log: counted.log),
+        quest: three,
+        index: 0,
+      )
     })
     == [33, 66, 100]
     as "0x1406113b0 shows trunc(100 x (stored x 0.001f)) of the stored thousandths"
@@ -485,7 +501,12 @@ pub fn a_percent_kill_stores_thousandths_and_finishes_on_its_count_test() -> Nil
       as {
         at(count:, text: "a stored 1 would show as the raw 1, not a percent")
       }
-    assert quest_log.objective_progress(log: before.log, quest:, index: 0) < 100
+    assert quest_view.objective_progress(
+        view: quest_log.view(log: before.log),
+        quest:,
+        index: 0,
+      )
+      < 100
       as { at(count:, text: "one kill short of the count shows below 100") }
     assert !before.became_achieved
       as { at(count:, text: "one kill short does not finish the quest") }
@@ -498,7 +519,12 @@ pub fn a_percent_kill_stores_thousandths_and_finishes_on_its_count_test() -> Nil
     let after = killed(log:, quest:, kills: count)
     assert after.progress == 1000
       as { at(count:, text: "count kills reach 1000") }
-    assert quest_log.objective_progress(log: after.log, quest:, index: 0) == 100
+    assert quest_view.objective_progress(
+        view: quest_log.view(log: after.log),
+        quest:,
+        index: 0,
+      )
+      == 100
       as { at(count:, text: "1000 shows as 100, the needed count") }
     assert after.became_achieved
       as { at(count:, text: "count kills finish the quest") }
