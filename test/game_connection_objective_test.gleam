@@ -747,11 +747,12 @@ pub fn a_station_its_objective_reuses_counts_again_test() -> Nil {
     as "opcode.0x361: the same unit used again counts again for an objective in the reuse set"
 }
 
-/// The tells of the steps to the map (`TellReleased` is the one these tests look for).
+/// The tells of the steps to the map that decide something there (`TellReleased` is the one
+/// these tests look for), not the player's news for its viewers.
 fn told_the_map(
   steps steps: List(step.ConnectionStep(Request)),
 ) -> List(step.Effect(step.ConnectionEffect(Request))) {
-  list.flat_map(steps, connection_support.told_the_map)
+  list.flat_map(steps, connection_support.told_the_map_decisions)
 }
 
 /// The tell that asks the map to release a unit.

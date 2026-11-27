@@ -64,7 +64,6 @@ import genesis_prime/message/unit_cc_state_ended.{
   type UnitCcStateEnded, UnitCcStateEnded,
 }
 import genesis_prime/message/unit_tether_anchor
-import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/int
 import gleam/list
@@ -1188,15 +1187,8 @@ pub fn a_caster_aimed_state_of_any_kind_is_told_and_ends_test() -> Nil {
       state: Stun,
       instance_id: told.instance_id,
     )
-  assert list.contains(support.tells(effects: pressed), #(
-      ConnectionId(2),
-      restriction,
-    ))
-    && list.contains(support.tells(effects: pressed), #(
-      ConnectionId(3),
-      restriction,
-    ))
-    as "and so is each connection of the go's audience, with the cast's id and the same instance id"
+  assert list.contains(support.tells(effects: pressed), restriction)
+    as "and so is the map, once, with the cast's id and the same instance id"
   assert list.any(go.targets, fn(info) {
     info.unit_id == 7
     && list.any(info.effects, fn(effect) {
@@ -1215,9 +1207,9 @@ pub fn a_caster_aimed_state_of_any_kind_is_told_and_ends_test() -> Nil {
     support.fired_raw_as(caster: fighting(), state:, timer: row_end, at: 3500)
   assert ended_state(effects: ended).state == Stun
     as "the end is a 0x880 of the Stun (opcode.0x880)"
-  assert list.map(support.tells(effects: ended), fn(tell) { tell.0 })
-    == [ConnectionId(2), ConnectionId(3)]
-    as "and the audience is told it ends"
+  let assert [unit_news.CasterRestrictionEnded(..)] =
+    support.tells(effects: ended)
+    as "and the map is told it ends, once"
   let until_removed = support.plans_of([holding(states: [Stun])])
   let #(state, _) = restricted(plans: until_removed)
   let #(_, ended) =
@@ -1308,15 +1300,15 @@ pub fn a_tether_tells_its_anchor_before_its_state_test() -> Nil {
   let assert [go] =
     support.frames_of(message_id: spell_go.message_id, effects: pressed)
   let assert Ok(go) = spell_go.decode(go.body)
-  assert list.contains(support.tells(effects: pressed), #(
-    ConnectionId(2),
+  assert list.contains(
+    support.tells(effects: pressed),
     unit_news.CasterRestrictionApplied(
       cast_id: go.cast_id,
       state: Tether,
       instance_id: applied_instance(effects: pressed),
     ),
-  ))
-    as "the audience is told the state as for any other, and no news of an anchor exists: a 0x881 names no unit, so only the caster gets one"
+  )
+    as "the map is told the state as for any other, and no news of an anchor exists: a 0x881 names no unit, so only the caster gets one"
   let #(_, stunned) =
     restricted(plans: support.plans_of([holding(states: [Stun])]))
   assert support.frames_of(

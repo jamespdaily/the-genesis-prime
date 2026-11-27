@@ -35,6 +35,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
 import gleam/erlang/process.{type Name, type Pid}
+import gleam/function
 import gleam/list
 import gleam/otp/static_supervisor as supervisor
 import gleam/set
@@ -84,6 +85,7 @@ fn start_world_on(
       maps: maps_name,
       map_supervisor: map_supervisor_name,
       maps_call_ms:,
+      maps_reach: function.identity,
       map_shutdown_ms: 1000,
       creatures: creature_registry.new(),
       map_tells: group_registry.new(label: "map_tells"),

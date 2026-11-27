@@ -30,7 +30,6 @@ import genesis_prime/game/unit_properties
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
-import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{
   Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
@@ -466,10 +465,10 @@ pub fn a_cast_whose_item_visual_swap_row_has_flags_2_lingers_and_writes_no_finis
   assert support.started_timers(effects:) == []
     as "a node until removed arms no timer, so no time ends it"
   assert list.filter(support.tells(effects:), fn(told) {
-      told.1 == CastFinished(cast_id: support.pressed_id(effects:))
+      told == CastFinished(cast_id: support.pressed_id(effects:))
     })
     == []
-    as "the audience is told no end"
+    as "the map is told no end"
 }
 
 pub fn the_casters_death_ends_a_flags_2_item_visual_swap_node_with_the_finish_test() -> Nil {
@@ -490,11 +489,7 @@ pub fn the_casters_death_ends_a_flags_2_item_visual_swap_node_with_the_finish_te
     )
   assert support.finished_ids(support.writes(effects: ended)) == [id]
     as "the server's choice: the client has no path that ends a buff on a unit's death (cast.target_node_end), so the node's cast ends with the caster"
-  assert support.tells(effects: ended)
-    == [
-      #(ConnectionId(2), CastFinished(cast_id: id)),
-      #(ConnectionId(3), CastFinished(cast_id: id)),
-    ]
+  assert support.tells(effects: ended) == [CastFinished(cast_id: id)]
 }
 
 /// A press of the plans' ability of base 3 whose go finds the creature `unit_id` struck.

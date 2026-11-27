@@ -41,7 +41,7 @@ import genesis_prime/message/spell_failed
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
-import genesis_prime/step.{type ConnectionId, type TimerId, TimerId}
+import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/dict
 import gleam/int
@@ -325,10 +325,10 @@ fn all_ticks(run run: Run) -> List(#(Int, SpellEffectTick)) {
   })
 }
 
-/// The 0x7f8 the audience is told.
-fn ticks_told(effects effects: List(Effect)) -> List(#(ConnectionId, News)) {
+/// The 0x7f8 the map is told.
+fn ticks_told(effects effects: List(Effect)) -> List(News) {
   list.filter(support.tells(effects:), fn(tell) {
-    case tell.1 {
+    case tell {
       CastTicked(..) -> True
       _ -> False
     }
@@ -1407,7 +1407,7 @@ pub fn a_removed_unit_writes_no_tick_test() -> Nil {
     )
   assert support.writes(effects: late) == []
     as "the tick whose round closes after the removal writes no 0x7f8"
-  assert ticks_told(effects: late) == [] as "and tells no viewer of it"
+  assert ticks_told(effects: late) == [] as "and tells the map none of it"
 }
 
 pub fn a_restarted_creature_refuses_the_old_lifes_tick_test() -> Nil {
@@ -1635,9 +1635,8 @@ pub fn a_heal_tick_heals_the_caster_each_tick_test() -> Nil {
   let assert [#(_, first_tick), ..] = ticks
   assert first_written_before_heal(effects: first_tick)
     as "the 0x7f8 comes before the heal it shows"
-  assert list.map(ticks_told(effects: first_tick), fn(tell) { tell.0 })
-    == [step.ConnectionId(2), step.ConnectionId(3)]
-    as "and the audience is told each tick"
+  assert list.length(ticks_told(effects: first_tick)) == 1
+    as "and the map is told each tick once"
   let shields = heal_run(rows: [shield_heal(schedule:)])
   let assert [_, #(_, first_shield), ..] = shields.steps
   assert list.map(ticks_of(effects: first_shield), fn(tick) {

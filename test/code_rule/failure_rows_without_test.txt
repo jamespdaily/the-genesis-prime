@@ -1,0 +1,32 @@
+the creature is killed after the map sent it `Unseen` and before it took it
+a viewer's connection is killed
+the map is killed
+`Seen(V, g)` reaches a creature twice
+the next life is killed before its snapshot
+a child starts and exits before the map's watch
+the map is killed while a spawn is `Respawning`
+`Expired` waits past a deadline, or the next life's start waits behind a burst
+`Unseen(V, g)` reaches a creature twice
+a `Broadcast` is sent twice
+an ask (`Join`, `Leave`, `Summon`) waits behind relays
+a creature never answers `Seen`
+a viewer's connection fails a write while it takes a relayed burst
+a creature is released while a viewer awaits its snapshot
+`WatchEnded` of a creature's watch is taken twice, or after `CreatureNotStarted`
+`Unseen` waits past a deadline
+the creature's end waits past a deadline
+the map's end waits past a deadline
+a map dies
+the map crashes in the middle of a burst of starts
+a creature crashes as soon as it is told of a player
+the map has given every unit id
+the map run ends
+the creature supervisor or the creature registry restarts
+a player in a ring leaves, camps or its connection ends
+a dead player's connection ends or camps
+an `ObjectsSeen` while a hiding `VisibilityChanged` is still on its way
+a creature is hidden in the middle of a fight
+a move crosses an object's sight twice in one `Moved` batch
+a released object's timer fires after its viewer left, or with no player in the map
+a player moves out of sight of a static object mid-release
+a creature captive of a released object is not live at the release (dormant, waiting for a restart or failed)

@@ -20,8 +20,8 @@
 ////   unit holds an effect a unit create lists (`lasting.Listed`): its entry then
 ////   names that unit as a target with each such effect, and the client builds the
 ////   buff there as a watcher's did (`opcode.0x262.casts`). `listed` is the one
-////   place that decides it, and the audience of a cast joins by the same list, so a
-////   viewer is told the news of exactly the casts it was shown.
+////   place that decides it, and a viewer's ledger records the casts a create lists, so a
+////   viewer is written the frames of exactly the casts it was shown.
 //// - An effect's delay is the delay still to run (0 once it has run) and its
 ////   lifetime the time left from now, counted with that delay, never 0 for an
 ////   effect that still ends and 0 only for one that lasts until removed
@@ -167,7 +167,7 @@ pub fn target_of(
   }
 }
 
-/// The views a create lists and an audience joins: the current cast and each cast
+/// The views a create lists: the current cast and each cast
 /// that holds a target, with a cast id above 0, in cast id order, at most 511.
 pub fn listed(views views: List(CastView)) -> List(CastView) {
   views

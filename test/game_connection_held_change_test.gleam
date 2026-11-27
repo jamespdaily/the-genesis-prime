@@ -28,7 +28,7 @@ import connection_rule_support as rule_support
 import fixture_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, TellPeer,
+  type Answer, type Message, type Request, TellBroadcast,
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
@@ -73,11 +73,11 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
+import genesis_prime/world_map/relay
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/set
 import owned_test
 import place_support
 import planted_table
@@ -305,14 +305,6 @@ fn absorptions_written(
   })
 }
 
-/// The news the steps tell the viewer connection `viewer`, in order.
-fn news_told(
-  steps steps: List(ConnectionStep(Request)),
-  viewer viewer: Int,
-) -> List(News) {
-  list.flat_map(steps, support.news_told(_, viewer:))
-}
-
 /// The tells of the steps that are not news to a viewer: a change is told and ended with
 /// no answer, so none leaves the connection.
 fn tells_but_news(
@@ -321,7 +313,7 @@ fn tells_but_news(
   list.flat_map(steps, support.tells)
   |> list.filter(fn(told) {
     case told.1 {
-      TellPeer(..) -> False
+      TellBroadcast(..) -> False
       _ -> True
     }
   })
@@ -439,9 +431,7 @@ pub fn a_change_a_player_in_sight_tells_is_applied_as_the_players_own_change_of_
     let state = support.watched_by(state: support.in_world(), viewers: [2, 3])
     let #(_, taken) = support.feed(state:, event: tell(starts(hold:)))
     assert seen(steps: [taken]) == written as reason
-    list.each([2, 3], fn(viewer) {
-      assert news_told(steps: [taken], viewer:) == news as reason
-    })
+    assert support.news_broadcast(taken) == news as reason
     assert tells_but_news(steps: [taken]) == []
       as "nothing is asked or answered: no tell but the viewers' news leaves the connection"
   })
@@ -584,32 +574,32 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
     #(
       "a went from a connection that holds no source of that cast (4 holds none of cast 100)",
       holding_armor,
-      went(caster: 4, cast_id: 100, audience: []),
+      went(caster: 4, cast_id: 100),
     ),
     #(
       "a went for a cast the ally holds nothing of",
       holding_armor,
-      went(caster: 3, cast_id: 999, audience: []),
+      went(caster: 3, cast_id: 999),
     ),
     #(
       "a went to a dead ally, whose death cleared its ledger",
       support.killed(holding_armor).0,
-      went(caster: 3, cast_id: 100, audience: []),
+      went(caster: 3, cast_id: 100),
     ),
   ]
   list.each(went_rows, fn(row) {
     let #(reason, state, event) = row
     let #(_, taken) = support.at(state:, ms: went_at_ms, event:)
-    assert told_a_held_cast_start(taken:) == [] as reason
+    assert held_cast_starts_told(taken:) == 0 as reason
   })
   let #(_, taken) =
     support.at(
       state: holding_armor,
       ms: went_at_ms,
-      event: went(caster: 3, cast_id: 100, audience: []),
+      event: went(caster: 3, cast_id: 100),
     )
-  assert told_a_held_cast_start(taken:) == [2, 4]
-    as "the same went from the connection that holds the source starts the cast for the viewers outside its audience, so the refusals above are the guard's"
+  assert held_cast_starts_told(taken:) == 1
+    as "the same went from the connection that holds the source tells the map the start, so the refusals above are the guard's"
 }
 
 pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_names_no_held_source_of_that_caster_changes_nothing_test() -> Nil {
@@ -734,7 +724,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
     let #(_, taken) =
       feed_all(state: holding(holds:), events: list.map(ends, tell))
     assert seen(steps: taken) == written as reason
-    assert news_told(steps: taken, viewer: 2) == news as reason
+    assert list.flat_map(taken, support.news_broadcast) == news as reason
     assert tells_but_news(steps: taken) == [] as "an end is answered by nothing"
   })
   // The end of caster 2 left the source of caster 3 held: its sight's end takes it.
@@ -845,23 +835,6 @@ pub fn a_caster_the_map_says_no_longer_sees_the_player_ends_each_change_it_held_
       )
     assert support.written_ids(taken) == ids as reason
     assert seen(steps: [taken]) == written as reason
-    case notice, rule_support.effects_of(taken) {
-      Unseen(caster:), [first, ..] if caster == 3 -> {
-        assert first
-          == OwnEffect(step.Tell(
-            to: step.Connection(connection: ConnectionId(3)),
-            request: TellPeer(
-              stay: support.viewer_stay(3),
-              news: unit_news.PeerNews(
-                unit_id: support.own_unit_id,
-                news: unit_news.Departed(generation: support.viewer_sight(3)),
-              ),
-            ),
-          ))
-          as "the viewer's removal is told first, the ends after it"
-      }
-      _, _ -> Nil
-    }
   })
   // The notice a second time finds nothing held.
   let state = holding(holds: [armor_of_three, pool_of_three])
@@ -1586,7 +1559,7 @@ pub fn a_player_that_comes_into_sight_lists_the_casts_other_players_hold_on_it_t
     )
   let assert [own_cast, ..] =
     list.flat_map(steps, fn(taken) {
-      support.cast_starts(support.news_told(taken:, viewer: 2))
+      support.cast_starts(support.news_broadcast(taken))
     })
     as "the watcher is told the Gamma Rays cast started"
   let below = own_cast.cast_id - 1000
@@ -1632,14 +1605,13 @@ pub fn a_player_that_comes_into_sight_lists_the_casts_other_players_hold_on_it_t
     as "the list is cut at 511 entries (opcode.0x262.casts: a 9-bit count)"
 }
 
-/// The cast ids each step tells the viewer connection `viewer` ended (`HeldCastEnded`), a
+/// The cast ids each step tells the map ended (`HeldCastEnded`, for the map to relay), a
 /// list for each step, in order.
 fn held_casts_ended(
   steps steps: List(ConnectionStep(Request)),
-  viewer viewer: Int,
 ) -> List(List(Int)) {
   list.map(steps, fn(taken) {
-    list.filter_map(support.news_told(taken:, viewer:), fn(news) {
+    list.filter_map(support.news_broadcast(taken), fn(news) {
       case news {
         HeldCastEnded(cast_id:) -> Ok(cast_id)
         _ -> Error(Nil)
@@ -1648,13 +1620,13 @@ fn held_casts_ended(
   })
 }
 
-/// Whether the effect is the tell of a `HeldCastEnded` to a viewer.
+/// Whether the effect is the tell of a `HeldCastEnded` to the map.
 fn tells_a_held_cast_ended(
   effect effect: step.Effect(step.ConnectionEffect(Request)),
 ) -> Bool {
   case effect {
     OwnEffect(step.Tell(
-      request: TellPeer(
+      request: client_connection.TellBroadcast(
         news: unit_news.PeerNews(news: HeldCastEnded(..), ..),
         ..,
       ),
@@ -1673,10 +1645,10 @@ type AllyEvent {
 
 /// The Design's end paths of #570 Part 7, and `landing.changed`, `caster_unseen`,
 /// `caster_removed` and `ended_at_death`: when the ledger's last source of a cast leaves,
-/// the ally tells each of its viewers `HeldCastEnded` with the cast id, once per cast, in
-/// cast id order, after what it writes for its own client. The ledger's own ends are tested
-/// above; this tests what the ally then tells.
-pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_the_cast_ended_test() -> Nil {
+/// the ally tells the map `HeldCastEnded` with the cast id, once per cast, in cast id order,
+/// after what it writes for its own client; the map relays it to the viewers that remain. The
+/// ledger's own ends are tested above; this tests what the ally then tells.
+pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_the_map_the_cast_ended_test() -> Nil {
   use <- owned_test.run(10_000)
   let armor_of_three =
     held(caster: 3, source: armor_source(cast_id: 100), change: armor())
@@ -1684,14 +1656,13 @@ pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_
   let assert [armor_hold, pool_hold] =
     armor_and_pool(cast_id: 100, sight: EndsWhenUnseen)
     as "Phantasmal Armor's cast holds its armor and its pool"
-  // What the ally holds, what happens to it, and the casts each step tells connection 2 and
-  // connection 3 ended, a list for each step.
+  // What the ally holds, what happens to it, and the casts each step tells the map ended, a
+  // list for each step.
   let rows = [
     #(
-      "the end tell of the only source tells each viewer the cast ended",
+      "the end tell of the only source tells the map the cast ended",
       [armor_of_three],
       [CasterEnds(armor_of_three)],
-      [[100]],
       [[100]],
     ),
     #(
@@ -1699,27 +1670,23 @@ pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_
       [armor_hold, pool_hold],
       [CasterEnds(armor_hold), CasterEnds(pool_hold)],
       [[], [100]],
-      [[], [100]],
     ),
     #(
-      "the unseen notice of the caster ends an unkept source and tells the viewers that remain, not the caster that left",
+      "the unseen notice of the caster ends an unkept source and tells the map: the viewers that remain are the map's to find, and the caster that left is out of the relation",
       [armor_of_three],
       [MapNotice(Unseen(3))],
       [[100]],
-      [[]],
     ),
     #(
       "the unseen notice of the caster leaves a kept source and tells none",
       [kept_armor_of_three],
       [MapNotice(Unseen(3))],
       [[]],
-      [[]],
     ),
     #(
       "the gone notice of the caster's unit ends a kept source and tells",
       [kept_armor_of_three],
       [MapNotice(UnitGone(3))],
-      [[100]],
       [[100]],
     ),
     #(
@@ -1729,22 +1696,20 @@ pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_
       ]),
       [AllyDies],
       [[100, 200]],
-      [[100, 200]],
     ),
     #(
-      "an ally with no viewer left tells nobody",
+      "an ally with no viewer left still tells the map: it keeps no list of viewers, and the map relays to none",
       [kept_armor_of_three],
       [
         MapNotice(Unseen(3)),
         MapNotice(Unseen(2)),
         CasterEnds(kept_armor_of_three),
       ],
-      [[], [], []],
-      [[], [], []],
+      [[], [], [100]],
     ),
   ]
   list.each(rows, fn(row) {
-    let #(reason, holds, events, to_two, to_three) = row
+    let #(reason, holds, events, told) = row
     let #(_, steps) =
       list.fold(events, #(holding(holds:), []), fn(so_far, event) {
         let #(state, steps) = so_far
@@ -1759,8 +1724,7 @@ pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_
         }
         #(state, list.append(steps, [taken]))
       })
-    assert held_casts_ended(steps:, viewer: 2) == to_two as reason
-    assert held_casts_ended(steps:, viewer: 3) == to_three as reason
+    assert held_casts_ended(steps:) == told as reason
   })
   // The tell comes after every write to the ally's own client, as the cast's 0x7fe of a kept
   // change does.
@@ -1788,13 +1752,12 @@ pub fn the_last_source_of_a_cast_that_ends_on_an_ally_tells_each_of_its_viewers_
     as "no write to the ally's own client follows the first tell"
 }
 
-/// The starts of a held cast the step tells the viewer connection `viewer` (`HeldCastStarted`),
-/// each as its 0x7ff and its 0x7f4, in order.
+/// The starts of a held cast the step tells the map to relay (`HeldCastStarted`), each as its
+/// 0x7ff and its 0x7f4, in order.
 fn held_casts_started(
   taken taken: ConnectionStep(Request),
-  viewer viewer: Int,
 ) -> List(#(SpellStarted, SpellGo)) {
-  list.filter_map(support.news_told(taken:, viewer:), fn(news) {
+  list.filter_map(support.news_broadcast(taken), fn(news) {
     case news {
       HeldCastStarted(start:, go:) -> Ok(#(start, go))
       _ -> Error(Nil)
@@ -1802,28 +1765,21 @@ fn held_casts_started(
   })
 }
 
-/// The connection numbers the step tells a `HeldCastStarted`, in order.
-fn told_a_held_cast_start(taken taken: ConnectionStep(Request)) -> List(Int) {
-  list.filter_map(support.peer_tells(taken), fn(tell) {
-    case { tell.1 }.news {
-      HeldCastStarted(..) -> Ok(tell.0)
-      _ -> Error(Nil)
-    }
-  })
+/// How many times the step tells the map a `HeldCastStarted`, and that no viewer is told one
+/// directly.
+fn held_cast_starts_told(taken taken: ConnectionStep(Request)) -> Int {
+  assert support.tells_to_players_but_moves(taken) == []
+    as "the ally tells no viewer a start itself: the map relays it"
+  list.length(held_casts_started(taken:))
 }
 
 /// The go of caster connection `caster`'s cast `cast_id`, as the caster's connection tells the
-/// ally after its rows, with the connections it told the cast's 0x7ff.
+/// ally after its rows.
 fn went(
   caster caster: Int,
   cast_id cast_id: Int,
-  audience audience: List(Int),
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  tell(PlayerCastWent(
-    from: ConnectionId(caster),
-    cast_id:,
-    audience: set.from_list(list.map(audience, ConnectionId)),
-  ))
+  tell(PlayerCastWent(from: ConnectionId(caster), cast_id:))
 }
 
 /// The ally, seen by connections 2, 3 and 4 (the caster's), holding `holds` as the caster's
@@ -1843,24 +1799,25 @@ fn armor_and_pool_of_4(cast_id cast_id: Int, sight sight: Sight) -> List(Hold) {
 /// The monotonic time of the go, after the rows were told for the go's time 1000.
 const went_at_ms = 2500
 
-pub fn a_went_tell_makes_the_ally_start_the_cast_for_each_of_its_viewers_outside_the_audience_except_the_caster_test() -> Nil {
+pub fn a_went_tell_makes_the_ally_tell_the_map_the_casts_start_once_for_its_viewers_ledgers_to_judge_test() -> Nil {
   use <- owned_test.run(10_000)
   let armor_of_four =
     Hold(
       ..held(caster: 4, source: armor_source(cast_id: 100), change: armor()),
       sight: KeptWhenUnseen,
     )
-  // Row 1: viewers 2 (outside the audience), 3 (inside it) and 4 (the caster).
+  // Row 1: the ally is seen by 2, 3 and 4 (the caster): one start goes to the map, not one
+  // to each viewer. Which viewer writes it is the viewer's ledger's (a viewer that holds the
+  // cast in no state, whose own unit is not the caster's).
   let #(_, taken) =
     support.at(
       state: holding_for_caster_4(holds: [armor_of_four]),
       ms: went_at_ms,
-      event: went(caster: 4, cast_id: 100, audience: [3]),
+      event: went(caster: 4, cast_id: 100),
     )
-  assert told_a_held_cast_start(taken:) == [2]
-    as "only connection 2 is told the start: 3 is in the audience and 4 is the caster"
-  let assert [#(start, go)] = held_casts_started(taken:, viewer: 2)
-    as "connection 2 is told one start"
+  assert held_cast_starts_told(taken:) == 1
+    as "the map is told the start once, whoever the viewers are"
+  let assert [#(start, go)] = held_casts_started(taken:) as "one start is told"
   assert start.cast_id == 100
     && start.caster_unit_id == support.viewer_unit_id(4)
     && start.primary_target_unit_id == support.own_unit_id
@@ -1877,34 +1834,7 @@ pub fn a_went_tell_makes_the_ally_start_the_cast_for_each_of_its_viewers_outside
     })
     == [[#(203_798, 0, 8500)]]
     as "the effect 203798 at delay 0 with the time left of its 10 000 ms from the go at 1000, at 2500"
-  // Row 2: the caster's connection is not told though it is outside the audience.
-  let #(_, taken) =
-    support.at(
-      state: holding_for_caster_4(holds: [armor_of_four]),
-      ms: went_at_ms,
-      event: went(caster: 4, cast_id: 100, audience: []),
-    )
-  assert told_a_held_cast_start(taken:) == [2, 3]
-    as "with an empty audience both other viewers are told, and the caster is not: its client has the cast from its own go, and a 0x7ff naming its own unit starts its global cooldown (opcode.0x7ff)"
-  // Row 3: an audience that names a connection that is not a viewer of the ally (9) tells
-  // nobody for it, and a viewer that left before the went (2) is told nothing.
-  let #(left, _) =
-    support.feed(
-      state: holding_for_caster_4(holds: [armor_of_four]),
-      event: support.sent_by_the_map(map.UnseenBy(
-        by: ConnectionId(2),
-        generation: support.viewer_sight(2),
-      )),
-    )
-  let #(_, taken) =
-    support.at(
-      state: left,
-      ms: went_at_ms,
-      event: went(caster: 4, cast_id: 100, audience: [9]),
-    )
-  assert told_a_held_cast_start(taken:) == [3]
-    as "connection 9 is no viewer and is told nothing; connection 2 left before the went and is told nothing"
-  // Row 4: two rows of one cast, then the went: one start holding both effects, told once.
+  // Row 2: two rows of one cast, then the went: one start holding both effects, told once.
   let #(_, taken) =
     support.at(
       state: holding_for_caster_4(holds: armor_and_pool_of_4(
@@ -1912,21 +1842,22 @@ pub fn a_went_tell_makes_the_ally_start_the_cast_for_each_of_its_viewers_outside
         sight: KeptWhenUnseen,
       )),
       ms: went_at_ms,
-      event: went(caster: 4, cast_id: 100, audience: [3]),
+      event: went(caster: 4, cast_id: 100),
     )
-  let assert [#(_, both)] = held_casts_started(taken:, viewer: 2)
+  let assert [#(_, both)] = held_casts_started(taken:)
     as "one start holding both effects is told once"
   assert list.map(both.targets, fn(target) {
       list.map(target.effects, fn(effect) { effect.spell4_effects_id })
     })
     == [[203_798, 62_024]]
     as "both effects of the cast are listed on the one target, in the order they were told"
-  // Row 5: a viewer made a viewer after the went is told no start: its create lists the cast.
+  // Row 3: a viewer made a viewer after the went is told no start by the ally: its create
+  // lists the cast.
   let #(state, _) =
     support.at(
       state: holding_for_caster_4(holds: [armor_of_four]),
       ms: went_at_ms,
-      event: went(caster: 4, cast_id: 100, audience: [3]),
+      event: went(caster: 4, cast_id: 100),
     )
   let #(_, arrived) =
     support.feed(
@@ -1938,10 +1869,10 @@ pub fn a_went_tell_makes_the_ally_start_the_cast_for_each_of_its_viewers_outside
         generation: support.viewer_sight(6),
       )),
     )
-  assert told_a_held_cast_start(taken: arrived) == []
+  assert held_cast_starts_told(taken: arrived) == 0
     as "a viewer that arrives after the went is told no start"
-  // Row 6: every effect of the cast ended before the went (its end tell came first), or ended
-  // by the clock: nobody is told.
+  // Row 4: every effect of the cast ended before the went (its end tell came first), or ended
+  // by the clock: nothing is told.
   let #(ended, _) =
     support.feed(
       state: holding_for_caster_4(holds: [armor_of_four]),
@@ -1951,26 +1882,26 @@ pub fn a_went_tell_makes_the_ally_start_the_cast_for_each_of_its_viewers_outside
     support.at(
       state: ended,
       ms: went_at_ms,
-      event: went(caster: 4, cast_id: 100, audience: [3]),
+      event: went(caster: 4, cast_id: 100),
     )
-  assert told_a_held_cast_start(taken:) == []
+  assert held_cast_starts_told(taken:) == 0
     as "a cast whose only source ended before the went is started for nobody"
   let #(_, taken) =
     support.at(
       state: holding_for_caster_4(holds: [armor_of_four]),
       ms: 11_000,
-      event: went(caster: 4, cast_id: 100, audience: [3]),
+      event: went(caster: 4, cast_id: 100),
     )
-  assert told_a_held_cast_start(taken:) == []
+  assert held_cast_starts_told(taken:) == 0
     as "a cast whose every effect ended at the clock is started for nobody"
-  // Row 7: the caster's unseen notice taken between the rows and the went. A kept cast
-  // (Phantasmal Armor, propertyFlags 257) is still started for the outside viewer; an unkept
-  // one (Interrupt Armor 76766), already ended by the notice, is not.
+  // Row 5: the caster's unseen notice taken between the rows and the went. A kept cast
+  // (Phantasmal Armor, propertyFlags 257) is still started; an unkept one (Interrupt Armor
+  // 76766), already ended by the notice, is not.
   let unkept_armor = Hold(..interrupt_armor_hold(cast_id: 101), caster: 4)
   list.each(
     [
-      #("a kept cast", armor_of_four, 100, [2]),
-      #("an unkept cast", unkept_armor, 101, []),
+      #("a kept cast", armor_of_four, 100, 1),
+      #("an unkept cast", unkept_armor, 101, 0),
     ],
     fn(row) {
       let #(reason, hold, cast_id, told) = row
@@ -1986,12 +1917,12 @@ pub fn a_went_tell_makes_the_ally_start_the_cast_for_each_of_its_viewers_outside
         support.at(
           state: unseen,
           ms: went_at_ms,
-          event: went(caster: 4, cast_id:, audience: [3]),
+          event: went(caster: 4, cast_id:),
         )
-      assert told_a_held_cast_start(taken:) == told
+      assert held_cast_starts_told(taken:) == told
         as {
           reason
-          <> " after the caster's unseen notice is started for the outside viewer only when the ally still holds it"
+          <> " after the caster's unseen notice is started only when the ally still holds it"
         }
     },
   )
@@ -2005,10 +1936,12 @@ fn events_told(
   list.filter_map(support.tells(taken), fn(told) {
     case told {
       #(
-        step.Connection(connection: ConnectionId(caster)),
-        client_connection.TellPlayer(
-          stay:,
-          tell: client_connection.Event(event:),
+        _,
+        client_connection.TellLanding(
+          to: ConnectionId(caster),
+          to_stay: stay,
+          landing: relay.AllyEvent(event:),
+          ..,
         ),
       ) -> Ok(#(caster, stay, event))
       _ -> Error(Nil)
@@ -2272,8 +2205,8 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
     list.filter(rule_support.effects_of(taken), fn(effect) {
       case effect {
         OwnEffect(step.Tell(
-          request: client_connection.TellPlayer(
-            tell: client_connection.Event(..),
+          request: client_connection.TellLanding(
+            landing: relay.AllyEvent(..),
             ..,
           ),
           ..,
@@ -2338,4 +2271,138 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
     ],
     0,
   ))
+}
+
+/// The viewer `viewer` of the player (connection 3's unit) is shown the caster's unit and the
+/// start of its cast `cast_id`, as the caster's snapshot and news give them.
+fn caster_shown_casting(
+  state state: game_connection.State,
+  cast_id cast_id: Int,
+) -> game_connection.State {
+  let caster_unit = support.viewer_unit_id(3)
+  feed_all(state:, events: [
+    support.sent_by_a_peer(support.news_of(
+      unit_id: caster_unit,
+      news: Appeared(
+        unit: UnitCreatePlayer(..support.another_unit(), unit_id: caster_unit),
+        generation: support.viewer_sight(3),
+      ),
+    )),
+    support.sent_by_a_peer(support.news_of(
+      unit_id: caster_unit,
+      news: unit_news.CastStarted(start: support.spell_started_of(
+        cast_id:,
+        caster: caster_unit,
+      )),
+    )),
+  ]).0
+}
+
+pub fn a_unit_leaves_a_viewer_by_one_message_that_finishes_its_casts_removes_it_and_ends_its_sources_in_that_order_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Caster 3, whose unit the player shows and whose cast 100 the player's client holds as
+  // written by it. The player holds, from that caster, an armor that ends with its sight
+  // (cast 100) and a pool of a spell with propertyFlags 0x100, kept (cast 101).
+  let armor_of_three =
+    held(caster: 3, source: armor_source(cast_id: 100), change: armor())
+  let kept_pool_of_three =
+    Hold(
+      ..held(
+        caster: 3,
+        source: pool_source(cast_id: 101),
+        change: pool(amount: 300),
+      ),
+      sight: KeptWhenUnseen,
+    )
+  let state =
+    caster_shown_casting(
+      state: holding(holds: [armor_of_three, kept_pool_of_three]),
+      cast_id: 100,
+    )
+  let unseen =
+    support.sent_by_the_map(map.PlayerUnseen(
+      unit_id: support.viewer_unit_id(3),
+      generation: support.viewer_sight(3),
+    ))
+  let #(state, taken) = support.feed(state:, event: unseen)
+  assert support.written_ids(taken) == [0x07FE, 0x0355, 0x093A]
+    as "the 0x7fe of the cast the caster wrote, the caster's 0x355, then the end of the armor that ends with its sight"
+  assert seen(steps: [taken]).absorptions == []
+    as "the kept pool is not ended: its spell keeps its buff after the caster's removal (cast.target_node_end)"
+  let #(_, again) = support.feed(state:, event: unseen)
+  assert support.written_ids(again) == []
+    as "a second message for the same sight writes nothing: the unit is removed once"
+}
+
+pub fn a_caster_that_joins_again_ends_the_sources_of_its_earlier_stay_that_end_with_its_sight_and_keeps_a_kept_one_and_a_creatures_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The player holds from caster 3: a pool that ends with its sight (cast 101), an armor
+  // of a spell with propertyFlags 0x100 (cast 100); and from caster 4 a pool (cast 102),
+  // which stands for a source the caster's sight does not end. Caster 3's connection joins
+  // again: its earlier sight of the player ends (`PlayerUnseen`) and a new one begins.
+  let pool_of_three =
+    held(
+      caster: 3,
+      source: pool_source(cast_id: 101),
+      change: pool(amount: 300),
+    )
+  let kept_armor_of_three =
+    Hold(
+      ..held(caster: 3, source: armor_source(cast_id: 100), change: armor()),
+      sight: KeptWhenUnseen,
+    )
+  let pool_of_four =
+    held(
+      caster: 4,
+      source: pool_source(cast_id: 102),
+      change: pool(amount: 200),
+    )
+  let state =
+    caster_shown_casting(
+      state: holding_on(state: support.in_world(), viewers: [2, 3, 4], holds: [
+        pool_of_three,
+        kept_armor_of_three,
+        pool_of_four,
+      ]),
+      cast_id: 100,
+    )
+  let #(state, unseen) =
+    support.feed(
+      state:,
+      event: support.sent_by_the_map(map.PlayerUnseen(
+        unit_id: support.viewer_unit_id(3),
+        generation: support.viewer_sight(3),
+      )),
+    )
+  assert seen(steps: [unseen]).absorptions == [200]
+    as "caster 3's pool, which ends with its sight, is taken off: the player's absorption falls to caster 4's 200"
+  assert seen(steps: [unseen]).properties == []
+    as "the armor of the spell that keeps its buff is not taken off"
+  let new_stay = stay.next(support.viewer_stay(3))
+  let new_sight = generation.after(support.viewer_sight(5))
+  let #(state, _) =
+    support.feed(
+      state:,
+      event: support.sent_by_the_map(map.SeenBy(
+        by: ConnectionId(3),
+        stay: new_stay,
+        unit_id: support.viewer_unit_id(3),
+        generation: new_sight,
+      )),
+    )
+  let #(_, started) =
+    support.feed(
+      state:,
+      event: tell(PlayerChangeStarts(
+        from: ConnectionId(3),
+        from_stay: new_stay,
+        source: pool_source(cast_id: 103),
+        change: pool(amount: 300),
+        sight: EndsWhenUnseen,
+        spell4_id: armor_spell(),
+        effect: effect_of(source: pool_source(cast_id: 103)),
+      )),
+    )
+  assert seen(steps: [started]).absorptions == [500]
+    as "a start of the caster's new stay is held: caster 4's 200 and the new 300"
 }

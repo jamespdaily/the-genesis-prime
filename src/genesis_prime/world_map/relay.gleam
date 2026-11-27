@@ -24,10 +24,13 @@
 ////                                         ToldCreature(P, stay, inbound) ─▶ the creature's message
 //// ```
 ////
-//// The table of kinds, one row for each `Payload` and each `Inbound`: which way it goes,
-//// the check on its destination and the check on its source. A destination check is
-//// never sight: an answer or a tell reaches a player in its current stay whether or not
-//// it sees the creature, and a tell reaches a running creature whatever the sender sees.
+//// The table of kinds, one row for each `Payload`, each `Inbound` and each `Landing`: which
+//// way it goes, the check on its destination and the check on its source. A destination check
+//// is never sight: an answer or a tell reaches a player in its current stay whether or not
+//// it sees the creature, and a tell reaches a running creature whatever the sender sees. A
+//// landing is what one player's connection tells another through the map: it reaches the told
+//// player in the stay the tell names whatever the two see of each other. A local chat line
+//// and a unit's news are no landing: the map relays them through a player's relation.
 ////
 //// | Payload | Kind | Destination check | Source check |
 //// |---|---|---|---|
@@ -45,12 +48,21 @@
 //// | `CastViewSet` | what a player's cast holds on the creature | the running creature | the sender is a player of the map in the stay the relay names |
 //// | `CastViewEnds` | a cast holds nothing on the creature any more | the running creature | none |
 //// | `ControlsEnd` | the states a cast landed on the creature end | the running creature | none |
+//// | `HealStrike` | the heal rows of a caster's cast, for the told player's life | the told player's current stay | none |
+//// | `HealAnswer` | the told player's answer to a heal strike, for the caster's round | the told player's current stay | none |
+//// | `ChangeStart` | a change the caster's cast puts on the told player | the told player's current stay | the sender is a player of the map in the stay the tell names |
+//// | `ChangeEnd` | the end of a change the caster's cast put on the told player | the told player's current stay | none |
+//// | `CastWent` | the caster's go has told the told player each of its changes | the told player's current stay | none |
+//// | `AllyEvent` | the events of a blow on the told player that the caster's Proc rows on it wait for | the told player's current stay | none |
 
+import genesis_prime/game/chat_tell.{type Said as ChatSaid}
 import genesis_prime/game/experience.{type Credit}
 import genesis_prime/game/forced_move
+import genesis_prime/game/held_changes.{type PlayerChange}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell.{
-  type Answered, type Fight, type Tell as StrikeTell,
+  type Answered, type Fight, type PlayerAnswered, type PlayerEvent,
+  type PlayerStrike, type Tell as StrikeTell,
 }
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{type PeerNews}
@@ -75,6 +87,12 @@ pub type Delivered {
   News(news: PeerNews)
   /// A payload the creature told the player.
   Tell(payload: Payload)
+  /// What another player's cast landed on the player, or the answer to what the player
+  /// did to it, which the map admitted by its kind (`landing_kind_of`).
+  Landed(landing: Landing)
+  /// A local chat line (Say, Yell or Emote) of a player the told player sees, for a
+  /// viewer whose relation relays.
+  Said(said: ChatSaid)
 }
 
 /// The check on where a relayed payload goes.
@@ -185,5 +203,62 @@ pub fn inbound_kind_of(inbound inbound: Inbound) -> InboundKind {
       InboundKind(destination: RunningCreature, source: NoSenderCheck)
     ControlsEnd(..) ->
       InboundKind(destination: RunningCreature, source: NoSenderCheck)
+  }
+}
+
+/// What one player's connection tells another's through the map: what a cast lands on
+/// the other player, or the other's answer to it. Each kind is admitted by the map
+/// with the checks of `landing_kind_of`, and delivered to the told player's connection
+/// for the stay the tell names.
+pub type Landing {
+  /// The heal rows of the caster's cast, for the told player's life.
+  HealStrike(strike: PlayerStrike)
+  /// The told player's answer to a heal strike, for the caster's round.
+  HealAnswer(answered: PlayerAnswered)
+  /// A change the caster's cast puts on the told player.
+  ChangeStart(change: PlayerChange)
+  /// The end of a change the caster's cast put on the told player.
+  ChangeEnd(change: PlayerChange)
+  /// The caster's go has told the told player each of its changes.
+  CastWent(change: PlayerChange)
+  /// The events of a blow on the told player that the caster's Proc rows on it wait for.
+  AllyEvent(event: PlayerEvent)
+}
+
+/// The check on where a landing goes.
+pub type LandingDestination {
+  /// The told player is in the map in the stay the tell names, whether or not it sees the
+  /// sender.
+  TellsCurrentStay
+}
+
+/// The check on where a landing comes from.
+pub type LandingSource {
+  /// No check: the landing's own rules decide.
+  NoLandingSourceCheck
+  /// The sender is a player of the map in the stay the tell names for it.
+  SenderStayIsCurrent
+}
+
+/// The destination and source checks of a landing's kind.
+pub type LandingKind {
+  LandingKind(destination: LandingDestination, source: LandingSource)
+}
+
+/// The kind of a landing, from the table above.
+pub fn landing_kind_of(landing landing: Landing) -> LandingKind {
+  case landing {
+    HealStrike(..) ->
+      LandingKind(destination: TellsCurrentStay, source: NoLandingSourceCheck)
+    HealAnswer(..) ->
+      LandingKind(destination: TellsCurrentStay, source: NoLandingSourceCheck)
+    ChangeStart(..) ->
+      LandingKind(destination: TellsCurrentStay, source: SenderStayIsCurrent)
+    ChangeEnd(..) ->
+      LandingKind(destination: TellsCurrentStay, source: NoLandingSourceCheck)
+    CastWent(..) ->
+      LandingKind(destination: TellsCurrentStay, source: NoLandingSourceCheck)
+    AllyEvent(..) ->
+      LandingKind(destination: TellsCurrentStay, source: NoLandingSourceCheck)
   }
 }

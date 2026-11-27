@@ -56,7 +56,7 @@ pub fn a_kill_credit_sends_experience_gained_of_kind_2_test() -> Nil {
     as "0x1ac {5, 0, 0, 2, the creature's unit}"
   assert support.written_ids(taken) == [0x01AC]
     as "nothing else is written: the level stands below 655 experience"
-  assert support.peer_tells(taken) == []
+  assert support.tells_to_players_but_moves(taken) == []
     as "a viewer is told nothing of a gain that is the player's own"
 }
 
@@ -151,7 +151,7 @@ pub fn crossing_a_level_sends_stat_10_to_the_player_and_its_viewers_test() -> Ni
     as "0x938 {the player's unit, stat 10, 2}: the level the client raises (opcode.0x938)"
   assert support.written_ids(taken) == [0x01AC, 0x0938, 0x093A]
     as "the experience first, then the level it made, then the properties the level moves (a_level_up_sends_property_7_at_the_new_level_test)"
-  assert support.news_told(taken:, viewer: 2)
+  assert support.news_broadcast(taken)
     == [
       unit_news.Level(level: 2),
       unit_news.PropertiesChanged(properties: [
@@ -162,7 +162,7 @@ pub fn crossing_a_level_sends_stat_10_to_the_player_and_its_viewers_test() -> Ni
         ),
       ]),
     ]
-    as "a viewer is told the level, to write the same 0x938 under the unit it shows, then the Base Health the level gives (a_level_up_sends_property_7_at_the_new_level_test)"
+    as "the map is told the level, to relay to each viewer to write the same 0x938 under the unit it shows, then the Base Health the level gives (a_level_up_sends_property_7_at_the_new_level_test)"
   assert unit_fields.stat(
       tail: support.created_for(state:, viewer: 4).tail,
       stat_id: 10,

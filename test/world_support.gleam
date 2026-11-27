@@ -21,6 +21,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/erlang/process.{type Pid, type Subject}
+import gleam/function
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/otp/static_supervisor as supervisor
@@ -104,6 +105,7 @@ fn started(
       maps:,
       map_supervisor: process.new_name("map_supervisor"),
       maps_call_ms: ask_support.beyond_the_test_ms,
+      maps_reach: function.identity,
       map_shutdown_ms: 1000,
       creatures:,
       map_tells: group_registry.new(label: "map_tells"),

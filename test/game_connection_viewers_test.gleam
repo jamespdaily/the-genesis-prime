@@ -35,8 +35,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike_tell
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news.{
-  Appeared, CastFinished, Departed, LookChanged, PeerNews, PropertiesChanged,
-  Removed,
+  Appeared, CastFinished, LookChanged, PeerNews, PropertiesChanged, Removed,
 }
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
@@ -85,7 +84,6 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{Character, ForItems, ForSelect, ItemsSaved, Listed}
 import genesis_prime/table/id.{ClassId, Spell4EffectsId, Spell4Id}
-import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_path
@@ -169,7 +167,7 @@ pub fn a_viewer_writes_a_0x262_only_for_a_unit_its_client_does_not_hold_and_a_0x
   // writes it after itself (genesis_prime/game/move_stamp).
   // Each sequence is what two senders can produce for one unit: the owner's
   // messages in the order it sent them, and the map's Gone after the owner's
-  // end, anywhere among them. A player's removal is the owner's Departed, so each row
+  // end, anywhere among them. A player's removal is the map's PlayerUnseen, so each row
   // with one runs the viewer's memory of the sight that ended. A move before its
   // 0x262 stands for a notice the map relayed late.
   list.each(
@@ -564,26 +562,25 @@ pub fn a_watched_makes_the_owner_send_the_viewer_its_0x262_at_its_current_place_
         generation: game_connection_support.viewer_sight(2),
       )),
     )
-  let assert [#(2, PeerNews(news: Appeared(unit: created, ..), ..))] =
-    game_connection_support.peer_tells(taken)
-    as "the viewer is sent the unit at once"
+  let assert [PeerNews(news: Appeared(unit: created, ..), ..)] =
+    game_connection_support.snapshot_items(taken)
+    as "the viewer's snapshot, told to the map at once, holds the unit"
   let assert [passive] = created.tail.casts
     as "the Engineer's innate passive is the one cast it holds"
-  assert game_connection_support.peer_tells(taken)
+  assert game_connection_support.snapshot_items(taken)
     == [
-      #(
-        2,
-        game_connection_support.told(news: Appeared(
-          unit: appearance_at(
-            place: game_connection_support.entry_place(),
-            time_ms: 1000,
-            casts: [engineer_passive(cast_id: passive.cast_id)],
-          ),
-          generation: game_connection_support.viewer_sight(2),
-        )),
-      ),
+      game_connection_support.told(news: Appeared(
+        unit: appearance_at(
+          place: game_connection_support.entry_place(),
+          time_ms: 1000,
+          casts: [engineer_passive(cast_id: passive.cast_id)],
+        ),
+        generation: game_connection_support.viewer_sight(2),
+      )),
     ]
-    as "the viewer is sent the unit at once, from the origin the map's Joined carried: the map sends the client no unit, and its copy lists the passive's buffs"
+    as "the snapshot holds the unit at once, from the origin the map's Joined carried, and its copy lists the passive's buffs"
+  assert game_connection_support.tells_to_players_but_moves(taken) == []
+    as "and the connection tells the viewer's connection nothing itself: the map relays the snapshot"
   assert support.writes(taken) == []
 }
 
@@ -633,8 +630,8 @@ pub fn a_viewers_copy_of_a_player_carries_no_class_resource_stat_or_maximum_test
           generation: game_connection_support.viewer_sight(2),
         )),
       )
-    let assert [#(2, PeerNews(news: Appeared(unit:, ..), ..))] =
-      game_connection_support.peer_tells(taken)
+    let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+      game_connection_support.snapshot_items(taken)
     assert list.map(unit.tail.stats, fn(stat) { stat.stat_id }) == [0, 10, 20]
       as "health, level and shield only: no class slot's stat and no stat 1"
     assert !list.any(unit.tail.properties, fn(property) {
@@ -669,8 +666,8 @@ pub fn a_move_the_owner_took_before_a_watched_is_in_the_0x262_the_new_viewer_is_
         generation: game_connection_support.viewer_sight(2),
       )),
     )
-  let assert [#(2, PeerNews(news: Appeared(unit:, ..), ..))] =
-    game_connection_support.peer_tells(taken)
+  let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+    game_connection_support.snapshot_items(taken)
   let assert [start_movement.Position(at), start_movement.Rotation(_)] =
     unit.tail.movement_commands
   assert at.x == float32.to_bits(1.5)
@@ -698,16 +695,8 @@ pub fn an_unwatched_makes_the_owner_send_that_viewer_its_0x355_and_no_more_moves
         generation: game_connection_support.viewer_sight(2),
       )),
     )
-  assert game_connection_support.peer_tells(taken)
-    == [
-      #(
-        2,
-        game_connection_support.told(
-          news: Departed(generation: game_connection_support.viewer_sight(2)),
-        ),
-      ),
-    ]
-    as "the viewer that stops seeing the unit is sent its removal, for the sight that ended, and only that one"
+  assert game_connection_support.tells_to_players_but_moves(taken) == []
+    as "the viewer that stops seeing the unit is sent nothing by the owner: its removal, for the sight that ended, is the map's PlayerUnseen"
   assert list.map(
       game_connection_support.viewer_moves(
         taken: game_connection_support.read(state, moves).1,
@@ -724,7 +713,7 @@ pub fn an_unwatched_makes_the_owner_send_that_viewer_its_0x355_and_no_more_moves
         generation: game_connection_support.viewer_sight(8),
       )),
     )
-  assert game_connection_support.peer_tells(taken) == []
+  assert game_connection_support.tells_to_players_but_moves(taken) == []
     && support.logs(taken) == []
     as "an Unwatched for a connection that is no viewer changes nothing and is no bug"
 }
@@ -771,25 +760,11 @@ pub fn the_owners_camp_sends_each_viewer_its_0x355_before_the_leave_is_asked_tes
       taken:,
       outcome: game_connection_support.place_saved(),
     )
-  assert game_connection_support.peer_tells(taken)
-    == [
-      #(
-        2,
-        game_connection_support.told(
-          news: Departed(generation: game_connection_support.viewer_sight(2)),
-        ),
-      ),
-      #(
-        3,
-        game_connection_support.told(
-          news: Departed(generation: game_connection_support.viewer_sight(3)),
-        ),
-      ),
-    ]
-    as "its 0x355 to every viewer, each for the sight it ends: the map's Unwatched after the leave would be a second sender"
+  assert game_connection_support.tells_to_players_but_moves(taken) == []
+    as "a camp tells no viewer a removal: the map ends each sight when it takes the leave (PlayerUnseen)"
   assert game_connection_support.ask_request(taken)
     == game_connection_support.leave_asked()
-    as "and the leave of the map is asked in the same step, after the tells"
+    as "and the leave of the map is asked in the same step"
 }
 
 pub fn an_accepted_0x637_tells_the_map_the_place_the_movement_keeps_and_nothing_else_test() -> Nil {
@@ -932,8 +907,8 @@ pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x63
     move.server_time_ms
   }
   let create_time = fn(monotonic_ms) {
-    let assert [#(2, PeerNews(news: Appeared(unit:, ..), ..))] =
-      game_connection_support.peer_tells(at(
+    let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+      game_connection_support.snapshot_items(at(
         monotonic_ms,
         game_connection_support.sent_by_the_map(SeenBy(
           by: ConnectionId(2),
@@ -1646,23 +1621,18 @@ pub fn a_viewer_that_leaves_between_the_save_and_the_news_is_dropped_like_other_
         generation: game_connection_support.viewer_sight(2),
       )),
     )
-  list.each([2, 3], fn(viewer) {
-    let assert [LookChanged(..), PropertiesChanged(..), ..] =
-      game_connection_support.news_told(taken: answered, viewer:)
-      as "each viewer held when the answer comes is told the look and then the properties"
-    Nil
-  })
-  assert game_connection_support.news_told(taken: unseen, viewer: 2)
-    == [Departed(generation: game_connection_support.viewer_sight(2))]
-    as "then the viewer that left is told the unit is removed"
-  assert game_connection_support.news_told(taken: unseen, viewer: 3) == []
+  let assert [LookChanged(..), PropertiesChanged(..), ..] =
+    game_connection_support.news_broadcast(answered)
+    as "each viewer held when the answer comes is told the look and then the properties"
+  assert game_connection_support.news_broadcast(unseen) == []
+    as "then the viewer that left is told nothing by the unit's owner: its removal is the map's"
+  assert game_connection_support.news_broadcast(unseen) == []
     as "and the viewer that stayed is told nothing more"
   // The viewer's own connection: its client showed the unit, then the map said the unit
   // is gone, so the look and the properties the player told it find no unit shown and
   // are dropped, as any news of a unit not shown is. A viewer that still shows the unit
   // writes them, so the empty writes are the drop and not news the viewer never writes.
-  let told =
-    list.take(game_connection_support.news_told(taken: answered, viewer: 2), 2)
+  let told = list.take(game_connection_support.news_broadcast(answered), 2)
   let #(shown, _) =
     game_connection_support.feed(
       game_connection_support.in_world(),
@@ -2437,10 +2407,9 @@ fn medic_casting_seen_by_a_new_viewer(
     )
   let starts =
     list.flat_map(steps, fn(taken) {
-      game_connection_support.cast_starts(game_connection_support.news_told(
-        taken:,
-        viewer: 2,
-      ))
+      game_connection_support.cast_starts(
+        game_connection_support.news_broadcast(taken),
+      )
     })
   assert starts != [] as "the watcher is told the pressed cast started"
   #(starts, game_connection_support.created_at(state:, viewer: 3, ms: until_ms))
@@ -2459,27 +2428,15 @@ fn own_target(
   )
 }
 
-/// A viewer's coming into sight of the Medic or leaving it, at a time.
-type Move {
-  Comes(at_ms: Int)
-  Goes(at_ms: Int)
-}
-
-/// The news the Medic's connection tells the viewer 3 after Discharge, pressed at 1000 ms
-/// with the connection 2 watching, as the viewer comes and goes by `moves`, and the casts
-/// the watcher 2 was told started. Discharge's first go, 410 ms in, starts a Power Charge
-/// (Spell4 42569) that no go of Discharge ends: its cast lingers until its buff ends.
-fn discharge_told_to_a_viewer(
-  moves moves: List(Move),
-) -> #(List(spell_started.SpellStarted), List(unit_news.News)) {
-  discharge_told_on(tables: character_tables.shared(), moves:)
-}
-
-/// `discharge_told_to_a_viewer` on these tables.
-fn discharge_told_on(
-  tables tables: store_tables.Tables,
-  moves moves: List(Move),
-) -> #(List(spell_started.SpellStarted), List(unit_news.News)) {
+/// The news the Medic's connection tells the map after Discharge, pressed at 1000 ms with
+/// the connection 2 watching, run to the end of its casts, and the casts the watcher 2 was
+/// told started. Discharge's first go, 410 ms in, starts a Power Charge (Spell4 42569) that no
+/// go of Discharge ends: its cast lingers until its buff ends.
+fn discharge_told_to_the_map() -> #(
+  List(spell_started.SpellStarted),
+  List(unit_news.News),
+) {
+  let tables = character_tables.shared()
   let #(state, _, bag_index) =
     game_connection_support.entered_with_server_proxies(
       class_id: 4,
@@ -2495,61 +2452,22 @@ fn discharge_told_on(
       ms: 1000,
       until_ms: 1000,
     )
-  let #(state, pending, steps) =
-    list.fold(
-      moves,
-      #(state, game_connection_support.cast_timers(steps: pressed, ms: 1000), [
-        pressed,
-      ]),
-      fn(held, move) {
-        let #(state, pending, steps) = held
-        let #(state, pending, ran) =
-          game_connection_support.casts_left(
-            state:,
-            pending:,
-            until_ms: move.at_ms,
-            steps: [],
-          )
-        let notice = case move {
-          Comes(..) ->
-            SeenBy(
-              by: ConnectionId(3),
-              stay: game_connection_support.viewer_stay(3),
-              unit_id: game_connection_support.viewer_unit_id(3),
-              generation: game_connection_support.viewer_sight(3),
-            )
-          Goes(..) ->
-            UnseenBy(
-              by: ConnectionId(3),
-              generation: game_connection_support.viewer_sight(3),
-            )
-        }
-        let #(state, moved) =
-          game_connection_support.at(
-            state:,
-            ms: move.at_ms,
-            event: game_connection_support.sent_by_the_map(notice),
-          )
-        #(state, pending, list.append(steps, [ran, [moved]]))
-      },
-    )
   let #(_, ran) =
     game_connection_support.casts_run(
       state:,
-      pending:,
+      pending: game_connection_support.cast_timers(steps: pressed, ms: 1000),
       until_ms: 100_000,
       steps: [],
     )
-  let steps = list.flatten([list.flatten(steps), ran])
+  let steps = list.append(pressed, ran)
   #(
     list.flat_map(steps, fn(taken) {
-      game_connection_support.cast_starts(game_connection_support.news_told(
-        taken:,
-        viewer: 2,
-      ))
+      game_connection_support.cast_starts(
+        game_connection_support.news_broadcast(taken),
+      )
     }),
     list.flat_map(steps, fn(taken) {
-      game_connection_support.news_told(taken:, viewer: 3)
+      game_connection_support.news_broadcast(taken)
     }),
   )
 }
@@ -2596,10 +2514,9 @@ pub fn a_player_that_comes_into_sight_lists_its_buffs_test() -> Nil {
     )
   let assert [gate, ..] =
     list.flat_map(steps, fn(taken) {
-      game_connection_support.cast_starts(game_connection_support.news_told(
-        taken:,
-        viewer: 2,
-      ))
+      game_connection_support.cast_starts(
+        game_connection_support.news_broadcast(taken),
+      )
     })
     as "the watcher is told the pressed cast started"
   let created = game_connection_support.created_at(state:, viewer: 3, ms: 1100)
@@ -2648,9 +2565,8 @@ pub fn a_player_that_comes_into_sight_lists_its_buffs_test() -> Nil {
 /// state 2 (bit 1) until its first go and state 3 (bit 0) after; a cast that is no longer
 /// the current cast and holds no node is not listed, and one that holds a node with a
 /// listed effect still is (a Discharge's lingering Power Charge). And
-/// `cast.target_node_end`: a viewer is then told the later news of the casts it was
-/// listed and of no other (a 0x87f of a cast it does not hold would wait on the unit for
-/// ever), and one that left sight is told nothing of the casts it saw before.
+/// `cast.target_node_end`: the caster tells the map Discharge's finish and the end of the
+/// Power Charge it left, once each, for the viewers' ledgers to judge.
 pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
   use <- owned_test.run(60_000)
   let none =
@@ -2737,55 +2653,42 @@ pub fn a_player_that_comes_into_sight_lists_its_current_cast_test() -> Nil {
       }
     },
   )
-  list.each(
-    [
-      #(
-        "a viewer that comes into sight after Discharge's first go is told its finish and the end of the Power Charge the first go left, which its create listed",
-        [Comes(1500)],
-      ),
-      #(
-        "a viewer that saw the Power Charge start, left and came back is told the Power Charge's end once: it was listed it again",
-        [Comes(1100), Goes(1500), Comes(1600)],
-      ),
-    ],
-    fn(row) {
-      let #(name, moves) = row
-      let #(started, told) = discharge_told_to_a_viewer(moves:)
-      let assert [discharge, ..] = started
-      let assert Ok(power_charge) =
-        list.find(started, fn(start) { start.spell4_id == 42_569 })
-        as "the first go starts a Power Charge"
-      assert discharge.spell4_id == 58_832 as name
-      assert list.contains(told, CastFinished(cast_id: discharge.cast_id))
-        as name
-      assert told_of(told:, cast_id: power_charge.cast_id) as name
-      assert list.count(told, fn(news) {
-          list.any([False, True], fn(destroyed) {
-            news
-            == unit_news.CastTargetsRemoved(
-              removed: spell_targets_removed.SpellTargetsRemoved(
-                cast_id: power_charge.cast_id,
-                unit_ids: [game_connection_support.own_unit_id],
-              ),
-              destroyed:,
-            )
-          })
-        })
-        == 1
-        as name
-    },
-  )
+  // The caster tells the map each news of Discharge's life once, whoever is in sight; which of
+  // them a viewer writes is its ledger's decision, stated by the ledger rows of
+  // `a_cast_finished_at_the_viewer_before_the_allys_start_is_written_no_start_and_the_start_first_is_dropped_then_the_finish_written_test`.
+  let #(started, told) = discharge_told_to_the_map()
+  let assert [discharge, ..] = started
+  let assert Ok(power_charge) =
+    list.find(started, fn(start) { start.spell4_id == 42_569 })
+    as "the first go starts a Power Charge"
+  assert discharge.spell4_id == 58_832
+  assert list.contains(told, CastFinished(cast_id: discharge.cast_id))
+    as "Discharge's finish is told to the map"
+  assert told_of(told:, cast_id: power_charge.cast_id)
+    as "the Power Charge's end is told to the map"
+  assert list.count(told, fn(news) {
+      list.any([False, True], fn(destroyed) {
+        news
+        == unit_news.CastTargetsRemoved(
+          removed: spell_targets_removed.SpellTargetsRemoved(
+            cast_id: power_charge.cast_id,
+            unit_ids: [game_connection_support.own_unit_id],
+          ),
+          destroyed:,
+        )
+      })
+    })
+    == 1
+    as "and told once"
 }
 
-/// `opcode.0x262.casts` and `cast.target_node_end`: a viewer is told the later news of the
-/// casts its create listed and of no other. The map's second join of a connection sends each
-/// player it sees a second `SeenBy`, and a viewer that already shows the player drops the
-/// second create, so the second `SeenBy` lists it nothing and joins it to no cast. Discharge's
-/// Power Charge (Spell4 42569) is given a cast time of 1000 ms, so that this child cast of
-/// the first go (410 ms in) waits 1000 ms before its own first go makes its node: a viewer that
-/// comes at 1500 ms is not listed it, and one that comes again at 2600 ms, after the node, is
-/// still not told its end.
-pub fn a_second_join_of_a_viewer_joins_it_to_no_cast_it_was_not_listed_test() -> Nil {
+/// `opcode.0x262.casts` and `cast.target_node_end`: the casts a viewer's ledger holds are those
+/// its create lists, and the map relays it the news of every cast, so what the create lists
+/// decides which news the viewer writes a frame for. Discharge's Power Charge (Spell4 42569)
+/// is given a cast time of 1000 ms, so that this child cast of the first go (410 ms in) waits
+/// 1000 ms before its own first go makes its node: a create at 1500 ms does not list it, and
+/// a create at 2600 ms, after the node, does.
+pub fn a_create_lists_only_the_casts_that_hold_a_node_when_it_is_built_test() -> Nil {
   use <- owned_test.run(60_000)
   use tables <- fixture_tables.changed(table: "Spell4", id: 42_569, with: [
     #("castTime", planted_table.Integer(1000)),
@@ -2793,24 +2696,53 @@ pub fn a_second_join_of_a_viewer_joins_it_to_no_cast_it_was_not_listed_test() ->
   list.each(
     [
       #(
-        "a viewer that comes while the Power Charge waits for its first go is not listed it, so it is told nothing of it",
-        [Comes(1500)],
+        "a viewer that comes while the Power Charge waits for its first go is listed Discharge, the current cast, and not the Power Charge: it holds no node yet",
+        1500,
+        True,
+        False,
       ),
-      #("and a second join after the node does not add the viewer to the cast", [
-        Comes(1500),
-        Comes(2600),
-      ]),
+      #(
+        "a viewer that comes after the node is listed the Power Charge",
+        2600,
+        False,
+        True,
+      ),
     ],
     fn(row) {
-      let #(name, moves) = row
-      let #(started, told) = discharge_told_on(tables:, moves:)
+      let #(name, at_ms, lists_discharge, lists_power_charge) = row
+      let #(state, _, bag_index) =
+        game_connection_support.entered_with_server_proxies(
+          class_id: 4,
+          ability: discharge_base,
+          proxies: server_proxy_support.none(),
+          tables:,
+        )
+      let #(state, steps) =
+        game_connection_support.pressed_until(
+          state: game_connection_support.watched_by(state:, viewers: [2]),
+          bag_index:,
+          client_cast_id: 1,
+          ms: 1000,
+          until_ms: at_ms,
+        )
+      let started =
+        list.flat_map(steps, fn(taken) {
+          game_connection_support.cast_starts(
+            game_connection_support.news_broadcast(taken),
+          )
+        })
       let assert [discharge, ..] = started
       let assert Ok(power_charge) =
         list.find(started, fn(start) { start.spell4_id == 42_569 })
         as "the first go starts a Power Charge"
-      assert list.contains(told, CastFinished(cast_id: discharge.cast_id))
-        as "the viewer was listed Discharge, the current cast, at its first join"
-      assert !told_of(told:, cast_id: power_charge.cast_id) as name
+      let listed =
+        list.map(
+          game_connection_support.created_at(state:, viewer: 3, ms: at_ms).tail.casts,
+          fn(cast) { cast.cast_id },
+        )
+      assert list.contains(listed, discharge.cast_id) == lists_discharge as name
+      assert list.contains(listed, power_charge.cast_id) == lists_power_charge
+        as name
     },
   )
 }
@@ -3731,7 +3663,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
           <> ": the unit's 0x355, then the 0x7fe of the lingering cast its nodes left"
         }
       assert list.contains(
-        game_connection_support.news_told_to_viewer_2(taken: removed),
+        game_connection_support.news_broadcast(removed),
         CastFinished(cast_id:),
       )
         as { reason <> ": the viewer told the cast's start is told its finish" }
@@ -3966,14 +3898,11 @@ fn departed_at(
   session session: connection_state.Session,
   sight_number sight_number: Int,
 ) -> Taken {
-  viewers.viewer_takes(
+  viewers.map_sent(
     session:,
     now: at_ms_zero,
     entered: entered_of(session:),
-    news: PeerNews(
-      unit_id: 9,
-      news: Departed(generation: sight(n: sight_number)),
-    ),
+    notice: map.PlayerUnseen(unit_id: 9, generation: sight(n: sight_number)),
   )
   |> taken_from
 }
@@ -4384,7 +4313,7 @@ pub fn a_players_copy_takes_the_generation_the_map_gave_each_viewer_and_an_unsee
         generation: sight(n: 3),
       )),
     )
-  assert game_connection_support.peer_tells(taken) == []
+  assert game_connection_support.tells_to_players_but_moves(taken) == []
     as "an end of an earlier sight than the one the copy holds sends no removal"
   assert list.length(support.logs_of(step: taken, level: LogError)) == 1
     as "and is logged as an error: the map issues an end for the sight the copy holds, so an older one is its bug"
@@ -4399,14 +4328,8 @@ pub fn a_players_copy_takes_the_generation_the_map_gave_each_viewer_and_an_unsee
         generation: sight(n: 5),
       )),
     )
-  assert game_connection_support.peer_tells(taken)
-    == [
-      #(
-        2,
-        game_connection_support.told(news: Departed(generation: sight(n: 5))),
-      ),
-    ]
-    as "the end of the sight the copy holds sends the removal for it"
+  assert game_connection_support.tells_to_players_but_moves(taken) == []
+    as "the end of the sight the copy holds sends the viewer nothing: the removal is the map's"
   assert move_to_2(state) == [] as "and deletes the entry: no more moves"
 }
 

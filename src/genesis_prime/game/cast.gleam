@@ -15,22 +15,22 @@
 ////                            the spell's cast conditions last (CasterCast 151, TargetCast 281)
 ////                            accepted: id k = mint(unit, n); the gcd starts
 //// ◀── 0x7fd {client id, k, caster}                  (the caster's cast starts in its client)
-////                            Tell(each viewer, CastStarted)  ──────────────▶ 0x7ff, when its client shows the caster
+////                            Broadcast(CastStarted)  ─▶ the map ─▶ 0x7ff, when its client shows the caster
 //// ◀── 0x816 {ability, ability, 0, k}   a RapidTap or ChargeRelease ability's first press opens its threshold
 //// ◀── 0x817 {ability, index}           the next tap's stage, or the next charge level (a timer)
 ////                            cast time 0: the go at once; else StartTimer(go)
-//// ◀── 0x7f4 {k, phase 0, no target, no effect}  ◀── Tell(each viewer, CastWent) ─▶ 0x7f4, for a cast it wrote
+//// ◀── 0x7f4 {k, phase 0, no target, no effect}  ◀── Broadcast(CastWent) ─▶ 0x7f4, for a cast it wrote
 ////                            the spell's own cooldown and its groups start at the go its method names
 ////                            each Proxy of the phase: StartTimer(delay), or at once for delay 0
 ////                            a child: id k2 = mint, root = the pressed spell, parent = the proxying spell
-//// ◀── 0x7ff {k2, ..}        Tell(each viewer, CastStarted) ───────────────▶ 0x7ff
+//// ◀── 0x7ff {k2, ..}        Broadcast(CastStarted) ───▶ 0x7ff
 //// ◀── 0x7f4, 0x7fe          its go and finish, as the pressed cast's
-//// ◀── 0x7fe {k}             Tell(each viewer, CastFinished) ──────────────▶ 0x7fe, for a cast it wrote
+//// ◀── 0x7fe {k}             Broadcast(CastFinished) ──────▶ 0x7fe, for a cast it wrote
 //// ◀── 0x814 {ability, bit}  the last tap or the release closes the threshold
 //// 0x801 {k, 6, 1} ─────────▶ the cast ends: its timers cancelled, 0x7fe to all
 ////
 //// each input in the world ─▶ `persisted`: a lasting cast whose persistence stopped holding
-////                            ends ──▶ 0x7f9 {k, 282 or 283, caster, 0}, then 0x7fe {k}; Tell(each viewer, CastFinished)
+////                            ends ──▶ 0x7f9 {k, 282 or 283, caster, 0}, then 0x7fe {k}; Broadcast(CastFinished)
 ////
 //// each input ─────────────▶ `settled`: the stealth change ──▶ StealthChanged (0x8f5), then the procs held for the
 ////                            input's events (its own: Died, LeftCombat or a hit's; then EnteredStealth or LeftStealth) cast
@@ -79,14 +79,13 @@
 ////   (0, 0) with the 0x816 value for an open ChargeRelease threshold
 ////   (`opcode.0x801`). It clears the caster's current cast, whatever cast that is,
 ////   and the cast ends with its go timers cancelled and 0x7fe to the caster and the
-////   audience, no strike; the base cast of a charge ends its threshold too, with
+////   map, no strike; the base cast of a charge ends its threshold too, with
 ////   0x814 before its 0x7fe. A cast that is not live is a debug line. Any other
 ////   reason or bit is one the client never sends, and ends the connection.
-//// - **The audience** of a cast is the caster's viewers when it starts, and each viewer
-////   that comes into sight while a unit create of the caster lists the cast
-////   (`cast_state.audience_joined`); its go and finish go to them. A viewer writes a 0x7ff only when its client shows the
-////   caster, and a go, or a finish, only for a cast it wrote
-////   (genesis_prime/game/connection). The threshold messages go to the caster only.
+//// - **A cast's news** goes to the map once, as `Broadcast`, which relays it to each player
+////   whose relation with the caster relays; the cast rule keeps no list of viewers. A viewer
+////   writes a 0x7ff only when its client shows the caster, and a go, or a finish, only for a
+////   cast it wrote (genesis_prime/game/connection). The threshold messages go to the caster only.
 
 import genesis_prime/client_connection
 import genesis_prime/game/activate
@@ -109,24 +108,24 @@ import genesis_prime/game/cast/state.{
   type Restricting, type Role, type Standing, type StandingKey, type State,
   type Struck, type TargetVerdict, type TickAsked, type Used, type UsedUnit,
   Accept, Activated, Activating, Activation, ActivationStart, Aimed, AimedPress,
-  AnswerSucceeded, Answered, AwaitingAnswer, Base, Cancelled, CannotTell,
-  CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel, Child,
-  CooldownEnds, CooldownKept, CooldownModifierEnds, CooldownModifierStarts,
-  Deflected, Described, Finish, ForcedMoveStart, Frames, GateFails, Go, GoAsked,
-  Healing, Held, HeldProc, Hit, Hold, HoldForCast, Holding, Immune, Item,
-  ItemAtPlace, ItemPress, KeyHeld, Lingering, Listed, Live, Log, ModifierEnd,
-  ModifierStart, NoClientCastId, NoInteraction, NoInteractionWaits, NoItemSpell,
-  NodesEnd, NotBuilt, NotDecoded, NotSentByClient, OnCaster, OnPlayer, Passive,
-  Plain, PlayerChangeEnd, PressNotBuilt, PressRefused, Pressed, PressedAt,
-  ProcDue, QuestAdvanceDue, QuestAdvanced, QuestButton, Reached, Refuse,
-  RepeatHeld, Resolution, ResourceMoved, RestrictionEnd, Send, Shortcut,
-  ShortcutCast, Stage, Standing, StandingKey, StartChild, StartHeld, Started,
-  StartedMoving, Starts, State, StateEnd, StealthChanged, Strike,
-  TargetModifierStart, Tell, Threshold, Tick, UnbuiltItemSpell, UnbuiltShortcut,
-  UnbuiltSpell, UnbuiltStandingSpell, UnknownAnswer, UnknownCancel,
-  UnreadItemPrerequisite, UnreadLinkPrerequisite, UnreadPrerequisite,
-  UnreadShortcutPick, UsedUnit, WindowEnd, WithCast, WithNothing, WithUse,
-  WrongAnswerSpell,
+  AnswerSucceeded, Answered, AwaitingAnswer, Base, Broadcast, Cancelled,
+  CannotTell, CastClears, CasterChangeEnds, CasterChangeStarts, ChargeLevel,
+  Child, CooldownEnds, CooldownKept, CooldownModifierEnds,
+  CooldownModifierStarts, Deflected, Described, Finish, ForcedMoveStart, Frames,
+  GateFails, Go, GoAsked, Healing, Held, HeldProc, Hit, Hold, HoldForCast,
+  Holding, Immune, Item, ItemAtPlace, ItemPress, KeyHeld, Lingering, Listed,
+  Live, Log, ModifierEnd, ModifierStart, NoClientCastId, NoInteraction,
+  NoInteractionWaits, NoItemSpell, NodesEnd, NotBuilt, NotDecoded,
+  NotSentByClient, OnCaster, OnPlayer, Passive, Plain, PlayerChangeEnd,
+  PressNotBuilt, PressRefused, Pressed, PressedAt, ProcDue, QuestAdvanceDue,
+  QuestAdvanced, QuestButton, Reached, Refuse, RepeatHeld, Resolution,
+  ResourceMoved, RestrictionEnd, Send, Shortcut, ShortcutCast, Stage, Standing,
+  StandingKey, StartChild, StartHeld, Started, StartedMoving, Starts, State,
+  StateEnd, StealthChanged, Strike, TargetModifierStart, Threshold, Tick,
+  UnbuiltItemSpell, UnbuiltShortcut, UnbuiltSpell, UnbuiltStandingSpell,
+  UnknownAnswer, UnknownCancel, UnreadItemPrerequisite, UnreadLinkPrerequisite,
+  UnreadPrerequisite, UnreadShortcutPick, UsedUnit, WindowEnd, WithCast,
+  WithNothing, WithUse, WrongAnswerSpell,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/class_resource.{type Payment}
@@ -157,7 +156,6 @@ import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/item_use as item_use_message
 import genesis_prime/step.{type Now, type TimerId, LogDebug, LogInfo, LogWarning}
 import genesis_prime/table/id.{type Item2Id, type Spell4Id, Spell4EffectsId}
-import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -3513,7 +3511,7 @@ fn nodes_ended(
 }
 
 /// A tick's strike round closed (genesis_prime/game/strike `Ticked`): a landed tick
-/// writes the 0x7f8 to the caster and tells the audience `CastTicked`, and a killing one
+/// writes the 0x7f8 to the caster and broadcasts `CastTicked`, and a killing one
 /// then drops the unit's ticks; a deflected or immune tick writes nothing and the ticks
 /// go on; a refused tick or one left out at the deadline (`None`) writes nothing and
 /// drops the unit's ticks. A tick whose row was dropped while its round was open, or
@@ -3695,15 +3693,8 @@ fn tick_closed(
     cast_id: asked.cast_id,
     key: cast_state.tick_key(unit_id: asked.unit_id, effect_id: asked.effect_id),
     now_ms:,
-    landing: fn(cast, holder, row) {
-      cast_tick.tick_outcome(
-        cast:,
-        audience: holder.audience,
-        row:,
-        asked:,
-        struck:,
-        now_ms:,
-      )
+    landing: fn(cast, _holder, row) {
+      cast_tick.tick_outcome(cast:, row:, asked:, struck:, now_ms:)
     },
   )
 }
@@ -3745,7 +3736,7 @@ fn round_closed_for(
 }
 
 /// The caster died: each live cast ends with its timers cancelled and 0x7fe to
-/// the caster and the audience that was told its start, in cast id order, and its nodes
+/// the caster and the map, in cast id order, and its nodes
 /// with it, where a 0x801 lets them linger (`end_live_cast`); then the held press, the hold and every open
 /// threshold end, and every other timer is cancelled, as when the player leaves
 /// (`cast_tick.left`). The client does not end its own casts when it dies (not read,
@@ -3801,7 +3792,7 @@ pub fn combat_left(
 /// are the server's: after every input, which is exact and needs no timer. A cast ends
 /// with 0x7f9 {cast id, 282 or 283, the caster, 0}, which destroys its nodes and so ends
 /// its buff, then the 0x7fe that takes it out of the client's table, and is told to the
-/// audience as a finish (`opcode.0x7f9`, `cast.target_node_end`). CasterPersistence
+/// map as a finish (`opcode.0x7f9`, `cast.target_node_end`). CasterPersistence
 /// (282) is checked before TargetPersistence (283), the caster the first unit and the
 /// cast's primary target the second; TargetPersistence is checked only for a cast the
 /// caster itself is the target of, since no creature's state is held here. A press held
@@ -3899,7 +3890,7 @@ fn persistence_end(
 /// go, finish, tick and NodesEnd timers are cancelled, its property modifiers, procs and
 /// cooldown effects and its effects on other units end, and an open threshold it is the base
 /// cast of closes as a 0x801 closes it; otherwise `finish` ends it with its 0x7fe to the
-/// caster and the audience.
+/// caster and the map.
 fn live_ended(
   cast cast: State,
   cast_id cast_id: Int,
@@ -3933,7 +3924,7 @@ fn nodes_and_effects_ended(
 }
 
 /// A lingering cast ends before its nodes' time: its ticks stop, its timers are cancelled,
-/// its effects end and its nodes with them, and its 0x7fe goes to the caster and the audience.
+/// its effects end and its nodes with them, and its 0x7fe goes to the caster and the map.
 fn lingering_ended(
   cast cast: State,
   cast_id cast_id: Int,
@@ -3948,7 +3939,7 @@ fn lingering_ended(
     list.flatten([
       ticks,
       ended,
-      cast_tick.finished_effects(cast_id:, audience: lingering.audience),
+      cast_tick.finished_effects(cast_id:),
     ]),
   )
 }
@@ -4014,7 +4005,7 @@ fn dropped_while_waiting(cast cast: State) -> State {
 /// cast is told by its spell and its item, so the same spell from an item of another level is
 /// another cast.
 /// Each standing spell no longer wanted ends first, the lowest cast id first, with its 0x7fe
-/// to the caster and the audience (`standing_ended`). Then each wanted spell that does not
+/// to the caster and the map (`standing_ended`). Then each wanted spell that does not
 /// stand starts as a cast of the player's own with its caster as root, no parent and its
 /// primary target, written as 0x7ff with no 0x7fd, which runs no check of the caster and
 /// starts no global cooldown (`Passive`); the 0x7ff tells the item's level, and the cast's
@@ -4184,12 +4175,7 @@ fn all_ended(cast cast: State, now now: Now) -> #(State, List(Effect)) {
   let lingering_finished =
     dict.to_list(cast.lingering)
     |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
-    |> list.flat_map(fn(entry) {
-      cast_tick.finished_effects(
-        cast_id: entry.0,
-        audience: { entry.1 }.audience,
-      )
-    })
+    |> list.flat_map(fn(entry) { cast_tick.finished_effects(cast_id: entry.0) })
   let modifiers_ended = cast_proc.modifiers_pending(cast:)
   // The go applied a QuestAdvanceObjective row already; its delay only holds the count back, so
   // the caster's death leaves its timer (a server choice).
@@ -4260,7 +4246,7 @@ fn stealth_after_blow(
 }
 
 /// A cast of the spell starts: its id, the start written to the caster (0x7fd for
-/// a press, 0x7ff for a child) and told to the audience, the global cooldown, the
+/// a press, 0x7ff for a child) and told to the map, the global cooldown, the
 /// threshold's message and timers when the cast opens or moves one, the timer of
 /// each later go and of a channel's finish, and the first go at once when it has
 /// no wait.
@@ -4278,7 +4264,6 @@ fn start(
   reserved reserved: List(Payment),
 ) -> #(State, List(Effect)) {
   let id = cast_state.next_cast_id(cast:, caster:)
-  let audience = caster.audience
   let go_times = spell_plan.go_times_ms(spell:)
   let gos =
     list.index_map(go_times, fn(wait_ms, phase) {
@@ -4335,7 +4320,6 @@ fn start(
           None
       },
       started_at: area.pose_of(place: caster.place),
-      audience:,
       gone: 0,
       started_ms: now_ms,
       stage_of: case role {
@@ -4444,10 +4428,7 @@ fn start(
       cast_frame.confirmed_frame(client_cast_id:, start: start_message)
     None -> cast_frame.started_frame(start: start_message)
   }
-  let told =
-    list.map(map.sorted_connections(audience), fn(viewer) {
-      Tell(to: viewer, news: unit_news.CastStarted(start: start_message))
-    })
+  let told = [Broadcast(news: unit_news.CastStarted(start: start_message))]
   let #(cast, threshold_effects) = threshold_step(cast:, role:, cast_id: id)
   let #(cast, dropped_effects) = cast_press.controls_dropped(cast:, spell:)
   let opening =
@@ -4743,7 +4724,7 @@ fn start_cooldown(
 }
 
 /// The go of phase `phase` of a live cast, with the units its round struck: 0x7f4 to
-/// the caster and the audience, then the 0x7fb of the deflected ones (the client
+/// the caster and the map, then the 0x7fb of the deflected ones (the client
 /// accepts either order and drops a miss after the finish, `cast.miss_order`), the
 /// spell's own cooldown at the go its method names, the current cast cleared as the
 /// client does, the Proxies of the phase whose gates pass, and the finish after the
@@ -4828,13 +4809,7 @@ fn go(
           rolls:,
         )
       let #(cast, restricting) =
-        cast_control.restrictions_numbered(
-          cast:,
-          caster:,
-          cast_id:,
-          live:,
-          applied:,
-        )
+        cast_control.restrictions_numbered(cast:, caster:, cast_id:, applied:)
       let aimed =
         aimed_at(
           applied:,
@@ -4890,15 +4865,11 @@ fn go(
       let going =
         list.flatten([
           [Send(frame: cast_frame.went_frame(go: go_message))],
-          list.map(map.sorted_connections(live.audience), fn(viewer) {
-            Tell(to: viewer, news: unit_news.CastWent(go: go_message))
-          }),
+          [Broadcast(news: unit_news.CastWent(go: go_message))],
           case missed {
             Some(missed) -> [
               Send(frame: cast_frame.missed_frame(missed:)),
-              ..list.map(map.sorted_connections(live.audience), fn(viewer) {
-                Tell(to: viewer, news: unit_news.CastMissed(missed:))
-              })
+              Broadcast(news: unit_news.CastMissed(missed:)),
             ]
             None -> []
           },
@@ -4936,7 +4907,7 @@ fn go(
           }
         })
       let shown =
-        cast_control.restrictions_shown(restricting:, cast_id:, caster:, live:)
+        cast_control.restrictions_shown(restricting:, cast_id:, caster:)
       let #(cast, removed) = removed_by_go(cast:, aimed:, now_ms:)
       let #(cast, logged) =
         cast_frame.states_logged(
@@ -4967,7 +4938,6 @@ fn go(
           aimed:,
           struck:,
           spell:,
-          audience: live.audience,
           started_ms: live.started_ms,
           now_ms:,
         )
@@ -6446,7 +6416,7 @@ fn child(
   }
 }
 
-/// A live cast ends: 0x7fe to the caster and the audience, and the cast is no
+/// A live cast ends: 0x7fe to the caster and the map, and the cast is no
 /// longer live nor the caster's current cast. A channel starts its cooldown here
 /// too (`0x14053e1b0`), and a stage that closes its ability's threshold does that
 /// after its 0x7fe.
@@ -6462,7 +6432,7 @@ fn finish(
     cast_proc.standing_cleared(cast:, cast_id:),
     list.flatten([
       ticks,
-      cast_tick.finished_effects(cast_id:, audience: live.audience),
+      cast_tick.finished_effects(cast_id:),
       closed,
     ]),
   )
@@ -6534,7 +6504,6 @@ fn finish_or_linger(
             Lingering(
               spell: live.spell,
               root: live.root,
-              audience: live.audience,
               started_ms: live.started_ms,
               primary_target: live.primary_target,
               nodes: dict.from_list(kept),
@@ -6557,7 +6526,6 @@ fn finish_or_linger(
           cast_tick.targets_removed_effects(
             cast_id:,
             unit_ids: cast_state.sorted_units(ended),
-            audience: live.audience,
             destroyed: False,
           )
       }

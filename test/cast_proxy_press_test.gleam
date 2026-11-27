@@ -121,7 +121,7 @@ fn stacked(
 
 /// What the viewer 2 is told started, as (spell, root, parent), in order.
 fn started(effects effects: List(Effect)) -> List(#(Int, Int, Int)) {
-  support.started_told_to(effects:, connection: 2)
+  support.started_told(effects:)
 }
 
 /// The press of the bag index at 5000 ms, past every global cooldown of the stack presses.

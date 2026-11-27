@@ -142,9 +142,7 @@ pub fn a_health_tick_writes_0x92f_to_the_player_tells_its_viewers_and_asks_the_n
       ),
     ]
     as "700 and 18: 0x92f to the player's own client"
-  assert list.map(game_connection_support.peer_tells(tick), fn(tell) {
-      { tell.1 }.news
-    })
+  assert game_connection_support.news_broadcast(tick)
     == [unit_news.Health(health: 718, dead: False)]
     as "its viewer is told the health (it writes 0x937)"
   assert started(tick) == [#(health_timer, 500)]
@@ -201,9 +199,7 @@ pub fn a_blow_starts_the_shield_timer_at_the_items_reboot_time_and_each_tick_aft
       ),
     ]
     as "294 and 67: 0x938 stat 20, in combat"
-  assert list.map(game_connection_support.peer_tells(first), fn(tell) {
-      { tell.1 }.news
-    })
+  assert game_connection_support.news_broadcast(first)
     == [unit_news.Shield(shield: 361)]
     as "its viewer is told the shield (it writes 0x938)"
   assert started(first) == [#(shield_timer, 500)]

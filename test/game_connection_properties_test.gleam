@@ -128,22 +128,14 @@ fn written_properties(
   })
 }
 
-/// The news the steps tell the viewer connection `viewer`, in order.
-fn news_told(
-  steps steps: List(ConnectionStep(Request)),
-  viewer viewer: Int,
-) -> List(News) {
+/// The news the steps tell the map to relay to the player's viewers, in order.
+fn news_broadcast(steps steps: List(ConnectionStep(Request))) -> List(News) {
   list.flat_map(steps, fn(taken) {
-    list.filter_map(support.peer_tells(taken), fn(tell) {
-      case tell.0 == viewer {
-        True -> {
-          let PeerNews(unit_id:, news:) = tell.1
-          assert unit_id == support.own_unit_id
-            as "the news names the player's own unit"
-          Ok(news)
-        }
-        False -> Error(Nil)
-      }
+    list.map(support.broadcasts(taken), fn(broadcast) {
+      let PeerNews(unit_id:, news:) = broadcast.2
+      assert unit_id == support.own_unit_id
+        as "the news names the player's own unit"
+      news
     })
   })
 }
@@ -173,12 +165,10 @@ pub fn a_modifier_starting_at_a_go_writes_0x93a_to_the_player_and_tells_each_vie
     as "FallingDamageMultiplier goes from 1.0 to 0.0, base and value"
   assert list.contains(written, [health])
     as "BaseHealth goes from its maximum to 100 more"
-  list.each([2, 3], fn(viewer) {
-    let told = news_told(steps: taken, viewer:)
-    assert list.contains(told, PropertiesChanged(properties: [falling]))
-      as "each viewer is told the same entries"
-    assert list.contains(told, PropertiesChanged(properties: [health]))
-  })
+  let told = news_broadcast(steps: taken)
+  assert list.contains(told, PropertiesChanged(properties: [falling]))
+    as "the map is told the same entries, to relay to each viewer"
+  assert list.contains(told, PropertiesChanged(properties: [health]))
 }
 
 pub fn the_modifiers_end_writes_0x93a_with_the_value_back_at_its_base_test() -> Nil {
@@ -212,9 +202,9 @@ pub fn the_modifiers_end_writes_0x93a_with_the_value_back_at_its_base_test() -> 
   assert list.contains(written, [falling_again])
   assert list.contains(written, [health_again])
     as "with the value back at its base"
-  let told = news_told(steps: ended, viewer: 2)
+  let told = news_broadcast(steps: ended)
   assert list.contains(told, PropertiesChanged(properties: [falling_again]))
-    as "and told to the viewer"
+    as "and told to the map, for the viewers"
   assert list.contains(told, PropertiesChanged(properties: [health_again]))
 }
 
@@ -240,8 +230,8 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
   let state = spellslinger(tables:, saved: None)
   let maximum = maximum_health()
   let #(state, started) = pressed(state:)
-  let assert [#(4, PeerNews(news: Appeared(unit:, ..), ..))] =
-    support.peer_tells(arriving(state:, viewer: 4))
+  let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+    support.snapshot_items(arriving(state:, viewer: 4))
     as "the player's connection sends the arriving viewer its 0x262"
   let property = fn(id) {
     list.find(unit.tail.properties, fn(property) { property.property_id == id })
@@ -274,8 +264,8 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
         generation: support.viewer_sight(6),
       )),
     )
-  let assert [#(6, PeerNews(news: Appeared(unit: mid_buff, ..), ..))] =
-    support.peer_tells(at_1400)
+  let assert [PeerNews(news: Appeared(unit: mid_buff, ..), ..)] =
+    support.snapshot_items(at_1400)
   let assert [gate_cast] = mid_buff.tail.casts
     as "Gate's cast holds a node on the player"
   assert gate_cast.spell4_id == 34_355
@@ -311,8 +301,8 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
         #(support.feed(so_far.0, OwnEvent(TimerFired(timer))).0, Nil)
       },
     )
-  let assert [#(5, PeerNews(news: Appeared(unit: later, ..), ..))] =
-    support.peer_tells(arriving(state:, viewer: 5))
+  let assert [PeerNews(news: Appeared(unit: later, ..), ..)] =
+    support.snapshot_items(arriving(state:, viewer: 5))
   assert list.find(later.tail.properties, fn(property) {
       property.property_id == falling_damage
     })

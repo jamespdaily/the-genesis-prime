@@ -564,24 +564,16 @@ pub fn a_viewer_of_the_engineer_is_told_42148s_cast_and_never_the_volatility_tes
       ms: 1000,
       until_ms: 2300,
     )
-  let told_viewer =
-    list.flat_map(steps, fn(taken) {
-      list.filter_map(game_connection_support.peer_tells(taken), fn(tell) {
-        case tell.0 == 2 {
-          True -> Ok({ tell.1 }.news)
-          False -> Error(Nil)
-        }
-      })
-    })
+  let told_viewer = list.flat_map(steps, game_connection_support.news_broadcast)
   assert list.any(told_viewer, fn(news) {
     case news {
       unit_news.CastStarted(start:) -> start.spell4_id == 42_148
       _ -> False
     }
   })
-    as "the viewer is told 42148's start, which it writes as 0x7ff for a caster it shows (opcode.0x7ff)"
+    as "the map is told 42148's start to relay to the viewer, which writes it as 0x7ff for a caster it shows (opcode.0x7ff)"
   assert list.all(told_viewer, is_cast_or_combat_news)
-    as "everything the viewer is told of the Engineer's blast is a cast's news or the combat flag's: no news carries a class resource, which 0x935 sets for the player's own client alone (class_resource header)"
+    as "everything the map is told of the Engineer's blast is a cast's news or the combat flag's: no news carries a class resource, which 0x935 sets for the player's own client alone (class_resource header)"
   assert list.length(changes(steps)) == 1
     as "the one 0x935 of the run is written to the player's own client"
 }

@@ -38,11 +38,12 @@ import gleam/set
 import gleam/string
 import legal_order_support.{
   type Mail, type Scene, type Violation, CreatureProcess, FromCaster,
-  FromConnection, FromTimer, Mail, MapProcess, NoFrameAfterRemoval, ToCreature,
-  ToMap, Violation,
+  FromConnection, FromTimer, MapProcess, NoFrameAfterRemoval, ToCreature, ToMap,
+  Violation,
 }
 import map_spawn_support as spawns
 import map_support
+import order_explorer
 import owned_test
 import world_watch_support
 
@@ -112,7 +113,7 @@ fn strike(damage damage: Int) -> Mail {
       cast_id: 1,
       occasion: strike_tell.AtGo(phase: 0),
     )
-  Mail(
+  order_explorer.Mail(
     to: MapProcess,
     from: FromCaster,
     input: ToMap(
@@ -139,7 +140,7 @@ fn strike(damage damage: Int) -> Mail {
 /// it: the map takes the join in its own turn, among what the first player's connection tells
 /// it, and sends the creature its `Seen`.
 fn viewer_joins() -> Mail {
-  Mail(
+  order_explorer.Mail(
     to: MapProcess,
     from: FromConnection,
     input: ToMap(
@@ -162,7 +163,7 @@ fn viewer_joins() -> Mail {
 /// The viewer's connection moves out of sight of the creature, or back, as its connection
 /// tells the map.
 fn moves(x x: Float, seq seq: Int, name name: String) -> Mail {
-  Mail(
+  order_explorer.Mail(
     to: MapProcess,
     from: FromConnection,
     input: ToMap(
@@ -180,7 +181,7 @@ fn moves(x x: Float, seq seq: Int, name name: String) -> Mail {
 
 /// The corpse timer of the creature fires.
 fn corpse_timer() -> Mail {
-  Mail(
+  order_explorer.Mail(
     to: CreatureProcess,
     from: FromTimer,
     input: ToCreature(OwnEvent(ServiceTimerFired(TimerId(1)))),
@@ -188,10 +189,19 @@ fn corpse_timer() -> Mail {
   )
 }
 
+/// The scenes the deliveries of `scene` end in, after checking that the walk by commuting
+/// (`order_explorer.orders`) and the walk that counts every two deliveries to one receiver as
+/// dependent end in the same states.
+fn orders_of(scene scene: Scene) -> List(Scene) {
+  assert legal_order_support.relations_end_alike(scene:)
+    as "the finer relation ends in the same states as the receiver-only one"
+  legal_order_support.orders(scene:)
+}
+
 /// Each scene a legal order ends in, with the invariants it breaks, which a test of an
 /// order that is right has none of.
 fn broken_in_each_order(scene scene: Scene) -> List(Violation) {
-  list.filter_map(legal_order_support.orders(scene:), fn(ended) {
+  list.filter_map(orders_of(scene:), fn(ended) {
     case legal_order_support.check(scene: ended) {
       Ok(Nil) -> Error(Nil)
       Error(violation) -> Ok(violation)
@@ -311,7 +321,7 @@ pub fn news_before_a_snapshot_and_a_snapshot_of_an_earlier_generation_are_droppe
     legal_order_support.order_at(scene: ended, receiver: CreatureProcess)
     == ["Strike", "Seen"]
   }
-  let ended = legal_order_support.orders(scene: arriving)
+  let ended = orders_of(scene: arriving)
   assert broken_in_each_order(scene: arriving) == []
     as "(a) and (b): no order breaks an invariant"
   let #(first, second) = list.partition(ended, strike_first)
@@ -342,7 +352,7 @@ pub fn news_before_a_snapshot_and_a_snapshot_of_an_earlier_generation_are_droppe
     ])
   assert broken_in_each_order(scene: leaving) == []
     as "(c) no order breaks an invariant, which holds a snapshot of the earlier generation dropped wherever it falls among the viewer's moves"
-  assert list.all(legal_order_support.orders(scene: leaving), fn(scene) {
+  assert list.all(orders_of(scene: leaving), fn(scene) {
     legal_order_support.health_shown(frames: scene.frames, unit_id: 2)
     == Some(38)
   })
@@ -393,7 +403,7 @@ pub fn a_viewer_that_arrives_or_leaves_as_the_creature_expires_is_shown_one_pict
   assert broken_in_each_order(scene: arriving) == []
     as "(a) no order breaks an invariant"
   let #(seen_first, timer_first) =
-    list.partition(legal_order_support.orders(scene: arriving), fn(scene) {
+    list.partition(orders_of(scene: arriving), fn(scene) {
       legal_order_support.order_at(scene:, receiver: CreatureProcess)
       == ["Seen", "Corpse timer"]
     })
@@ -474,7 +484,7 @@ pub fn a_viewer_that_arrives_or_leaves_as_the_creature_expires_is_shown_one_pict
     )
   assert broken_in_each_order(scene: leaving) == []
     as "(b) no order breaks an invariant"
-  let ended = legal_order_support.orders(scene: leaving)
+  let ended = orders_of(scene: leaving)
   assert legal_order_support.deviations(
       scenes: ended,
       observed: fn(scene) { legal_order_support.names(frames: scene.frames) },
@@ -534,7 +544,7 @@ pub fn legal_order_support_delivers_nothing_to_a_creature_that_stopped_test() ->
         corpse_timer(),
       ],
     )
-  let ended = legal_order_support.orders(scene:)
+  let ended = orders_of(scene:)
   assert list.all(ended, fn(scene) {
     list.last(legal_order_support.order_at(scene:, receiver: CreatureProcess))
     == Ok("Corpse timer")
@@ -567,7 +577,7 @@ pub fn an_unseen_and_the_creatures_news_write_nothing_after_the_unit_is_removed_
     )
   assert broken_in_each_order(scene:) == []
     as "no order writes a frame for the unit after its removal"
-  let ended = legal_order_support.orders(scene:)
+  let ended = orders_of(scene:)
   let names =
     list.map(ended, fn(scene) {
       legal_order_support.names(frames: scene.frames)
@@ -588,7 +598,7 @@ pub fn an_unseen_and_the_creatures_news_write_nothing_after_the_unit_is_removed_
 /// The scene with the mail added behind what is in flight.
 /// The first player's connection moves out of sight of the creature, as it tells the map.
 fn first_player_moves_out(seq seq: Int) -> Mail {
-  Mail(
+  order_explorer.Mail(
     to: MapProcess,
     from: FromCaster,
     input: ToMap(
@@ -622,8 +632,8 @@ pub fn a_strike_and_the_senders_move_out_of_sight_are_taken_in_the_order_the_sen
       first_player_moves_out(seq: 1),
       strike(damage: 14),
     ])
-  let strike_first = legal_order_support.orders(scene: strike_first)
-  let move_first = legal_order_support.orders(scene: move_first)
+  let strike_first = orders_of(scene: strike_first)
+  let move_first = orders_of(scene: move_first)
   assert list.all(list.append(strike_first, move_first), fn(scene) {
     legal_order_support.check(scene:) == Ok(Nil)
   })
@@ -678,7 +688,7 @@ pub fn a_strike_and_the_senders_move_out_of_sight_are_taken_in_the_order_the_sen
 pub fn legal_order_support_refuses_mail_to_a_creature_from_any_sender_but_its_map_and_its_timer_test() -> Nil {
   use <- owned_test.run(5000)
   let mail = fn(sender) {
-    Mail(
+    order_explorer.Mail(
       to: CreatureProcess,
       from: sender,
       input: ToCreature(OwnEvent(ServiceTimerFired(TimerId(1)))),

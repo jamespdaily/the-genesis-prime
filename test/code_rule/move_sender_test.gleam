@@ -110,7 +110,7 @@ pub fn the_map_and_the_relay_hold_no_move_and_a_move_is_told_only_by_the_mover_t
       "}",
       "",
       "fn another_request() {",
-      "  client_connection.TellPeer(stay: a, news: b)",
+      "  client_connection.TellBroadcast(connection: a, stay: b, news: c)",
       "}",
     ])
   assert tells_a_move(file: planted_file) == [6, 10, 14]

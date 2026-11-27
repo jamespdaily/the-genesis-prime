@@ -863,6 +863,13 @@ pub fn a_life_changed_of_the_value_held_sends_nothing_and_one_from_a_connection_
   assert map_spawn_support.sends(taken) == [] as "nothing is sent"
   assert list.length(support.logs_of(step: taken, level: LogError)) == 1
     as "one error line, as a Moved from a connection not in the map"
+  let #(state, _) = map_spawn_support.leave(state:, at_ms: 6400, connection: 1)
+  let #(after_leave, late) =
+    map_spawn_support.life(state:, at_ms: 6500, connection: 1, alive: False)
+  assert after_leave == state as "nothing changes"
+  assert map_spawn_support.sends(late) == [] as "nothing is sent"
+  assert list.length(support.logs_of(step: late, level: LogError)) == 1
+    as "one error line, as a Moved after the connection's Leave"
 }
 
 pub fn a_second_join_of_a_player_in_a_ring_names_no_life_and_the_map_keeps_the_one_it_holds_test() -> Nil {

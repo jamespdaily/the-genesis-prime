@@ -24,7 +24,9 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{type Wrapper, ClientWrapper}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
-import genesis_prime/game/chat_tell.{type Tell as ChatTell}
+import genesis_prime/game/chat_tell.{
+  type Said as ChatSaid, type Tell as ChatTell,
+}
 import genesis_prime/game/experience.{type Credit}
 import genesis_prime/game/held_changes.{type PlayerChange}
 import genesis_prime/game/move_stamp
@@ -46,9 +48,10 @@ import genesis_prime/step.{
 }
 import genesis_prime/store
 import genesis_prime/table/id.{type PrerequisiteId}
+import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
-import genesis_prime/world_map/relay.{type Inbound}
+import genesis_prime/world_map/relay.{type Inbound, type Landing}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/bit_array
 import gleam/bool
@@ -110,28 +113,47 @@ pub type Request {
   /// use's own frames; never asked.
   TellReleased(unit_id: Int)
   /// What a `Tell` effect sends the connection of a player who sees this one
-  /// (genesis_prime/step `Connection`): news of this player's unit, which that
-  /// connection writes as 0x262, 0x638 or 0x355 when its client can take it, for
-  /// that player's stay `stay`, as the map's `SeenBy` named it. Never asked, and
-  /// never told to a map.
-  TellPeer(stay: Stay, news: PeerNews)
-  /// What a `Tell` effect sends the connection of a player who sees this one
   /// (genesis_prime/step `Connection`): a chunk of this player's move, for that
   /// player's stay `stay` and the generation of the relation, which the mover's copy of
   /// its viewers holds (genesis_prime/game/move_stamp). The only message of a player's
   /// move: no map carries one. Never asked, and never told to a map.
   TellMove(stay: Stay, move: move_stamp.Move)
+  /// What a `Tell` effect sends the run of a map: news of the player's own unit, for the
+  /// map to relay to each viewer whose relation relays (genesis_prime/world_map/map
+  /// `PlayerBroadcast`), the player being `connection` in its stay `stay`. Never asked.
+  TellBroadcast(connection: ConnectionId, stay: Stay, news: PeerNews)
+  /// What a `Tell` effect sends the run of a map: the player's snapshot of the sight
+  /// `generation` that `viewer` has of it, built when it took the map's `SeenBy` of that
+  /// generation (genesis_prime/world_map/map `PlayerSnapshot`), for the map to relay when
+  /// the pair awaits it. Never asked.
+  TellSnapshot(
+    connection: ConnectionId,
+    stay: Stay,
+    viewer: ConnectionId,
+    generation: Generation,
+    burst: List(PeerNews),
+  )
+  /// What a `Tell` effect sends the run of a map: what the player's cast lands on the
+  /// player of connection `to` in its stay `to_stay`, or its answer to one
+  /// (genesis_prime/world_map/map `TellLanding`), for the map to admit by the kind's
+  /// checks and deliver. Never asked.
+  TellLanding(
+    connection: ConnectionId,
+    stay: Stay,
+    to: ConnectionId,
+    to_stay: Stay,
+    landing: Landing,
+  )
+  /// What a `Tell` effect sends the run of a map: a local chat line of the player, for
+  /// the map to relay to each viewer whose relation relays (genesis_prime/world_map/map
+  /// `Say`). Never asked.
+  TellSay(connection: ConnectionId, stay: Stay, said: ChatSaid)
   /// What a `Tell` effect sends the connection of another player, or every
   /// connection of a zone channel, or the connection that holds a character's
   /// name (genesis_prime/step `Connection`, `ZoneChannel`, `CharacterNamed`): a
-  /// chat line or a whisper's reply (genesis_prime/game/chat_tell). Never asked,
+  /// zone line or a whisper's reply (genesis_prime/game/chat_tell). Never asked,
   /// and never told to a map.
   TellChat(tell: ChatTell)
-  /// What a `Tell` effect sends the connection of a player who sees the speaker
-  /// (genesis_prime/step `Connection`): a chat line (`Said`) for that player's stay
-  /// `stay`, as the map's `SeenBy` named it, so that a line queued across a re-entry of
-  /// the same run is dropped at the connection. Never asked, and never told to a map.
-  TellLine(stay: Stay, tell: ChatTell)
   /// What a `Tell` effect sends the run of a map (genesis_prime/step `Map`): the player
   /// of `connection`, in its stay `stay`, tells the creature `unit_id` of life `life`
   /// `payload`, a strike, a move, an answer or an effect of its casts
@@ -144,15 +166,10 @@ pub type Request {
     life: Int,
     payload: Inbound,
   )
-  /// What a `Tell` effect sends the connection of another player (genesis_prime/step
-  /// `Connection`): what its cast does to this connection's player, or the answer to
-  /// what this connection's player did to it (`PlayerTell`). `stay` is the told
-  /// player's stay, which fences the tell. Never asked, and never told to a map.
-  TellPlayer(stay: Stay, tell: PlayerTell)
 }
 
-/// What one connection tells the connection of another player, as `TellPlayer`
-/// carries it and `SentByPlayer` delivers it.
+/// What a player's connection lands on the connection of another player, or answers it,
+/// as the map relays it (`Landed`) and the connection takes it as `SentByPlayer`.
 pub type PlayerTell {
   /// The heal rows the caster's cast applies to the told player's life
   /// (genesis_prime/game/connection/landing); the strike holds the caster's stay.
@@ -203,15 +220,15 @@ pub type StaySent {
   /// (`Gone`). A map's answers (`Joined`, `Left`) come as an ask's outcome,
   /// never as this.
   SentByMap(notice: map.Notice)
-  /// What the connection of another player, or a creature's process, sends it:
-  /// news of the unit it owns (genesis_prime/game/connection).
+  /// What the map relays to the connection of a player that sees a unit: news of the
+  /// unit (genesis_prime/game/connection).
   SentByPeer(news: PeerNews)
   /// What the connection of another player sends it of that player's move, stamped
   /// with the generation of the sight (genesis_prime/game/move_stamp).
   SentByMove(move: move_stamp.Move)
-  /// What the connection of a player this one's player sees tells it: a chat line
-  /// (`Said`) for this stay, written by the chat feature (genesis_prime/game/chat).
-  SentByLine(tell: ChatTell)
+  /// What the map relays to the connection of a player that sees a speaker: a local chat
+  /// line (`Said`) for this stay, written by the chat feature (genesis_prime/game/chat).
+  SentByLine(said: ChatSaid)
   /// What a creature that fights this connection's player sends it: that it
   /// threatens or releases the player, or its strike
   /// (genesis_prime/game/player_life).
@@ -833,5 +850,78 @@ pub fn open(
               )
           }
       }
+  }
+}
+
+/// The message a map takes a `Tell` effect's request as, or `Error(Nil)` for a request that is
+/// no tell of a map: an ask, or a tell to a connection.
+pub fn told_to_the_map(request request: Request) -> Result(map.Message, Nil) {
+  case request {
+    TellMoved(connection:, place:, seq:) ->
+      Ok(map.Moved(connection:, place:, seq:))
+    TellReady(connection:, seq:) -> Ok(map.Ready(connection:, seq:))
+    TellStealthChanged(connection:, stealthed:) ->
+      Ok(map.StealthChanged(connection:, stealthed:))
+    TellVisibilityChanged(connection:, hidden:) ->
+      Ok(map.VisibilityChanged(connection:, hidden:))
+    TellLifeChanged(connection:, alive:) ->
+      Ok(map.LifeChanged(connection:, alive:))
+    TellReleased(unit_id:) -> Ok(map.Released(unit_id:))
+    TellCreature(connection:, stay:, unit_id:, life:, payload:) ->
+      Ok(map.TellCreature(from: connection, stay:, unit_id:, life:, payload:))
+    TellBroadcast(connection:, stay:, news:) ->
+      Ok(map.PlayerBroadcast(from: connection, stay:, news:))
+    TellSnapshot(connection:, stay:, viewer:, generation:, burst:) ->
+      Ok(map.PlayerSnapshot(by: connection, stay:, viewer:, generation:, burst:))
+    TellLanding(connection:, stay:, to:, to_stay:, landing:) ->
+      Ok(map.TellLanding(from: connection, stay:, to:, to_stay:, landing:))
+    TellSay(connection:, stay:, said:) ->
+      Ok(map.Say(from: connection, stay:, said:))
+    TellMove(..)
+    | TellChat(..)
+    | AskStore(..)
+    | AskHandOff(..)
+    | AskSessions(..)
+    | AskMap(..)
+    | AskMapRun(..) -> Error(Nil)
+  }
+}
+
+/// The message a connection takes a `Tell` effect's request as, for the stay the request
+/// names, or `Error(Nil)` for a request that is no tell to a connection: an ask, or a tell
+/// to a map.
+pub fn told_to_a_connection(request request: Request) -> Result(Message, Nil) {
+  case request {
+    TellMove(stay:, move:) -> Ok(ForStay(stay:, sent: SentByMove(move:)))
+    TellChat(tell:) -> Ok(SentByChat(tell:))
+    TellMoved(..)
+    | TellReady(..)
+    | TellStealthChanged(..)
+    | TellLifeChanged(..)
+    | TellVisibilityChanged(..)
+    | TellReleased(..)
+    | TellCreature(..)
+    | TellBroadcast(..)
+    | TellSnapshot(..)
+    | TellLanding(..)
+    | TellSay(..)
+    | AskStore(..)
+    | AskHandOff(..)
+    | AskSessions(..)
+    | AskMap(..)
+    | AskMapRun(..) -> Error(Nil)
+  }
+}
+
+/// The tell a landing is delivered to the told player's connection as, when the map relays
+/// it (`Relayed(Landed)`).
+pub fn player_tell_of(landing landing: relay.Landing) -> PlayerTell {
+  case landing {
+    relay.HealStrike(strike:) -> Strike(strike:)
+    relay.HealAnswer(answered:) -> Answer(answered:)
+    relay.ChangeStart(change:)
+    | relay.ChangeEnd(change:)
+    | relay.CastWent(change:) -> Change(change:)
+    relay.AllyEvent(event:) -> Event(event:)
   }
 }

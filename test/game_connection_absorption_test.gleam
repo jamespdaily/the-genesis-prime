@@ -100,18 +100,14 @@ fn written(steps steps: List(ConnectionStep(Request))) -> List(Int) {
   })
 }
 
-/// The absorption of each `Absorption` news the steps tell the viewer connection `viewer`,
+/// The absorption of each `Absorption` news the steps tell the map to relay to the viewers,
 /// in order.
-fn told(
-  steps steps: List(ConnectionStep(Request)),
-  viewer viewer: Int,
-) -> List(Int) {
+fn told(steps steps: List(ConnectionStep(Request))) -> List(Int) {
   list.flat_map(steps, fn(taken) {
-    list.filter_map(support.peer_tells(taken), fn(tell) {
-      case tell.0 == viewer, { tell.1 }.news {
-        True, Absorption(absorption:) -> Ok(absorption)
-        True, _ -> Error(Nil)
-        False, _ -> Error(Nil)
+    list.filter_map(support.news_broadcast(taken), fn(news) {
+      case news {
+        Absorption(absorption:) -> Ok(absorption)
+        _ -> Error(Nil)
       }
     })
   })
@@ -143,8 +139,7 @@ fn a_struck_pool_falls_for_the_player_and_its_viewer(
   let #(holding, early) = pooled_until(world:, until_ms: 1500)
   assert written(steps: early) == [164]
     as "0x938 stat 22 = 164 at the go: round(2.531 x 50.765625 + 2.531 x 13.921875)"
-  assert told(steps: early, viewer: 2) == [164]
-    as "a viewer is told the same sum"
+  assert told(steps: early) == [164] as "a viewer is told the same sum"
   let #(_, struck) =
     support.at(
       state: holding,
@@ -158,9 +153,8 @@ fn a_struck_pool_falls_for_the_player_and_its_viewer(
   let assert [left] = written(steps: [struck])
     as "one 0x938 of stat 22 after the blow, and none of stat 20: the shield is untouched"
   assert left == left_after as "164 less what the pool soaked of the blow"
-  assert told(steps: [struck], viewer: 2) == [left]
-    as "the viewer is told the same value"
-  assert told(steps: [struck], viewer: 3) == [left]
+  assert told(steps: [struck]) == [left]
+    as "the viewers are told the same value"
   assert list.map(support.heard(struck, support.keyed()), fn(frame) {
       frame.message_id
     })
@@ -186,9 +180,7 @@ fn an_absorb_that_ends_tells_zero(world world: World) -> Nil {
   let #(_, whole) = pooled_until(world:, until_ms: 20_000)
   assert written(steps: whole) == [164, 0]
     as "stat 22 = 164 at the go and 0 when the 5000 ms end"
-  assert told(steps: whole, viewer: 2) == [164, 0]
-    as "each viewer is told the same two"
-  assert told(steps: whole, viewer: 3) == [164, 0]
+  assert told(steps: whole) == [164, 0] as "the viewers are told the same two"
   let #(_, holding) = pooled_until(world:, until_ms: 5900)
   assert written(steps: holding) == [164]
     as "nothing has ended by 5900 ms: the end comes 5000 ms after the go at 1000"

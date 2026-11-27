@@ -127,7 +127,7 @@
 //// | a persistence check while the player is leaving or dead | nothing: `cast_tick.left` and `cast.died` have already dropped every cast |
 //// | a press while one is held | 0x7fc 13 |
 //// | a press of a spell whose caster conditions mask Ability Restriction while the caster holds it | 0x7fc 302, ahead of the cooldowns; a spell whose mask lacks bit 27 passes |
-//// | a go gives the caster Ability Restriction | 0x87f to the caster and its audience, once for the effect; a `RestrictionEnd` timer at the row's delay plus duration, none for flag 2; the cast lingers until its persistence ends (the server reads no ride, so the hoverboard's ends in the go's own input) |
+//// | a go gives the caster Ability Restriction | 0x87f to the caster and the map, once for the effect; a `RestrictionEnd` timer at the row's delay plus duration, none for flag 2; the cast lingers until its persistence ends (the server reads no ride, so the hoverboard's ends in the go's own input) |
 //// | a `RestrictionEnd` fires for a state the caster holds | 0x880 with the cast and the instance id of its 0x87f, before the cast's node ends; a row of duration 0 without flag 2 ends in the go's own step |
 //// | a cast that holds Ability Restriction ends (its persistence fails, a type 80 removal takes its node off, its node ends by time) | the `RestrictionEnd` timers cancelled, and 0x880 for a state the row's end has not already ended, after the 0x7f9 or the 0x811; a death or a leave drops the state and writes nothing |
 //// | a 0x805 result 3 of an activate cast of castMethod 5 | nothing: the interaction only began |
@@ -166,19 +166,19 @@
 //// | a threshold's window ends with taps left | the threshold closes, nothing is written, the cooldown starts |
 //// | the player camps with casts, children or a threshold pending | every timer is cancelled and nothing is written: the viewers' clients drop the cast with the unit (the connection writes each viewer's 0x7fe before its 0x355) |
 //// | the caster's connection ends, a key held | its timers and the hold end with it; the map's `Gone` removes the unit from each viewer, which finishes its casts first |
-//// | the caster dies with casts live | each ends with its timers cancelled and 0x7fe to the caster and its audience; the hold and every other timer end, but the standing spells' casts, their nodes, modifiers and pending children (`cast.died`) |
+//// | the caster dies with casts live | each ends with its timers cancelled and 0x7fe to the caster and the map; the hold and every other timer end, but the standing spells' casts, their nodes, modifiers and pending children (`cast.died`) |
 //// | a standing spell stops standing | its cast ends with its 0x7fe, live or lingering, and its modifiers, procs and pending children end with it (`cast.standing_changed`) |
 //// | the innate passive's plan is missing | a warning and no cast: the plans hold every class's passive, or the load fails (`connection/casting.standing_wanted`) |
 //// | a timer fires after its cast ended | a go finds no live cast and does nothing; the cast's end cancels its go timers |
 //// | a timer fires in a status that holds no player in the world | dropped; the world is left already |
 //// | the answer of a store ask comes after a timer's due time | the timer is taken after the answer: the go and finish are late by the ask, never lost |
 //// | a viewer is told a go or finish of a cast it did not write | dropped (genesis_prime/game/connection) |
-//// | the audience's connection has ended | the tell is dropped by the shell |
+//// | a viewer's connection has ended | the map's relay to it is dropped by the shell |
 //// | a go lists a lasting effect, the last go leaves a node with life | the cast lingers with no 0x7fe; the timer of its earliest ending node starts |
 //// | a lingering cast's timer fires with no node ended, or after a removal took the cast off | nothing is written; the timer starts again for the nodes left, or finds no cast |
 //// | two nodes of a lingering cast end at the same time | one 0x811 naming both units |
 //// | a removal and a lingering cast's timer in one step | the removal first; the timer finds nothing |
-//// | the caster dies with a lingering cast | its 0x7fe to the caster and the audience, with the live casts' (server choice: the client has no death path) |
+//// | the caster dies with a lingering cast | its 0x7fe to the caster and the map, with the live casts' (server choice: the client has no death path) |
 //// | the caster leaves with a lingering cast | every timer is cancelled and nothing is written; each viewer's 0x355 ends the cast on its client |
 //// | the client cancels a cast that holds a node with life left | its pending gos are cancelled and it lingers, with no 0x7fe until the node ends |
 //// | a live cast's node ends while the cast goes on | 0x811 for the unit; the cast's later gos go on |
@@ -189,7 +189,7 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state.{
   type Aimed, type Aside, type Caster, type Due, type Effect, type HeldProc,
   type Holder, type Live, type ProcHold, type StandingKey, type State,
-  type Struck, Activated, Aside, CancelTimer, CasterChangeEnding,
+  type Struck, Activated, Aside, Broadcast, CancelTimer, CasterChangeEnding,
   CasterChangeEnds, CasterChangeStarts, ChargeLevel, CooldownEnding,
   CooldownModifierEnds, CooldownModifierStarts, CreatureControlsEnd,
   CreatureDespawns, CreatureHoldsUnitStates, Deflected, FindProxyTickUnits,
@@ -200,7 +200,7 @@ import genesis_prime/game/cast/state.{
   ProcHold, QuestAdvanceDue, QuestAdvanced, RepeatHeld, RestrictionEnd, Send,
   ShortcutCast, StartChild, StartHeld, StartTimer, State, StateEnd,
   StealthChanged, Strike, TargetChangeEnds, TargetChangeStarts,
-  TargetModifierStart, Tell, Tick, TickStrike, WindowEnd,
+  TargetModifierStart, Tick, TickStrike, WindowEnd,
 } as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/cooldown
@@ -270,7 +270,7 @@ pub fn heals_landed(
       CasterChangeStarts(change: HeldChange(..), ..)
       | CasterChangeStarts(change: Look(..), ..) -> []
       Send(..)
-      | Tell(..)
+      | Broadcast(..)
       | StartTimer(..)
       | CancelTimer(..)
       | Log(..)
@@ -312,7 +312,7 @@ pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
           holder: None,
         ))
       Send(..)
-      | Tell(..)
+      | Broadcast(..)
       | StartTimer(..)
       | CancelTimer(..)
       | Log(..)
@@ -866,7 +866,7 @@ pub fn unit_removed(
     let ends = case
       holder.phase == cast_state.LastGoGone && dict.is_empty(nodes)
     {
-      True -> cast_tick.finished_effects(cast_id:, audience: holder.audience)
+      True -> cast_tick.finished_effects(cast_id:)
       False -> []
     }
     #(cast, list.flatten([effects, ticks, on_units, left, ends]))
@@ -1426,7 +1426,6 @@ fn node_off(
         cast_tick.targets_removed_effects(
           cast_id:,
           unit_ids: [unit_id],
-          audience: holder.audience,
           destroyed: emptied && !kept,
         )
       let #(cast, modifiers) =
@@ -1437,7 +1436,7 @@ fn node_off(
         cast_control.units_ended(cast:, cast_id:, unit_ids: [unit_id])
       let #(cast, left) = nodes_left(cast:, cast_id:, holder:, nodes:, now_ms:)
       let ends = case holder.phase == cast_state.LastGoGone && emptied && kept {
-        True -> cast_tick.finished_effects(cast_id:, audience: holder.audience)
+        True -> cast_tick.finished_effects(cast_id:)
         False -> []
       }
       #(cast, list.flatten([ticks, removed, modifiers, on_units, left, ends]))

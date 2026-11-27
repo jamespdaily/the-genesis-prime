@@ -88,10 +88,7 @@ pub fn proxy_press_spell_started_names_the_proxy_spell_with_the_ability_as_root_
     as "a caster with no stack of 42607 passes gate 16451, so the press is not refused"
   let started =
     list.flat_map(steps, fn(taken) {
-      connection_support.cast_starts(connection_support.news_told(
-        taken:,
-        viewer: 2,
-      ))
+      connection_support.cast_starts(connection_support.news_broadcast(taken))
     })
     |> list.map(fn(start) {
       #(start.spell4_id, start.root_spell4_id, start.parent_spell4_id)

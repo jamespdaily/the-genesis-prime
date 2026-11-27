@@ -370,6 +370,7 @@ fn blow_carried(
             list.append(
               own,
               connection_landing.events_told(
+                session:,
                 entered:,
                 events: cast_proc.blow_events(blow:),
               ),

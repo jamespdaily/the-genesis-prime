@@ -23,7 +23,6 @@ import genesis_prime/game/spell_plan
 import genesis_prime/game/unit_news
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_started
-import genesis_prime/step
 import genesis_prime/table/id.{Spell4Id}
 import gleam/dict
 import gleam/list
@@ -314,13 +313,11 @@ pub fn electrocute_is_refused_51_at_0_volatility_and_accepted_after_a_pulse_blas
 
 // ---- 9 ----
 
-/// The 0x7ff each connection that sees the caster is told of, as its start.
-fn started_told(
-  effects: List(Effect),
-) -> List(#(step.ConnectionId, spell_started.SpellStarted)) {
+/// The 0x7ff the map is told of, as the starts it relays.
+fn started_told(effects: List(Effect)) -> List(spell_started.SpellStarted) {
   list.filter_map(support.tells(effects:), fn(tell) {
-    case tell.1 {
-      unit_news.CastStarted(start:) -> Ok(#(tell.0, start))
+    case tell {
+      unit_news.CastStarted(start:) -> Ok(start)
       _ -> Error(Nil)
     }
   })
@@ -331,8 +328,7 @@ pub fn a_viewer_of_the_engineer_is_told_42148s_cast_test() -> Nil {
   let effects =
     every(pulse_blast(caster: engineer(in_combat: True), foes: [10]))
   let told_of_42148 =
-    list.filter(started_told(effects), fn(told) { told.1.spell4_id == 42_148 })
-  assert list.map(told_of_42148, fn(told) { told.0 })
-    == [step.ConnectionId(2), step.ConnectionId(3)]
-    as "each connection that sees the caster is told 42148's start, as of any child (opcode.0x7ff); the test caster's audience is connections 2 and 3. That a viewer is sent no 0x935 is shown on the connection (game_connection_volatility_test)"
+    list.filter(started_told(effects), fn(told) { told.spell4_id == 42_148 })
+  assert list.length(told_of_42148) == 1
+    as "the map is told 42148's start once, as of any child (opcode.0x7ff), for each connection that sees the caster. That a viewer is sent no 0x935 is shown on the connection (game_connection_volatility_test)"
 }

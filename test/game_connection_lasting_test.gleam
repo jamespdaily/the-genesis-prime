@@ -183,7 +183,7 @@ pub fn a_creatures_0x355_drops_its_nodes_and_the_lingering_cast_left_with_none_f
   assert game_connection_support.written_ids(removed) == [0x0355, 0x07FE]
     as "the client dropped the Beast's nodes with its 0x355 (0x1404550d0): the lingering cast has none left and ends with its 0x7fe"
   assert list.contains(
-    game_connection_support.news_told_to_viewer_2(taken: removed),
+    game_connection_support.news_broadcast(removed),
     unit_news.CastFinished(cast_id:),
   )
     as "the viewer told the cast's start is told its finish"

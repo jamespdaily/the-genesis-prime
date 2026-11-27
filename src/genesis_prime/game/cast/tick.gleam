@@ -25,14 +25,14 @@ import genesis_prime/game/cast/state.{
   type Aimed, type Caster, type Effect, type GateDecision, type Holder,
   type Paid, type Reached, type State, type StrikeGate, type Struck,
   type TargetVerdict, type TickAsked, type TickKey, type Ticking, type TickingOn,
-  type Verdict, Accept, CancelTimer, Caster, CasterChangeStarts, CasterSide,
-  ChargeLevel, CooldownModifierEnds, CooldownModifierStarts, Deflected,
-  FindProxyTickUnits, Finish, ForcedMoveStart, Go, Heal, Healed, HeldChange, Hit,
-  HitOtherPlayer, Immune, Lingering, Live, Look, ModifierEnd, ModifierStart,
-  NodesEnd, NotBuilt, PlayerChangeEnd, ProcDue, ProxyTickAsked, QuestAdvanceDue,
-  Refuse, RepeatHeld, RestrictionEnd, Send, StartChild, StartHeld, Starts, State,
-  StateEnd, StrikeWithBlow, TargetModifierStart, Tell, TellHeal, Tick, TickAsked,
-  TickStrike, TickingOn, UnitSide, WindowEnd,
+  type Verdict, Accept, Broadcast, CancelTimer, Caster, CasterChangeStarts,
+  CasterSide, ChargeLevel, CooldownModifierEnds, CooldownModifierStarts,
+  Deflected, FindProxyTickUnits, Finish, ForcedMoveStart, Go, Heal, Healed,
+  HeldChange, Hit, HitOtherPlayer, Immune, Lingering, Live, Look, ModifierEnd,
+  ModifierStart, NodesEnd, NotBuilt, PlayerChangeEnd, ProcDue, ProxyTickAsked,
+  QuestAdvanceDue, Refuse, RepeatHeld, RestrictionEnd, Send, StartChild,
+  StartHeld, Starts, State, StateEnd, StrikeWithBlow, TargetModifierStart,
+  TellHeal, Tick, TickAsked, TickStrike, TickingOn, UnitSide, WindowEnd,
 } as cast_state
 import genesis_prime/game/class_resource
 import genesis_prime/game/cooldown
@@ -53,9 +53,8 @@ import genesis_prime/message/spell_damage_description.{
 import genesis_prime/message/spell_effect_tick.{SpellEffectTick}
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
-import genesis_prime/step.{type ConnectionId, type TimerId}
+import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{type Spell4EffectsId}
-import genesis_prime/world_map/map
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -325,7 +324,7 @@ fn tick_timers_cancelled(
 /// The ticks of the cast `cast_id` due at the time fire, each due tick of each row, a
 /// connection fallen behind included, earliest first and at one time in unit and row id
 /// order: a damage row asks its unit for the tick (`TickStrike`), whose 0x7f8 waits for
-/// `cast.ticked`; a heal row writes its 0x7f8 to the caster, tells the audience
+/// `cast.ticked`; a heal row writes its 0x7f8 to the caster, broadcasts it
 /// (genesis_prime/client_connection `CastTicked`) and heals the caster
 /// (`CasterChangeStarts`), reading the vitals the heal ticks before it in the step left,
 /// and heals nothing on a dead caster; a Proxy row aimed at the caster or the primary target
@@ -502,7 +501,6 @@ fn tick_landed(
                 caster:,
                 cast_id:,
                 effect_id: cast_state.key_effect(key:),
-                audience: holder.audience,
                 vital:,
                 formula:,
                 passed_in:,
@@ -701,7 +699,7 @@ fn next_tick_armed(
 }
 
 /// A heal tick on the caster: its 0x7f8 with the heal's description, told to the
-/// audience, then the heal, the formula read for the caster as it is at the tick and
+/// map, then the heal, the formula read for the caster as it is at the tick and
 /// split by the room its vitals have then (`cast_heal.split_of`); the caster comes back with the
 /// heal's split added to its vitals, for a heal tick due with it. A dead caster is healed
 /// nothing and shown nothing.
@@ -709,7 +707,6 @@ fn healed_by_tick(
   caster caster: Caster,
   cast_id cast_id: Int,
   effect_id effect_id: Spell4EffectsId,
-  audience audience: Set(ConnectionId),
   vital vital: effect_kind.Vital,
   formula formula: damage.Formula,
   passed_in passed_in: Option(Float),
@@ -732,13 +729,9 @@ fn healed_by_tick(
       ),
     ),
     list.flatten([
-      tick_written(
-        cast_id:,
-        effect_id:,
-        unit_id: caster.unit_id,
-        descriptions: [cast_heal.heal_description(healed:)],
-        audience:,
-      ),
+      tick_written(cast_id:, effect_id:, unit_id: caster.unit_id, descriptions: [
+        cast_heal.heal_description(healed:),
+      ]),
       [
         CasterChangeStarts(
           source: unit_properties.Source(cast_id:, effect_id:),
@@ -750,13 +743,12 @@ fn healed_by_tick(
 }
 
 /// The 0x7f8 of one tick of the effect row on the unit, with the descriptions of what the
-/// tick did, written to the caster and told to the audience.
+/// tick did, written to the caster and told to the map.
 fn tick_written(
   cast_id cast_id: Int,
   effect_id effect_id: Spell4EffectsId,
   unit_id unit_id: Int,
   descriptions descriptions: List(SpellDamageDescription),
-  audience audience: Set(ConnectionId),
 ) -> List(Effect) {
   let tick =
     SpellEffectTick(
@@ -767,15 +759,13 @@ fn tick_written(
     )
   [
     Send(frame: cast_frame.ticked_frame(tick:)),
-    ..list.map(map.sorted_connections(audience), fn(viewer) {
-      Tell(to: viewer, news: unit_news.CastTicked(tick:))
-    })
+    Broadcast(news: unit_news.CastTicked(tick:)),
   ]
 }
 
 /// What a closed tick round of the row does: a heal a player applied writes its 0x7f8 to the
-/// audience, the description being what the player applied (`cast_heal.applied`), and heals
-/// nothing here; a hit writes its 0x7f8 to the audience,
+/// map, the description being what the player applied (`cast_heal.applied`), and heals
+/// nothing here; a hit writes its 0x7f8 to the map,
 /// whichever go's schedule asked it, since the unit took the damage and its health news
 /// goes out, and one that kills drops the unit's ticks; a deflect or an immunity writes
 /// nothing; no answer for a round of the row's current schedule (the unit is gone, or
@@ -785,7 +775,6 @@ fn tick_written(
 /// the unit again.
 pub fn tick_outcome(
   cast cast: State,
-  audience audience: Set(ConnectionId),
   row row: Ticking,
   asked asked: TickAsked,
   struck struck: Option(Struck),
@@ -802,7 +791,6 @@ pub fn tick_outcome(
         descriptions: list.map(heals, fn(landed) {
           cast_heal.heal_description(healed: cast_heal.applied(landed:))
         }),
-        audience:,
       ),
     )
     Some(Hit(descriptions:, ..)), _ -> {
@@ -814,7 +802,6 @@ pub fn tick_outcome(
           descriptions: list.map(descriptions, fn(description) {
             description.damage
           }),
-          audience:,
         )
       let killed =
         list.any(descriptions, fn(description) {
@@ -1063,12 +1050,11 @@ pub fn nodes_ended_frames(
   kept kept: List(#(Int, lasting.Node)),
 ) -> List(Effect) {
   case holder.phase == cast_state.LastGoGone && kept == [] {
-    True -> finished_effects(cast_id:, audience: holder.audience)
+    True -> finished_effects(cast_id:)
     False ->
       targets_removed_effects(
         cast_id:,
         unit_ids: cast_state.sorted_units(ended),
-        audience: holder.audience,
         destroyed: kept == []
           && !keeps_without_target(method: holder.spell.method),
       )
@@ -1591,54 +1577,43 @@ pub fn stack_off(
       }
       #(
         with_nodes(cast:, cast_id:, nodes:),
-        stack_removed_effects(cast_id:, unit_id:, audience: holder.audience),
+        stack_removed_effects(cast_id:, unit_id:),
       )
     }
   }
 }
 
-/// 0x811 for the units, to the caster and told to the audience, with whether the
+/// 0x811 for the units, to the caster and told to the map, with whether the
 /// client destroys the cast with it.
 pub fn targets_removed_effects(
   cast_id cast_id: Int,
   unit_ids unit_ids: List(Int),
-  audience audience: Set(ConnectionId),
   destroyed destroyed: Bool,
 ) -> List(Effect) {
   let removed = SpellTargetsRemoved(cast_id:, unit_ids:)
   [
     Send(frame: cast_frame.targets_removed_frame(removed:)),
-    ..list.map(map.sorted_connections(audience), fn(viewer) {
-      Tell(to: viewer, news: unit_news.CastTargetsRemoved(removed:, destroyed:))
-    })
+    Broadcast(news: unit_news.CastTargetsRemoved(removed:, destroyed:)),
   ]
 }
 
-/// 0x813 for the unit, to the caster and told to the audience.
+/// 0x813 for the unit, to the caster and told to the map.
 fn stack_removed_effects(
   cast_id cast_id: Int,
   unit_id unit_id: Int,
-  audience audience: Set(ConnectionId),
 ) -> List(Effect) {
   let removed = SpellStackRemoved(cast_id:, unit_id:)
   [
     Send(frame: cast_frame.stack_removed_frame(removed:)),
-    ..list.map(map.sorted_connections(audience), fn(viewer) {
-      Tell(to: viewer, news: unit_news.CastStackRemoved(removed:))
-    })
+    Broadcast(news: unit_news.CastStackRemoved(removed:)),
   ]
 }
 
-/// 0x7fe to the caster and told to the audience.
-pub fn finished_effects(
-  cast_id cast_id: Int,
-  audience audience: Set(ConnectionId),
-) -> List(Effect) {
+/// 0x7fe to the caster and told to the map.
+pub fn finished_effects(cast_id cast_id: Int) -> List(Effect) {
   [
     Send(frame: cast_frame.finished_frame(cast_id:)),
-    ..list.map(map.sorted_connections(audience), fn(viewer) {
-      Tell(to: viewer, news: unit_news.CastFinished(cast_id:))
-    })
+    Broadcast(news: unit_news.CastFinished(cast_id:)),
   ]
 }
 

@@ -1233,11 +1233,10 @@ pub fn selling_a_worn_item_sends_0x148_then_0x933_and_0x93a_and_tells_each_viewe
     )
   assert properties.unit_id == connection_support.own_unit_id
     as "opcode.0x93a: the properties are the player's own unit's; their values are the gear step's"
-  list.each([2, 3], fn(viewer) {
-    let assert [LookChanged(..), PropertiesChanged(..), ..] =
-      connection_support.news_told(taken: answered, viewer:)
-      as "opcode.0x93a.other_unit: each viewer is told the look, then the properties"
-  })
+  let assert [LookChanged(..), PropertiesChanged(..), ..] =
+    connection_support.news_broadcast(answered)
+    as "opcode.0x93a.other_unit: each viewer is told the look, then the properties"
+  Nil
 }
 
 /// Dorian Walker sells Item2 48169, a bracer with three kind-2 random stat entries in the

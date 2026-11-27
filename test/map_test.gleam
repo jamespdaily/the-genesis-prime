@@ -380,6 +380,16 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
         Connection(ConnectionId(8)),
         map.Noticed(
           stay: map_support.stay(count: 1),
+          notice: map.PlayerUnseen(
+            unit_id: unit_of(first, 1),
+            generation: generation.first(),
+          ),
+        ),
+      )),
+      OwnEffect(step.Send(
+        Connection(ConnectionId(8)),
+        map.Noticed(
+          stay: map_support.stay(count: 1),
           notice: map.UnseenBy(
             by: ConnectionId(7),
             generation: generation.after(generation: generation.first()),
@@ -388,7 +398,7 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
       )),
       OwnEffect(Reply(CallerId(3), Left)),
     ]
-    as "the connection's watch, which the join opened as watch 1, is dropped: the connection goes on after its camp, so the map must not hold it as a player; the other player, who saw it, is told its viewer 7 is gone (the connection sent its clients the 0x355 itself, so no Unseen); then the leave is answered"
+    as "the connection's watch, which the join opened as watch 1, is dropped: the connection goes on after its camp, so the map must not hold it as a player; the other player, who saw it, is told its unit is unseen (its 0x355) and its viewer 7 is gone; then the leave is answered"
   assert support.logs(left) == []
   let #(state, again) = join(state:, connection: 7, caller: 4)
   assert unit_of(first, 1) == 1 && unit_of(other, 2) == 2

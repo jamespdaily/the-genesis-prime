@@ -78,13 +78,8 @@ pub fn a_press_that_makes_the_stealth_writes_0x8f5_to_the_player_and_tells_each_
     as "the 0x8f5 follows the go that made the stealth"
   assert only(frames:, ids: [0x0247, 0x093A]) == []
     as "no combat log entry (the client logs its own change) and no property (the client slows a stealthed player itself, unit.stealth_look)"
-  list.each([2, 3], fn(viewer) {
-    assert list.contains(
-      support.news_told(taken:, viewer:),
-      Stealth(stealthed: True),
-    )
-      as "each viewer is told"
-  })
+  assert list.contains(support.news_broadcast(taken), Stealth(stealthed: True))
+    as "each viewer is told"
 }
 
 /// The step's stealth change is written and told to the viewers before its tell to the
@@ -98,14 +93,11 @@ fn assert_the_change_comes_before_the_map_tell(
     as "the 0x8f5 is written before the tell"
   assert !list.contains(cast_support.ids(frames: after), 0x08F5)
     as "no 0x8f5 follows the tell"
-  list.each([2, 3], fn(viewer) {
-    assert list.filter(
-        support.news_told_after_the_map_tell(taken:, viewer:),
-        fn(news) { news == Stealth(True) || news == Stealth(False) },
-      )
-      == []
-      as "no stealth news follows the tell"
-  })
+  assert list.filter(support.news_told_after_the_map_tell(taken:), fn(news) {
+      news == Stealth(True) || news == Stealth(False)
+    })
+    == []
+    as "no stealth news follows the tell"
 }
 
 /// What the connection tells the map when its player's stealth changes to `stealthed`.
@@ -121,23 +113,20 @@ fn stealth_told(
 pub fn the_cast_rules_stealth_changed_tells_the_map_after_the_0x8f5_and_the_viewers_news_once_for_entering_and_once_for_leaving_test() -> Nil {
   use <- owned_test.run(60_000)
   let #(state, entering) = stealthed()
-  assert support.told_the_map(entering) == [stealth_told(stealthed: True)]
+  assert support.told_the_map_decisions(entering)
+    == [stealth_told(stealthed: True)]
     as "the toggle press that enters stealth tells the run of the player's map once: Jim's decision on issue 483, so no creature aggroes a stealthed player it is not fighting"
   assert_the_change_comes_before_the_map_tell(taken: entering)
-  list.each([2, 3], fn(viewer) {
-    assert list.contains(
-      support.news_told(taken: entering, viewer:),
-      Stealth(True),
-    )
-      as "each viewer is told too (Spell4Effects.effectType.83, opcode.0x8f5)"
-  })
+  assert list.contains(support.news_broadcast(entering), Stealth(True))
+    as "each viewer is told too (Spell4Effects.effectType.83, opcode.0x8f5)"
   let #(_, leaving) =
     support.press_stealth_again(state:, client_cast_id: 2, ms: 3000)
-  assert support.told_the_map(leaving) == [stealth_told(stealthed: False)]
+  assert support.told_the_map_decisions(leaving)
+    == [stealth_told(stealthed: False)]
     as "the second press ends the stealth (Spell4.46073, Stealth Cancel 38783): one tell, False"
   assert_the_change_comes_before_the_map_tell(taken: leaving)
   let blow = struck_while_stealthed()
-  assert support.told_the_map_but_creatures(blow)
+  assert support.told_the_map_decisions(blow)
     == [stealth_told(stealthed: False)]
     as "a landed blow on a stealth that ends on damage taken (Spell4Effects.effectType.83, 83834: dataBits02 0) tells the map False once"
   assert_the_change_comes_before_the_map_tell(taken: blow)
@@ -181,16 +170,15 @@ pub fn a_landed_blow_writes_the_health_then_0x811_of_the_stealth_cast_then_0x8f5
     list.filter(frames, fn(frame) { frame.message_id == 0x08F5 })
   assert unit_stealth.decode(stealth.body)
     == Ok(UnitStealth(unit_id: support.own_unit_id, stealthed: 0))
-  list.each([2, 3], fn(viewer) {
-    let assert [
-      unit_news.Shield(..),
-      unit_news.Health(dead: False, ..),
-      unit_news.CastTargetsRemoved(..),
-      Stealth(stealthed: False),
-      ..
-    ] = support.news_told(taken:, viewer:)
-      as "each viewer is told the blow's shield and health (0x938 and 0x937), the stealth cast taken off (0x811) and then the stealth, before the real Stalker's own casts that follow"
-  })
+  let assert [
+    unit_news.Shield(..),
+    unit_news.Health(dead: False, ..),
+    unit_news.CastTargetsRemoved(..),
+    Stealth(stealthed: False),
+    ..
+  ] = support.news_broadcast(taken)
+    as "each viewer is told the blow's shield and health (0x938 and 0x937), the stealth cast taken off (0x811) and then the stealth, before the real Stalker's own casts that follow"
+  Nil
 }
 
 // ---- a go that ends the stealth ----
@@ -208,13 +196,12 @@ pub fn a_go_that_ends_the_stealth_writes_0x811_then_0x8f5_and_tells_each_viewer_
     list.filter(frames, fn(frame) { frame.message_id == 0x08F5 })
   assert unit_stealth.decode(stealth.body)
     == Ok(UnitStealth(unit_id: support.own_unit_id, stealthed: 0))
-  list.each([2, 3], fn(viewer) {
-    let assert [unit_news.CastTargetsRemoved(..), Stealth(False)] =
-      list.filter(support.news_told(taken:, viewer:), fn(news) {
-        support.is_cast_removal(news) || news == Stealth(False)
-      })
-      as "each viewer is told the stealth cast taken off (0x811), then the change (the casts the real rows start in between are other news)"
-  })
+  let assert [unit_news.CastTargetsRemoved(..), Stealth(False)] =
+    list.filter(support.news_broadcast(taken), fn(news) {
+      support.is_cast_removal(news) || news == Stealth(False)
+    })
+    as "each viewer is told the stealth cast taken off (0x811), then the change (the casts the real rows start in between are other news)"
+  Nil
 }
 
 /// A creature's strike of 0 on the tests' player, a blow that lowers neither its health
@@ -249,12 +236,10 @@ pub fn a_blow_that_lowers_nothing_keeps_the_stealth_test() -> Nil {
   let taken = support.feed(state, harmless_strike()).1
   assert only(frames: support.written(taken:), ids: [0x0811, 0x08F5]) == []
     as "a blow that lowers neither health nor shield takes no damage"
-  list.each([2, 3], fn(viewer) {
-    assert !list.contains(
-      support.news_told(taken:, viewer:),
-      Stealth(stealthed: False),
-    )
-  })
+  assert !list.contains(
+    support.news_broadcast(taken),
+    Stealth(stealthed: False),
+  )
 }
 
 pub fn a_lethal_blow_ends_the_stealth_before_the_death_is_written_test() -> Nil {
@@ -275,7 +260,7 @@ pub fn a_death_while_stealthed_by_a_kept_on_damage_source_ends_the_casts_then_th
   use <- owned_test.run(60_000)
   let #(state, pressed) = support.stealthed_stalker_kept_on_damage()
   let stealth_cast =
-    support.cast_starts(support.news_told(taken: pressed, viewer: 2))
+    support.cast_starts(support.news_broadcast(pressed))
     |> list.filter(fn(started) { started.spell4_id == 38_784 })
     |> list.map(fn(started) { started.cast_id })
   assert list.length(stealth_cast) == 1 as "the press starts Stealth 38784 once"
@@ -400,9 +385,9 @@ fn create_flags_sent_to_a_new_viewer(
       True -> support.in_second_stay(seen)
       False -> seen
     })
-  let assert [#(2, PeerNews(news: Appeared(unit:, ..), ..))] =
-    support.peer_tells(taken)
-    as "the viewer is sent the player's unit"
+  let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+    support.snapshot_items(taken)
+    as "the viewer's snapshot holds the player's unit"
   unit.tail.create_flags
 }
 
@@ -443,11 +428,10 @@ pub fn a_camp_while_stealthed_writes_no_stealth_and_the_next_stay_starts_unsteal
   list.each(steps, fn(taken) {
     assert only(frames: support.written(taken:), ids: [0x0811, 0x08F5]) == []
       as "a camp writes no stealth: the viewers' 0x355 removes the unit"
-    assert !list.any(support.peer_tells(taken), fn(tell) {
-      { tell.1 }.news == Stealth(stealthed: False)
-      || { tell.1 }.news == Stealth(stealthed: True)
+    assert !list.any(support.news_broadcast(taken), fn(news) {
+      news == Stealth(stealthed: False) || news == Stealth(stealthed: True)
     })
-      as "and tells the viewers no stealth"
+      as "and tells the map no stealth to relay"
   })
   let #(state, listing) = support.read(state:, bytes: support.select_start())
   let #(state, _) =

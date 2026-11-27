@@ -6,11 +6,11 @@
 ////
 //// ```
 //// caster's connection C                        this connection T (the healed player)
-////   Tell(Connection(T), TellPlayer(stay_T, Strike(PlayerStrike(key, C, stay_C, outgoing, heals))))
-////                      ─▶ ForStay(stay_T, SentByPlayer(Strike(strike)))   (the stay fence; held through an ask)
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, HealStrike(PlayerStrike(key, C, stay_C, outgoing, heals))))
+////                      ─▶ the map: Relayed(stay_T, Landed(..)) ─▶ ForStay(stay_T, SentByPlayer(Strike(strike)))   (the stay fence; held through an ask)
 ////                      ─▶ player_life.heals_taken: each row in order on the life the one before left
 ////   ForStay(stay_C, SentByPlayer(Answer(PlayerAnswered(key, HealsLanded(splits) | PlayerDead))))
-////                      ◀─ Tell(Connection(C), TellPlayer(stay_C, Answer(answered))), then T's own news
+////                      ◀─ Tell(map, TellLanding(T, stay_T, C, stay_C, HealAnswer(answered))), then T's own news
 //// ```
 ////
 //// - **The answer is told before T's own news**, in the order a creature answers a strike
@@ -23,25 +23,25 @@
 ////
 //// ```
 //// caster's connection C                        this connection T (the ally)
-////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect))))
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, ChangeStart(PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect))))
+////                      ─▶ the map (T in stay_T and C in stay_C): Relayed(stay_T, Landed(..))
 ////                      ─▶ ForStay(stay_T, SentByPlayer(Change(..)))   (the stay fence; held through an ask)
 ////                      ─▶ changed: the change through the function the player's own cast uses
 ////                         (properties.started, absorption.started), held for C
-////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerChangeEnds(C, source))))
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, ChangeEnd(PlayerChangeEnds(C, source))))
 ////                      ─▶ changed: the source taken off, when C holds it
-////   Tell(Connection(T), TellPlayer(stay_T, Change(PlayerCastWent(C, cast_id, audience))))
-////                      ─▶ cast_went: Tell(each viewer of T outside the audience, except C,
-////                         PeerNews(T, HeldCastStarted(0x7ff, 0x7f4))), after the rows
+////   Tell(map, TellLanding(C, stay_C, T, stay_T, CastWent(PlayerCastWent(C, cast_id))))
+////                      ─▶ cast_went: Tell(map, TellBroadcast(PeerNews(T, HeldCastStarted(0x7ff, 0x7f4)))), after the rows
 ////   the map's UnseenBy(C) ─▶ caster_unseen: C's sources with `EndsWhenUnseen` taken off
 ////   the map's Gone(C's unit) ─▶ caster_removed: every source of that unit taken off
 ////   T dies                ─▶ ended_at_death: every source T holds taken off
 ////   each of the three, once a cast has no source left
-////                         ─▶ Tell(each viewer, PeerNews(T, HeldCastEnded(cast_id))), after T's own writes
+////                         ─▶ Tell(map, TellBroadcast(PeerNews(T, HeldCastEnded(cast_id)))), after T's own writes
 //// ```
 ////
 //// ```
 //// a creature's blow lands on T, T alive, C among T's viewers and waiting for an event it raises
-////   Tell(Connection(C), TellPlayer(stay_C, Event(PlayerEvent(T's unit, the events C waits for))))
+////   Tell(map, TellLanding(T, stay_T, C, stay_C, AllyEvent(PlayerEvent(T's unit, the events C waits for))))
 ////                      ◀─ events_told: after T's own procs are raised, one tell per waiting caster
 //// ```
 ////
@@ -69,7 +69,8 @@
 ////   0x100 stays after its caster left T's sight. T's death clears the ledger
 ////   (`ended_at_death`), so a dead T holds none and takes no went. The start lists each effect
 ////   the ledger holds of the cast (`held_changes.cast_views`), at the clock the went is
-////   taken, and goes to each viewer outside the audience except the caster, whose client
+////   taken, and goes to the map, which relays it to each viewer; a viewer writes it only when its
+////   own ledger holds the cast in no state and the cast's caster is not its own unit, whose client
 ////   holds the cast from its own go (`opcode.0x7ff`).
 //// - **The tell carries what a create lists**: the cast's Spell4 id and the change's
 ////   effect with the go's own monotonic time as its start, which the ledger keeps
@@ -105,14 +106,12 @@ import genesis_prime/game/unit_news
 import genesis_prime/game/unit_properties
 import genesis_prime/game/world_entry
 import genesis_prime/gap
-import genesis_prime/step.{
-  type ConnectionEffect, type Effect, type Now, OwnEffect,
-}
+import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import genesis_prime/world_map/relay
 import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/set.{type Set}
 
 /// The heal rows of `strike` applied to the player `entered`, and the answer told to
 /// the caster's connection for the stay the strike names, before the player's own news.
@@ -131,16 +130,16 @@ pub fn struck(
   let #(session, news) =
     life_effect.life_changed(session:, now:, change: fn(_) { #(life, effects) })
   let answer: Effect(ConnectionEffect(Request)) =
-    OwnEffect(step.Tell(
-      to: step.Connection(connection: strike.from),
-      request: client_connection.TellPlayer(
-        stay: strike.stay,
-        tell: client_connection.Answer(answered: strike_tell.PlayerAnswered(
-          key: strike.key,
-          outcome:,
-        )),
-      ),
-    ))
+    connection_state.tells_the_landing(
+      session:,
+      entered:,
+      to: strike.from,
+      to_stay: strike.stay,
+      landing: relay.HealAnswer(answered: strike_tell.PlayerAnswered(
+        key: strike.key,
+        outcome:,
+      )),
+    )
   Continue(session, [answer, ..news])
 }
 
@@ -247,14 +246,14 @@ pub fn changed(
         }
         Ok(_) | Error(Nil) -> Continue(session, [])
       }
-    held_changes.PlayerCastWent(from:, cast_id:, audience:) ->
-      cast_went(session:, now:, entered:, from:, cast_id:, audience:)
+    held_changes.PlayerCastWent(from:, cast_id:) ->
+      cast_went(session:, now:, entered:, from:, cast_id:)
   }
 }
 
 /// The go of the cast `cast_id` that the caster of connection `from` started has told the
-/// player its changes: the player tells each of its viewers outside `audience`, except
-/// the caster, the cast's start, built from the changes it holds of the cast. The ledger
+/// player its changes: the player tells the map the cast's start, built from the changes it
+/// holds of the cast, for the map to relay to its viewers. The ledger
 /// is the whole guard: a dead player holds nothing (`ended_at_death`).
 fn cast_went(
   session session: Session,
@@ -262,7 +261,6 @@ fn cast_went(
   entered entered: world_entry.Entered,
   from from: step.ConnectionId,
   cast_id cast_id: Int,
-  audience audience: Set(step.ConnectionId),
 ) -> client_connection.Handled(Session) {
   use <- bool.guard(
     when: !held_changes.holds_cast_from(held: entered.held, cast_id:, by: from),
@@ -285,14 +283,13 @@ fn cast_went(
           place: movement.place(entered.movement),
           now_ms: now.monotonic_ms,
         )
-      Continue(
-        session,
-        connection_state.news_to_viewers_but(
+      Continue(session, [
+        connection_state.broadcast(
+          session:,
           entered:,
-          left_out: set.insert(audience, from),
           news: unit_news.HeldCastStarted(start:, go:),
         ),
-      )
+      ])
     }
     Error(Nil) -> Continue(session, [])
   }
@@ -330,6 +327,7 @@ pub fn caster_removed(
 /// one of them gets one tell with the stay it holds the viewer by, the player's unit and the
 /// events it waits for in the order they were raised. A dead player tells nobody.
 pub fn events_told(
+  session session: Session,
   entered entered: world_entry.Entered,
   events events: List(proc.Event),
 ) -> List(Effect(ConnectionEffect(Request))) {
@@ -343,18 +341,16 @@ pub fn events_told(
       list.filter(events, fn(event) { list.contains(triggers, event.trigger) })
     case dict.get(entered.viewers, caster), waited_for {
       Ok(viewer), [_, ..] ->
-        Ok(
-          OwnEffect(step.Tell(
-            to: step.Connection(connection: caster),
-            request: client_connection.TellPlayer(
-              stay: viewer.stay,
-              tell: client_connection.Event(event: strike_tell.PlayerEvent(
-                unit_id: entered.unit_id,
-                events: waited_for,
-              )),
-            ),
+        Ok(connection_state.tells_the_landing(
+          session:,
+          entered:,
+          to: caster,
+          to_stay: viewer.stay,
+          landing: relay.AllyEvent(event: strike_tell.PlayerEvent(
+            unit_id: entered.unit_id,
+            events: waited_for,
           )),
-        )
+        ))
       Ok(_), [] | Error(Nil), _ -> Error(Nil)
     }
   })
@@ -404,7 +400,7 @@ fn released_ended(
   }
 }
 
-/// The tell of `HeldCastEnded` to each viewer of the player for each cast of `sources` of
+/// The tell of `HeldCastEnded` to the map for each cast of `sources` of
 /// which the player holds no source any more, in cast id order, after the writes to the
 /// player's own client: the viewers that were listed the cast by the player's create and
 /// not told it by its caster end it themselves (genesis_prime/game/connection/viewers).
@@ -415,10 +411,11 @@ fn viewers_told_ended(
   case connection_state.entered_of(session.status) {
     None -> []
     Some(entered) ->
-      list.flat_map(
+      list.map(
         held_changes.casts_left(held: entered.held, released: sources),
         fn(cast_id) {
-          connection_state.news_to_viewers(
+          connection_state.broadcast(
+            session:,
             entered:,
             news: unit_news.HeldCastEnded(cast_id:),
           )
@@ -475,7 +472,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A viewer inside the audience of a cast (the connections its caster told the cast's start) whose client held no copy of the player when the caster's go reached it is shown no buff until the caster's next go, because the caster's 0x7f4 skips a unit the client lacks and the player starts the cast for no viewer inside the audience; a viewer that comes into sight of the player after the player took a cast's changes and before it took the cast's go is shown the effects told before it came into sight, and the player's start of the cast is then dropped; and a caster that comes back into the sight of a player that still holds its kept change is shown no buff on it, since no rule of the caster stands behind the entry (`proc.nodes_left`, `unit_removed`). The entry names the holder as the cast's primary and only target, which is wrong for a cast whose primary target is another unit (a child Barrier's Proxy started on an ally, whose area found others around that ally).",
+      missing: "A viewer its caster told a cast's start, whose client held no copy of the player when the caster's go reached it, is shown no buff on the player until the caster's next go, because the caster's 0x7f4 skips a unit the client lacks and the viewer's ledger holds the cast from the caster's start, so it drops the start the player tells; a viewer that comes into sight of the player after the player took a cast's changes and before it took the cast's go is shown the changes the player's create listed, and the player's start of the cast is then dropped by the viewer's ledger; and a caster that comes back into the sight of a player that still holds its kept change is shown no buff on it, since no rule of the caster stands behind the entry (`proc.nodes_left`, `unit_removed`). The entry names the holder as the cast's primary and only target, which is wrong for a cast whose primary target is another unit (a child Barrier's Proxy started on an ally, whose area found others around that ally).",
     ),
     gap.Entry(
       area: "Casting",
@@ -483,7 +480,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A change a caster tells a player before the player has taken its sight notice of that caster is dropped, because the player holds a change only from a caster it sees; the map's notice and the caster's tell come from two senders with no order. A caster that joins again under a new stay, with no unseen notice between, keeps the sources of its earlier stay.",
+      missing: "A kept change (a spell with propertyFlags 0x100) that a caster put on a player stays on the player after the caster joins again under a new stay, as after the caster left sight: only the caster's end tell or the removal of its unit takes it off (`held_changes.released_unseen`); the change's other sources end with the caster's earlier sight.",
     ),
     gap.Entry(
       area: "Casting",

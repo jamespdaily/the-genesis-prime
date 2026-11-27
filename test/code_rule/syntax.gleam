@@ -5,6 +5,7 @@ import code_rule/source.{type SourceFile}
 import database_support
 import glance.{type Expression, type Statement}
 import gleam/bit_array
+import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -46,6 +47,40 @@ pub fn module_name(path: String) -> String {
   |> string.remove_prefix("test/")
   |> string.remove_suffix(".gleam")
   |> string.remove_suffix(".erl")
+}
+
+/// The names of the variants of the custom types called `type_names`, in
+/// declaration order; a name that is no type of the file gives none.
+pub fn variants_of(
+  file file: SourceFile,
+  type_names type_names: List(String),
+) -> List(String) {
+  list.reverse(parse(file).custom_types)
+  |> list.filter(fn(definition) {
+    list.contains(type_names, definition.definition.name)
+  })
+  |> list.flat_map(fn(definition) {
+    list.map(definition.definition.variants, fn(variant) { variant.name })
+  })
+}
+
+/// The rows of the module's `////` doc table whose first cell is backticked:
+/// that cell's text and the row's last cell.
+pub fn table_rows(file file: SourceFile) -> List(#(String, String)) {
+  string.split(file.text, "\n")
+  |> list.filter_map(fn(line) {
+    use <- bool.guard(
+      when: !string.starts_with(line, "//// | `"),
+      return: Error(Nil),
+    )
+    use name <- result.try(
+      string.split(string.drop_start(line, 8), "`") |> list.first,
+    )
+    use last <- result.map(
+      string.split(string.trim_end(line), " | ") |> list.last,
+    )
+    #(name, string.remove_suffix(last, " |"))
+  })
 }
 
 /// The Erlang module and function each `@external(erlang, ...)` attribute
@@ -512,7 +547,8 @@ pub fn calls(module: glance.Module) -> List(Call) {
   })
 }
 
-fn called(function: Expression) -> Called {
+/// What the expression names when it is called.
+pub fn called(function: Expression) -> Called {
   case function {
     glance.Variable(name:, ..) -> CalledByName(name)
     glance.FieldAccess(

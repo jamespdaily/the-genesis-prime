@@ -151,13 +151,11 @@ pub fn a_level_up_sends_property_7_at_the_new_level_test() -> Nil {
     )
   assert written == [[entry]]
     as "0x93a {7 = CreatureLevel row 2's 216.533 and the worn 600, rounded: 817}, and nothing else: only the level's property moves"
-  list.each([2, 3], fn(viewer) {
-    assert list.contains(
-      support.news_told(taken: credit, viewer:),
-      PropertiesChanged(properties: [entry]),
-    )
-      as "each viewer is told the same entry"
-  })
+  assert list.contains(
+    support.news_broadcast(credit),
+    PropertiesChanged(properties: [entry]),
+  )
+    as "the map is told the same entry, to relay to each viewer"
 }
 
 /// Item2 27106 is a level-scaled heavy armor chest (flags bit 3) worn in the chest slot, over

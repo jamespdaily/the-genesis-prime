@@ -1,19 +1,19 @@
 //// What the caster's game connection does with the changes its cast rule tells another
 //// player (`genesis_prime/game/connection/casting` `cast_effects`): it tells the connection
-//// of that player, for the stay the cast's address names, `TellPlayer` of a `Change` with its own
-//// connection and stay as the caster, and writes nothing to its own client. The
+//// of that player, for the stay the cast's address names, `TellLanding` to the map of a
+//// `Change` with its own connection and stay as the caster, and writes nothing to its own client. The
 //// shell decides nothing: the rule chose the change, the source and whether it outlives
 //// sight. Expected values come from these places.
 //// - `genesis_prime/game/held_changes`: a start names the caster's connection and stay
 ////   (`from`, `from_stay`), which the player holds the change against; an end names the
 ////   caster's connection and the source.
-//// - `genesis_prime/client_connection` `TellPlayer(stay, Change(change))`: the stay is the
-////   player's, from the address the go used (the map's `SeenBy`).
+//// - `genesis_prime/client_connection` `TellLanding(.., to_stay, ChangeStart | ChangeEnd |
+////   CastWent)`: the stay is the player's, from the address the go used (the map's `SeenBy`).
 //// - The caster is the tests' connection 1 in the stay `world_entry_support` gives its
 ////   `Entered`; the ally is connection 2 in the stay `map_support.stay(count: 2)`.
 
 import game_connection_support as support
-import genesis_prime/client_connection.{TellPlayer}
+import genesis_prime/client_connection
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/effects as connection_effects
@@ -27,16 +27,14 @@ import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
 import genesis_prime/game/unit_properties.{type Source, Change, Source}
 import genesis_prime/game/world_entry
-import genesis_prime/step.{
-  type ConnectionId, type Effect, ConnectionId, Now, OwnEffect,
-}
+import genesis_prime/step.{type Effect, ConnectionId, Now, OwnEffect}
 import genesis_prime/table/id.{
   type Spell4Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
+import genesis_prime/world_map/relay
 import gleam/dict
 import gleam/list
 import gleam/result
-import gleam/set
 import map_support
 import owned_test
 import world_entry_support
@@ -49,11 +47,6 @@ fn address() -> PlayerAddress {
     unit_id: 40,
     stay: map_support.stay(count: ally_connection),
   )
-}
-
-/// The connections the caster told the cast's 0x7ff: its own and a viewer's.
-fn told_the_0x7ff() -> set.Set(ConnectionId) {
-  set.from_list([ConnectionId(1), ConnectionId(3)])
 }
 
 fn source() -> Source {
@@ -97,16 +90,24 @@ fn in_the_world() -> Session {
   ))
 }
 
-/// What a tell to the ally's connection is, as the caster's connection sends it: the stay of
-/// the ally, with the caster's own connection and stay.
+/// What a tell to the ally's connection is, as the caster's connection sends it: to the
+/// map, for the ally's connection and stay, with the caster's own connection and stay.
 fn told_to_the_ally(
   change change: held_changes.PlayerChange,
 ) -> Effect(step.ConnectionEffect(client_connection.Request)) {
+  let landing = case change {
+    PlayerChangeStarts(..) -> relay.ChangeStart(change:)
+    PlayerChangeEnds(..) -> relay.ChangeEnd(change:)
+    PlayerCastWent(..) -> relay.CastWent(change:)
+  }
   OwnEffect(step.Tell(
-    to: step.Connection(connection: address().connection),
-    request: TellPlayer(
-      stay: address().stay,
-      tell: client_connection.Change(change:),
+    to: step.Map(map: entered().map, incarnation: entered().incarnation),
+    request: client_connection.TellLanding(
+      connection: ConnectionId(1),
+      stay: entered().stay,
+      to: address().connection,
+      to_stay: address().stay,
+      landing:,
     ),
   ))
 }
@@ -122,14 +123,14 @@ fn carried(
   ).1
 }
 
-pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_that_players_connection_for_its_stay_from_the_casters_own_connection_and_stay_test() -> Nil {
+pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_the_map_for_that_players_connection_and_stay_from_the_casters_own_connection_and_stay_test() -> Nil {
   use <- owned_test.run(10_000)
   let own_stay = entered().stay
   let from = ConnectionId(1)
   // The effect, what it tells and to whom; nothing is written to the caster's client.
   let rows = [
     #(
-      "an absorb start: one tell to the ally's connection for its stay, from the caster's connection and stay, the sight as the rule gave it",
+      "an absorb start: one tell to the map for the ally's connection and stay, from the caster's connection and stay, the sight as the rule gave it",
       cast_state.OtherPlayerChangeStarts(
         address: address(),
         source: source(),
@@ -173,17 +174,15 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_that_players_connection_
       ],
     ),
     #(
-      "a went: one tell to the ally's connection for its stay, from the caster's own connection, with the cast id and the audience as the rule gave them",
+      "a went: one tell to the map for the ally's connection and stay, from the caster's own connection, with the cast id as the rule gave it",
       cast_state.OtherPlayerCastWent(
         address: address(),
         cast_id: source().cast_id,
-        audience: told_the_0x7ff(),
       ),
       [
         told_to_the_ally(change: PlayerCastWent(
           from:,
           cast_id: source().cast_id,
-          audience: told_the_0x7ff(),
         )),
       ],
     ),
@@ -215,7 +214,6 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_that_players_connection_
       cast_state.OtherPlayerCastWent(
         address: address(),
         cast_id: source().cast_id,
-        audience: told_the_0x7ff(),
       ),
     ])
     == []

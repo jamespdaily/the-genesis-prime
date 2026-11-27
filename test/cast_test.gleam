@@ -33,7 +33,7 @@ import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_cast_refused.{SpellCastRefused}
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started.{type SpellStarted}
-import genesis_prime/step.{ConnectionId, LogDebug}
+import genesis_prime/step.{LogDebug}
 import genesis_prime/store.{HeldItem}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/bool
@@ -363,12 +363,8 @@ pub fn an_accepted_press_answers_0x7fd_to_the_caster_and_tells_0x7ff_with_root_o
   assert confirmed.server_cast_id >= first_server_id
     && cast_state.caster_of(cast_id: confirmed.server_cast_id) == 7
     as "the id is the caster's own mint: 2^31 and the unit's number above it"
-  let assert [
-    #(ConnectionId(2), CastStarted(start: first)),
-    #(ConnectionId(3), CastStarted(start: second)),
-  ] = support.tells(effects:)
-    as "each viewer is told the start, in connection order"
-  assert first == second
+  let assert [CastStarted(start: first)] = support.tells(effects:)
+    as "the map is told the start once"
   assert first.cast_id == confirmed.server_cast_id
   assert first.spell4_id == 1
     && first.root_spell4_id == 1
@@ -418,7 +414,7 @@ fn cast_id_of(frame: Frame) -> Int {
   }
 }
 
-pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_test() -> Nil {
+pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_map_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, pressed) =
     support.pressed(state: cast_state.new(), bag_index: 0, target: 0, at: 1000)
@@ -431,27 +427,21 @@ pub fn each_start_gets_one_go_then_one_finish_to_the_caster_and_the_audience_tes
       as "opcode.0x7fe: the finish comes after the go"
   })
   let told = support.tells(effects:)
-  list.each([ConnectionId(2), ConnectionId(3)], fn(viewer) {
-    let kinds =
-      list.filter_map(told, fn(pair) {
-        case pair.0 == viewer {
-          True ->
-            Ok(case pair.1 {
-              CastStarted(..) -> "start"
-              CastWent(..) -> "go"
-              CastFinished(..) -> "finish"
-              unit_news.CastInterrupted(..) -> "interrupt"
-              _ -> "other"
-            })
-          False -> Error(Nil)
-        }
-      })
-    assert list.filter(kinds, fn(kind) { kind == "go" }) |> list.length
-      == list.filter(kinds, fn(kind) { kind == "start" }) |> list.length
-      && list.filter(kinds, fn(kind) { kind == "finish" }) |> list.length
-      == list.filter(kinds, fn(kind) { kind == "start" }) |> list.length
-      as "each viewer is told one go and one finish for each start (opcode.0x7fe, 0x140561c30)"
-  })
+  let kinds =
+    list.map(told, fn(news) {
+      case news {
+        CastStarted(..) -> "start"
+        CastWent(..) -> "go"
+        CastFinished(..) -> "finish"
+        unit_news.CastInterrupted(..) -> "interrupt"
+        _ -> "other"
+      }
+    })
+  assert list.filter(kinds, fn(kind) { kind == "go" }) |> list.length
+    == list.filter(kinds, fn(kind) { kind == "start" }) |> list.length
+    && list.filter(kinds, fn(kind) { kind == "finish" }) |> list.length
+    == list.filter(kinds, fn(kind) { kind == "start" }) |> list.length
+    as "the map is told one go and one finish for each start (opcode.0x7fe, 0x140561c30)"
 }
 
 pub fn cast_ids_are_above_2_pow_31_hold_the_unit_and_never_repeat_among_one_units_numbers_test() -> Nil {
@@ -890,12 +880,8 @@ pub fn a_0x801_ends_that_cast_with_its_timers_cancelled_and_0x7fe_to_all_and_no_
     as "opcode.0x801: the client sends 6 and the bit 1 when the player's cast ends"
   assert support.cancelled_timers(effects:) == [go_timer]
   assert support.written_ids(effects:) == [0x07FE]
-  assert list.map(support.tells(effects:), fn(pair) { pair.0 })
-    == [ConnectionId(2), ConnectionId(3)]
-  assert list.all(support.tells(effects:), fn(pair) {
-    pair.1 == CastFinished(cast_id: id)
-  })
-    as "the audience is told the finish; no go and no strike"
+  assert support.tells(effects:) == [CastFinished(cast_id: id)]
+    as "the map is told the finish; no go and no strike"
   let #(_, again) =
     support.pressed(state: after, bag_index: 3, target: 0, at: 1600)
   assert accepted(effects: again)
@@ -975,7 +961,7 @@ fn dead_caster() -> cast_state.Caster {
   cast_state.Caster(..support.caster(), dead: True)
 }
 
-pub fn a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_caster_and_its_audience_test() -> Nil {
+pub fn a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_caster_and_the_map_test() -> Nil {
   use <- owned_test.run(5000)
   // Telekinetic Strike goes 1250 ms after the accept, so its go waits on a timer.
   let #(state, pressed) =
@@ -994,11 +980,7 @@ pub fn a_dead_casters_casts_end_with_their_timers_cancelled_and_0x7fe_to_the_cas
     as "the waiting go is cancelled: no go and no strike"
   assert support.written_ids(effects:) == [0x07FE]
     as "0x7fe to the caster's own client"
-  assert support.tells(effects:)
-    == [
-      #(ConnectionId(2), CastFinished(cast_id: id)),
-      #(ConnectionId(3), CastFinished(cast_id: id)),
-    ]
+  assert support.tells(effects:) == [CastFinished(cast_id: id)]
     as "and to every viewer told the cast's start"
   let #(_, again) =
     support.pressed(state: after, bag_index: 3, target: 0, at: 1600)

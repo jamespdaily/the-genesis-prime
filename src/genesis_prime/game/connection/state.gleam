@@ -4,7 +4,7 @@
 //// the tells of news to the players who see the player.
 
 import genesis_prime/client_connection.{
-  type Bucket, type Link, type Request, AskStore, Asking, Done, TellPeer,
+  type Bucket, type Link, type Request, AskStore, Asking, Done,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -564,13 +564,6 @@ pub fn level_of(entered entered: world_entry.Entered) -> Int {
   |> result.unwrap(1)
 }
 
-/// The connections whose players see the player.
-pub fn viewer_connections(
-  entered entered: world_entry.Entered,
-) -> Set(ConnectionId) {
-  set.from_list(dict.keys(entered.viewers))
-}
-
 /// Makes the connection's next ask, after the effects `before`, with the
 /// settings' deadline.
 pub fn ask(
@@ -713,75 +706,46 @@ pub fn saves_the_place(status: Status) -> Bool {
   }
 }
 
-/// The tell of news about the player's own unit to the connection of a player
-/// who sees it, for that player's stay.
-pub fn news_to(
+/// The tell of `news` about the player's own unit to the run of its map, which relays it
+/// to each player whose relation with this one relays, in the map's order
+/// (genesis_prime/world_map/map `PlayerBroadcast`): the owner tells no viewer itself.
+pub fn broadcast(
+  session session: Session,
   entered entered: world_entry.Entered,
-  viewer viewer: #(ConnectionId, Stay),
   news news: unit_news.News,
 ) -> Effect(ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: step.Connection(viewer.0),
-    request: TellPeer(
-      stay: viewer.1,
+  tells_the_map(
+    entered:,
+    request: client_connection.TellBroadcast(
+      connection: client_connection.connection(session.link),
+      stay: entered.stay,
       news: unit_news.PeerNews(unit_id: entered.unit_id, news:),
     ),
-  ))
+  )
 }
 
-/// The tell of news to the connection, when its player sees this one; none when
-/// it no longer does: its client was sent the unit's 0x355 and forgot the unit.
-pub fn news_to_connection(
+/// The tell of `landing` to the run of the player's map, for the player of connection `to`
+/// in its stay `to_stay`: what the player's cast lands on that player, or its answer to
+/// one. The map admits it by the kind's checks and relays it to `to`
+/// (genesis_prime/world_map/map `TellLanding`), in the order this connection told it
+/// beside its broadcasts; the player tells no other player itself.
+pub fn tells_the_landing(
+  session session: Session,
   entered entered: world_entry.Entered,
-  connection connection: ConnectionId,
-  news news: unit_news.News,
-) -> List(Effect(ConnectionEffect(Request))) {
-  case dict.get(entered.viewers, connection) {
-    Ok(viewer) -> [
-      news_to(entered:, viewer: #(connection, viewer.stay), news:),
-    ]
-    Error(Nil) -> []
-  }
-}
-
-/// The tells that remove the player's own unit from the client of each player who
-/// sees it, for its camp and the Holocrypt, which send them before its leave is
-/// asked: the map's `UnseenBy` after the leave would be a second sender of news
-/// of the unit. Each names the generation of that viewer's sight.
-pub fn removes_its_unit_from_the_viewers(
-  entered entered: world_entry.Entered,
-) -> List(Effect(ConnectionEffect(Request))) {
-  list.map(sorted_viewers(entered:), fn(viewer) {
-    news_to(
-      entered:,
-      viewer: #(viewer.0, { viewer.1 }.stay),
-      news: unit_news.Departed(generation: { viewer.1 }.generation),
-    )
-  })
-}
-
-/// The tell of `news` about the player's own unit to each player who sees it, in
-/// connection order.
-pub fn news_to_viewers(
-  entered entered: world_entry.Entered,
-  news news: unit_news.News,
-) -> List(Effect(ConnectionEffect(Request))) {
-  news_to_viewers_but(entered:, left_out: set.new(), news:)
-}
-
-/// The tell of `news` about the player's own unit to each player who sees it, in
-/// connection order, except the connections in `left_out`.
-pub fn news_to_viewers_but(
-  entered entered: world_entry.Entered,
-  left_out left_out: Set(ConnectionId),
-  news news: unit_news.News,
-) -> List(Effect(ConnectionEffect(Request))) {
-  list.filter(sorted_viewers(entered:), fn(viewer) {
-    !set.contains(left_out, viewer.0)
-  })
-  |> list.map(fn(viewer) {
-    news_to(entered:, viewer: #(viewer.0, { viewer.1 }.stay), news:)
-  })
+  to to: ConnectionId,
+  to_stay to_stay: Stay,
+  landing landing: relay.Landing,
+) -> Effect(ConnectionEffect(Request)) {
+  tells_the_map(
+    entered:,
+    request: client_connection.TellLanding(
+      connection: client_connection.connection(session.link),
+      stay: entered.stay,
+      to:,
+      to_stay:,
+      landing:,
+    ),
+  )
 }
 
 /// The tell of `request` to the run of the player's map, which no answer follows

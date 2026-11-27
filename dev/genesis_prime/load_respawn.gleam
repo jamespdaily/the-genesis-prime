@@ -102,7 +102,9 @@ fn of_sent(sent: StaySent) -> Told {
 
 fn of_notice(notice: Notice) -> Told {
   case notice {
-    map.UnitUnseen(unit_id:, ..) | map.Gone(unit_id:) -> Removal([unit_id])
+    map.UnitUnseen(unit_id:, ..)
+    | map.PlayerUnseen(unit_id:, ..)
+    | map.Gone(unit_id:) -> Removal([unit_id])
     map.ObjectsUnseen(unit_ids:) -> Removal(unit_ids)
     map.ObjectsSeen(units:) ->
       Creation(
@@ -120,7 +122,6 @@ fn of_news(unit_id unit_id: Int, news news: News) -> Told {
     unit_news.CreatureAppeared(..) -> Creation([unit_id])
     unit_news.Died -> Death
     unit_news.Appeared(..)
-    | unit_news.Departed(..)
     | unit_news.CastStarted(..)
     | unit_news.CastWent(..)
     | unit_news.CastMissed(..)

@@ -24,7 +24,6 @@ import genesis_prime/game/unit_news.{CastFinished, CastStarted, CastWent}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_info.{SpellEffectInfo}
 import genesis_prime/message/spell_effect_result
-import genesis_prime/step.{ConnectionId}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -99,13 +98,10 @@ pub fn a_fanfare_cast_starts_goes_at_once_and_ends_after_the_effects_life_with_n
         name
         <> "the tier's row with the life 0 that leaves it to the client (opcode.0x7f4.effect_time)"
       }
-    let viewers = [ConnectionId(2), ConnectionId(3)]
     let tells = support.tells(effects:)
-    assert list.all(viewers, fn(viewer) {
-      list.contains(tells, #(viewer, CastStarted(start:)))
-      && list.contains(tells, #(viewer, CastWent(go:)))
-    })
-      as { name <> "each viewer is told the start and the go the player reads" }
+    assert list.contains(tells, CastStarted(start:))
+      && list.contains(tells, CastWent(go:))
+      as { name <> "the map is told the start and the go the player reads" }
     assert state.global_cooldown_ends_ms == None
       as {
         name <> "global cooldown kind 3 starts none (Spell4.tierIndex.level_up)"
@@ -133,9 +129,9 @@ pub fn a_fanfare_cast_starts_goes_at_once_and_ends_after_the_effects_life_with_n
       == [start.cast_id]
       as { name <> "0x7fe of the cast" }
     assert list.any(support.tells(effects: ended), fn(tell) {
-      tell.1 == CastFinished(cast_id: start.cast_id)
+      tell == CastFinished(cast_id: start.cast_id)
     })
-      as { name <> "each viewer is told the finish" }
+      as { name <> "the map is told the finish" }
     assert state.casts == dict.new() && state.lingering == dict.new()
       as { name <> "the state holds no live cast after" }
   })

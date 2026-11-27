@@ -56,7 +56,7 @@
 ////   connection (cast rule)                         map                           creature
 ////   a toggle press, a landed blow on 83834 or a death moves the stealth
 ////     StealthChanged(s) ─▶ 0x8f5 {owner, s}         ─▶ the owner's client
-////                       ─▶ Tell(each viewer, Stealth(s))
+////                       ─▶ Tell(map, TellBroadcast(Stealth(s)))
 ////                       ─▶ Tell(map, TellStealthChanged(connection, s))
 ////                                                    ─▶ a change: Withdrew(connection) when s,
 ////                                                       Approached when not s ─────────────▶ near
@@ -950,7 +950,6 @@ pub fn caster_of(
     book: ability_book.book(tables:, loadout: entered.loadout, level:),
     surge_spell: spell_surge.spell(tables:),
     weapon: entered.gear.weapon,
-    audience: connection_state.viewer_connections(entered:),
     players_in_sight: player_address.in_sight(
       viewers: entered.viewers,
       picture: entered.shown,
@@ -1457,11 +1456,10 @@ fn carried_out(
       cast_state.Send(frame:), _ -> #(session, [
         connection_state.to_client(session, frame),
       ])
-      cast_state.Tell(to:, news:), Some(entered) -> #(
-        session,
-        connection_state.news_to_connection(entered:, connection: to, news:),
-      )
-      cast_state.Tell(..), None -> #(session, [])
+      cast_state.Broadcast(news:), Some(entered) -> #(session, [
+        connection_state.broadcast(session:, entered:, news:),
+      ])
+      cast_state.Broadcast(..), None -> #(session, [])
       cast_state.StartTimer(timer:, after_ms:), _ -> #(session, [
         OwnEffect(StartTimer(timer:, after_ms:)),
       ])
@@ -1583,9 +1581,12 @@ fn carried_out(
       ),
         Some(entered)
       -> #(session, [
-        tells_the_player(
-          address:,
-          change: held_changes.PlayerChangeStarts(
+        connection_state.tells_the_landing(
+          session:,
+          entered:,
+          to: address.connection,
+          to_stay: address.stay,
+          landing: relay.ChangeStart(change: held_changes.PlayerChangeStarts(
             from: client_connection.connection(session.link),
             from_stay: entered.stay,
             source:,
@@ -1593,31 +1594,36 @@ fn carried_out(
             sight:,
             spell4_id:,
             effect:,
-          ),
+          )),
         ),
       ])
-      cast_state.OtherPlayerChangeEnds(address:, source:), Some(_) -> #(
+      cast_state.OtherPlayerChangeEnds(address:, source:), Some(entered) -> #(
         session,
         [
-          tells_the_player(
-            address:,
-            change: held_changes.PlayerChangeEnds(
+          connection_state.tells_the_landing(
+            session:,
+            entered:,
+            to: address.connection,
+            to_stay: address.stay,
+            landing: relay.ChangeEnd(change: held_changes.PlayerChangeEnds(
               from: client_connection.connection(session.link),
               source:,
-            ),
+            )),
           ),
         ],
       )
-      cast_state.OtherPlayerCastWent(address:, cast_id:, audience:), Some(_) -> #(
+      cast_state.OtherPlayerCastWent(address:, cast_id:), Some(entered) -> #(
         session,
         [
-          tells_the_player(
-            address:,
-            change: held_changes.PlayerCastWent(
+          connection_state.tells_the_landing(
+            session:,
+            entered:,
+            to: address.connection,
+            to_stay: address.stay,
+            landing: relay.CastWent(change: held_changes.PlayerCastWent(
               from: client_connection.connection(session.link),
               cast_id:,
-              audience:,
-            ),
+            )),
           ),
         ],
       )
@@ -1637,10 +1643,13 @@ fn carried_out(
               ),
             ),
           ],
-          connection_state.news_to_viewers(
-            entered:,
-            news: unit_news.Stealth(stealthed:),
-          ),
+          [
+            connection_state.broadcast(
+              session:,
+              entered:,
+              news: unit_news.Stealth(stealthed:),
+            ),
+          ],
           // The map keeps a stealthed player out of every creature's ring: Jim's
           // decision, a server choice. Told last, after the owner's 0x8f5 and the
           // viewers' news.
@@ -1802,22 +1811,6 @@ fn procs_fired(
 
 /// The bytes of a chance draw: one 32-bit word (`random.words`).
 const proc_word_bytes = 4
-
-/// The change `change` told to the connection of the player `address` names, for the stay
-/// it names, through the registry: the player's connection applies
-/// it and holds it for this connection.
-fn tells_the_player(
-  address address: player_address.PlayerAddress,
-  change change: held_changes.PlayerChange,
-) -> Effect(ConnectionEffect(Request)) {
-  OwnEffect(step.Tell(
-    to: step.Connection(connection: address.connection),
-    request: client_connection.TellPlayer(
-      stay: address.stay,
-      tell: client_connection.Change(change:),
-    ),
-  ))
-}
 
 /// The throw of the creature `unit_id` of `life`, told through the player's map as a
 /// strike's tell goes: the connection draws `forced_move.draw_bytes` from its seed
@@ -2105,14 +2098,14 @@ fn strike_carried_out(
           payload: relay.Strike(tell:),
         ),
       ])
-      strike.TellPlayerStrike(address:, strike:), Some(_) -> #(session, [
-        OwnEffect(step.Tell(
-          to: step.Connection(connection: address.connection),
-          request: client_connection.TellPlayer(
-            stay: address.stay,
-            tell: client_connection.Strike(strike:),
-          ),
-        )),
+      strike.TellPlayerStrike(address:, strike:), Some(entered) -> #(session, [
+        connection_state.tells_the_landing(
+          session:,
+          entered:,
+          to: address.connection,
+          to_stay: address.stay,
+          landing: relay.HealStrike(strike:),
+        ),
       ])
       strike.StartTimer(timer:, after_ms:), Some(_) -> #(session, [
         OwnEffect(StartTimer(timer:, after_ms:)),
@@ -2238,7 +2231,6 @@ pub fn creature_news_frames(
     | unit_news.CameBackLogged
     | unit_news.Appeared(..)
     | unit_news.CreatureAppeared(..)
-    | unit_news.Departed(..)
     | unit_news.Removed
     | unit_news.CastStarted(..)
     | unit_news.CastWent(..)

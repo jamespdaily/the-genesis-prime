@@ -44,7 +44,7 @@ import genesis_prime/game/ticking.{Schedule, Ticks}
 import genesis_prime/game/unit_news.{CastFinished}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_failed
-import genesis_prime/step.{type TimerId, ConnectionId, LogDebug}
+import genesis_prime/step.{type TimerId, LogDebug}
 import genesis_prime/table/id.{
   PrerequisiteId, Spell4BaseId, Spell4EffectsId, Spell4Id,
 }
@@ -144,11 +144,7 @@ pub fn a_step_that_leaves_spell_power_at_24_ends_the_spell_surge_buff_and_at_25_
   assert support.ids(frames: support.writes(effects:)) == [0x07F9, 0x07FE]
     && finished_ids(effects:) == [buff]
     as "then the 0x7fe that takes the cast out of the client's table (0x7f9 leaves it filed, opcode.0x7f9)"
-  assert support.tells(effects:)
-    == [
-      #(ConnectionId(2), CastFinished(cast_id: buff)),
-      #(ConnectionId(3), CastFinished(cast_id: buff)),
-    ]
+  assert support.tells(effects:) == [CastFinished(cast_id: buff)]
     as "each viewer is told the cast finished"
   let #(_, again) =
     persisted(state: ended, caster: spellslinger(power: 24.0), at: 1300)
@@ -955,11 +951,7 @@ pub fn a_periodic_proxys_own_persistence_ends_its_cast_in_the_input_that_breaks_
     == set.from_list(armed)
     && dict.size(ended.timers) == 0
     as "the tick timer and the node's end timer are cancelled and none is left"
-  assert support.tells(effects:)
-    == [
-      #(ConnectionId(2), CastFinished(cast_id:)),
-      #(ConnectionId(3), CastFinished(cast_id:)),
-    ]
+  assert support.tells(effects:) == [CastFinished(cast_id:)]
     as "each viewer is told the cast finished"
   let plain =
     support.plans_of([

@@ -30,7 +30,7 @@ import genesis_prime/game/ability_book
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/loadout
 import genesis_prime/game/unit_news.{
-  type News, Appeared, Departed, LookChanged, PeerNews, Removed,
+  type News, Appeared, LookChanged, PeerNews, Removed,
 }
 import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
@@ -152,19 +152,9 @@ fn written(
   })
 }
 
-/// The news the steps tell the viewer connection `viewer`, in order.
-fn news_told(
-  steps steps: List(ConnectionStep(Request)),
-  viewer viewer: Int,
-) -> List(News) {
-  list.flat_map(steps, fn(taken) {
-    list.filter_map(support.peer_tells(taken), fn(tell) {
-      case tell.0 == viewer {
-        True -> Ok({ tell.1 }.news)
-        False -> Error(Nil)
-      }
-    })
-  })
+/// The news the steps tell the map to relay to the player's viewers, in order.
+fn news_broadcast(steps steps: List(ConnectionStep(Request))) -> List(News) {
+  list.flat_map(steps, support.news_broadcast)
 }
 
 /// The visuals a news carries when it is a `LookChanged`, whatever they hold.
@@ -175,12 +165,9 @@ fn look_visuals(news news: News) -> Result(List(ItemVisual), Nil) {
   }
 }
 
-/// The visuals of every `LookChanged` the steps tell the viewer `viewer`, in order.
-fn told(
-  steps steps: List(ConnectionStep(Request)),
-  viewer viewer: Int,
-) -> List(List(ItemVisual)) {
-  list.filter_map(news_told(steps:, viewer:), fn(news) { look_visuals(news:) })
+/// The visuals of every `LookChanged` the steps tell the map, in order.
+fn told(steps steps: List(ConnectionStep(Request))) -> List(List(ItemVisual)) {
+  list.filter_map(news_broadcast(steps:), fn(news) { look_visuals(news:) })
 }
 
 // ---- the suit on the player and its viewers ----
@@ -189,15 +176,13 @@ fn writes_the_suit_then_the_empty_slot(world world: World) -> Nil {
   let #(_, early) = suited_until(world:, until_ms: 10_000)
   assert written(steps: early) == [[suit(display: world.suit)]]
     as "0x933 {the player, [slot 64, the suit's display, colour set 0, dye 0]} once, at the go: the row of the player's faction (112543 behind 30100, base faction 167, or 178142 behind 30101, 166)"
-  assert told(steps: early, viewer: 2) == [[suit(display: world.suit)]]
-    as "each viewer is told the same visuals"
-  assert told(steps: early, viewer: 3) == [[suit(display: world.suit)]]
+  assert told(steps: early) == [[suit(display: world.suit)]]
+    as "the map is told the same visuals, to relay to each viewer"
   let #(_, whole) = suited_until(world:, until_ms: 20_000)
   assert written(steps: whole)
     == [[suit(display: world.suit)], [suit(display: 0)]]
     as "and 10,250 ms later slot 64 with display 0, which empties it (opcode.0x933.empty_display): the player held nothing there"
-  assert told(steps: whole, viewer: 2)
-    == [[suit(display: world.suit)], [suit(display: 0)]]
+  assert told(steps: whole) == [[suit(display: world.suit)], [suit(display: 0)]]
 }
 
 pub fn a_dominion_engineers_eradicate_writes_the_suit_then_the_empty_slot_to_itself_and_each_viewer_test() -> Nil {
@@ -221,8 +206,8 @@ fn created_for(
   state state: game_connection.State,
   viewer viewer: Int,
 ) -> UnitCreatePlayer {
-  let assert [#(_, PeerNews(news: Appeared(unit:, ..), ..))] =
-    support.peer_tells(
+  let assert [PeerNews(news: Appeared(unit:, ..), ..)] =
+    support.snapshot_items(
       support.feed(
         state:,
         event: support.sent_by_the_map(SeenBy(
@@ -356,8 +341,8 @@ fn the_death_writes_the_restore_to_the_player_and_each_viewer(
   let #(dead, taken) = support.killed(suited)
   assert written(steps: [taken]) == [[suit(display: 0)]]
     as "the death ends the suit: slot 64 with display 0 goes to the player in the death's step"
-  assert told(steps: [taken], viewer: 2) == [[suit(display: 0)]]
-  assert told(steps: [taken], viewer: 3) == [[suit(display: 0)]]
+  assert told(steps: [taken]) == [[suit(display: 0)]]
+    as "and the map is told the same, to relay to each viewer"
   assert suits_of(unit: created_for(state: dead, viewer: 4)) == []
     as "a viewer that comes after the death gets the base list"
 }
@@ -389,19 +374,8 @@ fn a_camp_tells_the_viewers_removed_and_no_look(world world: World) -> Nil {
     )
   let steps = [requested, finished, saved, left]
   assert written(steps:) == [] as "a camp writes no 0x933 to the player"
-  list.each([2, 3], fn(viewer) {
-    let news = news_told(steps:, viewer:)
-    assert list.filter(news, fn(told) {
-        case told {
-          Departed(..) -> True
-          _ -> False
-        }
-      })
-      == [Departed(generation: support.viewer_sight(viewer))]
-      as "the camp's own steps tell each viewer the unit is removed, once (opcode.0x355)"
-    assert list.filter_map(news, fn(told) { look_visuals(news: told) }) == []
-      as "and no LookChanged, whatever it carries"
-  })
+  assert told(steps:) == []
+    as "the camp's own steps tell the map no LookChanged, whatever it carries; the unit's removal is the map's PlayerUnseen when it takes the leave (opcode.0x355)"
   // The next entry: a fresh Entered from the map's join, whose 0x262 lists the base.
   let #(_, entering) =
     support.entered_from(
@@ -501,9 +475,9 @@ pub fn an_unequip_while_a_suit_holds_the_look_sends_no_0x933_and_the_suit_end_sh
     as "the chest's slot 1 is emptied and the suit's slot 64 is left alone: no 0x933 names slot 64"
   assert list.contains(support.written_ids(answered), 0x093A)
     as "0x93a is sent while the suit shows"
-  assert told(steps: [answered], viewer: 2)
+  assert told(steps: [answered])
     == [[ItemVisual(slot: 1, display_id: 0, item_color_set_id: 0, dye: 0)]]
-    as "each viewer is told the same"
+    as "the map is told the same, to relay to each viewer"
   let #(ended, _, rest) =
     support.casts_left(state: unequipped, pending:, until_ms: 20_000, steps: [])
   assert written(steps: rest) == [[suit(display: 0)]]

@@ -187,7 +187,7 @@ fn changed_to(
   }
 }
 
-/// 0x93a to the player's client and the news to each viewer, the same entries, then what
+/// 0x93a to the player's client and the news to the map, the same entries, then what
 /// the life writes for its new maxima and regeneration.
 fn told(
   session session: Session,
@@ -207,10 +207,13 @@ fn told(
         ),
       ),
     ],
-    connection_state.news_to_viewers(
-      entered:,
-      news: unit_news.PropertiesChanged(properties: sent),
-    ),
+    [
+      connection_state.broadcast(
+        session:,
+        entered:,
+        news: unit_news.PropertiesChanged(properties: sent),
+      ),
+    ],
     life_effect.life_effects(session:, now:, entered:, effects: life_effects),
   ])
 }

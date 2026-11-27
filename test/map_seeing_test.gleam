@@ -150,13 +150,16 @@ fn two_players(x: Float) -> #(State, ServiceStep(map.Outgoing)) {
   join(state: state, connection: 2, place: at(x), elapsed_ms: 200)
 }
 
-/// What a step tells players' connections: the connection, the stay the notice
-/// is for and the notice, in the order sent.
+/// What a step tells players' connections about who sees whom: the connection, the stay
+/// the notice is for and the notice, in the order sent. The viewer's own notice that a
+/// unit is unseen (`PlayerUnseen`) is checked by the table tests of
+/// `map_player_relation_test`.
 fn notices(
   taken: ServiceStep(map.Outgoing),
 ) -> List(#(Int, stay.Stay, map.Notice)) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
+      Noticed(notice: map.PlayerUnseen(..), ..) -> Error(Nil)
       Noticed(stay:, notice:) -> Ok(#(sent.0, stay, notice))
       Joined(..)
       | map.NotJoined(..)
@@ -264,6 +267,19 @@ pub fn a_second_join_keeps_the_new_joins_stay_test() -> Nil {
     == [
       #(
         1,
+        map_support.stay(count: 1),
+        UnseenBy(by: ConnectionId(2), generation: generation.first()),
+      ),
+      #(
+        2,
+        map_support.stay(count: 2),
+        UnseenBy(
+          by: ConnectionId(1),
+          generation: generation.after(generation: generation.first()),
+        ),
+      ),
+      #(
+        1,
         map_support.stay(count: 7),
         SeenBy(
           by: ConnectionId(2),
@@ -289,7 +305,7 @@ pub fn a_second_join_keeps_the_new_joins_stay_test() -> Nil {
         ),
       ),
     ]
-    as "the connection's newest join names the stay it takes messages for, and the unit it kept"
+    as "the connection's newest join names the stay it takes messages for, and the unit it kept; the sights of its earlier stay end in that stay"
 }
 
 /// The end of the connection `connection`'s watch: the watch the join opened as
@@ -388,8 +404,14 @@ pub fn a_pair_in_sight_is_told_nothing_by_a_move_and_one_that_leaves_and_returns
     as "a pair that stays in sight is told nothing by the map: the owners' connections send the moves"
   let #(state, away) =
     move(state: state, connection: 2, x: 5000.0, elapsed_ms: 400)
-  assert shape(away) == [#(1, "Unwatched by 2"), #(2, "Unwatched by 1")]
-    as "the pair that leaves sight is told it in one step"
+  assert shape(away)
+    == [
+      #(2, "Player unseen 1"),
+      #(2, "Unwatched by 1"),
+      #(1, "Player unseen 2"),
+      #(1, "Unwatched by 2"),
+    ]
+    as "the pair that leaves sight is told it in one step: each player that the other's unit is unseen, then that the other no longer sees it"
   let #(_, back) = move(state: state, connection: 2, x: 200.0, elapsed_ms: 500)
   assert shape(back) == [#(1, "Watched by 2"), #(2, "Watched by 1")]
     as "the pair that returns is told it again"
@@ -432,8 +454,8 @@ pub fn a_leave_tells_each_player_who_saw_the_leaver_unwatched_and_none_gone_and_
   let #(state, _) =
     join(state: state, connection: 3, place: at(90_000.0), elapsed_ms: 30)
   let #(_, left) = leave(state: state, connection: 2, elapsed_ms: 40)
-  assert shape(left) == [#(1, "Unwatched by 2")]
-    as "the player who saw it is told its viewer 2 is gone; the leaver, who sent its viewers their 0x355 itself, and the player out of sight are sent nothing, and no Gone"
+  assert shape(left) == [#(1, "Player unseen 2"), #(1, "Unwatched by 2")]
+    as "the player who saw it is told its viewer 2 is gone and that unit 2 is unseen; the leaver and the player out of sight are sent nothing, and no Gone"
 }
 
 pub fn a_connection_ending_tells_each_player_who_saw_it_unwatched_and_gone_once_test() -> Nil {
@@ -451,8 +473,13 @@ pub fn a_connection_ending_tells_each_player_who_saw_it_unwatched_and_gone_once_
         int.to_string(second.0) <> second.1,
       )
     })
-    == [#(1, "Gone 2"), #(1, "Unwatched by 2"), #(3, "Gone 2")]
-    as "a connection that ended sends no 0x355, so the map says the unit is gone, to every player: the one that saw it is also told Unwatched"
+    == [
+      #(1, "Gone 2"),
+      #(1, "Player unseen 2"),
+      #(1, "Unwatched by 2"),
+      #(3, "Gone 2"),
+    ]
+    as "a connection that ended sends no 0x355, so the map says the unit is gone, to every player: the one that saw it is also told Unwatched and that the unit is unseen"
   let #(_, moved) = move(state: state, connection: 1, x: 50.0, elapsed_ms: 50)
   assert support.sends(moved) == [] as "the player that ended is no longer seen"
 }
@@ -471,8 +498,8 @@ pub fn a_connection_ending_tells_gone_to_every_player_in_the_map_even_one_that_n
     join(state: state, connection: 3, place: at(50.0), elapsed_ms: 30)
   let #(state, away) =
     move(state: state, connection: 2, x: 9000.0, elapsed_ms: 40)
-  assert list.length(support.sends(away)) == 4
-    as "V is out of sight of A and of C: both are told, and so is V"
+  assert list.length(support.sends(away)) == 8
+    as "V is out of sight of A and of C: both are told V no longer sees them and that V's unit is unseen, and so is V, of each"
   let #(_, ended) = ends(state:, connection: 1, elapsed_ms: 50)
   assert list.sort(shape(ended), fn(first, second) {
       string.compare(
@@ -480,8 +507,13 @@ pub fn a_connection_ending_tells_gone_to_every_player_in_the_map_even_one_that_n
         int.to_string(second.0) <> second.1,
       )
     })
-    == [#(2, "Gone 1"), #(3, "Gone 1"), #(3, "Unwatched by 1")]
-    as "C saw A, so it is told Unwatched and Gone; V no longer did, and is told Gone all the same, since A's connection cannot send V its 0x355"
+    == [
+      #(2, "Gone 1"),
+      #(3, "Gone 1"),
+      #(3, "Player unseen 1"),
+      #(3, "Unwatched by 1"),
+    ]
+    as "C saw A, so it is told Unwatched, that the unit is unseen and Gone; V no longer did, and is told Gone all the same, since A's connection cannot send V its 0x355"
 }
 
 pub fn a_second_join_resends_the_joiner_a_watched_for_each_player_it_sees_test() -> Nil {
@@ -489,8 +521,16 @@ pub fn a_second_join_resends_the_joiner_a_watched_for_each_player_it_sees_test()
   let #(state, _) = two_players(100.0)
   let #(_, again) =
     join(state: state, connection: 2, place: at(100.0), elapsed_ms: 300)
-  assert shape(again) == [#(2, "Watched by 1"), #(1, "Watched by 2")]
-    as "the joiner is told the player it sees is its viewer, so one that lost its viewers has them again, and that player is told the joiner is its viewer, so it sends its 0x262 again, as well as the error line"
+  assert shape(again)
+    == [
+      #(2, "Player unseen 1"),
+      #(2, "Unwatched by 1"),
+      #(1, "Player unseen 2"),
+      #(1, "Unwatched by 2"),
+      #(2, "Watched by 1"),
+      #(1, "Watched by 2"),
+    ]
+    as "each sight of the pair ends and a new one begins: the joiner is told the player it sees is its viewer, so one that lost its viewers has them again, and that player is told the joiner is its viewer, so it sends its 0x262 again, as well as the error line"
   assert support.logs_of(step: again, level: LogError) != []
 }
 
@@ -532,7 +572,7 @@ pub fn a_moved_from_a_connection_not_in_the_map_changes_nothing_and_logs_an_erro
     as "a connection's rule tells only while joined, so this is a bug"
   // The map is as it was: a move of a player in it still decides sight.
   let #(_, away) = move(state: after, connection: 2, x: 9000.0, elapsed_ms: 400)
-  assert list.length(support.sends(away)) == 2
+  assert list.length(support.sends(away)) == 4
 }
 
 pub fn a_moved_after_the_connections_leave_is_ignored_with_an_error_test() -> Nil {

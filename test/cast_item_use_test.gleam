@@ -409,9 +409,8 @@ pub fn the_grenade_at_a_slaver_shack_starts_the_activate_cast_test() -> Nil {
   assert confirmed.client_cast_id == clients_cast_id
     && confirmed.primary_target_unit_id == its_unit
     as "opcode.0x7fd: the confirmation answers the client's cast id and names the unit"
-  let assert [#(_, client_news), ..] = support.tells(effects:)
-    as "the viewers are told the start"
-  let assert CastStarted(start: started) = client_news
+  let assert [CastStarted(start: started), ..] = support.tells(effects:)
+    as "the map is told the start"
   assert started.spell4_id == 26_663
     && started.root_spell4_id == 26_663
     && started.caster_unit_id == 7
@@ -430,8 +429,8 @@ pub fn an_item_cast_at_a_creature_leaves_the_activate_bit_clear_in_the_start_tes
       at: 1000,
     )
     as "the use is taken"
-  let assert [#(_, CastStarted(start: started)), ..] = support.tells(effects:)
-    as "the viewers are told the start"
+  let assert [CastStarted(start: started), ..] = support.tells(effects:)
+    as "the map is told the start"
   assert started.creature_activate == 0
     as "opcode.0x7ff.activate: only CastActivateSpell sets info 0x54; StartItemUseCast writes 0x58, so an item's cast at a creature takes the item spell's own cast time and name"
   Nil
@@ -867,9 +866,8 @@ pub fn the_generic_quest_spell_item_at_a_farmhand_starts_within_5_m_test() -> Ni
     as "the use is taken"
   assert support.refusal_results(effects:) == []
     as "Spell4 1545 has no cast group, and the farmhand is within its targetMaxRange 5.0"
-  let assert [#(_, client_connection_news), ..] = support.tells(effects:)
-    as "the viewers are told the start"
-  let assert CastStarted(start: started) = client_connection_news
+  let assert [CastStarted(start: started), ..] = support.tells(effects:)
+    as "the map is told the start"
   assert started.spell4_id == 1545 as "the cast is Spell4 1545"
   assert support.activated_count(
       effects:,
@@ -1580,7 +1578,7 @@ pub fn a_consumables_use_is_decided_by_its_spell_test() -> Nil {
             == [cast_state.Heal(vital: effect_kind.Health, amount:)]
             as case_.why
           assert support.refusal_results(effects:) == [] as case_.why
-          let assert [#(_, CastStarted(start: started))] =
+          let assert [CastStarted(start: started)] =
             list.take(support.tells(effects:), 1)
             as case_.why
           assert started.creature_activate == 0 as case_.why
@@ -1764,9 +1762,7 @@ pub fn a_child_an_items_cast_starts_heals_by_the_items_level_test() -> Nil {
     as "the Proxy's child reads the passed-in value at the item's level, as the item's own cast does"
   assert list.unique(
       list.map(
-        game_connection_support.cast_starts(
-          list.map(support.tells(effects:), fn(tell) { tell.1 }),
-        ),
+        game_connection_support.cast_starts(support.tells(effects:)),
         fn(start) { start.caster_item_level },
       ),
     )

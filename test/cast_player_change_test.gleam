@@ -48,7 +48,7 @@ import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_properties.{type Source}
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_started
-import genesis_prime/step.{type ConnectionId, type TimerId, ConnectionId}
+import genesis_prime/step.{type TimerId, ConnectionId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell_level
@@ -651,59 +651,41 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
       as "and so is the entry at every clock"
   })
   // The go's third tell: after the rows a cast lands on the player, one went for the cast and
-  // the player, with the audience the caster told the cast's 0x7ff, so the ally can start the
-  // cast for the viewers outside it. Phantasmal Armor tier 1 (Spell4 32823) lands its absorb
+  // the player, so the ally can start the cast for its viewers that hold it in no state.
+  // Phantasmal Armor tier 1 (Spell4 32823) lands its absorb
   // 62024 and tier 9 (Spell4 54806) its absorb 130470 and its modifier 130474 (`table_rows --
   // Spell4Effects spellId=32823 spellId=54806`); the committed rows hold no other tier with
   // two rows.
-  let told_the_0x7ff = set.from_list([ConnectionId(2), ConnectionId(3)])
   let #(one_id, one_went) =
-    pressed_with_audience_changes(
-      spell: as_base_3(spell4_id: 32_823),
-      joined: [],
-      left: [],
-    )
+    pressed_at_the_ally_and_gone(spell: as_base_3(spell4_id: 32_823))
   assert trail(effects: one_went, cast_id: one_id) == ["starts 62024", "went"]
     as "tier 1: its one change is told and then one went, after it"
   assert wents_of(effects: one_went, cast_id: one_id)
     == [
-      cast_state.OtherPlayerCastWent(
-        address: address(),
-        cast_id: one_id,
-        audience: told_the_0x7ff,
-      ),
+      cast_state.OtherPlayerCastWent(address: address(), cast_id: one_id),
     ]
-    as "the went names the ally's address, the cast and the connections told the cast's 0x7ff"
+    as "the went names the ally's address and the cast"
   let #(nine_id, nine_went) =
-    pressed_with_audience_changes(
+    pressed_at_the_ally_and_gone(
       spell: support.armor_spell(rows: support.armor_rows()),
-      joined: [],
-      left: [],
     )
   assert trail(effects: nine_went, cast_id: nine_id)
     == ["starts 130470", "starts 130474", "went"]
     as "tier 9: both changes are told, then exactly one went, after the last: one for the cast, not one for each change"
-  // A cast that shows its cast bar is the caster's current cast until its go, so a create of
-  // the caster lists it and the connection that came into sight joins its audience.
-  let #(moved_id, moved_went) =
-    pressed_with_audience_changes(
+  // A cast with a cast time goes on a timer of its own and still tells one went.
+  let #(timed_id, timed_went) =
+    pressed_at_the_ally_and_gone(
       spell: Spell(
         ..as_base_3(spell4_id: 32_823),
         cast_time_ms: 1500,
         cast_bar: spell_plan.ShowsCastBar,
       ),
-      joined: [ConnectionId(5)],
-      left: [ConnectionId(3)],
     )
-  assert wents_of(effects: moved_went, cast_id: moved_id)
+  assert wents_of(effects: timed_went, cast_id: timed_id)
     == [
-      cast_state.OtherPlayerCastWent(
-        address: address(),
-        cast_id: moved_id,
-        audience: set.from_list([ConnectionId(2), ConnectionId(5)]),
-      ),
+      cast_state.OtherPlayerCastWent(address: address(), cast_id: timed_id),
     ]
-    as "the audience is the live cast's: a connection that joined by a create listing the cast is in it, one that left is not"
+    as "a cast with a cast time tells its one went at its go"
   let #(_, _, at_oneself) =
     pressed_at_and_gone_in(
       plans: plans_of(spell: as_base_3(spell4_id: 32_823)),
@@ -730,14 +712,8 @@ pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_an
     as "an ally out of the caster's sight at the go is told no change and no went"
 }
 
-/// The press of `spell` at the ally and its go for a caster whose audience is the connections
-/// 2 and 3, after the connections `joined` joined the audience by a create that listed the
-/// cast and the connections `left` left it: the pressed cast's id and the go's effects.
-fn pressed_with_audience_changes(
-  spell spell: Spell,
-  joined joined: List(ConnectionId),
-  left left: List(ConnectionId),
-) -> #(Int, List(Effect)) {
+/// The press of `spell` at the ally and its go: the pressed cast's id and the go's effects.
+fn pressed_at_the_ally_and_gone(spell spell: Spell) -> #(Int, List(Effect)) {
   let #(state, pressed) =
     pressed_at_in(
       plans: plans_of(spell:),
@@ -747,14 +723,6 @@ fn pressed_with_audience_changes(
       caster: esper_seeing(players: [ally]),
       at: 1000,
     )
-  let state =
-    list.fold(joined, state, fn(state, viewer) {
-      cast_state.audience_joined(cast: state, viewer:, caster_unit_id: 7)
-    })
-  let state =
-    list.fold(left, state, fn(state, viewer) {
-      cast_state.audience_left(cast: state, viewer:)
-    })
   let #(state, went) =
     support.answered_each(
       caster: esper_seeing(players: [ally]),
@@ -1905,11 +1873,7 @@ pub fn a_proxy_aimed_at_the_primary_target_starts_its_child_on_the_player_the_pr
     && child_start.parent_spell4_id == 32_823
     && child_start.root_spell4_id == 32_823
     as "opcode.0x7ff: the child names the ally as its primary target, the Esper as its caster and the pressed spell as its parent and root"
-  assert list.contains(support.started_told_to(effects:, connection: 2), #(
-    76_766,
-    32_823,
-    32_823,
-  ))
+  assert list.contains(support.started_told(effects:), #(76_766, 32_823, 32_823))
     as "the ally's connection reads the child's 0x7ff"
   assert state.thresholds == dict.new() as "a child touches no threshold"
   let child_id = support.started_cast_id(effects: went, spell4_id: 76_766)
@@ -1938,11 +1902,7 @@ pub fn a_proxy_aimed_at_the_primary_target_starts_its_child_on_the_player_the_pr
       ends: unit_casts.EndsAt(ms: 6000),
     )
     as "Interrupt Armor row 199192 lasts 5000 ms from the child's go"
-  // The child is a cast of its own: its went carries its own cast id and the audience it was
-  // started with (the caster's at its go), not the pressed cast's, which is the connections
-  // told the press's 0x7ff.
-  let went_audience =
-    set.from_list([ConnectionId(2), ConnectionId(3), ConnectionId(6)])
+  // The child is a cast of its own: its went carries its own cast id, not the pressed cast's.
   let #(state, pressed) =
     pressed_at_in(
       plans: plans_of(spell: armor),
@@ -1954,10 +1914,7 @@ pub fn a_proxy_aimed_at_the_primary_target_starts_its_child_on_the_player_the_pr
     )
   let #(_, went) =
     support.answered_each(
-      caster: cast_state.Caster(
-        ..esper_seeing(players: [ally]),
-        audience: went_audience,
-      ),
+      caster: esper_seeing(players: [ally]),
       state:,
       effects: pressed,
       at: 1000,
@@ -1971,22 +1928,14 @@ pub fn a_proxy_aimed_at_the_primary_target_starts_its_child_on_the_player_the_pr
     as "the child tells its row and then its own went"
   assert wents_of(effects: went, cast_id: child_id)
     == [
-      cast_state.OtherPlayerCastWent(
-        address: address(),
-        cast_id: child_id,
-        audience: went_audience,
-      ),
+      cast_state.OtherPlayerCastWent(address: address(), cast_id: child_id),
     ]
-    as "the child's went names its own cast and the audience the child was started with"
+    as "the child's went names its own cast"
   assert wents_of(effects: went, cast_id: pressed_id)
     == [
-      cast_state.OtherPlayerCastWent(
-        address: address(),
-        cast_id: pressed_id,
-        audience: set.from_list([ConnectionId(2), ConnectionId(3)]),
-      ),
+      cast_state.OtherPlayerCastWent(address: address(), cast_id: pressed_id),
     ]
-    as "and the pressed cast's own went names its own audience: the two differ"
+    as "and the pressed cast's own went names its own cast: the two differ"
   // A press whose Proxy starts a child on each of two allies in sight (Runes of Protection,
   // Spell4 39092: Proxy 206357 starts 78708, whose absorb is row 206315,
   // `table_rows -- Spell4Effects 206357 206315`): each child tells its own ally the absorb and

@@ -100,7 +100,7 @@ pub fn a_warriors_onslaught_press_writes_42908s_go_with_the_scale_row_and_a_view
       fn(start) { start.cast_id == go.cast_id },
     )
     as "the caster's client reads the start of the cast that went"
-  let told = support.news_told(taken:, viewer: 2)
+  let told = support.news_broadcast(taken)
   assert list.contains(told, CastStarted(start:))
     as "each viewer is told the start of the cast"
   assert list.contains(told, CastWent(go:)) as "and the same go"

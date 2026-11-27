@@ -11,10 +11,8 @@ import code_rule/planted
 import code_rule/source.{type SourceFile, SourceFile}
 import code_rule/syntax
 import glance
-import gleam/bool
 import gleam/list
 import gleam/option.{None, Some}
-import gleam/result
 import gleam/string
 import owned_test
 import unitest
@@ -22,50 +20,21 @@ import unitest
 const relay_path = "src/genesis_prime/world_map/relay.gleam"
 
 /// The types the table has a row for each variant of, with the function that gives each
-/// variant's kind.
-const tables = [#("Payload", "kind_of"), #("Inbound", "inbound_kind_of")]
-
-/// The names of the variants of the custom types called `type_names`.
-fn variants_of(
-  file file: SourceFile,
-  type_names type_names: List(String),
-) -> List(String) {
-  syntax.parse(file).custom_types
-  |> list.filter(fn(definition) {
-    list.contains(type_names, definition.definition.name)
-  })
-  |> list.flat_map(fn(definition) {
-    list.map(definition.definition.variants, fn(variant) { variant.name })
-  })
-}
+/// variant's kind. `Landing` is what a player's connection lands on another through the map.
+const tables = [
+  #("Payload", "kind_of"),
+  #("Inbound", "inbound_kind_of"),
+  #("Landing", "landing_kind_of"),
+]
 
 /// The names of the variants of the table's types.
 fn variants(file file: SourceFile) -> List(String) {
-  variants_of(file:, type_names: list.map(tables, fn(table) { table.0 }))
-}
-
-/// The rows of the module's doc table: the backticked first cell and the last cell of
-/// each row of the module's `////` lines.
-fn table_rows(file file: SourceFile) -> List(#(String, String)) {
-  string.split(file.text, "\n")
-  |> list.filter_map(fn(line) {
-    use <- bool.guard(
-      when: !string.starts_with(line, "//// | `"),
-      return: Error(Nil),
-    )
-    use name <- result.try(
-      string.split(string.drop_start(line, 8), "`") |> list.first,
-    )
-    use last <- result.map(
-      string.split(string.trim_end(line), " | ") |> list.last,
-    )
-    #(name, last)
-  })
+  syntax.variants_of(file:, type_names: list.map(tables, fn(table) { table.0 }))
 }
 
 /// The names the module's doc table has a row for.
 fn tabled(file file: SourceFile) -> List(String) {
-  list.map(table_rows(file:), fn(row) { row.0 })
+  list.map(syntax.table_rows(file:), fn(row) { row.0 })
 }
 
 /// The arms of the kind functions, one clause for each arm, with its function's name.
@@ -119,8 +88,8 @@ fn constructor_of(pattern: glance.Pattern) -> Result(String, Nil) {
 /// Whether the source-check cell of each `Inbound` row of the doc table says there is
 /// none (it starts "none"), by the variant's name.
 fn tabled_without_sender_check(file file: SourceFile) -> List(#(String, Bool)) {
-  let inbound = variants_of(file:, type_names: ["Inbound"])
-  table_rows(file:)
+  let inbound = syntax.variants_of(file:, type_names: ["Inbound"])
+  syntax.table_rows(file:)
   |> list.filter(fn(row) { list.contains(inbound, row.0) })
   |> list.map(fn(row) { #(row.0, string.starts_with(row.1, "none")) })
 }
@@ -166,23 +135,26 @@ fn breaches(file file: SourceFile) -> List(String) {
       |> list.map(fn(name) {
         "no arm of its own in its kind function for " <> name
       }),
-    list.filter_map(variants_of(file:, type_names: ["Inbound"]), fn(name) {
-      case list.key_find(armed_without_sender_check(file:), name) {
-        Error(Nil) -> Error(Nil)
-        Ok(Error(Nil)) ->
-          Ok("the source check of " <> name <> " cannot be read from its arm")
-        Ok(Ok(armed)) ->
-          case list.key_find(tabled_without_sender_check(file:), name) {
-            Ok(tabled) if tabled != armed ->
-              Ok(
-                "the source check of "
-                <> name
-                <> " differs between its row and its arm",
-              )
-            Ok(_) | Error(Nil) -> Error(Nil)
-          }
-      }
-    }),
+    list.filter_map(
+      syntax.variants_of(file:, type_names: ["Inbound"]),
+      fn(name) {
+        case list.key_find(armed_without_sender_check(file:), name) {
+          Error(Nil) -> Error(Nil)
+          Ok(Error(Nil)) ->
+            Ok("the source check of " <> name <> " cannot be read from its arm")
+          Ok(Ok(armed)) ->
+            case list.key_find(tabled_without_sender_check(file:), name) {
+              Ok(tabled) if tabled != armed ->
+                Ok(
+                  "the source check of "
+                  <> name
+                  <> " differs between its row and its arm",
+                )
+              Ok(_) | Error(Nil) -> Error(Nil)
+            }
+        }
+      },
+    ),
   ])
 }
 
@@ -227,15 +199,15 @@ pub fn the_relay_table_has_one_row_for_each_payload_and_each_row_names_its_desti
     ])
   assert breaches(file: planted_file)
     == [
-      "no table row for TargetMoved",
-      "no table row for Despawn",
       "no table row for Struck",
       "no table row for Credit",
+      "no table row for TargetMoved",
+      "no table row for Despawn",
       "a table row for no variant: Gone",
-      "no arm of its own in its kind function for TargetMoved",
-      "no arm of its own in its kind function for Despawn",
       "no arm of its own in its kind function for Struck",
       "no arm of its own in its kind function for Credit",
+      "no arm of its own in its kind function for TargetMoved",
+      "no arm of its own in its kind function for Despawn",
       "the source check of Strike differs between its row and its arm",
       "the source check of TargetMoved cannot be read from its arm",
       "the source check of Despawn cannot be read from its arm",
@@ -246,5 +218,11 @@ pub fn the_relay_table_has_one_row_for_each_payload_and_each_row_names_its_desti
       text: source.read(relay_path),
     ))
     == []
-    as "each payload and each inbound tell of the relay has a row in the table and an arm of its own in its kind function"
+    as "each payload, each inbound tell and each landing of the relay has a row in the table and an arm of its own in its kind function"
+  assert list.filter(
+      variants(file: SourceFile(path: relay_path, text: source.read(relay_path))),
+      fn(name) { name == "Move" || name == "Moving" },
+    )
+    == []
+    as "a move is no relayed payload: the mover tells its viewers itself"
 }

@@ -9,7 +9,7 @@
 ////   (checked again after each end, since one can break another's): 0x7f9 {cast id, 282 or
 ////   283, the caster, 0}, which destroys the nodes the cast holds so its buff goes and leaves
 ////   the cast filed, then the 0x7fe that takes it out of the client's table, told to the
-////   audience as a finish (`opcode.0x7f9`, `cast.target_node_end`; which message retail sent
+////   map as a finish (`opcode.0x7f9`, `cast.target_node_end`; which message retail sent
 ////   is not known). The cast's go, finish and NodesEnd timers are cancelled, its property
 ////   modifiers and cooldown effects end, its stealth sources drop (the input's last effect
 ////   is `StealthChanged`), the current cast clears when it was this one, an open threshold

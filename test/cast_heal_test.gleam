@@ -644,15 +644,13 @@ pub fn the_viewers_go_carries_the_same_heal_description_test() -> Nil {
     as "the go lists the heal"
   let told =
     list.filter_map(support.tells(effects:), fn(tell) {
-      case tell.1 {
-        CastWent(go:) -> Ok(#(tell.0, go))
+      case tell {
+        CastWent(go:) -> Ok(go)
         _ -> Error(Nil)
       }
     })
-  assert list.length(told) == 2 as "the caster's audience is two connections"
-  assert list.all(told, fn(tell) {
-    cast_frame.went_frame(go: tell.1) == written
-  })
+  assert list.length(told) == 1 as "the map is told the go once"
+  assert list.all(told, fn(go) { cast_frame.went_frame(go:) == written })
     as "each viewer is written the very 0x7f4 the caster is, heal description included"
 }
 

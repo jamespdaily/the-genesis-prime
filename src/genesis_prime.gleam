@@ -63,6 +63,7 @@ import gleam/erlang/application as erlang_application
 import gleam/erlang/atom.{type Atom}
 import gleam/erlang/charlist.{type Charlist}
 import gleam/erlang/process
+import gleam/function
 import gleam/int
 import gleam/io
 import gleam/list
@@ -395,6 +396,7 @@ fn world(spawns: store.Key) -> server.World {
     maps: process.new_name("maps"),
     map_supervisor: process.new_name("map_supervisor"),
     maps_call_ms: 5000,
+    maps_reach: function.identity,
     map_shutdown_ms: 5000,
     creatures: creature_registry.new(),
     map_tells: group_registry.new(label: "map_tells"),

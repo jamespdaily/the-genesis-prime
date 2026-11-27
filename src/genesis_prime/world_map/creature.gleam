@@ -101,7 +101,7 @@
 //// caster's connection c0, what its cast holds on the creature
 //// CastViewSet(c0, view)
 ////                         views[cast id] = (c0, view), in place of that cast's earlier view
-////                                    no news: the viewers have the 0x7f4 from the caster's audience
+////                                    no news: the viewers have the 0x7f4 from the caster's broadcast
 //// CastViewEnds(c0, cast_id)
 ////                         held by c0 ─▶ dropped
 ////                         else nothing

@@ -195,7 +195,7 @@ fn result_value(result: CastResult) -> String {
 fn started_by_viewer(
   effects effects: List(cast_state.Effect),
 ) -> List(#(Int, Int, Int)) {
-  support.started_told_to(effects:, connection: 2)
+  support.started_told(effects:)
 }
 
 fn timers_of(effects effects: List(cast_state.Effect)) -> List(TimerId) {
@@ -569,9 +569,8 @@ pub fn a_0x801_for_a_live_channel_cancels_its_pulses_and_finish_and_ends_it_for_
       as "the three pulses and the finish are cancelled"
     assert support.ids(frames: support.writes(effects:)) == [0x07FE]
       as "no go, only the finish"
-    assert list.map(support.tells(effects:), fn(told) { told.1 })
-      == [CastFinished(cast_id: id), CastFinished(cast_id: id)]
-      as "the audience is told too"
+    assert support.tells(effects:) == [CastFinished(cast_id: id)]
+      as "the map is told too"
   })
 }
 
@@ -838,7 +837,7 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
     as "Spell4Thresholds 125: a release before 1000 ms casts 34720; the stage's 0x7f4 comes before the 0x814 that closes the threshold (cast.stage_root_parent), and the base cast ends last with 0x7fe"
   assert started_by_viewer(effects: early) == [#(34_720, 34_718, 34_718)]
     as "cast.stage_root_parent: root 34718 and parent 34718"
-  assert list.map(support.tells(effects: early), fn(told) { told.1 })
+  assert support.tells(effects: early)
     |> list.filter(fn(news) {
       case news {
         CastFinished(..) -> True
@@ -846,8 +845,8 @@ pub fn charged_shots_release_casts_the_row_at_the_level_reached_and_ends_the_cha
       }
     })
     |> list.length
-    == 4
-    as "the viewers are told the stage's finish and the base cast's finish, each by both connections"
+    == 2
+    as "the map is told the stage's finish and the base cast's finish"
   assert support.cancelled_timers(effects: early) == timers_of(effects: pressed)
     as "the charge timer is cancelled with the threshold"
 }
@@ -924,8 +923,7 @@ pub fn a_cancel_of_the_charge_closes_the_threshold_and_ends_only_the_base_cast_t
       as "cast.charge_release_base: the server ends 34718 only with 0x7fe, after the 0x814 that closes the threshold"
     assert support.cancelled_timers(effects:) == timers_of(effects: pressed)
       as "the charge timer is cancelled"
-    assert list.map(support.tells(effects:), fn(told) { told.1 })
-      == [CastFinished(cast_id: id), CastFinished(cast_id: id)]
+    assert support.tells(effects:) == [CastFinished(cast_id: id)]
     let #(_, quick_draw) =
       press(state:, bag_index: support.quick_draw, at: 2500)
     assert is_accepted(effects: quick_draw)

@@ -750,14 +750,8 @@ pub fn activating_varonia_cazalon_writes_48373s_go_with_its_delayed_item_visual_
       #(own, 122_326, 5000, 0),
     ]
     as "the go lists each type 76 row on the player's unit, the caster, with its own delayTime and the lifetime 0 that leaves the swap to the client (opcode.0x7f4.effect_time); the client applies none of them from this go (0x1405d6880.delayed_apply)"
-  let told =
-    list.filter_map(connection_support.peer_tells(started), fn(tell) {
-      case tell.0 == 2 {
-        True -> Ok({ tell.1 }.news)
-        False -> Error(Nil)
-      }
-    })
+  let told = connection_support.news_broadcast(started)
   let assert [go, ..] = gos
   assert list.contains(told, unit_news.CastWent(go:))
-    as "a viewer is told the same go (each row is delayed, so it shows nothing yet: the client applies a delayed effect only when its delay ends)"
+    as "the map is told the same go to relay to a viewer (each row is delayed, so it shows nothing yet: the client applies a delayed effect only when its delay ends)"
 }
