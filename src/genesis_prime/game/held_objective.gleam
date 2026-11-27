@@ -23,6 +23,7 @@
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/objective
 import genesis_prime/game/objective_row
+import genesis_prime/gap
 import genesis_prime/table/loader/store as table_store
 import gleam/set.{type Set}
 
@@ -47,4 +48,9 @@ pub fn select(
       )
     },
   )
+}
+
+/// What the table leaves undone, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  []
 }

@@ -4,6 +4,8 @@
 //// empty list says "no gaps". The registry's entries are checked by what they must be (plain,
 //// not repeated, free of change-log words) and for one fixed entry of the quest module.
 
+import content_support
+import database_support
 import genesis_prime/coverage/gaps
 import genesis_prime/gap.{Entry}
 import gleam/list
@@ -233,4 +235,77 @@ pub fn the_registry_holds_the_objective_placement_ground_gaps_test() -> Nil {
     && string.contains(entry.missing, "used-object record")
   })
     as "a placed creature's used objects are kept across a login (its id is fixed by the client's tables), so no gap says they are not"
+}
+
+/// The words of a kind: `instance_run` is an instance run.
+fn kind_words(kind kind: String) -> String {
+  string.replace(kind, "_", " ")
+}
+
+pub fn the_held_objective_gap_names_each_kind_the_table_holds_test() -> Nil {
+  // deadline: 5 s measured, 60 s for a loaded machine: it makes a migrated database to read the table's kind check from
+  use <- owned_test.run(60_000)
+  use <- unitest.tags(["coverage", "gaps"])
+  let database = database_support.new_database(on: database_support.shared())
+  let definition =
+    content_support.psql(
+      database:,
+      sql: "select pg_get_constraintdef(oid) from pg_constraint where conname = 'held_objective_kind_is_known'",
+    )
+  let kinds =
+    definition
+    |> string.split("'")
+    |> list.index_map(fn(part, index) { #(index, part) })
+    |> list.filter_map(fn(pair) {
+      case pair.0 % 2 {
+        1 -> Ok(pair.1)
+        _ -> Error(Nil)
+      }
+    })
+    |> list.filter(fn(word) { word != "" && !string.contains(word, "::") })
+  assert list.length(kinds) == 3
+    as { "the table's kind check lists three kinds: " <> definition }
+  let sentences =
+    gaps.registry()
+    |> list.filter(fn(entry) { entry.area == "Quest objectives" })
+    |> list.map(fn(entry) { string.lowercase(entry.missing) })
+    |> list.filter(fn(sentence) { string.contains(sentence, "held") })
+  assert list.length(sentences) == 1
+    as "one Quest objectives entry is about the held objectives"
+  let assert [sentence] = sentences
+  list.each(kinds, fn(kind) {
+    assert string.contains(sentence, kind_words(kind:))
+      as { "the entry names the kind " <> kind }
+  })
+}
+
+pub fn the_creature_spell_gap_names_the_guessed_order_and_cooldown_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["coverage", "gaps"])
+  let sentences =
+    gaps.registry()
+    |> list.filter(fn(entry) { entry.area == "Creature specials" })
+    |> list.map(fn(entry) { string.lowercase(entry.missing) })
+    |> list.filter(fn(sentence) { string.contains(sentence, "retail") })
+  assert list.length(sentences) == 1
+    as "one Creature specials entry is about the retail creature spells"
+  let assert [sentence] = sentences
+  assert string.contains(sentence, "order")
+    && string.contains(sentence, "cooldown")
+    && string.contains(sentence, "guess")
+    as "it says their order and cooldown are guesses"
+}
+
+pub fn the_focus_pool_gap_names_the_flat_pool_test() -> Nil {
+  use <- owned_test.run(5000)
+  use <- unitest.tags(["coverage", "gaps"])
+  let sentences =
+    gaps.registry()
+    |> list.filter(fn(entry) { entry.area == "Focus" })
+    |> list.map(fn(entry) { string.lowercase(entry.missing) })
+    |> list.filter(fn(sentence) { string.contains(sentence, "flat") })
+  assert list.length(sentences) == 1 as "one Focus entry is about the flat pool"
+  let assert [sentence] = sentences
+  assert string.contains(sentence, "1000") && string.contains(sentence, "flat")
+    as "it says the pool is a flat 1000"
 }

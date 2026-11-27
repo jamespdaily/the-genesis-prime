@@ -20,6 +20,7 @@ import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
+import genesis_prime/game/class_resource
 import genesis_prime/game/click_objective
 import genesis_prime/game/communicator
 import genesis_prime/game/connection/landing as connection_landing
@@ -28,6 +29,7 @@ import genesis_prime/game/dev_command
 import genesis_prime/game/dropped
 import genesis_prime/game/forced_move
 import genesis_prime/game/heal_split
+import genesis_prime/game/held_objective
 import genesis_prime/game/hello_reply
 import genesis_prime/game/hit
 import genesis_prime/game/interaction
@@ -128,6 +130,8 @@ pub fn registry() -> List(Entry) {
     connection_landing.gaps(),
     click_objective.gaps(),
     kill_objective.gaps(),
+    held_objective.gaps(),
+    class_resource.gaps(),
     cast_press.gaps(),
     activate.gaps(),
     limited_action_set.gaps(),

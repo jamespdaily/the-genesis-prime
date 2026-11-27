@@ -84,6 +84,7 @@
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
 import genesis_prime/game/focus
 import genesis_prime/game/unit_properties.{type Properties}
+import genesis_prime/gap
 import genesis_prime/message/float32
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/class
@@ -1130,4 +1131,9 @@ pub fn left(resources resources: Resources) -> #(Resources, List(Effect)) {
     list.filter(timers, is_running(resources:, timer: _))
     |> list.map(fn(timer) { CancelTimer(timer:) })
   #(Resources(..resources, running: set.new()), cancels)
+}
+
+/// What the table leaves undone, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  []
 }
