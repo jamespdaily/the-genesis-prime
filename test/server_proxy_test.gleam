@@ -6,7 +6,7 @@
 ////   37302 at its second go), the damage spell 37302 (gos at 0, 1, 2 and 3 ms,
 ////   SpellPhase 2820 to 2823) and Telekinetic Strike 32893 (one go, a Proxy to 30900 aimed
 ////   at the area).
-//// - Migration 0018's seed row (26468, go 1, 42148), a server choice (Jim, issue 419).
+//// - Migration 0018's seed row (26468, go 1, 42148), a server choice.
 //// - The content refusal pattern (`genesis_prime/content/refusal`): a table, a key and a rule.
 
 import fixture_tables

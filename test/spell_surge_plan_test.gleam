@@ -66,7 +66,7 @@ pub fn alternate_spells_plan_quick_draw_and_charged_shot_test() -> Nil {
     == [#(79_679, 0), #(34_766, 600), #(34_767, 800)]
     as "Spell4Thresholds 129, 192 and 190 by orderIndex 0, 1 and 2"
   assert charged_shot.costs == [spell_plan.RowClassCost(vital: 19, amount: 25)]
-    as "row 129's cost (19, 25) is paid at the press that opens the charge (Jim, 2026-11-15)"
+    as "row 129's cost (19, 25) is paid at the press that opens the charge (the server's choice)"
   let assert [first, ..] = charged_shot.stages
   assert first.spell.costs == []
     as "the opening press paid it, so the stage it casts at release costs nothing more"

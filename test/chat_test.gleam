@@ -270,7 +270,7 @@ pub fn an_accepted_say_yell_or_emote_gets_one_0x1c2_with_the_slot_the_name_the_u
         unit_id: 5,
         premium_tier: 0,
       )
-      as "opcode.0x1c2: the same chat message id, the speaker's own name, an empty realm name and the speaker's unit id; Jim 2026-11-03: yell and emote work like say"
+      as "opcode.0x1c2: the same chat message id, the speaker's own name, an empty realm name and the speaker's unit id; yell and emote work like say (the server's choice)"
   })
 }
 
@@ -399,7 +399,7 @@ pub fn bcrossfaction_is_1_only_when_the_factions_differ_on_every_channel_test() 
       }
       assert told(166) == 0 as "chat.cross_faction: the same faction, no flag"
       assert told(167) == 1
-        as "chat.cross_faction: another faction sets bCrossFaction, on every channel (Jim, 2026-11-03)"
+        as "chat.cross_faction: another faction sets bCrossFaction, on every channel (the server's choice)"
     },
   )
 }
@@ -850,7 +850,7 @@ pub fn support_and_instance_are_refused_with_result_3_and_named_as_unhandled_tes
           result: NoPermissions,
           chat_message_id: 1,
         )
-        as "Jim, 2026-11-03: Support and Instance are refused with result 3"
+        as "Support and Instance are refused with result 3 (the server's choice)"
       assert list.contains(effects, chat.Unhandled(channel_type: channel.1))
         as "the channel is logged as unhandled"
       assert said_to(effects) == [] as "nobody else gets anything"
@@ -1639,7 +1639,7 @@ pub fn a_zone_line_is_accepted_and_told_to_the_group_of_the_speakers_run_and_top
     #(address, chat_tell.ZoneLine(speaker: told, top_zone_id:, line:)),
   ] = tells_of(effects)
   assert address == zone_channel(1304) && top_zone_id == 1304
-    as "Jim, 2026-11-03: the reach is the top zone of the zone the client reports, in the same map run"
+    as "the reach is the top zone of the zone the client reports, in the same map run (the server's choice)"
   assert told == speaker()
   assert line.channel_type == chat_channel.Zone
     && line.channel_id == zone_channel_id
@@ -1698,7 +1698,7 @@ pub fn two_players_in_different_sub_zones_of_one_top_zone_share_the_group_and_ot
   assert address_of(speaker(), 1411) == address_of(other_player(), 1305)
     as "chat.zone_reach: the client reports the leaf, 1411 and 1305 are leaves of the top zone 1304: both hear each other"
   assert address_of(speaker(), 1411) != address_of(other_player(), 648)
-    as "a player in the same map under another top zone gets nothing (Jim, 2026-11-03)"
+    as "a player in the same map under another top zone gets nothing (the server's choice)"
   assert address_of(speaker(), 1411)
     != address_of(
       Speaker(..other_player(), map: MapId(world_id: 1387, instance: 0)),
@@ -1956,7 +1956,7 @@ pub fn a_whisper_to_a_target_of_the_other_faction_is_delivered_with_bcrossfactio
     chat.told(other_faction, tell).1
   let assert Ok(line) = chat_line.decode(frame.body)
   assert line.cross_faction == 1
-    as "chat.cross_faction: the client never refuses a whisper to the other faction; the flag only colours the name (Jim, 2026-11-03; retail opened cross-faction chat on 2016-04-13, MMOBomb, a retail record)"
+    as "chat.cross_faction: the client never refuses a whisper to the other faction; the flag only colours the name (the server's choice; retail opened cross-faction chat on 2016-04-13, MMOBomb, a retail record)"
 }
 
 pub fn the_targets_name_matches_without_case_by_the_fold_of_the_unique_index_test() -> Nil {

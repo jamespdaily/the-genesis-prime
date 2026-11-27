@@ -1,5 +1,5 @@
 //// Whether a creature may move (`genesis_prime/world_map/creature_unit_type`).
-//// Expected values are the rule itself, a server choice (Jim's decision): a Turret
+//// Expected values are the rule itself, a server choice: a Turret
 //// never moves, and a NonPlayer moves unless it is placed as part of a map object,
 //// the world database's `active_prop_id` not 0.
 

@@ -17,7 +17,7 @@
 ////   order, since its other rows differ only in race and sex
 ////   (`Item2.novice_set`). Every class and faction a player can make has one,
 ////   or the load fails. A character with a Novice set wears all of it at entry:
-////   a server choice (Jim's decision on goal 274).
+////   a server choice.
 //// - **The weapon** is the set's item whose equipped slot flags hold WeaponPrimary,
 ////   bit 16 (0x10000), and it is equipped in slot 16: the item's slot index is
 ////   the bit's (`0x1403afb10`, `lua.ActionBarFrame.InitializeBars`).

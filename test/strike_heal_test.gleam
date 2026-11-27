@@ -857,7 +857,7 @@ type CasterRow {
 
 /// A heal row aimed at the area alone (targetFlags 4) does not name the caster, so the
 /// caster is one of the candidates of the area, at distance 0 from its centre and with no
-/// shape test (Jim's decision on 2026-11-23; the text 195454 of Triage reads "yourself or an
+/// shape test (the server's choice; the text 195454 of Triage reads "yourself or an
 /// ally based on who has the lowest health", and Spell4 27972 "ST smart heal"), ranked by the
 /// health it misses from the vitals it holds, as an ally is. A row that names the caster
 /// (targetFlags 5 and 7, as Crisis Wave's) heals it by its flag, and a row aimed at the primary

@@ -7,8 +7,8 @@
 //// - Zap: area row 411 (5 units, 25 m, 360 degrees) and the twin rectangle 2837,
 ////   3.5 wide and 24 long, 1 m ahead: its half width 1.75 grows by the struck unit's
 ////   hit radius to 4.75 (`Spell4.41438.area`). That the unit's hit circle overlapping
-////   the shape is what counts, for every shape whatever its flag 0x200, is Jim's
-////   decision, from the client's drawn sizing (`0x14054da10`), not a client rule
+////   the shape is what counts, for every shape whatever its flag 0x200, is the server's
+////   choice, from the client's drawn sizing (`0x14054da10`), not a client rule
 ////   (`unit.hit_radius`).
 //// - Crush: area row 404 selects 1 unit (`Spell4.32812.area`).
 //// - The Virtual Battle Beast's hit radius is 3.0 (`Creature2.73464`).
@@ -22,7 +22,7 @@
 //// - Shapes 1, 3, 5 and 6: the client's drawing (`0x14054d170.shapes_1_3_5_6`), whose
 ////   placements `spell_area` builds; the rows named in the tests are TelegraphDamage 3852,
 ////   3029, 6957, 2920 and 4664.
-//// - Jim's choice: a unit is struck inside the telegraph's shape and within the area
+//// - The server's choice: a unit is struck inside the telegraph's shape and within the area
 ////   row's range; a spell with no telegraph is struck by its area row's range and arc.
 //// - Crush's 42297 has no telegraph row, so its area row alone decides (`Spell4.32812.area`).
 

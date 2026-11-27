@@ -1,8 +1,7 @@
 //// The map's rings under random moves, readiness, stealth, life and creature starts
 //// (`genesis_prime/world_map/map`), the rule run with the shell's part played by the
 //// test. Expected values come from these places.
-//// - A stealthed player stands in no ring: Jim's decision on issue 483 (Discord,
-////   2026-11-06, option A), a server choice, since the client holds no rule
+//// - A stealthed player stands in no ring: the server's choice, since the client holds no rule
 ////   (`UnitProperty2.stealth_detection`).
 //// - A dead player stands in no ring and the creatures it sees are sent `PlayerDied`
 ////   instead of `Withdrew`: a server choice (the Design of issue 496, section 2); a

@@ -4,7 +4,7 @@
 //// - `Spell4Effects.targetFlags.combined` (a guess): 3, 5 and 7 hold the union of their
 ////   bits (1 the caster, 2 the primary target, 4 the area), and a unit the bits name twice
 ////   is one unit.
-//// - `spell_plan.spell_hits_foes` (the server's choice, Jim's decision of 2026-11-15): the
+//// - `spell_plan.spell_hits_foes` (the server's choice): the
 ////   area bit is read only in a spell that hits foes, or, for an instant heal, in a spell
 ////   whose area finds the caster's allies (`spell_plan.area_finds_allies`).
 //// - The client's rows, kept in the fixture (`table_rows -- Spell4Effects <ids>`):
@@ -16,7 +16,7 @@
 ////     196409 is a damage row aimed at the caster and the area.
 ////   - 49023 (Spell4 28467), type 3, flags 5, a forced move; the spell's 49040 is a crowd
 ////     control row aimed at the area.
-//// - Jim's decision 1 (2026-11-15): a heal reaches each unit its aim names once and heals
+//// - The server's choice: a heal reaches each unit its aim names once and heals
 ////   only the caster; a heal on another unit waits for #570.
 //// - `cast` module doc: a press makes the caster its own primary target
 ////   (`Spell4TargetMechanics.targetType`), so a cast whose primary target is a creature is

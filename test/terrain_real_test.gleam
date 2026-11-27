@@ -1,5 +1,5 @@
 //// The server's ground read from the real ground files (dev/terrain_extract.py's
-//// folder) against the retail spawns of Jim's world database, which hold the
+//// folder) against the retail spawns of the world database, which hold the
 //// positions the client lacks. It runs where the client, the world data and the folder
 //// are present (tag `world_data`), and passes beside the other world-data tests.
 

@@ -346,7 +346,7 @@ pub fn a_special_with_some_strike_gos_that_can_never_strike_loads_and_strikes_at
   // Spell4 80315: gos at 0 and 750 ms (SpellPhase rows 21538 and 21539); its one damage row,
   // 212555 (phaseFlags -1), names both. Its one hit row, 15196, names go 1 alone
   // (`table_rows -- Spell4Effects spellId=80315`, `-- TelegraphDamage 15196`), so go 0 has no hit
-  // row and can never strike; go 1 does (Jim: option A, per go).
+  // row and can never strike; go 1 does (the server's choice, per go).
   let assert Ok(_) =
     creature_kind.select(
       rows: [default_row],

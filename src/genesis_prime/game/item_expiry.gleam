@@ -20,7 +20,7 @@
 //// - **The client removes nothing** and sends nothing when the time is up
 ////   (`opcode.0x111.time_left`), so the server removes the item with 0x148 reason 26 Expired,
 ////   which raises ItemRemoved and no notice (`opcode.0x148.expired`).
-//// - **The countdown runs offline** (Jim's choice; the client holds no rule on it): the moment
+//// - **The countdown runs offline** (the server's choice; the client holds no rule on it): the moment
 ////   is wall-clock, and an item past it at load is deleted before the entry sends its items.
 //// - **A split and a merge** keep a moment of the same item: a split copies the source's and a
 ////   merge keeps the earlier of the two (the server's choice; the client holds no rule).

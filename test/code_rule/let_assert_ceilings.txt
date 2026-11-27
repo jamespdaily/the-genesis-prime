@@ -37,7 +37,6 @@ genesis_prime/account_session 1
 genesis_prime/client_connection 1
 genesis_prime/connection/cipher 1
 genesis_prime/connection/hello 1
-genesis_prime/connection/network_message 2
 genesis_prime/content 2
 genesis_prime/game/ability_book_frame 4
 genesis_prime/game/ability_points 1
@@ -47,7 +46,7 @@ genesis_prime/game/area 1
 genesis_prime/game/camp 1
 genesis_prime/game/cast 1
 genesis_prime/game/cast/control 2
-genesis_prime/game/cast/frame 7
+genesis_prime/game/cast/frame 1
 genesis_prime/game/character_creation 2
 genesis_prime/game/character_select 8
 genesis_prime/game/character_state 2
@@ -59,7 +58,6 @@ genesis_prime/game/connection 1
 genesis_prime/game/connection/casting 10
 genesis_prime/game/connection/dev_command 2
 genesis_prime/game/connection/effects 1
-genesis_prime/game/connection/frames 8
 genesis_prime/game/connection/interaction 1
 genesis_prime/game/connection/item_spend 4
 genesis_prime/game/connection/life 1

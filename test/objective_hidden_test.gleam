@@ -256,7 +256,7 @@ pub fn a_login_completes_the_hidden_objective_of_a_saved_quest_and_sends_it_achi
       SendProgress(quest_id: nature, objective_index: 2, progress: 1),
       SendState(quest_id: nature, state: 2),
     ]
-    as "the saved row of Jim's character gets the hidden objective and state 2, with no server completion since Lucy Lazarin receives the quest"
+    as "the saved row of the player's character gets the hidden objective and state 2, with no server completion since Lucy Lazarin receives the quest"
   assert communicator.receivers_of(tables:, quest_id: nature) != []
     as "Lucy Lazarin (Creature2 45639) receives the quest, so the player turns it in"
 

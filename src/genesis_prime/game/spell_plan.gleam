@@ -2270,7 +2270,7 @@ pub fn spells_that_throw_target(
 /// crowd control (4) rows has a targetFlags from 2 to 7, which names the primary target or
 /// the area.
 ///
-/// [F] What "hits foes" means is the server's choice, made by Jim: the client's tables
+/// [F] What "hits foes" means is the server's choice: the client's tables
 /// hold no flag for it. A spell that hits none has an area the server reads as a friendly
 /// spell's, which finds no allies of the caster.
 pub fn spell_hits_foes(
