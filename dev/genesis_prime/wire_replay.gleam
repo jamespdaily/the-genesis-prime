@@ -58,7 +58,6 @@
 //// the connection and the recorded line. A replay whose table process ends or
 //// stops answering (genesis_prime/wire_replay/table) fails as `TableLost`.
 
-import genesis_prime/client_connection
 import genesis_prime/connection/frame
 import genesis_prime/connection/script.{
   type Clock, type Elapsed, type Scheduler, type Scripts, Issued, Script,
@@ -1417,7 +1416,7 @@ pub fn decode(bytes bytes: BitArray) -> Decoded {
 fn message_of(found: frame.Frame) -> Decoded {
   Message(
     message_id: found.message_id,
-    name: client_connection.message_text(message_id: found.message_id),
+    name: frame.message_text(message_id: found.message_id),
     text: wire_recording.hex(found.body),
   )
 }

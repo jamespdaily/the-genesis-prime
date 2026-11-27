@@ -6,6 +6,7 @@
 //// vector.opcode.0x7e0.frame, and the ciphered bytes of the others are the
 //// vector.0x1400c2d10 outputs for the counting bytes 00 01 02 ...
 
+import ask_support
 import body_generator
 import connection_vectors as vectors
 import frame_reader
@@ -15,6 +16,8 @@ import genesis_prime/connection/encrypted_frame.{
 }
 import genesis_prime/connection/frame.{Frame}
 import gleam/bit_array
+import gleam/int
+import gleam/string
 import owned_test
 import qcheck
 
@@ -159,7 +162,7 @@ pub fn an_inner_length_that_does_not_fill_the_outer_body_is_refused_test() -> Ni
 
 pub fn a_wrapper_around_an_inner_frame_too_big_for_its_outer_frame_is_not_written_test() -> Nil {
   use <- owned_test.run(5000)
-  let largest_body = frame.size_limit - 2 * frame.header_size
+  let largest_body = encrypted_frame.largest_inner_body()
   let assert Ok(_) =
     encrypted_frame.wrap(
       ClientWrapper,
@@ -209,4 +212,56 @@ pub fn a_create_character_frame_inside_0x25c_is_not_ciphered_test() -> Nil {
     as "opcode.0x25c: the body of 0x25C is the 0x25B frame as it stands"
   assert frame.parse(opened.body) == Ok(Frame(0x025B, <<1, 2, 3, 4, 5, 6, 7>>))
     as "opcode.0x25c: no second decryption is needed to read the 0x25B frame"
+}
+
+pub fn must_wrap_gives_the_bytes_wrap_gives_test() -> Nil {
+  use <- owned_test.run(5000)
+  let inner = Frame(0x0100, <<1, 2, 3>>)
+  assert Ok(encrypted_frame.must_wrap(GameWrapper, inner, base_cipher()))
+    == encrypted_frame.wrap(GameWrapper, inner, base_cipher())
+    as "the wrapper of a valid frame is the bytes wrap gives"
+}
+
+pub fn must_wrap_of_an_inner_body_past_the_wrapper_bound_crashes_naming_both_ids_not_the_body_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let length = encrypted_frame.largest_inner_body() + 1
+  let ended =
+    ask_support.ended_running(fn() {
+      let _bytes =
+        encrypted_frame.must_wrap(
+          ClientWrapper,
+          Frame(0x0ABC, <<0:size({ length * 8 })>>),
+          base_cipher(),
+        )
+      Nil
+    })
+  let text = ask_support.panic_message(ask_support.raised(ended))
+  assert string.contains(text, "0x0244")
+    as { "the crash names the wrapper id; it says: " <> text }
+  assert string.contains(text, "0x0ABC")
+    as { "the crash names the inner id; it says: " <> text }
+  assert string.contains(text, int.to_string(length))
+    as { "the crash names the body length; it says: " <> text }
+  assert string.contains(
+    text,
+    frame.describe(error: frame.LengthOverLimit(131_071)),
+  )
+    as { "the crash says why, in describe's sentence; it says: " <> text }
+  assert string.length(text) < 300
+    as {
+      "the crash holds no body; it is " <> int.to_string(string.length(text))
+    }
+}
+
+pub fn must_wrap_of_a_negative_inner_id_crashes_naming_it_in_decimal_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let ended =
+    ask_support.ended_running(fn() {
+      let _bytes =
+        encrypted_frame.must_wrap(GameWrapper, Frame(-1, <<>>), base_cipher())
+      Nil
+    })
+  let text = ask_support.panic_message(ask_support.raised(ended))
+  assert string.contains(text, "message -1") && !string.contains(text, "0x-")
+    as { "the crash names the inner id plainly; it says: " <> text }
 }

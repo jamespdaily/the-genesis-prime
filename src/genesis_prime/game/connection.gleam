@@ -626,7 +626,7 @@ fn routed(
             session:,
             now:,
             text: "the first message of a game connection is 0x058F, not "
-              <> client_connection.message_text(inner.message_id),
+              <> frame.message_text(inner.message_id),
           )
         routing.AtCharacterSelect | routing.AtWorld ->
           unhandled(session:, message_id: inner.message_id)

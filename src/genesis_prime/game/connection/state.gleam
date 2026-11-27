@@ -41,6 +41,7 @@ import genesis_prime/game/world_entry
 import genesis_prime/game/zone_welcome.{type ZoneWelcomes}
 import genesis_prime/game_settings.{type GameSettings}
 import genesis_prime/hand_off.{type Holder}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, LostUserServer,
@@ -492,8 +493,8 @@ pub fn notice(
   session session: Session,
   reason reason: DisconnectReason,
 ) -> Effect(ConnectionEffect(Request)) {
-  let assert Ok(body) = disconnect_notice.encode(DisconnectNotice(reason:))
-    as "a reason is within 5 bits"
+  let body =
+    bit_stream.must(DisconnectNotice(reason:), disconnect_notice.encode)
   to_client(session:, inner: Frame(disconnect_notice.message_id, body))
 }
 
@@ -544,7 +545,7 @@ pub fn misrouted(
     session:,
     now:,
     text: "the routing table sent "
-      <> client_connection.message_text(inner.message_id)
+      <> frame.message_text(inner.message_id)
       <> " to a feature that does not take it here",
   )
 }

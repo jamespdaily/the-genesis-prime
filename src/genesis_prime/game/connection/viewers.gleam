@@ -206,6 +206,7 @@ import genesis_prime/game/strike
 import genesis_prime/game/unit_casts
 import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
+import genesis_prime/message/bit_stream
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
@@ -894,9 +895,11 @@ pub fn viewer_takes(
       }
     unit_news.Targeting(target_unit_id:, threat:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
-      let assert Ok(body) =
-        unit_target.encode(UnitTarget(unit_id:, target_unit_id:, threat:))
-        as "unit ids and a threat of 32 bits fit the message"
+      let body =
+        bit_stream.must(
+          UnitTarget(unit_id:, target_unit_id:, threat:),
+          unit_target.encode,
+        )
       Continue(session, [
         connection_state.to_client(
           session,
@@ -906,9 +909,11 @@ pub fn viewer_takes(
     }
     unit_news.Threat(other_unit_id:, threat:) -> {
       use <- bool.guard(when: !shown, return: Continue(session, []))
-      let assert Ok(body) =
-        unit_threat.encode(UnitThreat(unit_id:, other_unit_id:, threat:))
-        as "unit ids and a threat of 32 bits fit the message"
+      let body =
+        bit_stream.must(
+          UnitThreat(unit_id:, other_unit_id:, threat:),
+          unit_threat.encode,
+        )
       Continue(session, [
         connection_state.to_client(
           session,

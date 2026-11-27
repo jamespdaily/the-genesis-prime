@@ -282,9 +282,7 @@ pub fn describe(refusal refusal: Refusal) -> String {
     CarrierHoldsNoFrame(error:) ->
       "0x025C holds no whole frame: " <> frame.describe(error)
     CarrierHolds(message_id:) ->
-      "0x025C holds "
-      <> client_connection.message_text(message_id:)
-      <> ", not 0x025B"
+      "0x025C holds " <> frame.message_text(message_id:) <> ", not 0x025B"
   }
 }
 

@@ -60,7 +60,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import gleam/set.{type Set}
-import gleam/string
 
 /// What a connection rule asks.
 pub type Request {
@@ -507,7 +506,10 @@ pub fn unhandled(
   Continue(session, [
     Log(LogLine(
       level:,
-      text: "unhandled " <> server <> " message " <> message_text(message_id:),
+      text: "unhandled "
+        <> server
+        <> " message "
+        <> frame.message_text(message_id:),
       about: About(..about, message: Some(#("unhandled", message_id))),
     )),
   ])
@@ -555,11 +557,6 @@ pub fn accepted_again(
   ])
 }
 
-/// A message id as the log writes it: four hex digits, as in `0x0244`.
-pub fn message_text(message_id message_id: Int) -> String {
-  "0x" <> string.pad_start(string.uppercase(int.to_base16(message_id)), 4, "0")
-}
-
 /// A body the client's own reader would refuse, as the message it was read for
 /// and why it was refused: the refusal every feature that decodes a client
 /// message has.
@@ -577,7 +574,7 @@ pub fn decoded(
 
 /// The sentence a body the client's own reader would refuse is logged with.
 pub fn describe_undecoded(undecoded undecoded: Undecoded) -> String {
-  message_text(message_id: undecoded.message_id)
+  frame.message_text(message_id: undecoded.message_id)
   <> " does not decode: "
   <> bit_stream.describe_decode(error: undecoded.error)
 }
@@ -603,7 +600,7 @@ pub fn written(
 
 /// The sentence a value the client never writes is logged with.
 pub fn describe_unwritten(unwritten unwritten: Unwritten) -> String {
-  message_text(message_id: unwritten.message_id)
+  frame.message_text(message_id: unwritten.message_id)
   <> " holds "
   <> unwritten.field
   <> " "
@@ -778,9 +775,7 @@ pub fn wrapped(
   inner inner: Frame,
   cipher cipher: Cipher,
 ) -> BitArray {
-  let assert Ok(bytes) = encrypted_frame.wrap(wrapper, inner, cipher)
-    as "a message the rule writes is far below the size limit"
-  bytes
+  encrypted_frame.must_wrap(wrapper:, inner:, cipher:)
 }
 
 /// The ids of the messages every connection that takes the client's wrapper
@@ -833,7 +828,7 @@ pub fn open(
     network_message.Malformed(message_id:, ..) ->
       Broken(
         text: "a network message "
-        <> message_text(message_id:)
+        <> frame.message_text(message_id:)
         <> " does not decode",
       )
     network_message.NotNetwork ->

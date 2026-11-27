@@ -86,16 +86,24 @@ pub fn must_encode(
     Error(error) ->
       panic as {
         "message "
-        <> case message_id < 0 {
-          True -> int.to_string(message_id)
-          False -> "0x" <> int.to_base16(message_id)
-        }
+        <> message_text(message_id:)
         <> ": "
         <> describe(error:)
         <> " ("
         <> string.inspect(error)
         <> ")"
       }
+  }
+}
+
+/// A message id as the log and every crash write it: four hex digits, as in
+/// `0x0244`, or plainly in decimal when it is negative, which no header holds.
+pub fn message_text(message_id message_id: Int) -> String {
+  case message_id < 0 {
+    True -> int.to_string(message_id)
+    False ->
+      "0x"
+      <> string.pad_start(string.uppercase(int.to_base16(message_id)), 4, "0")
   }
 }
 

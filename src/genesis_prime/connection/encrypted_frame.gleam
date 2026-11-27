@@ -11,6 +11,7 @@
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/frame.{type Frame, type FrameError}
 import gleam/bit_array
+import gleam/int
 import gleam/result
 
 /// Which message carries the inner frame.
@@ -55,6 +56,38 @@ pub fn wrap(
         cipher.encrypt(cipher, after_the_length):bits,
       >>)
     _ -> Error(frame.ShorterThanHeader(bit_array.byte_size(inner_bytes)))
+  }
+}
+
+/// The largest body an inner frame can have and still fit a wrapper: the outer
+/// frame's size limit less the header of the outer frame and of the inner one
+/// (WriteMessageFrame 0x1403355e0 refuses a frame over the limit 0x140335ec0).
+pub fn largest_inner_body() -> Int {
+  frame.size_limit - 2 * frame.header_size
+}
+
+/// The bytes of `wrap` for an inner frame the caller keeps within
+/// `largest_inner_body`. A failure is the server's bug, so it ends the process
+/// naming the wrapper id, the inner id and the length of the inner body, never
+/// the body, which may be 131 KB.
+pub fn must_wrap(
+  wrapper wrapper: Wrapper,
+  inner inner: Frame,
+  cipher cipher: Cipher,
+) -> BitArray {
+  case wrap(wrapper:, inner:, cipher:) {
+    Ok(bytes) -> bytes
+    Error(error) ->
+      panic as {
+        "wrapper "
+        <> frame.message_text(message_id: message_id(wrapper:))
+        <> " around message "
+        <> frame.message_text(message_id: inner.message_id)
+        <> " with a body of "
+        <> int.to_string(bit_array.byte_size(inner.body))
+        <> " bytes: "
+        <> frame.describe(error:)
+      }
   }
 }
 

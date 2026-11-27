@@ -136,6 +136,7 @@ import genesis_prime/game/unit_news
 import genesis_prime/game/unit_state
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
+import genesis_prime/message/bit_stream
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/random
@@ -2205,13 +2206,11 @@ pub fn creature_news_frames(
   use <- bool.guard(when: !dict.has_key(entered.shown, unit_id), return: [])
   case news {
     unit_news.Health(health:, dead:) -> {
-      let assert Ok(body) =
-        unit_health.encode(UnitHealth(
-          unit_id:,
-          health:,
-          dead: connection_frames.bit(dead),
-        ))
-        as "a unit id of 32 bits, a health of 32 and a bit fit the message"
+      let body =
+        bit_stream.must(
+          UnitHealth(unit_id:, health:, dead: connection_frames.bit(dead)),
+          unit_health.encode,
+        )
       [
         connection_state.to_client(
           session,
