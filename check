@@ -44,15 +44,16 @@
 # 120 s (GENESIS_CHECK_IDLE_SECONDS), or one still going at the wall cap, 10 times its
 # budget (GENESIS_CHECK_WALL_CAP_SECONDS), has everything the check started stopped, and
 # each part that was running is reported as hung. A part that uses CPU runs on until the
-# cap. The tree's CPU time is sampled once a second (`ps -o time=`, which macOS and Linux
-# both have), the tree as a whole and not each part. The window is the longest the tree may
-# wait without CPU while working, on a database or a child VM's start, which are seconds
-# against 120 s; a ./check fast run on the development Mac, sampled every second by a
-# watcher of the same tree, was never idle for as long as 1 s. No full run was sampled
-# where the window could be tested against Postgres waits, so a part that waits longer
-# than 120 s while working is stopped as hung. The cap is 1570 s for the full check and
-# 350 s for ./check fast, well above the 471 s and 105 s hang limits it replaces as the
-# last resort. A part that ends without writing its status fails the check by name.
+# cap. No CPU over the window means the tree used under 50 hundredths of a second
+# (GENESIS_CHECK_CPU_NOISE_HUNDREDTHS) in it, the same on macOS and Linux. The tree's CPU
+# time is sampled once a second, the tree as a whole and not each part: on Linux from
+# /proc, which counts children that have exited, on macOS from `ps -o time=`.
+# The window is measured: in one full ./check with Postgres on the development Mac (load
+# 3 to 39), sampled each second, the longest stretch with no CPU in the tree was 3 to 4 s,
+# and 11 s within one part's main VM; an idle VM uses about 4 hundredths in 120 s. The
+# cap is 10 times the budget, 1570 s for the full check and 350 s for ./check fast, the
+# last resort for a part that keeps using CPU; CI sets it below its job's timeout. A part
+# that ends without writing its status fails the check by name.
 #
 # The full check chooses its scope from the files the branch changes since its
 # merge base with origin/main (or main): uncommitted and untracked files count,
@@ -308,10 +309,12 @@ fast_budget=${GENESIS_CHECK_FAST_BUDGET_SECONDS:-35}
 # The idle window: the check, past three times its budget, is hung when the CPU time of
 # everything it started has not moved for this many seconds (GENESIS_CHECK_IDLE_SECONDS).
 # A part that waits on Postgres or a child VM's start uses no CPU of this tree for that
-# long; a sample that moves the sum by less than cpu_noise_hundredths is not use (the
-# check's own polling). The header says how the default was chosen.
+# long. Idle means the tree used less than cpu_noise_hundredths of CPU over the window
+# (GENESIS_CHECK_CPU_NOISE_HUNDREDTHS), the same on both systems: an idle VM uses about 4
+# hundredths in 120 s, the check's own polling is less. The header says how the default
+# was chosen.
 default_idle_window=120
-cpu_noise_hundredths=5
+cpu_noise_hundredths=${GENESIS_CHECK_CPU_NOISE_HUNDREDTHS:-50}
 if [ "$mode" = fast ]; then
   budget=$fast_budget
 fi
@@ -536,31 +539,31 @@ skip() {
   echo "$2" >"$work/$1.skipped"
 }
 
-# descendants_of PID: the process ids of everything PID started, children,
-# their children and so on, from one snapshot of the process table.
-descendants_of() {
-  ps -A -o pid= -o ppid= | awk -v root="$1" '
-    { parent[$1] = $2 }
-    END {
-      for (p in parent) {
-        q = p
-        while ((q in parent) && q != root && q != 0 && q != 1) q = parent[q]
-        if (q == root && p != root) print p
-      }
-    }'
+# process_table: one line per running process, "pid ppid cpu", the CPU time in hundredths
+# of a second. On Linux it is read from /proc (utime, stime and the time of the children
+# the process has waited for, so a child that has exited still counts); `ps -o time=` shows
+# only whole seconds of the living ones there and reads 0 for a loop of short children. On
+# macOS it is `ps -o time=`, [[dd-]hh:]mm:ss with hundredths.
+process_table() {
+  if [ -r /proc/self/stat ]; then
+    cat /proc/[0-9]*/stat 2>/dev/null | awk -v ticks="$(getconf CLK_TCK)" '
+      { open = match($0, /^.*\) /); split(substr($0, open + RLENGTH), f, " ")
+        print $1, f[2], int((f[12] + f[13] + f[14] + f[15]) * 100 / ticks) }'
+  else
+    ps -A -o pid= -o ppid= -o time= | awk '
+      { t = $3; days = 0
+        if (index(t, "-")) { split(t, d, "-"); days = d[1]; t = d[2] }
+        n = split(t, f, ":"); seconds = 0
+        for (i = 1; i <= n; i++) seconds = seconds * 60 + f[i]
+        print $1, $2, int((seconds + days * 86400) * 100 + 0.5) }'
+  fi
 }
 
-# tree_cpu_hundredths ROOT EXCLUDED: the CPU time, in hundredths of a second, of every
-# process ROOT started that is still running, except EXCLUDED (the watchdog, whose own
-# samples would count) and what it started. `ps -o time=` reads on macOS and Linux
-# alike: [[dd-]hh:]mm:ss, with hundredths on macOS and whole seconds on Linux.
-tree_cpu_hundredths() {
-  ps -A -o pid= -o ppid= -o time= | awk -v root="$1" -v excluded="$2" '
-    { parent[$1] = $2; t = $3; days = 0
-      if (index(t, "-")) { split(t, d, "-"); days = d[1]; t = d[2] }
-      n = split(t, f, ":"); seconds = 0
-      for (i = 1; i <= n; i++) seconds = seconds * 60 + f[i]
-      cpu[$1] = (seconds + days * 86400) * 100 }
+# tree_of ROOT [EXCLUDED]: "pid cpu" for everything ROOT started, children, their children
+# and so on, from one snapshot of the process table, except EXCLUDED and what it started.
+tree_of() {
+  process_table | awk -v root="$1" -v excluded="${2:-}" '
+    { parent[$1] = $2; cpu[$1] = $3 }
     END {
       for (p in parent) {
         q = p; skip = 0
@@ -568,10 +571,20 @@ tree_cpu_hundredths() {
           if (q == excluded) skip = 1
           q = parent[q]
         }
-        if (q == root && p != root && !skip) total += cpu[p]
+        if (q == root && p != root && !skip) print p, cpu[p]
       }
-      printf "%d\n", total
     }'
+}
+
+# descendants_of PID: the process ids of everything PID started.
+descendants_of() {
+  tree_of "$1" | awk '{ print $1 }'
+}
+
+# tree_cpu_hundredths ROOT EXCLUDED: the CPU time of tree_of ROOT EXCLUDED, summed (EXCLUDED
+# is the watchdog, whose own samples would count).
+tree_cpu_hundredths() {
+  tree_of "$1" "$2" | awk '{ total += $2 } END { printf "%d\n", total }'
 }
 
 # stop_everything PID: ends everything PID started: asks first, then kills what
@@ -689,14 +702,17 @@ fi
 
 # The watchdog: USR1 to this shell when the check is hung. It samples once a second the
 # CPU time of everything the check started (tree_cpu_hundredths), and the check is hung
-# when it is past the hang limit and that time has not moved for the idle window, or when
-# it reaches the wall cap whatever it does. The reason is left in $work/hung.reason.
+# when it is past the hang limit and that time has moved by less than cpu_noise_hundredths
+# since the last sample that moved it by that much, for the idle window, or when it reaches
+# the wall cap whatever it does. The reason is left in $work/hung.reason.
 hang_limit=$((3 * budget))
 idle_window=${GENESIS_CHECK_IDLE_SECONDS:-$default_idle_window}
 wall_cap=${GENESIS_CHECK_WALL_CAP_SECONDS:-$((10 * budget))}
 (
+  # $BASHPID is empty in bash 3.2, so this subshell's pid is its shell's child's parent.
+  self=$(exec sh -c 'echo $PPID')
   idle_since=$(date +%s)
-  previous=""
+  anchor=""
   while sleep 1; do
     now=$(date +%s)
     if [ "$now" -ge $((started + wall_cap)) ]; then
@@ -704,11 +720,11 @@ wall_cap=${GENESIS_CHECK_WALL_CAP_SECONDS:-$((10 * budget))}
       kill -USR1 $$ 2>/dev/null
       exit 0
     fi
-    cpu=$(tree_cpu_hundredths $$ "$BASHPID")
-    if [ -z "$previous" ] || [ "$((cpu > previous ? cpu - previous : previous - cpu))" -ge "$cpu_noise_hundredths" ]; then
+    cpu=$(tree_cpu_hundredths $$ "$self")
+    if [ -z "$anchor" ] || [ "$((cpu > anchor ? cpu - anchor : anchor - cpu))" -ge "$cpu_noise_hundredths" ]; then
       idle_since=$now
+      anchor=$cpu
     fi
-    previous=$cpu
     if [ "$now" -ge $((started + hang_limit)) ] && [ "$((now - idle_since))" -ge "$idle_window" ]; then
       echo "still running at three times its budget of ${budget}s" >"$work/hung.reason"
       kill -USR1 $$ 2>/dev/null

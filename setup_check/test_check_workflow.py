@@ -128,6 +128,15 @@ class CheckWorkflowTest(unittest.TestCase):
                 self.assertIn(LIGHT, field(step, "if"), label)
         self.assertEqual(field(step_named(every_step, "Check the part"), "run"), "./check part ${{ matrix.name }}")
 
+    def test_a_part_that_keeps_using_cpu_is_stopped_by_the_check_before_the_job_times_out(self):
+        # The cold setup takes 191 s (3 minutes 11 seconds, run 40316762854), the comment on the
+        # part job; the check then runs until its wall cap, and GitHub kills the job at its timeout.
+        part = job("part")
+        timeout_seconds = 60 * int(field(part, "timeout-minutes"))
+        cap = field(part, "GENESIS_CHECK_WALL_CAP_SECONDS").strip('"')
+        self.assertTrue(cap, "the part job sets GENESIS_CHECK_WALL_CAP_SECONDS, whose default of 10 budgets is over the timeout")
+        self.assertLess(191 + int(cap), timeout_seconds)
+
     def test_each_network_setup_step_is_retried_once(self):
         # (the steps, the step) whose network call can fail once and succeed on the next try; a second
         # failure fails the job: the retry has no continue-on-error.
