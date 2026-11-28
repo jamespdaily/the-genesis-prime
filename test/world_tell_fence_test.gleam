@@ -22,7 +22,7 @@ import genesis_prime/shared/strike_tell.{Answered, Landed}
 import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_news.{CreatureAppeared, PeerNews}
 import genesis_prime/shared/unit_state
-import genesis_prime/step.{ConnectionId, RingMember}
+import genesis_prime/step.{RingMember}
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_registry
@@ -94,7 +94,10 @@ fn cast_view(scene scene: Scene) -> unit_casts.CastView {
 }
 
 fn cast_view_set(scene scene: Scene) -> creature.Message {
-  creature.CastViewSet(by: ConnectionId(1), view: cast_view(scene:))
+  creature.CastViewSet(
+    by: map_support.address(number: 1),
+    view: cast_view(scene:),
+  )
 }
 
 fn thrown() -> creature.Message {
@@ -139,11 +142,10 @@ fn strike(
 /// The ring member of the connection's player, standing 5 units from the creature.
 fn member(connection connection: Int) -> step.RingMember {
   RingMember(
-    by: ConnectionId(connection),
+    by: map_support.address(number: connection),
     unit_id: connection * 10,
     place: place_at(x: 5.0),
     seq: 1,
-    stay: map_support.stay(count: 1),
     hit_radius: place_support.player_hit_radius,
   )
 }
@@ -160,10 +162,9 @@ fn place_at(x x: Float) -> Place {
 
 fn target_moved(connection connection: Int, x x: Float) -> creature.Message {
   creature.TargetMoved(
-    by: ConnectionId(connection),
+    by: map_support.address(number: connection),
     place: place_at(x:),
     seq: 2,
-    stay: map_support.stay(count: 1),
     hit_radius: place_support.player_hit_radius,
   )
 }
@@ -431,7 +432,7 @@ fn rows() -> List(Row) {
           life:,
           message: world_watch_support.modifier_starts(),
         )
-        creature.CasterGone(by: ConnectionId(1))
+        creature.CasterGone(by: map_support.address(number: 1))
       },
       settle: nothing_to_settle,
       changes: "connection 1: PropertiesChanged",
@@ -449,7 +450,7 @@ fn rows() -> List(Row) {
       prepare: fn(scene, life) {
         told_and_taken(scene:, life:, message: cast_view_set(scene:))
         creature.CastViewEnds(
-          by: ConnectionId(1),
+          by: map_support.address(number: 1),
           cast_id: cast_view(scene:).cast_id,
         )
       },
@@ -465,7 +466,7 @@ fn rows() -> List(Row) {
           life:,
           message: strike(scene:, cast_id: 5, stunning: True),
         )
-        creature.ControlsEnd(by: ConnectionId(1), cast_id: 5)
+        creature.ControlsEnd(by: map_support.address(number: 1), cast_id: 5)
       },
       settle: nothing_to_settle,
       changes: "connection 1: CrowdControlEnded",
@@ -560,13 +561,13 @@ fn rows() -> List(Row) {
           life:,
           message: creature.Approached(member: member(connection: 2)),
         )
-        creature.Withdrew(by: ConnectionId(2))
+        creature.Withdrew(by: map_support.address(number: 2))
       },
       settle: fn(scene) {
         told_and_taken(
           scene:,
           life: scene.next_life,
-          message: creature.PlayerDied(by: ConnectionId(1)),
+          message: creature.PlayerDied(by: map_support.address(number: 1)),
         )
         driven_time.advance(time: scene.time, ms: 10_000)
       },
@@ -577,7 +578,7 @@ fn rows() -> List(Row) {
       kind: Dagun,
       prepare: fn(scene, life) {
         fighting(scene:, life:)
-        creature.PlayerDied(by: ConnectionId(1))
+        creature.PlayerDied(by: map_support.address(number: 1))
       },
       settle: nothing_to_settle,
       changes: "connection 1: Released",

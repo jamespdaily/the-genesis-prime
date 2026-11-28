@@ -109,8 +109,8 @@ pub fn a_summon_starts_the_creature_at_the_players_place_and_facing_for_the_play
     as "the unit id after the three players', so none is a player's"
   assert spawns.first_viewers(start: creature)
     == [
-      #(ConnectionId(1), map_support.stay(count: 1)),
-      #(ConnectionId(2), map_support.stay(count: 1)),
+      map_support.address(number: 1),
+      map_support.address(number: 2),
     ]
     as "the players who see the place get the creature, each by its stay, in connection order; the far one does not"
 }

@@ -84,6 +84,7 @@ fn answer_of(
   Joined(
     unit: player_unit.create(unit:, realm_id:),
     loadout: player_unit.loadout(unit:),
+    address: map_support.address(number: 1),
     incarnation:,
     clock_origin_ms: 0,
   )

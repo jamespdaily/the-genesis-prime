@@ -22,8 +22,7 @@ import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news.{CreatureAppeared, Removed}
 import genesis_prime/step.{
-  Asked, CallerId, Connection, ConnectionId, OwnEvent, ServiceTimerFired,
-  TimerId, Told,
+  Asked, CallerId, ConnectionId, OwnEvent, ServiceTimerFired, TimerId, Told,
 }
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_unit
@@ -118,14 +117,13 @@ fn strike(damage damage: Int) -> Mail {
     input: ToMap(
       OwnEvent(
         Told(map_message.TellCreature(
-          from: ConnectionId(first_player),
-          stay: map_support.stay(count: 1),
+          from: map_support.address(number: first_player),
           unit_id: beast_unit,
           life: spawns.creature_of(state: standing().map, spawn: 1).1,
           payload: map_message.Strike(
             tell: strike_tell.Strike(
               ..tell,
-              from: Connection(ConnectionId(first_player)),
+              from: step.Unit(map_support.address(number: first_player)),
             ),
           ),
         )),

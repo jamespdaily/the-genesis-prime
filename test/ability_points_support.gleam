@@ -19,6 +19,7 @@ import genesis_prime/table/id.{ClassId}
 import genesis_prime/table/loader/store as table_store
 import gleam/list
 import gleam/option.{Some}
+import map_support
 
 /// Every 0x0169 among the frames, in order, as (points to spend, total).
 pub fn points_in(frames frames: List(Frame)) -> List(#(Int, Int)) {
@@ -67,6 +68,7 @@ pub fn level_up_on(
         FromMap(map_message.Joined(
           unit:,
           loadout:,
+          address: map_support.address(number: 1),
           incarnation:,
           clock_origin_ms:,
         )),

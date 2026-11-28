@@ -932,6 +932,7 @@ pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x63
   let assert map_message.Joined(
     unit:,
     loadout:,
+    address:,
     incarnation:,
     clock_origin_ms: _,
   ) = game_connection_support.map_answer(taken)
@@ -943,6 +944,7 @@ pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x63
         FromMap(map_message.Joined(
           unit:,
           loadout:,
+          address:,
           incarnation:,
           clock_origin_ms: 600,
         )),
@@ -1762,6 +1764,7 @@ pub fn a_viewer_writes_the_creatures_kind_3_flight_test() -> Nil {
   let assert map_message.Joined(
     unit:,
     loadout:,
+    address:,
     incarnation:,
     clock_origin_ms: _,
   ) = game_connection_support.map_answer(taken)
@@ -1773,6 +1776,7 @@ pub fn a_viewer_writes_the_creatures_kind_3_flight_test() -> Nil {
         FromMap(map_message.Joined(
           unit:,
           loadout:,
+          address:,
           incarnation:,
           clock_origin_ms: 600,
         )),
@@ -3779,7 +3783,7 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
       ),
     )
   assert creature_fight.threatened(state: creature.fight(state: creature_state))
-    == set.from_list([ConnectionId(1)])
+    == set.from_list([map_support.address(number: 1)])
     as "the viewer's strike put it on the creature's threat list"
   // The creature's snapshot reaches the map, which relays its burst, two news, to the viewer.
   let assert Ok(map.Live(unit_id:, life:, relations:, ..)) =
@@ -3795,7 +3799,7 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
           map_message.Snapshot(
             unit_id:,
             life:,
-            by: ConnectionId(1),
+            by: map_support.address(number: 1),
             generation: held,
             burst: [
               PeerNews(
@@ -3849,18 +3853,22 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
     })
     as "the map tells the creature the viewer's sight ended, then that the viewer is gone"
   assert creature.told_by_map(caster_gone)
-    == Ok(creature.CasterGone(by: ConnectionId(1)))
+    == Ok(creature.CasterGone(by: map_support.address(number: 1)))
     as "and the second tell is the map's CasterGone of the viewer's connection"
   assert told_unit == unit_id
   let assert Ok(told) = creature.told_by_map(unseen)
-  assert told == creature.Unseen(by: ConnectionId(1), generation: held)
+  assert told
+    == creature.Unseen(by: map_support.address(number: 1), generation: held)
     as "under the generation of the sight the viewer held"
   let #(creature_state, _) =
     creature.step(
       creature_state,
       support.input_at_ms(ms: 6400, event: OwnEvent(step.Told(told))),
     )
-  assert !set.contains(creature.viewers(state: creature_state), ConnectionId(1))
+  assert !set.contains(
+    creature.viewers(state: creature_state),
+    map_support.address(number: 1),
+  )
     as "the creature's copy of its viewers drops the connection"
   assert creature_fight.threatened(state: creature.fight(state: creature_state))
     == set.new()

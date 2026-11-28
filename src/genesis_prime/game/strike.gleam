@@ -179,6 +179,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{type Spell4EffectsId}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bit_array
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -198,8 +199,9 @@ const bytes_per_unit = hit.roll_bytes
 
 /// The caster as a selection and a strike take it: who it is, where it stands and
 /// faces, the place it stands at with the move sequence number of that place and
-/// the stay its strikes are told for, which their answers come back in
-/// (genesis_prime/shared/strike_tell `PlayerStriker`), its hit radius, its player faction, what its
+/// the stay its heals are told for, which their answers come back in
+/// (genesis_prime/shared/strike_tell `PlayerStrike`), its unit address, which its strikes
+/// on a creature name as their sender (`PlayerStriker`), its hit radius, its player faction, what its
 /// damage formulas read (`stats`), its health and shield as they are when the go or
 /// the tick is asked (`vitals`) and its properties, whose BaseCritChance,
 /// CriticalHitSeverityMultiplier and BaseAvoidReduceChance values, a modifier's
@@ -210,6 +212,7 @@ pub type Attacker {
   Attacker(
     unit_id: Int,
     connection: ConnectionId,
+    address: UnitAddress,
     pose: Pose,
     place: start_place.Place,
     move_seq: Int,
@@ -1185,12 +1188,11 @@ fn tell_of(
 ) -> Tell {
   strike_tell.Strike(
     key:,
-    from: step.Connection(attacker.connection),
+    from: step.Unit(attacker.address),
     striker: strike_tell.PlayerStriker(
       unit_id: attacker.unit_id,
       place: attacker.place,
       seq: attacker.move_seq,
-      stay: attacker.stay,
       hit_radius: attacker.hit_radius,
       rolls:,
     ),

@@ -20,7 +20,10 @@
 //// `Gone`, starts the spawn again as another unit after the respawn time if a
 //// player sees it then, with those players as its first viewers. In the diagrams
 //// `Broadcast(news)` is one send to the map for every viewer, `Snapshot` a viewer's first
-//// picture, and `Relay(c, payload)` a send to the player of connection c with its stay.
+//// picture, and `Relay(a, payload)` a send to the player of the unit address a. A creature names a
+//// player by the address the map issued for its join (genesis_prime/world_map/unit_address),
+//// never by its connection or its stay: an address names one join of the run, so a message for
+//// a unit that ended names no unit the creature holds.
 ////
 //// From the start to the end of a creature, and what the players in sight are
 //// sent:
@@ -28,8 +31,8 @@
 //// ```
 //// map                     creature                                    map
 ////                         Started ─▶ Watch(map run)                   (the shell monitors the run)
-////                                    for each first viewer c, g (CreatureStart.viewers):
-////                                      Send(map, Snapshot(c, g, its first picture))
+////                                    for each first viewer a, g (CreatureStart.viewers):
+////                                      Send(map, Snapshot(a, g, its first picture))
 ////                                    CreatureStart.ring, when the map's respawn carries one:
 ////                                      the fight takes RingAtStart: every ring player is
 ////                                      sighted and near, and one aggro starts the fight over
@@ -42,16 +45,17 @@
 ////
 //// ```
 //// map                     creature                                    map
-//// Seen(by: c, stay, g) ─▶ viewers + (c, stay, g); builds c's first picture from its state now
+//// Seen(by: a, g) ─────▶ viewers + (a, g); builds a's first picture from its state now
 ////                         (its 0x262, its guard's cast, each held unit state, the fight's arrival news;
 ////                          an empty burst when it is despawned)
-////                         Send(map, Snapshot(unit, life, c, g, burst)) ─▶ relayed to c when (c, g) awaits it
-//// Unseen(by: c, g) ─────▶ when (c, g) is the viewer held: viewers - c, its threat entry and its fight
-////                         copy of c; no 0x355 (the map tells c); the fight's release of c:
-////                         Send(map, Relay(unit, life, c, stay, Released)); an Unseen of another
-////                         generation, or of a connection that is no viewer, changes nothing
+////                         Send(map, Snapshot(unit, life, a, g, burst)) ─▶ relayed to a's connection when (a, g) awaits it
+//// Unseen(by: a, g) ─────▶ when (a, g) is the viewer held: viewers - a, its threat entry and its fight
+////                         copy of a; no 0x355 (the map tells a's connection); the fight's release of a:
+////                         Send(map, Relay(unit, life, a, Released)); an Unseen of another
+////                         generation, or of an address that is no viewer (as one of an earlier
+////                         address of the same joiner is not), changes nothing
 //// a news of its unit ───▶ Send(map, Broadcast(unit, life, news)), once for all viewers
-//// an answer, a credit, a fight tell ─▶ Send(map, Relay(unit, life, to, stay, payload))
+//// an answer, a credit, a fight tell ─▶ Send(map, Relay(unit, life, to: a, payload))
 //// ```
 ////
 //// caster's connection c0
@@ -168,15 +172,14 @@
 ////   opening are gone. A viewer that arrives is shown the guard's or the opening's cast after the 0x262.
 //// - **A viewer that is not a connection any more** is dropped by the map's relay (the
 ////   registry finds no process); the map's `Unseen` follows from its end.
-//// - **A `Seen` twice from one connection** is answered with a snapshot twice; the map relays
+//// - **A `Seen` twice from one address** is answered with a snapshot twice; the map relays
 ////   the first and drops the second, which no longer awaits it. The second `Seen` names the
-////   stay and generation the creature holds that player by from then on
-////   (genesis_prime/world_map/stay).
-//// - **A stay travels from the message that caused the work.** A strike's answer
-////   goes for the stay the strike was told for; the fight holds each player in
-////   the stay of the message that put it in the fight (the map's `Approached`, the
-////   player's strike) and tells it for that stay; a player's strike or move of a
-////   stay other than the one its `Seen` named starts and moves nothing
+////   generation the creature holds that player by from then on.
+//// - **A player is named by its address.** A strike's answer goes to the address the strike
+////   named as its sender; the fight holds each player by the address of the message that put
+////   it in the fight (the map's `Approached`, the player's strike) and tells it by that
+////   address; a player's strike or move of an address that is not a viewer (one of an earlier
+////   join of the same player, whose `Unseen` or `Seen` the map sent) starts and moves nothing
 ////   (genesis_prime/world_map/creature_fight).
 //// - **A property modifier** of a player's spell is told by the caster's connection
 ////   through its map, as a strike is; the caster's cast owns
@@ -224,7 +227,7 @@
 //// | a gated strike reaches a dead creature | it is answered `Refused(Dead)` with no gate read (`dead_creature_refuses_a_gated_strike_test`) |
 //// | two strikes reach it one after the other | each is answered in turn on the health the one before left; the second finds a corpse if the first killed |
 //// | the caster's connection has ended when the creature answers | the send is dropped by the registry; the hit and its news stand |
-//// | the killing blow's caster has left the world, or its stay has changed, when the credit arrives | the connection drops the credit (`stay_sent`): no experience is given, the death and its news stand |
+//// | the killing blow's caster has left the world, or its stay has changed, when the credit arrives | the map drops the credit, which names a unit that is no unit of its run, or the connection drops it (`stay_sent`): no experience is given, the death and its news stand |
 //// | a second strike reaches the creature after the killing one | it finds a corpse and is answered `Refused(Dead)`; it sends no credit, so a kill is credited once |
 //// | a viewer arrives while the creature is dead | its 0x262 carries health 0, which the client creates dead |
 //// | the creature crashes while retiring | the same watch end: the map takes it as a clean stop, since no client shows the unit |
@@ -285,11 +288,10 @@ import genesis_prime/shared/unit_properties.{
 }
 import genesis_prime/shared/unit_state
 import genesis_prime/step.{
-  type ConnectionId, type CreatureStart, type Effect, type RingMember,
-  type ServiceEffect, type ServiceInput, type ServiceRule, type ServiceStep,
-  Asked, Connection, CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send,
-  ServiceTimerFired, Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded,
-  WatchId,
+  type CreatureStart, type Effect, type RingMember, type ServiceEffect,
+  type ServiceInput, type ServiceRule, type ServiceStep, Asked,
+  CreatureNotStarted, Effects, OwnEffect, OwnEvent, Send, ServiceTimerFired,
+  Started, Stop, Stopping, TimerId, Told, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/table/id.{type Spell4Id, Faction2Id}
 import genesis_prime/world_map/creature_control
@@ -309,7 +311,7 @@ import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_source
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -370,41 +372,35 @@ pub type Settings {
 
 /// What the map and the connections tell a creature.
 pub type Message {
-  /// The map: the player of connection `by`, in its stay `stay`, sees the creature
-  /// from the sight `generation` names. The creature records the viewer and answers
-  /// with a `Snapshot` of that generation; a second `Seen` of the same viewer is
-  /// answered again.
-  Seen(by: ConnectionId, stay: Stay, generation: Generation)
-  /// The map: the sight `generation` of the player of connection `by` ended. The
+  /// The map: the player of the unit `by` sees the creature from the sight
+  /// `generation` names. The creature records the viewer and answers with a
+  /// `Snapshot` of that generation; a second `Seen` of the same viewer is answered
+  /// again.
+  Seen(by: UnitAddress, generation: Generation)
+  /// The map: the sight `generation` of the player of the unit `by` ended. The
   /// creature drops the viewer and its threat entry and sends nothing of the unit's
   /// removal (the map tells the viewer); a second `Unseen`, or one of a viewer that is
   /// not held, changes nothing.
-  Unseen(by: ConnectionId, generation: Generation)
+  Unseen(by: UnitAddress, generation: Generation)
   /// No player has seen the creature for the idle stop: end.
   Retire
   /// A caster's connection strikes the creature (genesis_prime/shared/strike_tell).
   Strike(tell: StrikeTell)
   /// The map: the ready player `member` entered the creature's ring.
   Approached(member: RingMember)
-  /// The map: the player of connection `by` left the creature's ring.
-  Withdrew(by: ConnectionId)
-  /// The map: the player of connection `by` died, so it leaves the creature's ring's
+  /// The map: the player of the unit `by` left the creature's ring.
+  Withdrew(by: UnitAddress)
+  /// The map: the player of the unit `by` died, so it leaves the creature's ring's
   /// players and its threat list.
-  PlayerDied(by: ConnectionId)
-  /// The connection of a player on the creature's threat list: its player, in its
-  /// stay `stay`, stands at `place`, its move `seq`.
-  TargetMoved(
-    by: ConnectionId,
-    place: Place,
-    seq: Int,
-    stay: Stay,
-    hit_radius: Float,
-  )
+  PlayerDied(by: UnitAddress)
+  /// The connection of a player on the creature's threat list: its player, the unit
+  /// `by`, stands at `place`, its move `seq`.
+  TargetMoved(by: UnitAddress, place: Place, seq: Int, hit_radius: Float)
   /// The connection of a player the creature struck answers the strike.
   StrikeAnswered(answered: Answered)
   /// The connection `by` of a caster: a property modifier of its spell starts on the
   /// creature. It is dropped when the creature lies dead.
-  ModifierStarts(by: ConnectionId, source: Source, modifier: Modifier)
+  ModifierStarts(by: UnitAddress, source: Source, modifier: Modifier)
   /// A caster's connection: the property modifier of `source` ends on the creature.
   ModifierEnds(source: Source)
   /// A caster's connection: a ForcedMove effect of its spell throws the creature
@@ -524,64 +520,52 @@ pub type Message {
   /// | two casters' views | both kept, each under its own cast id (a cast id names its caster) |
   /// | the caster leaves the map or its connection ends | `CasterGone` drops every view of it |
   /// | the creature crashes | the views are lost and the map starts the spawn again as a new unit |
-  CastViewSet(by: ConnectionId, view: unit_casts.CastView)
+  CastViewSet(by: UnitAddress, view: unit_casts.CastView)
   /// The caster's connection `by` tells the creature that its cast `cast_id` holds
   /// nothing on it any more. The creature drops the view of that cast when `by` holds
   /// it; an end for a cast it does
   /// not hold, or one held by another connection, changes nothing.
-  CastViewEnds(by: ConnectionId, cast_id: Int)
+  CastViewEnds(by: UnitAddress, cast_id: Int)
   /// The caster's connection `by`: its cast `cast_id` no longer holds a node on the
   /// creature that holds the states the cast landed, so each of those states ends.
-  ControlsEnd(by: ConnectionId, cast_id: Int)
+  ControlsEnd(by: UnitAddress, cast_id: Int)
   /// The map's word that the player of connection `by` is gone from it, by its leave or
   /// by its connection's end: every source and view of that connection ends (each source
   /// with its property news), whatever state the creature is in (live, dead, retiring or
   /// releasing). A control stands until its own timer ends it. Told by the map once for
   /// each running creature: the creature watches no caster's connection.
-  CasterGone(by: ConnectionId)
+  CasterGone(by: UnitAddress)
 }
 
 /// What a creature sends its map without waiting. The map relays it to the players
 /// (genesis_prime/world_map/map); a creature sends no connection anything.
 pub type Outgoing {
-  /// To the creature's map: the picture of the creature for the viewer of connection
+  /// To the creature's map: the picture of the creature for the viewer of the unit
   /// `by` that took `Seen` of `generation`, built from the creature's state when it took
   /// it, `burst` in the order the viewer writes it. Empty for a creature that is not
   /// shown (`map_message.Snapshot`).
   Snapshot(
     unit_id: Int,
     life: Int,
-    by: ConnectionId,
+    by: UnitAddress,
     generation: Generation,
     burst: List(PeerNews),
   )
   /// To the creature's map: news of the creature's unit for every viewer, once, which
   /// the map relays to each viewer it holds as relaying (`map_message.Broadcast`).
   Broadcast(unit_id: Int, life: Int, news: PeerNews)
-  /// To the creature's map: a tell to one player, for its stay: the answer to its
+  /// To the creature's map: a tell to the player of the unit `to`: the answer to its
   /// strike, the credit for a kill or a fight tell (`map_message.Relay`). News of the
   /// creature's unit is no relay: it goes as a snapshot or a broadcast.
-  Relay(
-    unit_id: Int,
-    life: Int,
-    to: ConnectionId,
-    stay: Stay,
-    payload: map_message.Payload,
-  )
+  Relay(unit_id: Int, life: Int, to: UnitAddress, payload: map_message.Payload)
   /// To the creature's map: the creature of `unit_id` and `life` lay dead or despawned
   /// until its corpse timer and stops now; the map starts the creature's next life
   /// under the same unit id when it ends (`map_message.Expired`).
   Expired(unit_id: Int, life: Int)
 }
 
-/// A player in sight of a creature: the stay the map named it for and the generation
-/// of the sight it began under, which the map's `Unseen` must name to end it.
-pub type Viewer {
-  Viewer(stay: Stay, generation: Generation)
-}
-
-/// A creature's players in sight, each by its connection with the stay and generation the map
-/// named it for, its health, its fight, the crowd-control states it holds, whether
+/// A creature's players in sight, each by its unit address with the generation of the
+/// sight it began under, which the map's `Unseen` must name to end it, its health, its fight, the crowd-control states it holds, whether
 /// it was told to retire while it lay dead, its properties with the modifiers of
 /// players' spells on them, the caster's connection of each modifier's source in the order
 /// the modifiers started, and the monotonic time its pending despawn is due (none when
@@ -596,10 +580,10 @@ pub opaque type State {
     control: creature_control.State,
     guard: creature_guard.State,
     retiring: Bool,
-    viewers: Dict(ConnectionId, Viewer),
+    viewers: Dict(UnitAddress, Generation),
     properties: Properties,
-    held: held_changes.Held,
-    views: Dict(Int, #(ConnectionId, unit_casts.CastView)),
+    held: held_changes.Held(UnitAddress),
+    views: Dict(Int, #(UnitAddress, unit_casts.CastView)),
     despawn_due_ms: Option(Int),
     unit_state: creature_unit_state.State,
   )
@@ -635,11 +619,7 @@ pub fn new(settings: Settings) -> State {
       unit_id: settings.creature.unit_id,
     ),
     retiring: False,
-    viewers: dict.from_list(
-      list.map(settings.creature.viewers, fn(viewer) {
-        #(viewer.0, Viewer(stay: viewer.1, generation: viewer.2))
-      }),
-    ),
+    viewers: dict.from_list(settings.creature.viewers),
     properties: base_properties(settings:),
     held: held_changes.new(),
     views: dict.new(),
@@ -685,8 +665,8 @@ pub fn controlled(state state: State) -> Bool {
   creature_control.holds(state: state.control)
 }
 
-/// The connections whose players see the creature.
-pub fn viewers(state state: State) -> Set(ConnectionId) {
+/// The addresses of the units whose players see the creature.
+pub fn viewers(state state: State) -> Set(UnitAddress) {
   set.from_list(dict.keys(state.viewers))
 }
 
@@ -711,7 +691,7 @@ pub fn step(
               unit_id: creature.unit_id,
               life: creature.life,
               by: viewer.0,
-              generation: viewer.2,
+              generation: viewer.1,
               burst: [
                 appeared(state:, now_ms:),
                 ..list.append(
@@ -746,11 +726,8 @@ pub fn step(
         ),
       )
     }
-    OwnEvent(Told(message: Seen(by:, stay:, generation:))) -> #(
-      State(
-        ..state,
-        viewers: dict.insert(state.viewers, by, Viewer(stay:, generation:)),
-      ),
+    OwnEvent(Told(message: Seen(by:, generation:))) -> #(
+      State(..state, viewers: dict.insert(state.viewers, by, generation)),
       Effects([
         to_the_map(
           state:,
@@ -783,13 +760,13 @@ pub fn step(
     )
     OwnEvent(Told(message: Unseen(by:, generation:))) ->
       case dict.get(state.viewers, by) {
-        Ok(Viewer(generation: held, ..)) if held == generation -> {
+        Ok(held) if held == generation -> {
           let state = State(..state, viewers: dict.delete(state.viewers, by))
           let #(state, fought) =
             fought(state:, input: creature_fight.Unseen(by:), now_ms:)
           #(state, Effects(fought))
         }
-        Ok(Viewer(..)) | Error(Nil) -> #(state, Effects([]))
+        Ok(_) | Error(Nil) -> #(state, Effects([]))
       }
     OwnEvent(Told(message: Retire)) ->
       case creature_life.on_retire(life: state.life) {
@@ -803,10 +780,10 @@ pub fn step(
       fought_alone(state:, input: creature_fight.Withdrew(by:), now_ms:)
     OwnEvent(Told(message: PlayerDied(by:))) ->
       fought_alone(state:, input: creature_fight.PlayerDied(by:), now_ms:)
-    OwnEvent(Told(message: TargetMoved(by:, place:, seq:, stay:, hit_radius:))) ->
+    OwnEvent(Told(message: TargetMoved(by:, place:, seq:, hit_radius:))) ->
       fought_alone(
         state:,
-        input: creature_fight.TargetMoved(by:, place:, seq:, stay:, hit_radius:),
+        input: creature_fight.TargetMoved(by:, place:, seq:, hit_radius:),
         now_ms:,
       )
     OwnEvent(Told(message: StrikeAnswered(answered:))) ->
@@ -1120,7 +1097,7 @@ fn left_the_field(
 /// throw (`thrown`).
 fn modifier_started(
   state state: State,
-  by by: ConnectionId,
+  by by: UnitAddress,
   source source: Source,
   modifier modifier: Modifier,
   now_ms now_ms: Int,
@@ -1146,7 +1123,7 @@ fn modifier_started(
 /// its nodes. No news goes to the viewers.
 fn view_set(
   state state: State,
-  by by: ConnectionId,
+  by by: UnitAddress,
   view view: unit_casts.CastView,
 ) -> #(State, ServiceStep(Outgoing)) {
   #(
@@ -1159,7 +1136,7 @@ fn view_set(
 /// nothing on it: the view is dropped when `by` holds it. Any other end changes nothing.
 fn view_ended(
   state state: State,
-  by by: ConnectionId,
+  by by: UnitAddress,
   cast_id cast_id: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.views, cast_id) {
@@ -1269,7 +1246,7 @@ fn modifier_removed(
 /// caster is gone.
 fn dropped_from(
   state state: State,
-  by by: ConnectionId,
+  by by: UnitAddress,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
   let state =
@@ -1465,8 +1442,8 @@ fn struck(
       let input = case landed, tell.striker, tell.from, reaction.corpse_for_ms {
         _, _, _, Some(..) -> Some(creature_fight.Killed)
         Some(descriptions),
-          PlayerStriker(unit_id:, place:, seq:, stay:, hit_radius:, ..),
-          Connection(by),
+          PlayerStriker(unit_id:, place:, seq:, hit_radius:, ..),
+          step.Unit(by),
           None
         ->
           Some(creature_fight.StruckBy(
@@ -1474,7 +1451,6 @@ fn struck(
             unit_id:,
             place:,
             seq:,
-            stay:,
             hit_radius:,
             threat: creature_fight.threat_of(
               offence: tell.offence,
@@ -1524,11 +1500,10 @@ fn credit_for(
   reaction reaction: creature_life.Reaction,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
   case reaction.corpse_for_ms, strike_tell.player_sender(tell:) {
-    Some(..), Ok(#(connection, stay)) -> [
+    Some(..), Ok(address) -> [
       relayed(
         state:,
-        to: connection,
-        stay:,
+        to: address,
         payload: map_message.KillCredit(credit: Credit(
           unit_id: state.settings.creature.unit_id,
           creature_id: state.settings.spawn.creature_id,
@@ -1854,13 +1829,13 @@ fn control_ended(
 /// landed ends with its own 0x880 and its timer is cancelled, as a timer's end ends it.
 fn controls_ended_by(
   state state: State,
-  by by: ConnectionId,
+  by by: UnitAddress,
   cast_id cast_id: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   controls_ended(state:, now_ms:, ending: creature_control.ended_by(
     state: _,
-    caster: step.Connection(connection: by),
+    caster: step.Unit(address: by),
     cast_id:,
   ))
 }
@@ -1884,23 +1859,17 @@ fn controls_ended(
   #(state, Effects(list.append(carried(state:, effects:), resumed)))
 }
 
-/// The answer to a strike, relayed to the caster's connection through the map for the stay
-/// the strike was told for: the caster's connection takes it only in that stay. A
-/// strike with no player striker has no stay to answer for, and no answer: no
-/// creature strikes a creature.
+/// The answer to a strike, relayed through the map to the unit the strike named as its
+/// sender: the map delivers it only while that unit is in its run. A strike with no player
+/// striker has no unit to answer, and no answer: no creature strikes a creature.
 fn answer_to(
   state state: State,
   tell tell: StrikeTell,
   answered answered: Answered,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
   case strike_tell.player_sender(tell:) {
-    Ok(#(connection, stay)) -> [
-      relayed(
-        state:,
-        to: connection,
-        stay:,
-        payload: map_message.Struck(answered:),
-      ),
+    Ok(address) -> [
+      relayed(state:, to: address, payload: map_message.Struck(answered:)),
     ]
     Error(Nil) -> []
   }
@@ -1931,7 +1900,7 @@ fn fought_alone(
 }
 
 /// The fight's step and its effects carried out: news to every viewer, a tell to a
-/// player for the stay the fight holds it in, the health restored with its 0x937,
+/// player by the address the fight holds it by, the health restored with its 0x937,
 /// and the fight's timers.
 fn fought(
   state state: State,
@@ -1952,7 +1921,7 @@ fn fought_breaking(
     creature_fight.step(
       state: state.fight,
       fighter: fighter_of(state:),
-      viewers: dict.map_values(state.viewers, fn(_, viewer) { viewer.stay }),
+      viewers: set.from_list(dict.keys(state.viewers)),
       alive: !creature_life.is_dead(life: state.life),
       input:,
       now_ms:,
@@ -1964,8 +1933,8 @@ fn fought_breaking(
       let #(state, done) = so_far
       let #(state, more) = case effect {
         creature_fight.ToViewers(news:) -> #(state, to_viewers(state:, news:))
-        creature_fight.ToPlayer(to:, stay:, told:) -> #(state, [
-          relayed(state:, to:, stay:, payload: map_message.Fight(told:)),
+        creature_fight.ToPlayer(to:, told:) -> #(state, [
+          relayed(state:, to:, payload: map_message.Fight(told:)),
         ])
         creature_fight.RestoreHealth -> {
           let life = creature_life.new(body: state.body)
@@ -2314,11 +2283,10 @@ fn peer_news(
   PeerNews(unit_id: creature.unit_id, news:)
 }
 
-/// A tell to one player through the creature's map, for the player's stay.
+/// A tell to the player of the unit `to` through the creature's map.
 fn relayed(
   state state: State,
-  to to: ConnectionId,
-  stay stay: Stay,
+  to to: UnitAddress,
   payload payload: map_message.Payload,
 ) -> Effect(ServiceEffect(Outgoing)) {
   let creature = state.settings.creature
@@ -2328,7 +2296,6 @@ fn relayed(
       unit_id: creature.unit_id,
       life: creature.life,
       to:,
-      stay:,
       payload:,
     ),
   )
@@ -2347,25 +2314,24 @@ fn to_the_map(
 }
 
 /// What the map's `Outgoing` means to a creature: `Seen` and `Unseen`,
-/// each by the connection whose player sees or stops seeing it, `Approached` and
-/// `Withdrew`, by the connection whose ready player entered or left its ring,
-/// `PlayerDied`, by the connection whose player died, `Retire`, and the tells of a
-/// player (`ToldCreature`), each as the message of its kind with the sender and the stay
-/// the map names. Any other is no message to a creature, and `Error(Nil)`.
+/// each by the unit whose player sees or stops seeing it, `Approached` and
+/// `Withdrew`, by the unit whose ready player entered or left its ring,
+/// `PlayerDied`, by the unit whose player died, `Retire`, and the tells of a
+/// player (`ToldCreature`), each as the message of its kind with the sender the map
+/// names. Any other is no message to a creature, and `Error(Nil)`.
 pub fn told_by_map(
   outgoing outgoing: map_message.Outgoing,
 ) -> Result(Message, Nil) {
   case outgoing {
-    map_message.Seen(by:, stay:, generation:) ->
-      Ok(Seen(by:, stay:, generation:))
+    map_message.Seen(by:, generation:) -> Ok(Seen(by:, generation:))
     map_message.Unseen(by:, generation:) -> Ok(Unseen(by:, generation:))
     map_message.Approached(member:) -> Ok(Approached(member:))
     map_message.Withdrew(by:) -> Ok(Withdrew(by:))
     map_message.PlayerDied(by:) -> Ok(PlayerDied(by:))
     map_message.Retire -> Ok(Retire)
     map_message.CasterGone(by:) -> Ok(CasterGone(by:))
-    map_message.ToldCreature(by:, stay:, payload:) ->
-      Ok(told_by_a_player(by:, stay:, payload:))
+    map_message.ToldCreature(by:, payload:) ->
+      Ok(told_by_a_player(by:, payload:))
     map_message.Joined(..)
     | map_message.NotJoined(..)
     | map_message.Summoned(..)
@@ -2377,16 +2343,15 @@ pub fn told_by_map(
 }
 
 /// What a player's tell, as the map passed it on, means to a creature: the message of
-/// that kind, with the sender and the stay the map named.
+/// that kind, with the sender the map named.
 fn told_by_a_player(
-  by by: ConnectionId,
-  stay stay: Stay,
+  by by: UnitAddress,
   payload payload: map_message.Inbound,
 ) -> Message {
   case payload {
     map_message.Strike(tell:) -> Strike(tell:)
     map_message.TargetMoved(place:, seq:, hit_radius:) ->
-      TargetMoved(by:, place:, seq:, stay:, hit_radius:)
+      TargetMoved(by:, place:, seq:, hit_radius:)
     map_message.StrikeAnswered(answered:) -> StrikeAnswered(answered:)
     map_message.ModifierStarts(source:, modifier:) ->
       ModifierStarts(by:, source:, modifier:)
@@ -2409,8 +2374,8 @@ pub fn told_to_map(outgoing outgoing: Outgoing) -> map_message.Message {
       map_message.Snapshot(unit_id:, life:, by:, generation:, burst:)
     Broadcast(unit_id:, life:, news:) ->
       map_message.Broadcast(unit_id:, life:, news:)
-    Relay(unit_id:, life:, to:, stay:, payload:) ->
-      map_message.Relay(unit_id:, life:, to:, stay:, payload:)
+    Relay(unit_id:, life:, to:, payload:) ->
+      map_message.Relay(unit_id:, life:, to:, payload:)
     Expired(unit_id:, life:) -> map_message.Expired(unit_id:, life:)
   }
 }

@@ -2300,7 +2300,7 @@ fn struck_with_states(
     map_message.Strike(
       tell: strike_tell.Strike(
         ..tell,
-        from: step.Connection(ConnectionId(connection)),
+        from: step.Unit(map_support.address(number: connection)),
         striker: strike_tell.PlayerStriker(
           unit_id: connection * 10,
           place: place_support.at(
@@ -2311,7 +2311,6 @@ fn struck_with_states(
             z: 0.0,
           ),
           seq: 1,
-          stay: map_support.stay(count: 1),
           hit_radius: place_support.player_hit_radius,
           rolls: hit.Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
         ),

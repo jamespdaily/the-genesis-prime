@@ -1095,6 +1095,12 @@ fn tell(
       let _delivered = connection.settings.deliver(to, request)
       Nil
     }
+    step.Unit(..) ->
+      runtime.log(
+        LogError,
+        "a rule told a unit directly, which no process answers to in a map's inbox",
+        step.no_one,
+      )
     step.Creature(..) ->
       runtime.log(
         LogError,

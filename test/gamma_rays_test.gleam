@@ -51,6 +51,7 @@ fn gamma_caster(x x: Float, z z: Float, yaw yaw: Float) -> Attacker {
   Attacker(
     unit_id: 1,
     connection: ConnectionId(2),
+    address: map_support.address(number: 2),
     pose: Pose(at: Point(x:, z:), yaw:),
     place: place_support.at(world_id: 3460, world_zone_id: 5967, x:, y: 0.0, z:),
     move_seq: 1,

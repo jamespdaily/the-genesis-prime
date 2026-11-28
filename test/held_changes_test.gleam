@@ -54,7 +54,7 @@ type Start {
   Start(caster: Int, sight: Sight, cast_id: Int)
 }
 
-fn held_after(starts starts: List(Start)) -> #(Held, List(Bool)) {
+fn held_after(starts starts: List(Start)) -> #(Held(ConnectionId), List(Bool)) {
   let #(held, flags) =
     list.fold(starts, #(held_changes.new(), []), fn(so_far, start) {
       let #(held, flags) = so_far
@@ -83,7 +83,7 @@ fn number_of(by by: ConnectionId) -> Int {
   number
 }
 
-fn connection_numbers(held held: Held) -> List(Int) {
+fn connection_numbers(held held: Held(ConnectionId)) -> List(Int) {
   list.map(held_changes.connections(held:), fn(by) { number_of(by:) })
 }
 
@@ -298,10 +298,10 @@ pub fn ending_every_source_of_a_caster_takes_that_casters_alone_in_start_order_t
 /// A release, as a number the property draws: 0 a caster's connection ending, 1 a caster out
 /// of sight, 2 a caster's unit gone.
 fn released_as(
-  held held: Held,
+  held held: Held(ConnectionId),
   kind kind: Int,
   caster caster: Int,
-) -> #(Held, List(Source)) {
+) -> #(Held(ConnectionId), List(Source)) {
   case kind {
     0 -> held_changes.released_by(held:, by: ConnectionId(caster))
     1 -> held_changes.released_unseen(held:, by: ConnectionId(caster))
@@ -509,7 +509,7 @@ type Listed {
   )
 }
 
-fn held_listed(listed listed: List(Listed)) -> Held {
+fn held_listed(listed listed: List(Listed)) -> Held(ConnectionId) {
   list.fold(listed, held_changes.new(), fn(held, one) {
     held_changes.started(
       held:,
@@ -688,7 +688,10 @@ pub fn the_casts_a_player_holds_are_listed_for_a_create_from_its_ledger_test() -
 
 /// Each effect the one cast of the held changes tells at `now_ms`: the row, the delay and
 /// the lifetime.
-fn told_effects(held held: Held, now_ms now_ms: Int) -> List(#(Int, Int, Int)) {
+fn told_effects(
+  held held: Held(ConnectionId),
+  now_ms now_ms: Int,
+) -> List(#(Int, Int, Int)) {
   let assert [view] =
     held_changes.cast_views(held:, holder_unit_id: holder, now_ms:)
   let assert Ok(entry) = unit_casts.entry_of(view:, now_ms:)
@@ -760,12 +763,12 @@ pub fn the_casts_a_release_leaves_with_no_source_are_named_once_each_in_cast_id_
 /// A start of the cast `cast_id` by caster `caster` that waits for `trigger` (none for a
 /// change the player applies), kept when its caster is unseen only when `sight` says so.
 fn waiting(
-  held held: Held,
+  held held: Held(ConnectionId),
   caster caster: Int,
   cast_id cast_id: Int,
   trigger trigger: option.Option(spell_plan.Trigger),
   sight sight: Sight,
-) -> Held {
+) -> Held(ConnectionId) {
   held_changes.started(
     held:,
     by: ConnectionId(caster),
@@ -779,7 +782,9 @@ fn waiting(
 }
 
 /// What `events_awaited` answers as connection numbers with their triggers.
-fn awaited(held held: Held) -> List(#(Int, List(spell_plan.Trigger))) {
+fn awaited(
+  held held: Held(ConnectionId),
+) -> List(#(Int, List(spell_plan.Trigger))) {
   list.map(held_changes.events_awaited(held:), fn(waiting) {
     #(number_of(by: waiting.0), waiting.1)
   })

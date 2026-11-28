@@ -10,7 +10,7 @@ import genesis_prime/shared/strike_tell.{
 import genesis_prime/shared/unit_casts.{type CastView, CastView}
 import genesis_prime/shared/unit_properties.{type Modifier, type Source}
 import genesis_prime/shared/unit_state
-import genesis_prime/step.{Connection, ConnectionId}
+import genesis_prime/step
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature
 import gleam/list
@@ -102,23 +102,13 @@ pub fn payloads(unit_id unit_id: Int) -> List(#(String, map_message.Inbound)) {
   })
 }
 
-/// The strike `tell` as the connection `from` tells it in its stay `stay_count`: its own
-/// sender and stay named as its striker.
+/// The strike `tell` as the player of the unit the map issued as its `from`th address tells
+/// it. `stay_count` names the stay of the join it was told in, which a strike no longer
+/// carries.
 pub fn struck_by(
   tell tell: StrikeTell,
   from from: Int,
-  stay_count stay_count: Int,
+  stay_count _stay_count: Int,
 ) -> StrikeTell {
-  strike_tell.Strike(
-    ..tell,
-    from: Connection(ConnectionId(from)),
-    striker: case tell.striker {
-      strike_tell.PlayerStriker(..) as striker ->
-        strike_tell.PlayerStriker(
-          ..striker,
-          stay: map_support.stay(count: stay_count),
-        )
-      strike_tell.CreatureStriker(..) as striker -> striker
-    },
-  )
+  strike_tell.Strike(..tell, from: step.Unit(map_support.address(number: from)))
 }

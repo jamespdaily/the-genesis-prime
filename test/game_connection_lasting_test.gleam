@@ -24,12 +24,13 @@ import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_news.{
   Appeared, CastFinished, CastStarted, CastWent, Removed,
 }
-import genesis_prime/step.{ConnectionId, OwnEvent}
+import genesis_prime/step.{OwnEvent}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/generation
 import gleam/list
 import gleam/option.{Some}
+import map_support
 import owned_test
 
 pub fn a_viewer_writes_0x811_and_0x813_only_for_a_cast_whose_start_it_wrote_test() -> Nil {
@@ -453,8 +454,7 @@ fn views_told(
     let #(unit_id, life, payload) = tell
     case
       creature.told_by_map(map_message.ToldCreature(
-        by: step.ConnectionId(1),
-        stay: game_connection_support.own_stay(),
+        by: map_support.address(number: 1),
         payload:,
       ))
     {
@@ -489,7 +489,7 @@ fn beast_removed() -> step.Event(
 pub fn the_creature_is_told_after_each_input_that_changes_its_node_test() -> Nil {
   use <- owned_test.run(60_000)
   let fissure = fissure_pressed()
-  let medic = ConnectionId(1)
+  let medic = map_support.address(number: 1)
   let ends = creature.CastViewEnds(by: medic, cast_id: fissure.child_cast_id)
   let #(_, removed) =
     game_connection_support.feed(fissure.state, beast_removed())
@@ -590,7 +590,10 @@ pub fn a_change_told_on_a_step_that_ends_in_an_ask_is_not_told_again_test() -> N
   use <- owned_test.run(60_000)
   let fissure = fissure_pressed()
   let ends =
-    creature.CastViewEnds(by: ConnectionId(1), cast_id: fissure.child_cast_id)
+    creature.CastViewEnds(
+      by: map_support.address(number: 1),
+      cast_id: fissure.child_cast_id,
+    )
   let #(summoning, summon) =
     game_connection_support.at(
       state: fissure.state,

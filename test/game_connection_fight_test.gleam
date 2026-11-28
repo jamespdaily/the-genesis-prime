@@ -78,6 +78,7 @@ import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import map_support
 import owned_test
 import place_support
 import planted_table
@@ -1296,11 +1297,7 @@ fn a_beast_of(
         spawn: spawn_source.Stored(id: spawn_id.SpawnId(1)),
         clock_origin_ms: 0,
         viewers: [
-          #(
-            ConnectionId(1),
-            game_connection_support.own_stay(),
-            generation.first(),
-          ),
+          #(map_support.address(number: 1), generation.first()),
         ],
         ring: [],
       ),
@@ -1342,8 +1339,7 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
     case tell {
       #(7, _, payload) ->
         creature.told_by_map(map_message.ToldCreature(
-          by: ConnectionId(1),
-          stay: game_connection_support.own_stay(),
+          by: map_support.address(number: 1),
           payload:,
         ))
       #(_, _, _) -> Error(Nil)
@@ -1442,11 +1438,10 @@ fn an_aggroed_medic() -> #(
         event: OwnEvent(
           step.Told(
             creature.Approached(member: step.RingMember(
-              by: ConnectionId(1),
+              by: map_support.address(number: 1),
               unit_id: medic_unit,
               place: medic_place(0.0),
               seq: 1,
-              stay: game_connection_support.own_stay(),
               hit_radius: place_support.player_hit_radius,
             )),
           ),
@@ -1610,11 +1605,10 @@ pub fn a_player_beside_the_crash_site_bodies_is_sent_no_target_combat_state_or_c
           event: OwnEvent(
             step.Told(
               creature.Approached(member: step.RingMember(
-                by: ConnectionId(1),
+                by: map_support.address(number: 1),
                 unit_id: medic_unit,
                 place: medic_place(0.0),
                 seq: 1,
-                stay: game_connection_support.own_stay(),
                 hit_radius: place_support.player_hit_radius,
               )),
             ),
@@ -1920,11 +1914,10 @@ fn aggroed(
         event: OwnEvent(
           step.Told(
             creature.Approached(member: step.RingMember(
-              by: ConnectionId(1),
+              by: map_support.address(number: 1),
               unit_id: medic_unit,
               place: medic_place(0.0),
               seq: 1,
-              stay: game_connection_support.own_stay(),
               hit_radius: place_support.player_hit_radius,
             )),
           ),
@@ -2680,18 +2673,11 @@ pub fn the_creature_tell_names_the_map_run_of_the_players_stay_with_its_sender_a
   // the map, never the creature.
   let entered = world_entry_support.entered_after(clock_origin_ms: 600)
   let payload = map_message.Despawn(delay_ms: 0, went_at_ms: 6000)
-  assert state.tells_the_creature(
-      entered:,
-      connection: ConnectionId(5),
-      unit_id: 7,
-      life: 3,
-      payload:,
-    )
+  assert state.tells_the_creature(entered:, unit_id: 7, life: 3, payload:)
     == OwnEffect(step.Tell(
       to: Map(map: entered.map, incarnation: entered.incarnation),
       request: client_connection.TellCreature(
-        connection: ConnectionId(5),
-        stay: entered.stay,
+        from: entered.address,
         unit_id: 7,
         life: 3,
         payload:,

@@ -52,6 +52,7 @@ import genesis_prime/table/id.{type PrerequisiteId}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bit_array
 import gleam/bool
 import gleam/int
@@ -153,17 +154,11 @@ pub type Request {
   /// and never told to a map.
   TellChat(tell: ChatTell)
   /// What a `Tell` effect sends the run of a map (genesis_prime/step `Map`): the player
-  /// of `connection`, in its stay `stay`, tells the creature `unit_id` of life `life`
+  /// of the unit `from` tells the creature `unit_id` of life `life`
   /// `payload`, a strike, a move, an answer or an effect of its casts
   /// (genesis_prime/world_map/map `TellCreature`), for the map to admit by the
   /// creature's state and the payload's kind and send the creature. Never asked.
-  TellCreature(
-    connection: ConnectionId,
-    stay: Stay,
-    unit_id: Int,
-    life: Int,
-    payload: Inbound,
-  )
+  TellCreature(from: UnitAddress, unit_id: Int, life: Int, payload: Inbound)
 }
 
 /// What a player's connection lands on the connection of another player, or answers it,
@@ -863,14 +858,8 @@ pub fn told_to_the_map(
     TellLifeChanged(connection:, alive:) ->
       Ok(map_message.LifeChanged(connection:, alive:))
     TellReleased(unit_id:) -> Ok(map_message.Released(unit_id:))
-    TellCreature(connection:, stay:, unit_id:, life:, payload:) ->
-      Ok(map_message.TellCreature(
-        from: connection,
-        stay:,
-        unit_id:,
-        life:,
-        payload:,
-      ))
+    TellCreature(from:, unit_id:, life:, payload:) ->
+      Ok(map_message.TellCreature(from:, unit_id:, life:, payload:))
     TellBroadcast(connection:, stay:, news:) ->
       Ok(map_message.PlayerBroadcast(from: connection, stay:, news:))
     TellSnapshot(connection:, stay:, viewer:, generation:, burst:) ->

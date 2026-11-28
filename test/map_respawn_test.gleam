@@ -24,12 +24,13 @@ import connection_rule_support as support
 import genesis_prime/map/message as map_message
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news
-import genesis_prime/step.{ConnectionId, LogError, WatchId}
+import genesis_prime/step.{LogError, WatchId}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -144,13 +145,13 @@ pub fn a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one
   assert next.unit_id == unit_id && next.life == next_life && next_life != life
     as "under the same unit id and a new life, the number of its watch"
   assert spawns.first_viewers(start: next)
-    == [#(ConnectionId(1), first_stay()), #(ConnectionId(2), first_stay())]
+    == [map_support.address(number: 1), map_support.address(number: 2)]
     as "for each player who sees the spawn, in connection order, each in its stay"
   assert list.all(next.viewers, fn(viewer) {
-      !list.contains(first_generations, viewer.2)
+      !list.contains(first_generations, viewer.1)
     })
     && {
-      list.map(next.viewers, fn(viewer) { viewer.2 })
+      list.map(next.viewers, fn(viewer) { viewer.1 })
       |> list.unique
       |> list.length
     }
@@ -160,7 +161,7 @@ pub fn a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one
     as "the ring holds the ready player standing in it"
   assert spawns.creature_sends(ended) == [] && spawns.player_sends(ended) == []
     as "no separate Approached, no Gone"
-  let assert [#(_, _, second_generation)] = list.drop(next.viewers, 1)
+  let assert [#(_, second_generation)] = list.drop(next.viewers, 1)
   assert spawns.relation_of(state: started, spawn: 1, connection: 2)
     == Some(map.Relation(
       generation: second_generation,
@@ -187,7 +188,6 @@ pub fn a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one
     as "a player who sees it again finds the same unit"
 
   // A viewer that joined again in the gap is the relation's, in its new stay.
-  let second_stay = map_support.stay(count: 2)
   let #(joined, taken) =
     spawns.join_in_stay(
       state: respawning,
@@ -204,7 +204,7 @@ pub fn a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one
     spawns.creature_ended(state: joined, at_ms: 7100, watch: WatchId(life))
   let assert [#(_, next)] = spawns.starts(ended)
   assert spawns.first_viewers(start: next)
-    == [#(ConnectionId(1), first_stay()), #(ConnectionId(2), second_stay)]
+    == [map_support.address(number: 1), map_support.address(number: 2)]
     as "the player's new stay is the relation's"
 
   // `Respawning` and a release: the spawn waits the release time at the creature's end.
@@ -284,11 +284,8 @@ fn joined(
   }
 }
 
-fn numbers(connections: List(#(step.ConnectionId, Stay))) -> List(Int) {
-  list.map(connections, fn(connection) {
-    let #(ConnectionId(number), _) = connection
-    number
-  })
+fn numbers(addresses: List(UnitAddress)) -> List(Int) {
+  list.map(addresses, fn(address) { unit_address.number(address:) })
 }
 
 pub fn a_respawn_start_carries_the_ring_of_ready_living_unstealthed_players_and_no_separate_approached_test() -> Nil {
@@ -551,7 +548,7 @@ fn tells_of(
       map_message.Snapshot(
         unit_id:,
         life:,
-        by: ConnectionId(1),
+        by: map_support.address(number: 1),
         generation:,
         burst: [
           health_news(unit_id:),
@@ -567,8 +564,7 @@ fn tells_of(
       map_message.Relay(
         unit_id:,
         life:,
-        to: ConnectionId(1),
-        stay: first_stay(),
+        to: map_support.address(number: 1),
         payload: map_message.Fight(told: strike_tell.Released(unit_id:)),
       ),
     ),

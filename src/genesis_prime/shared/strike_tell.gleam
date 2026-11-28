@@ -8,16 +8,16 @@
 ////
 //// ```
 //// player's connection                                       creature
-////   Tell(Map(..), TellCreature(c, stay, unit, life, Strike(Strike(key, Connection(c), PlayerStriker(unit, place, seq, rolls), offence))))
+////   Tell(Map(..), TellCreature(a, unit, life, Strike(Strike(key, Unit(a), PlayerStriker(unit, place, seq, rolls), offence))))
 ////                                                            ─▶ hit rule ─▶ health, 0x937, 0x88c to its viewers
-////   SentByTarget(Answered(key, outcome))   ◀─ Send(Connection(c), Answered(key, outcome)),
-////                                             for the stay the strike was told for
+////   SentByTarget(Answered(key, outcome))   ◀─ Relay(to: a, Struck(Answered(key, outcome))) through the map,
+////                                             which sends it for the stay of a's join
 ////
 ////   SentByFoe(Threatened(unit, life))      ◀─ the creature put the player on its threat list
 ////   SentByFoe(Attacks(Strike(key, Creature(..), CreatureStriker(unit, spell4_id), offence)))
 ////                                          ◀─ the creature's own strike
 ////   hit rule on the player's health and shield, rolls from the player's seed
-////   Tell(Map(..), TellCreature(c, stay, unit, life, StrikeAnswered(Answered(key, outcome)))) ─▶ the creature's round
+////   Tell(Map(..), TellCreature(a, unit, life, StrikeAnswered(Answered(key, outcome)))) ─▶ the creature's round
 ////   SentByFoe(Released(unit))              ◀─ the creature took the player off its threat list
 ////   (each SentByFoe travels for the player's stay: ForStay(stay, SentByFoe(..)))
 ////
@@ -90,6 +90,7 @@ import genesis_prime/shared/proc_event
 import genesis_prime/step.{type Address, type ConnectionId}
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/option.{type Option}
 
 /// How long a round waits for its answers, in milliseconds. A creature's respawn time
@@ -183,7 +184,6 @@ pub type Striker {
     unit_id: Int,
     place: Place,
     seq: Int,
-    stay: Stay,
     hit_radius: Float,
     rolls: Rolls,
   )
@@ -193,17 +193,18 @@ pub type Striker {
   CreatureStriker(unit_id: Int, spell4_id: Spell4Id)
 }
 
-/// The connection and the stay a strike names as its sender: a player's strike told from
-/// that player's own connection. A creature's strike, or one that names another address as
-/// its sender, names none.
-pub fn player_sender(tell tell: Tell) -> Result(#(ConnectionId, Stay), Nil) {
+/// The unit address a strike names as its sender: a player's strike told from that
+/// player's own unit. A creature's strike, or one that names another address as its
+/// sender, names none.
+pub fn player_sender(tell tell: Tell) -> Result(UnitAddress, Nil) {
   case tell.from {
-    step.Connection(connection:) ->
+    step.Unit(address:) ->
       case tell.striker {
-        PlayerStriker(stay:, ..) -> Ok(#(connection, stay))
+        PlayerStriker(..) -> Ok(address)
         CreatureStriker(..) -> Error(Nil)
       }
-    step.Creature(..)
+    step.Connection(..)
+    | step.Creature(..)
     | step.Sessions
     | step.HandOff
     | step.Store

@@ -18,10 +18,10 @@ import genesis_prime/step.{
 }
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/int
 import gleam/list
+import map_support
 
 /// The name of one news: the opcode of the frame the viewer's connection writes for it, with
 /// the values the tests tell apart.
@@ -117,14 +117,15 @@ pub fn said_to_the_map(taken: ServiceStep(creature.Outgoing)) -> List(String) {
     case sent {
       creature.Broadcast(news: PeerNews(news:, ..), ..) ->
         name_of(news) <> " to all"
-      creature.Snapshot(by: ConnectionId(number), ..) ->
-        "snapshot for " <> int.to_string(number)
+      creature.Snapshot(by:, ..) ->
+        "snapshot for " <> int.to_string(unit_address.number(address: by))
       creature.Expired(unit_id:, life:) ->
         "expired "
         <> int.to_string(unit_id)
         <> " of life "
         <> int.to_string(life)
-      creature.Relay(to: ConnectionId(number), payload:, ..) ->
+      creature.Relay(to:, payload:, ..) -> {
+        let number = unit_address.number(address: to)
         case payload {
           map_message.Struck(answered: Answered(outcome: Landed(..), ..)) ->
             "answer to " <> int.to_string(number)
@@ -147,6 +148,7 @@ pub fn said_to_the_map(taken: ServiceStep(creature.Outgoing)) -> List(String) {
           map_message.Fight(told: Attacks(..)) ->
             "Attacks to " <> int.to_string(number)
         }
+      }
     }
   })
 }
@@ -161,13 +163,27 @@ fn refusal_name(why: strike_tell.Refusal) -> String {
 
 /// The map's `Seen` of a viewer that the creature takes, under the generation every first
 /// viewer of the tests' creatures holds, so the `unseen` that follows it ends the sight.
-pub fn seen(by by: ConnectionId, stay stay: Stay) -> creature.Message {
-  creature.Seen(by:, stay:, generation: generation.first())
+pub fn seen(by by: ConnectionId) -> creature.Message {
+  creature.Seen(by: address_of(connection: by), generation: generation.first())
+}
+
+/// The address the tests' map issues the player of `connection`: its number.
+pub fn address_of(connection connection: ConnectionId) -> UnitAddress {
+  let ConnectionId(number) = connection
+  map_support.address(number:)
+}
+
+/// The connection whose number is the address's.
+pub fn connection_of(address address: UnitAddress) -> ConnectionId {
+  ConnectionId(unit_address.number(address:))
 }
 
 /// The map's `Unseen` of the sight `seen` or a creature's start began.
 pub fn unseen(by by: ConnectionId) -> creature.Message {
-  creature.Unseen(by:, generation: generation.first())
+  creature.Unseen(
+    by: address_of(connection: by),
+    generation: generation.first(),
+  )
 }
 
 /// The step as the players it concerns would hear it, one send to each, so the tests that
@@ -180,7 +196,7 @@ pub fn at_each_player(
   state state: creature.State,
   taken taken: ServiceStep(creature.Outgoing),
 ) -> ServiceStep(creature.Outgoing) {
-  let viewers = map.sorted_connections(creature.viewers(state))
+  let viewers = unit_address.sorted(creature.viewers(state))
   Effects(
     list.flat_map(support.effects_of(taken), fn(effect) {
       case effect {
@@ -189,7 +205,10 @@ pub fn at_each_player(
           message: creature.Broadcast(..) as message,
         )) ->
           list.map(viewers, fn(viewer) {
-            OwnEffect(Send(to: Connection(viewer), message:))
+            OwnEffect(Send(
+              to: Connection(connection_of(address: viewer)),
+              message:,
+            ))
           })
         OwnEffect(Send(
           to: step.Map(..),
@@ -197,7 +216,7 @@ pub fn at_each_player(
         )) ->
           list.map(burst, fn(news) {
             OwnEffect(Send(
-              to: Connection(by),
+              to: Connection(connection_of(address: by)),
               message: creature.Broadcast(unit_id:, life:, news:),
             ))
           })
@@ -205,7 +224,7 @@ pub fn at_each_player(
           to: step.Map(..),
           message: creature.Relay(to:, ..) as message,
         )) -> [
-          OwnEffect(Send(to: Connection(to), message:)),
+          OwnEffect(Send(to: Connection(connection_of(address: to)), message:)),
         ]
         OwnEffect(_)
         | step.Watch(..)
@@ -225,12 +244,13 @@ pub fn relayed_to(
   taken taken: ServiceStep(creature.Outgoing),
   connection connection: ConnectionId,
 ) -> List(map_message.Delivered) {
+  let address = address_of(connection:)
   list.flat_map(to_the_map(taken), fn(sent) {
     case sent {
-      creature.Snapshot(by:, burst:, ..) if by == connection ->
+      creature.Snapshot(by:, burst:, ..) if by == address ->
         list.map(burst, fn(news) { map_message.News(news:) })
       creature.Broadcast(news:, ..) -> [map_message.News(news:)]
-      creature.Relay(to:, payload:, ..) if to == connection -> [
+      creature.Relay(to:, payload:, ..) if to == address -> [
         map_message.Tell(payload:),
       ]
       creature.Snapshot(..) | creature.Relay(..) | creature.Expired(..) -> []

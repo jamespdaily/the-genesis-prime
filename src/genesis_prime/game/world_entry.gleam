@@ -208,6 +208,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn_id.{type LoadedSpawns, SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -382,6 +383,7 @@ pub type Entered {
     character: Character,
     entered_at: Place,
     stay: Stay,
+    address: UnitAddress,
     character_id: CharacterId,
     map: MapId,
     incarnation: Int,
@@ -455,7 +457,7 @@ pub type Entered {
     /// The changes other players' casts hold on the player, by caster
     /// (genesis_prime/game/held_changes): empty at each entry, and gone with the entry at
     /// a camp or a leave.
-    held: held_changes.Held,
+    held: held_changes.Held(ConnectionId),
     resources: class_resource.Resources,
     camp: camp.Camp,
     cast: cast_state.State,
@@ -1070,7 +1072,13 @@ pub fn joined(
       hidden:,
     ) -> {
       case answer {
-        map_message.Joined(unit:, loadout:, incarnation:, clock_origin_ms:) -> {
+        map_message.Joined(
+          unit:,
+          loadout:,
+          address:,
+          incarnation:,
+          clock_origin_ms:,
+        ) -> {
           let worn = gear.of_items(tables:, items:, level: character.level)
           let assert Ok(resource) =
             class_resource.of_class(classes:, class_id: character.class_id)
@@ -1158,6 +1166,7 @@ pub fn joined(
               character:,
               entered_at: place,
               stay:,
+              address:,
               character_id: character.character_id,
               map:,
               incarnation:,

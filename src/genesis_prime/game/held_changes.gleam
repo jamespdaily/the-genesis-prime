@@ -39,7 +39,6 @@ import genesis_prime/shared/player_change.{
 import genesis_prime/shared/spell_plan
 import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_properties.{type Source}
-import genesis_prime/step.{type ConnectionId}
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/bool
 import gleam/int
@@ -69,14 +68,14 @@ type Listing {
   Listing(spell4_id: Spell4Id, effect: unit_casts.HeldEffect)
 }
 
-type Entry {
+type Entry(by) {
   /// A source of another player's cast: the caster's connection and unit, how the change
   /// keeps when the caster leaves sight, what a create lists of it, and the event the
   /// caster waits for when the source is a Proc row (`Awaits`), none for a change the
   /// player applies.
   PlayerSource(
     source: Source,
-    by: ConnectionId,
+    by: by,
     unit_id: Int,
     sight: Sight,
     listing: Listing,
@@ -84,17 +83,18 @@ type Entry {
   )
   /// A source of a creature's, held for its connection until the connection ends: no unit,
   /// no sight rule and nothing listed.
-  CreatureSource(source: Source, by: ConnectionId)
+  CreatureSource(source: Source, by: by)
 }
 
-/// The sources a unit holds from other units' casts, with the connection of the caster
-/// of each, in the order they started.
-pub opaque type Held {
-  Held(entries: List(Entry))
+/// The sources a unit holds from other units' casts, with the caster of each, in the order
+/// they started. `by` names a caster: a player's connection on a player's side, a unit's
+/// address on a creature's.
+pub opaque type Held(by) {
+  Held(entries: List(Entry(by)))
 }
 
 /// A unit that holds nothing.
-pub fn new() -> Held {
+pub fn new() -> Held(by) {
   Held(entries: [])
 }
 
@@ -104,15 +104,15 @@ pub fn new() -> Held {
 /// and takes the new spell and effect (a later go of one cast); told by another connection
 /// it changes nothing.
 pub fn started(
-  held held: Held,
-  by by: ConnectionId,
+  held held: Held(by),
+  by by: by,
   unit_id unit_id: Int,
   source source: Source,
   sight sight: Sight,
   spell4_id spell4_id: Spell4Id,
   effect effect: unit_casts.HeldEffect,
   trigger trigger: Option(spell_plan.Trigger),
-) -> #(Held, Bool) {
+) -> #(Held(by), Bool) {
   let listing = Listing(spell4_id:, effect:)
   case holder_of(held:, source:) {
     Ok(holder) if holder == by -> #(
@@ -139,14 +139,14 @@ pub fn started(
 /// change ends with the connection: as `started`. A source held this way (a creature's)
 /// has no sight rule and lists nothing, and is taken only by `released_by` and `released`.
 pub fn started_by_connection(
-  held held: Held,
-  by by: ConnectionId,
+  held held: Held(by),
+  by by: by,
   source source: Source,
-) -> #(Held, Bool) {
+) -> #(Held(by), Bool) {
   added(held:, entry: CreatureSource(source:, by:))
 }
 
-fn added(held held: Held, entry entry: Entry) -> #(Held, Bool) {
+fn added(held held: Held(by), entry entry: Entry(by)) -> #(Held(by), Bool) {
   use <- bool.guard(
     when: list.any(held.entries, fn(held) { held.source == entry.source }),
     return: #(held, False),
@@ -156,27 +156,27 @@ fn added(held held: Held, entry entry: Entry) -> #(Held, Bool) {
 
 /// The connection that holds `source`, when it is held.
 pub fn holder_of(
-  held held: Held,
+  held held: Held(by),
   source source: Source,
-) -> Result(ConnectionId, Nil) {
+) -> Result(by, Nil) {
   list.find(held.entries, fn(entry) { entry.source == source })
   |> result.map(fn(entry) { entry.by })
 }
 
 /// `source` taken out, with the connection that held it; `Error` when it is not held.
 pub fn released(
-  held held: Held,
+  held held: Held(by),
   source source: Source,
-) -> Result(#(Held, ConnectionId), Nil) {
+) -> Result(#(Held(by), by), Nil) {
   use by <- result.map(holder_of(held:, source:))
   #(Held(entries: list.filter(held.entries, fn(e) { e.source != source })), by)
 }
 
 /// Every source of the connection `by` taken out, in the order they started.
 pub fn released_by(
-  held held: Held,
-  by by: ConnectionId,
-) -> #(Held, List(Source)) {
+  held held: Held(by),
+  by by: by,
+) -> #(Held(by), List(Source)) {
   released_where(held:, which: fn(entry) { entry.by == by })
 }
 
@@ -184,9 +184,9 @@ pub fn released_by(
 /// (`EndsWhenUnseen`) taken out, in the order they started; a `KeptWhenUnseen` source of
 /// `by` stays.
 pub fn released_unseen(
-  held held: Held,
-  by by: ConnectionId,
-) -> #(Held, List(Source)) {
+  held held: Held(by),
+  by by: by,
+) -> #(Held(by), List(Source)) {
   released_where(held:, which: fn(entry) {
     case entry {
       PlayerSource(sight: EndsWhenUnseen, ..) -> entry.by == by
@@ -198,9 +198,9 @@ pub fn released_unseen(
 /// Every source whose caster's unit is `unit_id` taken out, in the order they started:
 /// the caster's unit is gone, which ends a change that outlives sight as well.
 pub fn released_with_unit(
-  held held: Held,
+  held held: Held(by),
   unit_id unit_id: Int,
-) -> #(Held, List(Source)) {
+) -> #(Held(by), List(Source)) {
   released_where(held:, which: fn(entry) {
     case entry {
       PlayerSource(unit_id: caster_unit_id, ..) -> caster_unit_id == unit_id
@@ -210,9 +210,9 @@ pub fn released_with_unit(
 }
 
 fn released_where(
-  held held: Held,
-  which which: fn(Entry) -> Bool,
-) -> #(Held, List(Source)) {
+  held held: Held(by),
+  which which: fn(Entry(by)) -> Bool,
+) -> #(Held(by), List(Source)) {
   let #(taken, kept) = list.partition(held.entries, which)
   #(Held(entries: kept), list.map(taken, fn(entry) { entry.source }))
 }
@@ -220,7 +220,10 @@ fn released_where(
 /// The casts of the unit `unit_id` with a source that outlives its caster's sight
 /// (`KeptWhenUnseen`), each once, in the order their first source started: the casts the
 /// client keeps with their buffs when the unit is removed.
-pub fn kept_casts_of_unit(held held: Held, unit_id unit_id: Int) -> List(Int) {
+pub fn kept_casts_of_unit(
+  held held: Held(by),
+  unit_id unit_id: Int,
+) -> List(Int) {
   list.filter(held.entries, fn(entry) {
     case entry {
       PlayerSource(unit_id: caster_unit_id, sight: KeptWhenUnseen, ..) ->
@@ -235,8 +238,8 @@ pub fn kept_casts_of_unit(held held: Held, unit_id unit_id: Int) -> List(Int) {
 /// The connections that wait for events, each once in the order its first source started,
 /// with the triggers it waits for in the order its sources started, each once.
 pub fn events_awaited(
-  held held: Held,
-) -> List(#(ConnectionId, List(spell_plan.Trigger))) {
+  held held: Held(by),
+) -> List(#(by, List(spell_plan.Trigger))) {
   let waiting =
     list.filter_map(held.entries, fn(entry) {
       case entry {
@@ -259,15 +262,15 @@ pub fn events_awaited(
 }
 
 /// Whether any source of the cast `cast_id` is held.
-pub fn holds_cast(held held: Held, cast_id cast_id: Int) -> Bool {
+pub fn holds_cast(held held: Held(by), cast_id cast_id: Int) -> Bool {
   list.any(held.entries, fn(entry) { entry.source.cast_id == cast_id })
 }
 
 /// Whether a source of the cast `cast_id` that the connection `by` started is held.
 pub fn holds_cast_from(
-  held held: Held,
+  held held: Held(by),
   cast_id cast_id: Int,
-  by by: ConnectionId,
+  by by: by,
 ) -> Bool {
   list.any(held.entries, fn(entry) {
     entry.source.cast_id == cast_id && entry.by == by
@@ -275,13 +278,13 @@ pub fn holds_cast_from(
 }
 
 /// Every source held, in the order they started.
-pub fn all(held held: Held) -> List(Source) {
+pub fn all(held held: Held(by)) -> List(Source) {
   list.map(held.entries, fn(entry) { entry.source })
 }
 
 /// The connections that hold a source, each once, in the order their first source
 /// started.
-pub fn connections(held held: Held) -> List(ConnectionId) {
+pub fn connections(held held: Held(by)) -> List(by) {
   list.map(held.entries, fn(entry) { entry.by }) |> list.unique
 }
 
@@ -292,7 +295,7 @@ pub fn connections(held held: Held) -> List(ConnectionId) {
 /// started. A source with no caster unit (a creature's) is left out, and so is an effect
 /// whose end is at or before `now_ms`: its end tell may still be on its way.
 pub fn cast_views(
-  held held: Held,
+  held held: Held(by),
   holder_unit_id holder_unit_id: Int,
   now_ms now_ms: Int,
 ) -> List(unit_casts.CastView) {
@@ -338,7 +341,7 @@ pub fn cast_views(
 /// The cast ids of `released` of which `held` holds no source any more, each once, in
 /// cast id order: the casts a release has just ended on the unit.
 pub fn casts_left(
-  held held: Held,
+  held held: Held(by),
   released released: List(Source),
 ) -> List(Int) {
   casts_without_source(
@@ -349,7 +352,7 @@ pub fn casts_left(
 
 /// The cast ids of `cast_ids` of which `held` holds no source, each once, in cast id order.
 pub fn casts_without_source(
-  held held: Held,
+  held held: Held(by),
   cast_ids cast_ids: List(Int),
 ) -> List(Int) {
   list.unique(cast_ids)

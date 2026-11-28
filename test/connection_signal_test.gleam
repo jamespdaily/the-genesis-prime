@@ -94,6 +94,7 @@ fn start_asking(
         | step.Store
         | step.Maps
         | step.Map(..)
+        | step.Unit(..)
         | step.Creature(..)
         | step.CharacterNamed(..)
         | step.ZoneChannel(..)
@@ -1020,6 +1021,7 @@ pub fn a_tell_to_a_connection_is_delivered_with_no_watch_and_one_that_is_gone_is
           | step.Maps
           | step.CharacterNamed(..)
           | step.ZoneChannel(..)
+          | step.Unit(..)
           | step.Creature(..)
           | step.Map(..) -> Ok(Nil)
         }
@@ -1229,6 +1231,7 @@ pub fn a_tell_through_a_watch_goes_through_that_watchs_target_only_and_one_throu
           | step.Store
           | step.Maps
           | step.Map(..)
+          | step.Unit(..)
           | step.Creature(..)
           | step.ZoneChannel(..)
           | step.Connection(..) -> Error(Nil)

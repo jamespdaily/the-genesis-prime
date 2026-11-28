@@ -1397,7 +1397,9 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
       place: standing,
     )
     as "at the place the player stands at, with the Dagun's minLevel 1 (Creature2.73465) as the line named no level"
-  assert list.any(start.viewers, fn(viewer) { viewer.0 == ConnectionId(1) })
+  assert list.any(start.viewers, fn(viewer) {
+    viewer.0 == map_support.address(number: 1)
+  })
     as "the player sees the place, so it is a viewer"
   let #(_, settled) =
     map_spawn_support.start_settled(state: map_state, at_ms: 6000, spawn: -1)

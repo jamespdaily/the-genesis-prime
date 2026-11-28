@@ -25,7 +25,7 @@ import genesis_prime/shared/strike_tell.{
   type Answered, Answered, Key, Landed, Refused,
 }
 import genesis_prime/shared/unit_news.{PeerNews}
-import genesis_prime/step.{ConnectionId, Woken}
+import genesis_prime/step.{Woken}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/registry
 import gleam/list
@@ -124,7 +124,10 @@ pub fn a_viewer_writes_the_creatures_snapshot_and_then_its_news_in_the_order_the
     unit_id:,
     life: 2,
     payload: map_message.Strike(
-      tell: strike_tell.Strike(..tell, from: step.Connection(ConnectionId(2))),
+      tell: strike_tell.Strike(
+        ..tell,
+        from: step.Unit(map_support.address(number: 2)),
+      ),
     ),
   )
   held_at_least(time:, world:, count: 2)
@@ -267,8 +270,7 @@ pub fn a_dead_creature_that_is_released_still_answers_its_striker_through_the_ma
       map_message.Relay(
         unit_id: beast.unit_id,
         life: 2,
-        to: ConnectionId(1),
-        stay: map_support.stay(count: 1),
+        to: map_support.address(number: 1),
         payload: map_message.Struck(answered: Answered(
           key: strike_tell.Key(
             cast_id: 3,

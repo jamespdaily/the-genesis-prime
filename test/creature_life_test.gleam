@@ -24,7 +24,7 @@ import genesis_prime/shared/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/shared/strike_tell.{
   Answered, Dead, Deflected, Despawned, Key, Landed, Refused, Strike,
 }
-import genesis_prime/step.{ConnectionId}
+import genesis_prime/step
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/world_map/creature_life.{
   type Life, Body, Died, Health, StopAtRespawn, StopNow,
@@ -49,7 +49,7 @@ fn strike_of(
 ) -> strike_tell.Tell {
   Strike(
     key: Key(cast_id:, occasion: strike_tell.AtGo(phase: 0), unit_id: 20),
-    from: step.Connection(ConnectionId(2)),
+    from: step.Unit(map_support.address(number: 2)),
     offence: Offence(
       blows: [
         Blow(
@@ -74,7 +74,6 @@ fn strike_of(
         z: 0.0,
       ),
       seq: 1,
-      stay: map_support.stay(count: 1),
       hit_radius: place_support.player_hit_radius,
       rolls:,
     ),

@@ -132,7 +132,7 @@ pub fn modifier_source() -> unit_properties.Source {
 /// flat 0.5.
 pub fn modifier_starts() -> creature.Message {
   creature.ModifierStarts(
-    by: ConnectionId(1),
+    by: map_support.address(number: 1),
     source: modifier_source(),
     modifier: Change(
       property: UnitProperty2Id(100),
@@ -449,7 +449,7 @@ pub fn strike_message_of(
   creature.Strike(
     tell: Strike(
       key: Key(cast_id:, occasion:, unit_id:),
-      from: step.Connection(ConnectionId(1)),
+      from: step.Unit(map_support.address(number: 1)),
       offence: Offence(
         blows: [
           Blow(
@@ -474,7 +474,6 @@ pub fn strike_message_of(
           z: 0.0,
         ),
         seq: 1,
-        stay: map_support.stay(count: 1),
         hit_radius: place_support.player_hit_radius,
         rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
       ),
@@ -616,8 +615,7 @@ pub fn told_creature_by(
     service.tell_subject(
       run.subject,
       map_message.TellCreature(
-        from: ConnectionId(connection),
-        stay: map_support.stay(count: 1),
+        from: map_support.address(number: connection),
         unit_id:,
         life:,
         payload:,

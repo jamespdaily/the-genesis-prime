@@ -21,7 +21,7 @@ import genesis_prime/shared/creature_combat.{Hostile}
 import genesis_prime/step.{ConnectionId, LogError, OwnEvent, Told}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn.{Spawn}
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address
 import gleam/list
 import inbound_support
 import map_spawn_support
@@ -273,21 +273,26 @@ pub fn a_player_ready_before_any_move_of_its_stay_is_approached_with_the_connect
 
 // ---- a stealthed player (issue 483) ----
 
-/// What the step sends creatures as `Approached`: the player's connection, its unit,
-/// the place's x, the move's sequence number and the stay, in the order sent.
+/// What the step sends creatures as `Approached`: the number of the player's address,
+/// its unit, the place's x and the move's sequence number, in the order sent.
 fn approaches_in_full(
   taken: step.ServiceStep(map_message.Outgoing),
-) -> List(#(Int, Int, Float, Int, Stay)) {
+) -> List(#(Int, Int, Float, Int)) {
   list.filter_map(map_spawn_support.sends(taken), fn(sent) {
     case sent.1 {
       map_message.Approached(member: step.RingMember(
-        by: ConnectionId(by),
+        by:,
         unit_id:,
         place:,
         seq:,
-        stay:,
         ..,
-      )) -> Ok(#(by, unit_id, start_place.x(place), seq, stay))
+      )) ->
+        Ok(#(
+          unit_address.number(address: by),
+          unit_id,
+          start_place.x(place),
+          seq,
+        ))
       map_message.Withdrew(..)
       | map_message.PlayerDied(..)
       | map_message.CasterGone(..)
@@ -419,9 +424,8 @@ pub fn a_stealthed_player_that_leaves_stealth_inside_a_ring_sends_that_creature_
   let #(state, left) = stealth(state:, at_ms: 6100, stealthed: False)
   assert map_spawn_support.ring_sends(left) == [#(2, "Approached by 1")]
     as "one Approached to the Dagun (unit 2, after the player's 1)"
-  assert approaches_in_full(left)
-    == [#(1, 1, 92.0, 6000, map_support.stay(count: 1))]
-    as "the player's connection and unit, its place, the sequence number of its last move and its stay"
+  assert approaches_in_full(left) == [#(1, 1, 92.0, 6000)]
+    as "the player's address and unit, its place and the sequence number of its last move"
   let #(_, again) = stealth(state:, at_ms: 6200, stealthed: False)
   assert map_spawn_support.ring_sends(again) == []
     as "a second tell of the same value sends nothing"
@@ -472,8 +476,8 @@ pub fn a_player_stealthed_before_its_ready_is_sent_to_no_creature_at_ready_and_l
     as "leaving stealth sends one Approached to each ring it stands in, in spawn order"
   assert approaches_in_full(left)
     == [
-      #(1, 1, 101.0, 6000, map_support.stay(count: 1)),
-      #(1, 1, 101.0, 6000, map_support.stay(count: 1)),
+      #(1, 1, 101.0, 6000),
+      #(1, 1, 101.0, 6000),
     ]
 }
 
@@ -820,9 +824,8 @@ pub fn a_dead_player_that_wakes_inside_a_ring_sends_that_creature_one_approached
   let #(state, woke) = life(state:, at_ms: 6200, alive: True)
   assert map_spawn_support.ring_sends(woke) == [#(2, "Approached by 1")]
     as "waking where the body lies sends one Approached to the Dagun, as a walk-in does"
-  assert approaches_in_full(woke)
-    == [#(1, 1, 92.0, 6000, map_support.stay(count: 1))]
-    as "the player's connection and unit, its place, the sequence number of its last move and its stay"
+  assert approaches_in_full(woke) == [#(1, 1, 92.0, 6000)]
+    as "the player's address and unit, its place and the sequence number of its last move"
   let #(_, again) = life(state:, at_ms: 6300, alive: True)
   assert map_spawn_support.ring_sends(again) == []
     as "a second tell of the same value sends nothing"
@@ -854,8 +857,8 @@ pub fn a_player_that_joins_dead_is_sent_to_no_creature_at_ready_and_waking_then_
     as "waking sends one Approached to each ring it stands in, in spawn order"
   assert approaches_in_full(woke)
     == [
-      #(1, 1, 101.0, 6000, map_support.stay(count: 1)),
-      #(1, 1, 101.0, 6000, map_support.stay(count: 1)),
+      #(1, 1, 101.0, 6000),
+      #(1, 1, 101.0, 6000),
     ]
 }
 

@@ -3107,7 +3107,13 @@ pub fn with_the_tables_loadout(
   let assert Ok(held) =
     loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
     as "the tables hold a Novice set for the class"
-  map_message.Joined(unit:, loadout: held, incarnation:, clock_origin_ms:)
+  map_message.Joined(
+    unit:,
+    loadout: held,
+    address: map_support.address(number: 1),
+    incarnation:,
+    clock_origin_ms:,
+  )
 }
 
 /// The connection after the map took a character of the class, with its entry burst,

@@ -68,6 +68,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/dynamic/decode
 import gleam/erlang/process
@@ -126,7 +127,7 @@ fn creature_from(
       clock_origin_ms:,
       viewers: list.map(viewers, fn(viewer) {
         let ConnectionId(number) = viewer
-        #(viewer, map_support.stay(count: number), generation.first())
+        #(map_support.address(number:), generation.first())
       }),
       ring: [],
     ),
@@ -193,12 +194,7 @@ pub fn a_creature_watches_its_run_and_sends_its_0x262_to_each_player_who_sees_it
     feed(
       state:,
       at_ms: 6500,
-      event: OwnEvent(
-        Told(creature_news_support.seen(
-          by: ConnectionId(5),
-          stay: map_support.stay(count: 5),
-        )),
-      ),
+      event: OwnEvent(Told(creature_news_support.seen(by: ConnectionId(5)))),
     )
   let assert [#(5, PeerNews(unit_id:, news: CreatureAppeared(unit:, ..)))] =
     sent(taken)
@@ -228,12 +224,7 @@ pub fn a_creatures_0x262_names_its_spawn_and_not_its_unit_id_test() -> Nil {
     feed(
       state:,
       at_ms: 6500,
-      event: OwnEvent(
-        Told(creature_news_support.seen(
-          by: ConnectionId(5),
-          stay: map_support.stay(count: 5),
-        )),
-      ),
+      event: OwnEvent(Told(creature_news_support.seen(by: ConnectionId(5)))),
     )
   let assert [#(5, PeerNews(unit_id: 7, news: CreatureAppeared(spawn_id:, ..)))] =
     sent(taken)
@@ -249,12 +240,7 @@ pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothi
     feed(
       state:,
       at_ms: 6000,
-      event: OwnEvent(
-        Told(creature_news_support.seen(
-          by: ConnectionId(5),
-          stay: map_support.stay(count: 5),
-        )),
-      ),
+      event: OwnEvent(Told(creature_news_support.seen(by: ConnectionId(5)))),
     )
   let #(state, taken) =
     feed(
@@ -289,13 +275,12 @@ pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothi
       at_ms: 6000,
       event: OwnEvent(
         Told(creature.Seen(
-          by: ConnectionId(5),
-          stay: map_support.stay(count: 5),
+          by: map_support.address(number: 5),
           generation: generation.first(),
         )),
       ),
     )
-  assert set.contains(creature.viewers(state), ConnectionId(5))
+  assert set.contains(creature.viewers(state), map_support.address(number: 5))
     as "the map's Seen makes the connection a viewer"
   let #(state, unseen) =
     feed(
@@ -303,14 +288,14 @@ pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothi
       at_ms: 7000,
       event: OwnEvent(
         Told(creature.Unseen(
-          by: ConnectionId(5),
+          by: map_support.address(number: 5),
           generation: generation.first(),
         )),
       ),
     )
   assert support.effects_of(unseen) == []
     as "the creature sends no 0x355 when its viewer's sight ends"
-  assert !set.contains(creature.viewers(state), ConnectionId(5))
+  assert !set.contains(creature.viewers(state), map_support.address(number: 5))
     as "and no longer holds the viewer"
 }
 
@@ -370,7 +355,8 @@ pub fn a_creature_started_for_players_sends_each_its_0x262_as_it_starts_test() -
     )
   assert support.effects_of(taken) == []
     as "a first viewer is a viewer: the map's Unseen of the generation its start named ends it, and the creature sends nothing"
-  assert creature.viewers(state) == set.from_list([ConnectionId(5)])
+  assert creature.viewers(state)
+    == set.from_list([map_support.address(number: 5)])
 }
 
 /// What the step sends, in order, as the creature's sends of any kind.
@@ -401,8 +387,8 @@ fn snapshots(
 ) -> List(#(Int, Generation, List(PeerNews))) {
   list.filter_map(creature_news_support.to_the_map(taken), fn(sent) {
     case sent {
-      creature.Snapshot(by: ConnectionId(number), generation:, burst:, ..) ->
-        Ok(#(number, generation, burst))
+      creature.Snapshot(by:, generation:, burst:, ..) ->
+        Ok(#(unit_address.number(address: by), generation, burst))
       creature.Broadcast(..) | creature.Relay(..) | creature.Expired(..) ->
         Error(Nil)
     }
@@ -424,7 +410,7 @@ fn typed_strike(
   creature.Strike(
     tell: Strike(
       key: Key(cast_id:, occasion: strike_tell.AtGo(phase: 0), unit_id: 7),
-      from: step.Connection(ConnectionId(2)),
+      from: step.Unit(map_support.address(number: 2)),
       offence: Offence(
         blows: [
           Blow(
@@ -449,7 +435,6 @@ fn typed_strike(
           z: 0.0,
         ),
         seq: 1,
-        stay: map_support.stay(count: 2),
         hit_radius: place_support.player_hit_radius,
         rolls: Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
       ),
@@ -568,8 +553,7 @@ pub fn a_killing_strike_sends_the_killer_one_credit_test() -> Nil {
         creature.Relay(
           unit_id: 7,
           life: 3,
-          to: ConnectionId(2),
-          stay: map_support.stay(count: 2),
+          to: map_support.address(number: 2),
           payload: map_message.KillCredit(credit: Credit(
             unit_id: 7,
             creature_id: Creature2Id(73_464),
@@ -611,8 +595,7 @@ pub fn a_creature_struck_while_it_lies_dead_refuses_without_news_test() -> Nil {
         creature.Relay(
           unit_id: 7,
           life: 3,
-          to: ConnectionId(2),
-          stay: map_support.stay(count: 2),
+          to: map_support.address(number: 2),
           payload: map_message.Struck(answered: Answered(
             key: Key(
               cast_id: 2,
@@ -639,12 +622,7 @@ pub fn a_viewer_that_arrives_mid_fight_is_sent_the_creature_at_its_current_healt
     feed(
       state:,
       at_ms: 7000,
-      event: OwnEvent(
-        Told(creature_news_support.seen(
-          by: ConnectionId(9),
-          stay: map_support.stay(count: 9),
-        )),
-      ),
+      event: OwnEvent(Told(creature_news_support.seen(by: ConnectionId(9)))),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
     sent(taken)
@@ -664,12 +642,7 @@ pub fn a_viewer_that_arrives_while_the_creature_lies_dead_is_sent_it_created_dea
     feed(
       state:,
       at_ms: 7000,
-      event: OwnEvent(
-        Told(creature_news_support.seen(
-          by: ConnectionId(9),
-          stay: map_support.stay(count: 9),
-        )),
-      ),
+      event: OwnEvent(Told(creature_news_support.seen(by: ConnectionId(9)))),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, life: 3, ..), ..))] =
     sent(taken)
@@ -875,12 +848,7 @@ pub fn a_viewer_that_arrives_while_a_recorded_creature_is_hurt_is_sent_its_curre
     feed(
       state:,
       at_ms: 7000,
-      event: OwnEvent(
-        Told(creature_news_support.seen(
-          by: ConnectionId(9),
-          stay: map_support.stay(count: 9),
-        )),
-      ),
+      event: OwnEvent(Told(creature_news_support.seen(by: ConnectionId(9)))),
     )
   let assert [#(9, PeerNews(news: CreatureAppeared(unit:, ..), ..)), ..] =
     sent(taken)
@@ -921,8 +889,10 @@ pub fn a_recorded_creature_that_starts_is_shown_at_its_recorded_health_with_its_
 // mitigation 0.5996959 at level 1 that `player_life_test` pins from GameFormula
 // 1234 (`0x140464240`).
 
-/// The connection of the caster whose spells put modifiers on the creature.
-const caster = ConnectionId(9)
+/// The unit of the caster whose spells put modifiers on the creature.
+fn caster() -> UnitAddress {
+  map_support.address(number: 9)
+}
 
 /// A Move Speed Multiplier row: x becomes x * 1.0 + 0.5.
 fn sprint() -> Modifier {
@@ -1013,7 +983,7 @@ fn starting(
   source source: Source,
   modifier modifier: Modifier,
 ) -> creature.Message {
-  creature.ModifierStarts(by: caster, source:, modifier:)
+  creature.ModifierStarts(by: caster(), source:, modifier:)
 }
 
 /// The creature after the caster's start of this modifier, struck as it arrived.
@@ -1124,10 +1094,7 @@ pub fn late_viewer_sees_current_value_test() -> Nil {
     told(
       state:,
       at_ms: 7000,
-      message: creature_news_support.seen(
-        by: ConnectionId(8),
-        stay: map_support.stay(count: 8),
-      ),
+      message: creature_news_support.seen(by: ConnectionId(8)),
     )
   let assert [#(8, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
     sent(taken)
@@ -1229,7 +1196,10 @@ pub fn a_modifier_a_throw_a_despawn_and_unit_states_are_dropped_by_a_dead_or_des
         told(
           state: body.1,
           at_ms: at_7000,
-          message: creature.CastViewSet(by: ConnectionId(9), view: view_a()),
+          message: creature.CastViewSet(
+            by: map_support.address(number: 9),
+            view: view_a(),
+          ),
         )
       assert watch_changes(set) == []
         as {
@@ -1275,18 +1245,18 @@ pub fn run_watch_end_still_stops_creature_test() -> Nil {
 /// Beast.
 fn stunning_strike_from_the_caster(cast_id cast_id: Int) -> creature.Message {
   let assert creature.Strike(tell:) = stunning_strike(cast_id:)
-  creature.Strike(tell: Strike(..tell, from: step.Connection(caster)))
+  creature.Strike(tell: Strike(..tell, from: step.Unit(caster())))
 }
 
 pub fn a_creature_drops_the_sources_and_views_of_a_gone_caster_keeps_its_controls_sends_the_property_news_once_and_watches_only_its_run_test() -> Nil {
   use <- owned_test.run(5000)
-  let other = ConnectionId(10)
-  let stranger = ConnectionId(77)
+  let other = map_support.address(number: 10)
+  let stranger = map_support.address(number: 77)
   // The caster holds two sources, a view and a control; a second caster holds a view.
   let holdings = [
     starting(source: sprint_source(), modifier: sprint()),
     starting(source: thorns_source(), modifier: thorns()),
-    creature.CastViewSet(by: caster, view: view_a()),
+    creature.CastViewSet(by: caster(), view: view_a()),
     stunning_strike_from_the_caster(cast_id: 7),
     creature.CastViewSet(by: other, view: view_b()),
     creature.ModifierStarts(
@@ -1314,7 +1284,7 @@ pub fn a_creature_drops_the_sources_and_views_of_a_gone_caster_keeps_its_control
     == []
     as "the stun is the caster's: another connection's end for the same cast id ends nothing"
   let #(gone_state, gone) =
-    told(state:, at_ms: 7000, message: creature.CasterGone(by: caster))
+    told(state:, at_ms: 7000, message: creature.CasterGone(by: caster()))
   assert property_news(gone)
     == [
       #(2, [speed_back()]),
@@ -1342,7 +1312,7 @@ pub fn a_creature_drops_the_sources_and_views_of_a_gone_caster_keeps_its_control
     told(
       state: gone_state,
       at_ms: 7100,
-      message: creature.CasterGone(by: caster),
+      message: creature.CasterGone(by: caster()),
     )
   assert support.effects_of(again) == [] && again_state == gone_state
     as "a second CasterGone for the same connection changes nothing"
@@ -1402,7 +1372,7 @@ pub fn a_creature_drops_the_sources_and_views_of_a_gone_caster_keeps_its_control
     told(
       state: dead,
       at_ms: 8000,
-      message: creature.CasterGone(by: ConnectionId(9)),
+      message: creature.CasterGone(by: map_support.address(number: 9)),
     )
   assert arrival_holds(state: dead_gone) == []
     as "a dead creature told to retire drops a gone caster's view before its corpse expires"
@@ -1466,10 +1436,7 @@ pub fn base_health_modifier_clamps_health_test() -> Nil {
     told(
       state:,
       at_ms: 7000,
-      message: creature_news_support.seen(
-        by: ConnectionId(8),
-        stay: map_support.stay(count: 8),
-      ),
+      message: creature_news_support.seen(by: ConnectionId(8)),
     )
   let assert [#(8, PeerNews(news: CreatureAppeared(unit:, ..), ..))] =
     sent(arrived)
@@ -1812,11 +1779,10 @@ pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
       state: watched_by_two(),
       at_ms: 6000,
       message: creature.Approached(member: step.RingMember(
-        by: ConnectionId(2),
+        by: map_support.address(number: 2),
         unit_id: 20,
         place: map_spawn_support.at(5.0),
         seq: 1,
-        stay: map_support.stay(count: 2),
         hit_radius: place_support.player_hit_radius,
       )),
     )
@@ -1825,15 +1791,18 @@ pub fn a_throw_at_a_dead_or_returning_creature_is_dropped_test() -> Nil {
       state:,
       at_ms: 6000,
       message: creature.TargetMoved(
-        by: ConnectionId(2),
+        by: map_support.address(number: 2),
         place: map_spawn_support.at(100.0),
         seq: 2,
-        stay: map_support.stay(count: 2),
         hit_radius: place_support.player_hit_radius,
       ),
     )
   let #(state, _) =
-    told(state:, at_ms: 6000, message: creature.Withdrew(by: ConnectionId(2)))
+    told(
+      state:,
+      at_ms: 6000,
+      message: creature.Withdrew(by: map_support.address(number: 2)),
+    )
   let assert [#(t1, 1500)] = timers_started(aggro)
     as "the aggro starts the attack tick, 1500 ms on"
   let #(state, tick1) = fired(state:, at_ms: 7500, timer: t1)
@@ -2519,11 +2488,10 @@ pub fn a_despawn_at_a_dead_or_despawned_creature_is_dropped_test() -> Nil {
 /// Player 2, at x = 5, comes near the Beast, which stands at x = 0.
 fn approached_by_2() -> creature.Message {
   creature.Approached(member: step.RingMember(
-    by: ConnectionId(2),
+    by: map_support.address(number: 2),
     unit_id: 20,
     place: map_spawn_support.at(5.0),
     seq: 1,
-    stay: map_support.stay(count: 2),
     hit_radius: place_support.player_hit_radius,
   ))
 }
@@ -2677,14 +2645,11 @@ pub fn a_viewer_arriving_while_despawned_is_sent_nothing_test() -> Nil {
     told(
       state: despawned_by_two(),
       at_ms: 7000,
-      message: creature_news_support.seen(
-        by: ConnectionId(9),
-        stay: map_support.stay(count: 9),
-      ),
+      message: creature_news_support.seen(by: ConnectionId(9)),
     )
   assert support.effects_of(taken) == []
     as "opcode.0x355: the unit is gone to the client, and no 0x262 shows a creature that is not there"
-  assert set.contains(creature.viewers(state), ConnectionId(9))
+  assert set.contains(creature.viewers(state), map_support.address(number: 9))
     as "the viewer is recorded"
 }
 
@@ -2694,10 +2659,7 @@ pub fn a_viewer_that_arrived_while_despawned_is_sent_nothing_at_the_expiry_test(
     told(
       state: despawned_by_two(),
       at_ms: 7000,
-      message: creature_news_support.seen(
-        by: ConnectionId(9),
-        stay: map_support.stay(count: 9),
-      ),
+      message: creature_news_support.seen(by: ConnectionId(9)),
     )
   let #(_, taken) =
     feed_raw(
@@ -3050,7 +3012,7 @@ fn guarded_by_two() -> State {
           spawn: spawn_source.Stored(id: SpawnId(1)),
           clock_origin_ms:,
           viewers: [
-            #(ConnectionId(2), map_support.stay(count: 2), generation.first()),
+            #(map_support.address(number: 2), generation.first()),
           ],
           ring: [],
         ),
@@ -3159,27 +3121,13 @@ pub fn a_viewer_arriving_while_states_are_held_is_told_them_after_the_0x262_test
     )
   let nine = ConnectionId(9)
   let #(state, arrived) =
-    told(
-      state:,
-      at_ms: 7000,
-      message: creature_news_support.seen(
-        by: nine,
-        stay: map_support.stay(count: 9),
-      ),
-    )
+    told(state:, at_ms: 7000, message: creature_news_support.seen(by: nine))
   assert kinds_of(outgoing(arrived)) == ["creation to 9", "other", "other"]
     as "the 0x262, then one news per held state"
   assert unit_state_news(arrived)
     == [#(9, held(state: 6, number: 1)), #(9, held(state: 13, number: 2))]
   let #(state, again) =
-    told(
-      state:,
-      at_ms: 7500,
-      message: creature_news_support.seen(
-        by: nine,
-        stay: map_support.stay(count: 9),
-      ),
-    )
+    told(state:, at_ms: 7500, message: creature_news_support.seen(by: nine))
   assert kinds_of(outgoing(again)) == ["creation to 9", "other", "other"]
     as "a repeated Watched is told the creature and its states again"
   let #(state, ended) = fired(state:, at_ms: 8000, timer: unit_state_timer)
@@ -3194,10 +3142,7 @@ pub fn a_viewer_arriving_while_states_are_held_is_told_them_after_the_0x262_test
     told(
       state:,
       at_ms: 8100,
-      message: creature_news_support.seen(
-        by: ConnectionId(11),
-        stay: map_support.stay(count: 11),
-      ),
+      message: creature_news_support.seen(by: ConnectionId(11)),
     )
   assert unit_state_news(late) == [#(11, held(state: 6, number: 1))]
     as "only the state still held is told"
@@ -3312,14 +3257,22 @@ type At =
   #(Int, Event(ServiceEvent(creature.Message)))
 
 fn view_set(by by: Int, view view: CastView, at_ms at_ms: Int) -> At {
-  #(at_ms, OwnEvent(Told(creature.CastViewSet(by: ConnectionId(by), view:))))
+  #(
+    at_ms,
+    OwnEvent(
+      Told(creature.CastViewSet(by: map_support.address(number: by), view:)),
+    ),
+  )
 }
 
 fn view_ends(by by: Int, view view: CastView, at_ms at_ms: Int) -> At {
   #(
     at_ms,
     OwnEvent(
-      Told(creature.CastViewEnds(by: ConnectionId(by), cast_id: view.cast_id)),
+      Told(creature.CastViewEnds(
+        by: map_support.address(number: by),
+        cast_id: view.cast_id,
+      )),
     ),
   )
 }
@@ -3345,10 +3298,7 @@ fn arrival_create(
     told(
       state:,
       at_ms:,
-      message: creature_news_support.seen(
-        by: ConnectionId(20),
-        stay: map_support.stay(count: 20),
-      ),
+      message: creature_news_support.seen(by: ConnectionId(20)),
     )
   let assert [
     #(
@@ -3579,11 +3529,7 @@ pub fn a_creature_unit_create_lists_the_views_it_keeps_test() -> Nil {
 
 /// The map's `Seen` of the player of connection 9, for the generation, as the creature takes it.
 fn seen_by_nine(generation generation: Generation) -> creature.Message {
-  creature.Seen(
-    by: ConnectionId(9),
-    stay: map_support.stay(count: 9),
-    generation:,
-  )
+  creature.Seen(by: map_support.address(number: 9), generation:)
 }
 
 pub fn a_creature_answers_a_seen_with_a_snapshot_of_its_burst_live_dead_or_despawned_test() -> Nil {
@@ -3687,9 +3633,12 @@ pub fn a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_tim
     told_raw(
       state:,
       at_ms: 7200,
-      message: creature.Unseen(by: ConnectionId(9), generation: first_sight),
+      message: creature.Unseen(
+        by: map_support.address(number: 9),
+        generation: first_sight,
+      ),
     )
-  assert !set.contains(creature.viewers(state), ConnectionId(9))
+  assert !set.contains(creature.viewers(state), map_support.address(number: 9))
     as "the first Unseen drops the viewer"
   assert support.sends(unseen) == []
     as "and the creature sends no 0x355: the map tells the viewer"
@@ -3697,7 +3646,10 @@ pub fn a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_tim
     told_raw(
       state:,
       at_ms: 7300,
-      message: creature.Unseen(by: ConnectionId(9), generation: first_sight),
+      message: creature.Unseen(
+        by: map_support.address(number: 9),
+        generation: first_sight,
+      ),
     )
   assert support.effects_of(again) == [] && after == state
     as "a second Unseen finds no entry and changes nothing"
@@ -3717,7 +3669,7 @@ pub fn a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_tim
     map_message.Snapshot(
       unit_id:,
       life:,
-      by: ConnectionId(9),
+      by: map_support.address(number: 9),
       generation: held,
       burst: [
         PeerNews(unit_id:, news: unit_news.Health(health: 52, dead: False)),
@@ -3746,8 +3698,7 @@ pub fn each_tell_a_player_sends_a_creature_reaches_it_as_the_message_its_rule_ta
   // The sender and the stay the relay named: the map's, never the payload's. Each row is the
   // creature message the rule of that tell takes, by the kind's name; the payloads are the
   // tests' own (`inbound_support.payloads`).
-  let by = ConnectionId(4)
-  let stay = map_support.stay(count: 3)
+  let by = map_support.address(number: 4)
   let tell = inbound_support.strike(unit_id: 7)
   let place = inbound_support.place()
   let source = inbound_support.source()
@@ -3755,7 +3706,7 @@ pub fn each_tell_a_player_sends_a_creature_reaches_it_as_the_message_its_rule_ta
     #("Strike", creature.Strike(tell:)),
     #(
       "TargetMoved",
-      creature.TargetMoved(by:, place:, seq: 9, stay:, hit_radius: 0.75),
+      creature.TargetMoved(by:, place:, seq: 9, hit_radius: 0.75),
     ),
     #(
       "StrikeAnswered",
@@ -3784,7 +3735,7 @@ pub fn each_tell_a_player_sends_a_creature_reaches_it_as_the_message_its_rule_ta
     let #(kind, payload) = sent
     let assert Ok(expected) = list.key_find(rows, kind)
       as "a row for each kind the tests send"
-    assert creature.told_by_map(map_message.ToldCreature(by:, stay:, payload:))
+    assert creature.told_by_map(map_message.ToldCreature(by:, payload:))
       == Ok(expected)
       as {
         kind

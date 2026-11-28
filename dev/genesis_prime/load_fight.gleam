@@ -155,6 +155,7 @@ import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Pid, type Subject}
@@ -546,8 +547,9 @@ fn walker(
           ),
           fn(answer) { process.send(replies, answer) },
         )
-      let assert Ok(_joined) = process.receive(replies, within: 60_000)
-        as "the map answered the join"
+      let assert Ok(map_message.Joined(address:, ..)) =
+        process.receive(replies, within: 60_000)
+        as "the map answered the join with the walker's unit address"
       let _sent =
         service.tell_subject(
           run.subject,
@@ -569,6 +571,7 @@ fn walker(
           run:,
           selector:,
           connection:,
+          address:,
           id:,
           step: 1,
           place: start,
@@ -616,6 +619,7 @@ fn walk(
   run run: world_map_registry.MapProcess,
   selector selector: process.Selector(Message),
   connection connection: ConnectionId,
+  address address: UnitAddress,
   id id: Int,
   step step: Int,
   place place: Place,
@@ -637,7 +641,7 @@ fn walk(
         answers:,
         settings:,
         run:,
-        connection:,
+        address:,
         selector:,
         until_ms: next_ms,
         fighters:,
@@ -655,7 +659,7 @@ fn walk(
         scene:,
         settings:,
         run:,
-        connection:,
+        address:,
         id:,
         place: shown,
         step:,
@@ -666,7 +670,7 @@ fn walk(
     list.each(dict.to_list(fighters), fn(fighter) {
       tell_the_map(
         run:,
-        connection:,
+        address:,
         unit_id: fighter.0,
         life: fighter.1,
         payload: map_message.TargetMoved(
@@ -711,6 +715,7 @@ fn walk(
       run:,
       selector:,
       connection:,
+      address:,
       id:,
       step: step + 1,
       place:,
@@ -748,7 +753,7 @@ fn struck_back(
   scene scene: Scene,
   settings settings: server.Settings,
   run run: world_map_registry.MapProcess,
-  connection connection: ConnectionId,
+  address address: UnitAddress,
   id id: Int,
   place place: Place,
   step step: Int,
@@ -767,7 +772,7 @@ fn struck_back(
     made: strike_fighters(
       settings:,
       run:,
-      connection:,
+      address:,
       id:,
       place:,
       step:,
@@ -790,7 +795,7 @@ fn struck_back(
 fn strike_fighters(
   settings settings: server.Settings,
   run run: world_map_registry.MapProcess,
-  connection connection: ConnectionId,
+  address address: UnitAddress,
   id id: Int,
   place place: Place,
   step step: Int,
@@ -829,7 +834,7 @@ fn strike_fighters(
     let told =
       tell_the_map(
         run:,
-        connection:,
+        address:,
         unit_id: fighter.0,
         life: fighter.1,
         payload: map_message.Strike(
@@ -839,12 +844,11 @@ fn strike_fighters(
               occasion: strike_tell.AtGo(phase: 0),
               unit_id: fighter.0,
             ),
-            from: step.Connection(connection),
+            from: step.Unit(address),
             striker: strike_tell.PlayerStriker(
               unit_id: id,
               place:,
               seq: step,
-              stay: walkers_stay(),
               hit_radius:,
               rolls: hit.Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
             ),
@@ -885,7 +889,7 @@ fn hear(
   answers answers: Subject(Answer),
   settings settings: server.Settings,
   run run: world_map_registry.MapProcess,
-  connection connection: ConnectionId,
+  address address: UnitAddress,
   selector selector: process.Selector(Message),
   until_ms until_ms: Int,
   fighters fighters: Dict(Int, Int),
@@ -897,7 +901,7 @@ fn hear(
       answers:,
       settings:,
       run:,
-      connection:,
+      address:,
       selector:,
       until_ms:,
       fighters:,
@@ -934,7 +938,7 @@ fn hear(
           answers:,
           settings:,
           run:,
-          connection:,
+          address:,
           tell:,
           taken_us:,
         )
@@ -1066,7 +1070,7 @@ fn answered(
   answers answers: Subject(Answer),
   settings settings: server.Settings,
   run run: world_map_registry.MapProcess,
-  connection connection: ConnectionId,
+  address address: UnitAddress,
   tell tell: strike_tell.Tell,
   taken_us taken_us: Int,
 ) -> Result(#(Pid, Int), Nil) {
@@ -1075,7 +1079,7 @@ fn answered(
       let tell_creature = fn() {
         tell_the_map(
           run:,
-          connection:,
+          address:,
           unit_id:,
           life:,
           payload: map_message.StrikeAnswered(answered: strike_tell.Answered(
@@ -1175,7 +1179,7 @@ fn handed_over(
   }
 }
 
-/// The stay the walkers join the map in, which each tell of theirs to a creature names.
+/// The stay the walkers join the map in.
 fn walkers_stay() -> Stay {
   stay.next(stay.none_yet())
 }
@@ -1185,20 +1189,14 @@ fn walkers_stay() -> Stay {
 /// creature. Whether the map's process was reached.
 fn tell_the_map(
   run run: world_map_registry.MapProcess,
-  connection connection: ConnectionId,
+  address address: UnitAddress,
   unit_id unit_id: Int,
   life life: Int,
   payload payload: map_message.Inbound,
 ) -> Bool {
   service.tell_subject(
     run.subject,
-    map_message.TellCreature(
-      from: connection,
-      stay: walkers_stay(),
-      unit_id:,
-      life:,
-      payload:,
-    ),
+    map_message.TellCreature(from: address, unit_id:, life:, payload:),
   )
   |> result.is_ok
 }

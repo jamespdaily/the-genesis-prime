@@ -31,6 +31,7 @@ pub fn attacker() -> Attacker {
   Attacker(
     unit_id: 7,
     connection: ConnectionId(2),
+    address: map_support.address(number: 2),
     pose: Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.0),
     place: place_support.at(
       world_id: 3460,

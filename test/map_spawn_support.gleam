@@ -20,7 +20,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/static_object
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -316,12 +316,10 @@ pub fn starts(
   })
 }
 
-/// The first viewers a creature is started for, each by its connection and its
-/// stay, in the order the map named them.
-pub fn first_viewers(
-  start start: step.CreatureStart,
-) -> List(#(step.ConnectionId, Stay)) {
-  list.map(start.viewers, fn(viewer) { #(viewer.0, viewer.1) })
+/// The first viewers a creature is started for, each by its unit address, in the order
+/// the map named them.
+pub fn first_viewers(start start: step.CreatureStart) -> List(UnitAddress) {
+  list.map(start.viewers, fn(viewer) { viewer.0 })
 }
 
 /// The timers a step starts, each with its id's number and its delay.
@@ -370,6 +368,7 @@ pub fn creatures_told(
     case sent.0 {
       Creature(unit_id:, life:, ..) -> Ok(#(unit_id, life, said(sent.1)))
       Connection(..)
+      | step.Unit(..)
       | step.Sessions
       | step.HandOff
       | step.Store
@@ -464,26 +463,29 @@ pub fn said(message: map_message.Outgoing) -> String {
       notice: map_message.UnseenBy(by: ConnectionId(number), ..),
       ..,
     ) -> "Unwatched by " <> int.to_string(number)
-    map_message.Seen(by: ConnectionId(number), ..) ->
-      "Seen by " <> int.to_string(number)
-    map_message.Unseen(by: ConnectionId(number), ..) ->
-      "Unseen by " <> int.to_string(number)
+    map_message.Seen(by:, ..) ->
+      "Seen by " <> int.to_string(unit_address.number(address: by))
+    map_message.Unseen(by:, ..) ->
+      "Unseen by " <> int.to_string(unit_address.number(address: by))
     map_message.Noticed(notice: map_message.UnitUnseen(unit_id:, ..), ..) ->
       "Creature unseen " <> int.to_string(unit_id)
     map_message.Noticed(notice: map_message.PlayerUnseen(unit_id:, ..), ..) ->
       "Player unseen " <> int.to_string(unit_id)
     map_message.Relayed(..) -> "Relayed"
     map_message.Retire -> "Retire"
-    map_message.Approached(member: step.RingMember(by: ConnectionId(number), ..)) ->
-      "Approached by " <> int.to_string(number)
-    map_message.Withdrew(by: ConnectionId(number)) ->
-      "Withdrew by " <> int.to_string(number)
-    map_message.PlayerDied(by: ConnectionId(number)) ->
-      "PlayerDied by " <> int.to_string(number)
-    map_message.CasterGone(by: ConnectionId(number)) ->
-      "CasterGone by " <> int.to_string(number)
-    map_message.ToldCreature(by: ConnectionId(number), payload:, ..) ->
-      "Told " <> inbound_name(payload) <> " by " <> int.to_string(number)
+    map_message.Approached(member: step.RingMember(by:, ..)) ->
+      "Approached by " <> int.to_string(unit_address.number(address: by))
+    map_message.Withdrew(by:) ->
+      "Withdrew by " <> int.to_string(unit_address.number(address: by))
+    map_message.PlayerDied(by:) ->
+      "PlayerDied by " <> int.to_string(unit_address.number(address: by))
+    map_message.CasterGone(by:) ->
+      "CasterGone by " <> int.to_string(unit_address.number(address: by))
+    map_message.ToldCreature(by:, payload:) ->
+      "Told "
+      <> inbound_name(payload)
+      <> " by "
+      <> int.to_string(unit_address.number(address: by))
     map_message.Joined(..)
     | map_message.NotJoined(..)
     | map_message.Summoned(..)
@@ -671,10 +673,7 @@ pub fn expired(
 /// The connections of the players a creature's start carries in its ring, in the order
 /// carried.
 pub fn ring_of(start start: step.CreatureStart) -> List(Int) {
-  list.map(start.ring, fn(member) {
-    let ConnectionId(number) = member.by
-    number
-  })
+  list.map(start.ring, fn(member) { unit_address.number(address: member.by) })
 }
 
 /// What the step tells creatures, by the life of the creature told and what it says
@@ -707,13 +706,14 @@ pub fn inbound_name(payload: map_message.Inbound) -> String {
   }
 }
 
-/// The tell of the player of connection `from`, in the stay of its `stay_count`th join, to
-/// the creature `unit_id` of `life`, taken at time `at_ms`.
+/// The tell of the player of the unit the map issued as its `from`th address to the
+/// creature `unit_id` of `life`, taken at time `at_ms`. `stay_count` names the stay of the
+/// join the tell was made in, which the tell no longer carries.
 pub fn tell_creature(
   state state: State,
   at_ms at_ms: Int,
   from from: Int,
-  stay_count stay_count: Int,
+  stay_count _stay_count: Int,
   unit_id unit_id: Int,
   life life: Int,
   payload payload: map_message.Inbound,
@@ -723,8 +723,7 @@ pub fn tell_creature(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.TellCreature(
-        from: ConnectionId(from),
-        stay: map_support.stay(count: stay_count),
+        from: map_support.address(number: from),
         unit_id:,
         life:,
         payload:,
