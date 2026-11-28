@@ -70,10 +70,13 @@ pub fn breaches(
   let at_rows =
     list.filter_map(listed, fn(row) {
       case dict.get(actual, row.name) {
-        Error(Nil) -> Ok(at_row(row, "has no migration file"))
+        Error(Nil) -> Ok(list_breach(row, "has no migration file"))
         Ok(sha256) if sha256 == row.sha256 -> Error(Nil)
         Ok(_) ->
-          Ok(at_row(row, "differs from its file: the migration was changed"))
+          Ok(list_breach(
+            row,
+            "differs from its file: the migration was changed",
+          ))
       }
     })
   let disordered =
@@ -88,6 +91,6 @@ pub fn breaches(
   list.flatten([without_row, at_rows, disordered])
 }
 
-fn at_row(row: Listed, what: String) -> Breach {
+fn list_breach(row: Listed, what: String) -> Breach {
   Breach(path: list_path, line: row.line, rule: row.name <> " " <> what)
 }
