@@ -28,7 +28,7 @@ import genesis_prime/shared/player_change.{
 }
 import genesis_prime/shared/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
 import genesis_prime/shared/unit_properties.{type Source, Change, Source}
-import genesis_prime/step.{type Effect, ConnectionId, Now, OwnEffect}
+import genesis_prime/step.{type Effect, Now, OwnEffect}
 import genesis_prime/table/id.{
   type Spell4Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
@@ -43,9 +43,8 @@ const ally_connection = 2
 
 fn address() -> PlayerAddress {
   PlayerAddress(
-    connection: ConnectionId(ally_connection),
+    address: map_support.address(number: ally_connection),
     unit_id: 40,
-    stay: map_support.stay(count: ally_connection),
   )
 }
 
@@ -103,10 +102,8 @@ fn told_to_the_ally(
   OwnEffect(step.Tell(
     to: step.Map(map: entered().map, incarnation: entered().incarnation),
     request: client_connection.TellLanding(
-      connection: ConnectionId(1),
-      stay: entered().stay,
-      to: address().connection,
-      to_stay: address().stay,
+      unit: entered().address,
+      to: address().address,
       landing:,
     ),
   ))
@@ -125,8 +122,7 @@ fn carried(
 
 pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_the_map_for_that_players_connection_and_stay_from_the_casters_own_connection_and_stay_test() -> Nil {
   use <- owned_test.run(10_000)
-  let own_stay = entered().stay
-  let from = ConnectionId(1)
+  let from = entered().address
   // The effect, what it tells and to whom; nothing is written to the caster's client.
   let rows = [
     #(
@@ -142,7 +138,6 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_the_map_for_that_players
       [
         told_to_the_ally(change: PlayerChangeStarts(
           from:,
-          from_stay: own_stay,
           source: source(),
           change: player_change.Applies(Absorb(amount: 300, mask: 7)),
           sight: KeptWhenUnseen,
@@ -164,7 +159,6 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_the_map_for_that_players
       [
         told_to_the_ally(change: PlayerChangeStarts(
           from:,
-          from_stay: own_stay,
           source: source(),
           change: player_change.Applies(Property(modifier: modifier())),
           sight: player_change.EndsWhenUnseen,

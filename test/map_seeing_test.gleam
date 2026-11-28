@@ -28,7 +28,6 @@ import genesis_prime/step.{
 }
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{type State}
-import genesis_prime/world_map/stay
 import gleam/int
 import gleam/list
 import gleam/set
@@ -62,24 +61,12 @@ fn at(x: Float) -> Place {
 }
 
 /// A join of connection `connection` at `place`, `elapsed_ms` after the map
-/// started, for the stay numbered as the connection, so each player's stay is
-/// its own.
+/// started.
 fn join(
   state state: State,
   connection connection: Int,
   place place: Place,
   elapsed_ms elapsed_ms: Int,
-) -> #(State, ServiceStep(map_message.Outgoing)) {
-  join_for(state:, connection:, place:, elapsed_ms:, stay: connection)
-}
-
-/// The same for the connection's `stay`th stay.
-fn join_for(
-  state state: State,
-  connection connection: Int,
-  place place: Place,
-  elapsed_ms elapsed_ms: Int,
-  stay stay: Int,
 ) -> #(State, ServiceStep(map_message.Outgoing)) {
   map_spawn_support.feed(
     state: state,
@@ -87,10 +74,9 @@ fn join_for(
     event: OwnEvent(Asked(
       caller: CallerId(connection),
       message: Join(
-        connection: ConnectionId(connection),
+        joiner: ConnectionId(connection),
         character: map_support.character(100 + connection),
         place:,
-        stay: map_support.stay(count: stay),
         alive: True,
         hidden: set.new(),
       ),
@@ -111,7 +97,7 @@ fn move(
     at_ms: started_at_ms + elapsed_ms,
     event: OwnEvent(
       Told(message: Moved(
-        connection: ConnectionId(connection),
+        unit: map_support.address(number: connection),
         place: at(x),
         seq: elapsed_ms,
       )),
@@ -130,7 +116,7 @@ fn leave(
     at_ms: started_at_ms + elapsed_ms,
     event: OwnEvent(Asked(
       CallerId(9),
-      Leave(connection: ConnectionId(connection)),
+      Leave(unit: map_support.address(number: connection)),
     )),
   )
 }
@@ -150,15 +136,15 @@ fn two_players(x: Float) -> #(State, ServiceStep(map_message.Outgoing)) {
   join(state: state, connection: 2, place: at(x), elapsed_ms: 200)
 }
 
-/// What a step tells players' connections about who sees whom: the connection, the stay
-/// the notice is for and the notice, in the order sent. The viewer's own notice that a
+/// What a step tells players' connections about who sees whom: the number of the unit the
+/// notice is sent to and the notice, in the order sent. The viewer's own notice that a
 /// unit is unseen (`PlayerUnseen`) is checked by the table tests of
 /// `map_player_relation_test`.
 fn notices(
   taken: ServiceStep(map_message.Outgoing),
-) -> List(#(Int, stay.Stay, map_message.Notice)) {
+) -> List(#(Int, map_message.Notice)) {
   list.filter(player_support.notices(taken:), fn(sent) {
-    case sent.2 {
+    case sent.1 {
       map_message.PlayerUnseen(..) -> False
       _ -> True
     }
@@ -167,13 +153,12 @@ fn notices(
 
 /// The unit id a join's `Joined` answer gives the player, which a notice of that player
 /// names.
-pub fn a_notice_names_the_stay_of_the_player_it_is_for_and_seen_by_names_the_watchers_stay_test() -> Nil {
+pub fn a_notice_is_sent_to_the_address_of_the_player_it_is_for_and_seen_by_names_the_watchers_address_test() -> Nil {
   use <- owned_test.run(5000)
-  // The map keeps the stay each Join named (genesis_prime/world_map/stay), and a
-  // message for a stay is dropped by any other: so each notice names its
-  // receiver's join's stay, and SeenBy the watcher's, which the receiver names
-  // in every news it sends the watcher. SeenBy also names the unit the map gave the
-  // watcher at its join, which is the address the cast rule names the player by.
+  // Each notice is sent to its receiver's address, and SeenBy names the watcher's, which
+  // the receiver names in every news it sends the watcher. SeenBy also names the unit the
+  // map gave the watcher at its join, which is the address the cast rule names the player
+  // by.
   let #(state, first_join) =
     join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 100)
   let #(state, second_join) =
@@ -185,20 +170,16 @@ pub fn a_notice_names_the_stay_of_the_player_it_is_for_and_seen_by_names_the_wat
     == [
       #(
         1,
-        map_support.stay(count: 1),
         SeenBy(
-          by: ConnectionId(2),
-          stay: map_support.stay(count: 2),
+          by: map_support.address(number: 2),
           unit_id: second_unit,
           generation: generation.first(),
         ),
       ),
       #(
         2,
-        map_support.stay(count: 2),
         SeenBy(
-          by: ConnectionId(1),
-          stay: map_support.stay(count: 1),
+          by: map_support.address(number: 1),
           unit_id: first_unit,
           generation: generation.after(generation: generation.first()),
         ),
@@ -209,11 +190,13 @@ pub fn a_notice_names_the_stay_of_the_player_it_is_for_and_seen_by_names_the_wat
     == [
       #(
         1,
-        map_support.stay(count: 1),
-        UnseenBy(by: ConnectionId(2), generation: generation.first()),
+        UnseenBy(
+          by: map_support.address(number: 2),
+          generation: generation.first(),
+        ),
       ),
     ]
-    as "an UnseenBy goes for the stay of the player still in the map"
+    as "an UnseenBy goes to the unit of the player still in the map"
 }
 
 /// The end of the connection `connection`'s watch: the watch the join opened as

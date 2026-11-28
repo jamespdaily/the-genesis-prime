@@ -14,11 +14,11 @@ import genesis_prime/shared/chat_tell.{type Said as ChatSaid}
 import genesis_prime/shared/player_unit
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news.{type PeerNews, Appeared, Health, PeerNews}
-import genesis_prime/step.{type ServiceStep, ConnectionId, OwnEvent, Told}
+import genesis_prime/step.{type ServiceStep, OwnEvent, Told}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/map_id
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, Some}
@@ -32,11 +32,6 @@ pub fn empty() -> State {
   spawns.started_with_spawns(spawns: [])
 }
 
-/// The stay of a connection's `count`th join.
-pub fn stay(count count: Int) -> Stay {
-  map_support.stay(count:)
-}
-
 /// What the step sends to the connection `connection`, in order.
 pub fn sent_to(
   taken taken: ServiceStep(map_message.Outgoing),
@@ -47,40 +42,39 @@ pub fn sent_to(
   |> list.map(fn(sent) { sent.1 })
 }
 
-/// What the step relays, each as the connection's number, the stay and what is delivered.
+/// What the step relays, each as the number of the unit's address and what is delivered.
 pub fn relayed(
   taken taken: ServiceStep(map_message.Outgoing),
-) -> List(#(Int, Stay, map_message.Delivered)) {
+) -> List(#(Int, map_message.Delivered)) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      map_message.Relayed(stay:, delivered:) -> Ok(#(sent.0, stay, delivered))
+      map_message.Relayed(delivered:) -> Ok(#(sent.0, delivered))
       _ -> Error(Nil)
     }
   })
 }
 
-/// What a step sends as a notice (`Noticed`), each as the connection, the stay it is sent
-/// for and the notice, in the order sent.
+/// What a step sends as a notice (`Noticed`), each as the number of the unit's address it is
+/// sent to and the notice, in the order sent.
 pub fn notices(
   taken taken: ServiceStep(map_message.Outgoing),
-) -> List(#(Int, Stay, map_message.Notice)) {
+) -> List(#(Int, map_message.Notice)) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      map_message.Noticed(stay:, notice:) -> Ok(#(sent.0, stay, notice))
+      map_message.Noticed(notice:) -> Ok(#(sent.0, notice))
       _ -> Error(Nil)
     }
   })
 }
 
-/// The notices the step sends to connection `connection`, each with the stay it is sent
-/// for, in order.
+/// The notices the step sends to connection `connection`'s unit, in order.
 pub fn notices_to(
   taken taken: ServiceStep(map_message.Outgoing),
   connection connection: Int,
-) -> List(#(Stay, map_message.Notice)) {
+) -> List(map_message.Notice) {
   list.filter_map(notices(taken:), fn(sent) {
     case sent.0 == connection {
-      True -> Ok(#(sent.1, sent.2))
+      True -> Ok(sent.1)
       False -> Error(Nil)
     }
   })
@@ -94,10 +88,12 @@ pub fn sight_of(
   viewer viewer: Int,
 ) -> Option(Generation) {
   list.find_map(notices_to(taken:, connection: owner), fn(notice) {
-    case notice.1 {
-      map_message.SeenBy(by: ConnectionId(by), generation:, ..)
-        if by == viewer
-      -> Ok(generation)
+    case notice {
+      map_message.SeenBy(by:, generation:, ..) ->
+        case unit_address.rank(address: by) == viewer {
+          True -> Ok(generation)
+          False -> Error(Nil)
+        }
       _ -> Error(Nil)
     }
   })
@@ -128,26 +124,20 @@ pub fn health(connection connection: Int, health health: Int) -> PeerNews {
 }
 
 /// The owner's snapshot of the sight `generation` for `viewer`, as its connection tells
-/// the map, at time `at_ms`, with the owner's stay `owner_stay`: the owner's own 0x262 of
+/// the map, at time `at_ms`: the owner's own 0x262 of
 /// that sight, as a real owner begins it, then `burst`.
 pub fn snapshot(
   state state: State,
   at_ms at_ms: Int,
   owner owner: Int,
-  owner_stay owner_stay: Stay,
   viewer viewer: Int,
   generation generation: Generation,
   burst burst: List(PeerNews),
 ) -> #(State, ServiceStep(map_message.Outgoing)) {
-  snapshot_as_told(
-    state:,
-    at_ms:,
-    owner:,
-    owner_stay:,
-    viewer:,
-    generation:,
-    burst: [appeared(owner:, generation:), ..burst],
-  )
+  snapshot_as_told(state:, at_ms:, owner:, viewer:, generation:, burst: [
+    appeared(owner:, generation:),
+    ..burst
+  ])
 }
 
 /// The owner's 0x262 of the sight `generation`, which begins a snapshot.
@@ -177,7 +167,6 @@ pub fn snapshot_as_told(
   state state: State,
   at_ms at_ms: Int,
   owner owner: Int,
-  owner_stay owner_stay: Stay,
   viewer viewer: Int,
   generation generation: Generation,
   burst burst: List(PeerNews),
@@ -187,9 +176,8 @@ pub fn snapshot_as_told(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.PlayerSnapshot(
-        by: ConnectionId(owner),
-        stay: owner_stay,
-        viewer: ConnectionId(viewer),
+        by: map_support.unit(state:, connection: owner),
+        viewer: map_support.unit(state:, connection: viewer),
         generation:,
         burst:,
       )),
@@ -202,7 +190,6 @@ pub fn broadcast(
   state state: State,
   at_ms at_ms: Int,
   owner owner: Int,
-  owner_stay owner_stay: Stay,
   news news: PeerNews,
 ) -> #(State, ServiceStep(map_message.Outgoing)) {
   spawns.feed(
@@ -210,23 +197,20 @@ pub fn broadcast(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.PlayerBroadcast(
-        from: ConnectionId(owner),
-        stay: owner_stay,
+        from: map_support.unit(state:, connection: owner),
         news:,
       )),
     ),
   )
 }
 
-/// A landing of the player of connection `from`, in its stay `from_stay`, on the player
-/// of connection `to`, in the stay `to_stay`, at time `at_ms`.
+/// A landing of the player of connection `from` on the player of connection `to`, at time
+/// `at_ms`.
 pub fn landing(
   state state: State,
   at_ms at_ms: Int,
   from from: Int,
-  from_stay from_stay: Stay,
   to to: Int,
-  to_stay to_stay: Stay,
   landing landing: map_message.Landing,
 ) -> #(State, ServiceStep(map_message.Outgoing)) {
   spawns.feed(
@@ -234,10 +218,8 @@ pub fn landing(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.TellLanding(
-        from: ConnectionId(from),
-        stay: from_stay,
-        to: ConnectionId(to),
-        to_stay:,
+        from: map_support.unit(state:, connection: from),
+        to: map_support.unit(state:, connection: to),
         landing:,
       )),
     ),
@@ -271,7 +253,6 @@ pub fn say(
   state state: State,
   at_ms at_ms: Int,
   speaker speaker: Int,
-  speaker_stay speaker_stay: Stay,
   said said: ChatSaid,
 ) -> #(State, ServiceStep(map_message.Outgoing)) {
   spawns.feed(
@@ -279,8 +260,7 @@ pub fn say(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.Say(
-        from: ConnectionId(speaker),
-        stay: speaker_stay,
+        from: map_support.unit(state:, connection: speaker),
         said:,
       )),
     ),
@@ -311,8 +291,8 @@ pub fn relation(
 ) -> Option(map.Relation) {
   map.player_relation(
     state:,
-    owner: ConnectionId(owner),
-    viewer: ConnectionId(viewer),
+    owner: map_support.unit(state:, connection: owner),
+    viewer: map_support.unit(state:, connection: viewer),
   )
 }
 

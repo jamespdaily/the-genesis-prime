@@ -82,7 +82,7 @@ fn checked(
     connection_state.tells_the_map(
       entered:,
       request: client_connection.TellVisibilityChanged(
-        connection: client_connection.connection(session.link),
+        unit: entered.address,
         hidden:,
       ),
     ),

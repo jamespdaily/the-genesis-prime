@@ -58,7 +58,7 @@ const viewer = 1
 
 /// The address the map issues the first player: the first join of its run.
 fn first_players_address() -> UnitAddress {
-  map_support.address_for(incarnation: 1, number: 1, joiner: first_player)
+  map_support.address_for(incarnation: 1, number: 1, rank: first_player)
 }
 
 fn beast() -> Spawn {
@@ -151,10 +151,9 @@ fn viewer_joins() -> Mail {
       OwnEvent(Asked(
         caller: CallerId(viewer),
         message: map_message.Join(
-          connection: ConnectionId(viewer),
+          joiner: ConnectionId(viewer),
           character: map_support.character(100 + viewer),
           place: spawns.at(0.0),
-          stay: map_support.stay(count: 1),
           alive: True,
           hidden: set.new(),
         ),
@@ -173,7 +172,7 @@ fn moves(x x: Float, seq seq: Int, name name: String) -> Mail {
     input: ToMap(
       OwnEvent(
         Told(map_message.Moved(
-          connection: ConnectionId(viewer),
+          unit: map_support.address(number: viewer),
           place: spawns.at(x),
           seq:,
         )),
@@ -608,7 +607,7 @@ fn first_player_moves_out(seq seq: Int) -> Mail {
     input: ToMap(
       OwnEvent(
         Told(map_message.Moved(
-          connection: ConnectionId(first_player),
+          unit: map_support.address(number: first_player),
           place: spawns.at(spawns.far),
           seq:,
         )),

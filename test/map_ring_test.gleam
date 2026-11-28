@@ -18,7 +18,7 @@ import connection_rule_support as support
 import genesis_prime/game/start_place
 import genesis_prime/map/message as map_message
 import genesis_prime/shared/creature_combat.{Hostile}
-import genesis_prime/step.{ConnectionId, LogError, OwnEvent, Told}
+import genesis_prime/step.{LogError, OwnEvent, Told}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/unit_address
@@ -42,7 +42,7 @@ fn ready(
     at_ms: map_spawn_support.started_at_ms + 10,
     event: OwnEvent(
       Told(message: map_message.Ready(
-        connection: ConnectionId(connection),
+        unit: map_support.address(number: connection),
         seq: 0,
       )),
     ),
@@ -233,6 +233,8 @@ pub fn a_creature_starting_where_a_ready_player_stands_in_its_ring_is_sent_one_a
             _ -> Error(Nil)
           }
         step.OwnEffect(step.Reply(..))
+        | step.OwnEffect(step.Register(..))
+        | step.OwnEffect(step.Unregister(..))
         | step.OwnEffect(step.StartServiceTimer(..))
         | step.OwnEffect(step.CancelServiceTimer(..))
         | step.Watch(..)
@@ -264,7 +266,10 @@ pub fn a_player_ready_before_any_move_of_its_stay_is_approached_with_the_connect
       state:,
       at_ms: map_spawn_support.started_at_ms + 10,
       event: OwnEvent(
-        Told(message: map_message.Ready(connection: ConnectionId(1), seq: 5)),
+        Told(message: map_message.Ready(
+          unit: map_support.address(number: 1),
+          seq: 5,
+        )),
       ),
     )
   assert approaches(readied) == [#(95.0, 5)]
@@ -287,12 +292,7 @@ fn approaches_in_full(
         seq:,
         ..,
       )) ->
-        Ok(#(
-          unit_address.joiner(address: by),
-          unit_id,
-          start_place.x(place),
-          seq,
-        ))
+        Ok(#(unit_address.rank(address: by), unit_id, start_place.x(place), seq))
       map_message.Withdrew(..)
       | map_message.PlayerDied(..)
       | map_message.CasterGone(..)

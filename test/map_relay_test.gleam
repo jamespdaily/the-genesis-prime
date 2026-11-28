@@ -28,7 +28,6 @@ import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_address
 import gleam/int
 import gleam/list
@@ -61,7 +60,7 @@ fn told(taken: ServiceStep(map_message.Outgoing)) -> List(Told) {
         let #(by, generation) = viewer
         Started(
           unit_id: { start.1 }.unit_id,
-          by: unit_address.joiner(address: by),
+          by: unit_address.rank(address: by),
           generation:,
         )
       })
@@ -70,9 +69,9 @@ fn told(taken: ServiceStep(map_message.Outgoing)) -> List(Told) {
     list.filter_map(spawns.sends(taken), fn(sent) {
       case sent {
         #(Creature(unit_id:, ..), map_message.Seen(by:, generation:)) ->
-          Ok(Seen(unit_id:, by: unit_address.joiner(address: by), generation:))
+          Ok(Seen(unit_id:, by: unit_address.rank(address: by), generation:))
         #(Creature(unit_id:, ..), map_message.Unseen(by:, generation:)) ->
-          Ok(Unseen(unit_id:, by: unit_address.joiner(address: by), generation:))
+          Ok(Unseen(unit_id:, by: unit_address.rank(address: by), generation:))
         _ -> Error(Nil)
       }
     })
@@ -88,13 +87,13 @@ fn told_by_a_creature(
   spawns.feed(state:, at_ms:, event: OwnEvent(Told(message:)))
 }
 
-/// What the step relays, each as the connection's number, the stay and the payload.
+/// What the step relays, each as the number of the address it is sent to and the payload.
 fn relayed(
   taken: ServiceStep(map_message.Outgoing),
-) -> List(#(Int, Stay, map_message.Delivered)) {
+) -> List(#(Int, map_message.Delivered)) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      map_message.Relayed(stay:, delivered:) -> Ok(#(sent.0, stay, delivered))
+      map_message.Relayed(delivered:) -> Ok(#(sent.0, delivered))
       _ -> Error(Nil)
     }
   })
@@ -184,11 +183,7 @@ pub fn a_second_join_unsees_each_creature_the_first_unit_saw_and_sees_those_in_s
     && now_1 != now_2
     as "each new sight has a generation the map never gave before"
   assert spawns.relation_of(state:, spawn: 1, connection: 1)
-    == Some(map.Relation(
-      generation: now_1,
-      stay: map_support.stay(count: 1),
-      state: map.AwaitingSnapshot,
-    ))
+    == Some(map.Relation(generation: now_1, state: map.AwaitingSnapshot))
     as "the new sight awaits the creature's snapshot"
 }
 
@@ -208,11 +203,10 @@ pub fn a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test() -> N
     spawns.join(state:, at_ms: 6200, connection: 3, x: spawns.far)
   let #(state, _) = spawns.leave(state:, at_ms: 6300, connection: 3)
   let #(state, _) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: 6400,
       connection: 2,
-      stay_count: 2,
       x: spawns.far,
       alive: True,
       hidden: set.new(),
@@ -239,20 +233,18 @@ pub fn a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test() -> N
     #("Threatened", map_message.Fight(told: Threatened(unit_id:, life:))),
     #("Released", map_message.Fight(told: Released(unit_id:))),
   ]
-  // The address the relay names, the connection and the stay its join named, and whether it
-  // is delivered.
+  // The address the relay names, the number of the address it is sent to, and whether it is
+  // delivered.
   let destinations = [
     #(
       "a unit of the run whose player sees the creature",
       map_support.address(number: 1),
       1,
-      1,
       True,
     ),
     #(
       "a unit of the run whose player does not see the creature",
-      map_support.address_for(incarnation: 1, number: 4, joiner: 2),
-      2,
+      map_support.address_for(incarnation: 1, number: 4, rank: 2),
       2,
       True,
     ),
@@ -260,20 +252,17 @@ pub fn a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test() -> N
       "the address of a unit that ended when its connection joined again",
       map_support.address(number: 2),
       2,
-      1,
       False,
     ),
     #(
       "the address of a unit that left",
       map_support.address(number: 3),
       3,
-      1,
       False,
     ),
     #(
       "an address the map never issued",
       map_support.address(number: 99),
-      1,
       1,
       False,
     ),
@@ -281,14 +270,13 @@ pub fn a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test() -> N
       "an address of an earlier run of the map",
       map_support.address_in(incarnation: 0, number: 1),
       1,
-      1,
       False,
     ),
   ]
   list.each(payloads, fn(row) {
     let #(name, payload) = row
     list.each(destinations, fn(destination) {
-      let #(situation, address, connection, stay_count, delivered) = destination
+      let #(situation, address, connection, delivered) = destination
       let #(_, taken) =
         told_by_a_creature(
           state:,
@@ -297,11 +285,7 @@ pub fn a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test() -> N
         )
       let expected = case delivered {
         True -> [
-          #(
-            connection,
-            map_support.stay(count: stay_count),
-            map_message.Tell(payload:),
-          ),
+          #(connection, map_message.Tell(payload:)),
         ]
         False -> []
       }
@@ -341,7 +325,7 @@ pub fn a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test() -> N
     relayed(taken)
   }
   assert snapshot(map_support.address(number: 1))
-    == [#(1, map_support.stay(count: 1), map_message.News(news))]
+    == [#(1, map_message.News(news))]
     as "a snapshot of the address that holds the sight is relayed"
   assert list.all(
     [
@@ -502,7 +486,7 @@ fn told_creatures(
   list.filter_map(spawns.sends(taken), fn(sent) {
     case sent {
       #(Creature(unit_id:, life:, ..), map_message.ToldCreature(by:, payload:)) ->
-        Ok(#(unit_id, life, unit_address.joiner(address: by), payload))
+        Ok(#(unit_id, life, unit_address.rank(address: by), payload))
       _ -> Error(Nil)
     }
   })
@@ -593,11 +577,10 @@ fn senders_in_four_ways() -> #(State, Int, Int) {
   let #(state, _) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
   let #(state, _) = spawns.join(state:, at_ms: 6100, connection: 2, x: 0.0)
   let #(state, _) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: 6200,
       connection: 2,
-      stay_count: 2,
       x: 0.0,
       alive: True,
       hidden: set.new(),
@@ -621,12 +604,12 @@ pub fn a_strike_or_an_answer_of_an_address_that_ended_still_lands_and_a_move_or_
     ),
     #(
       "in the map, joined again",
-      map_support.address_for(incarnation: 1, number: 3, joiner: 2),
+      map_support.address_for(incarnation: 1, number: 3, rank: 2),
       True,
     ),
     #(
       "that left",
-      map_support.address_for(incarnation: 1, number: 4, joiner: 3),
+      map_support.address_for(incarnation: 1, number: 4, rank: 3),
       False,
     ),
     #("never issued an address", map_support.address(number: 5), False),
@@ -712,7 +695,7 @@ pub fn a_strike_or_an_answer_of_an_address_that_ended_still_lands_and_a_move_or_
       list.each(
         [
           map_support.address(number: 2),
-          map_support.address_for(incarnation: 1, number: 4, joiner: 3),
+          map_support.address_for(incarnation: 1, number: 4, rank: 3),
           map_support.address(number: 5),
         ],
         fn(from) {
@@ -830,16 +813,8 @@ pub fn a_snapshot_in_the_maps_mailbox_when_its_creature_ends_is_relayed_and_gone
     )
   assert relayed(snapshot)
     == [
-      #(
-        1,
-        map_support.stay(count: 1),
-        map_message.News(health_news(unit_id:, health: 52)),
-      ),
-      #(
-        1,
-        map_support.stay(count: 1),
-        map_message.News(health_news(unit_id:, health: 40)),
-      ),
+      #(1, map_message.News(health_news(unit_id:, health: 52))),
+      #(1, map_message.News(health_news(unit_id:, health: 40))),
     ]
     as "the burst in the map's mailbox is relayed, in the order the creature built it"
   let #(state, ended) =
@@ -934,7 +909,7 @@ pub fn the_map_numbers_each_creature_relation_through_join_move_leave_crash_re_e
     as "with fresh generations"
 }
 
-pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_test() -> Nil {
+pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_the_order_of_their_addresses_and_to_no_awaiting_or_departed_viewer_test() -> Nil {
   use <- owned_test.run(5000)
   // Four players join in the order 3, 1, 2, 4, each in a stay of its own. Players 3, 1 and 4
   // have their snapshots taken, 2 does not, and 4 leaves.
@@ -943,41 +918,37 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
       spawn_support.battle_beast(number: 1, x: 0.0),
     ])
   let #(state, _) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: 6000,
       connection: 3,
-      stay_count: 3,
       x: 0.0,
       alive: True,
       hidden: set.new(),
     )
   let #(state, _) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: 6100,
       connection: 1,
-      stay_count: 1,
       x: 0.0,
       alive: True,
       hidden: set.new(),
     )
   let #(state, _) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: 6200,
       connection: 2,
-      stay_count: 2,
       x: 0.0,
       alive: True,
       hidden: set.new(),
     )
   let #(state, _) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: 6300,
       connection: 4,
-      stay_count: 4,
       x: 0.0,
       alive: True,
       hidden: set.new(),
@@ -998,7 +969,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
               1 -> 2
               _ -> 4
             },
-            joiner: connection,
+            rank: connection,
           ),
           generation: spawns.generation_of(state:, spawn: 1, connection:),
           burst: [],
@@ -1015,8 +986,8 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
     )
   assert relayed(taken)
     == [
-      #(1, map_support.stay(count: 1), map_message.News(news)),
-      #(3, map_support.stay(count: 3), map_message.News(news)),
+      #(1, map_message.News(news)),
+      #(3, map_message.News(news)),
     ]
     as "relayed to the viewers that relay, each for its own stay, in connection order; the viewer that awaits its snapshot and the one that left are sent none"
   // The creature is released: the relations are kept as they were, so the viewer that
@@ -1029,7 +1000,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
       message: map_message.Snapshot(
         unit_id:,
         life:,
-        by: map_support.address_for(incarnation: 1, number: 3, joiner: 2),
+        by: map_support.address_for(incarnation: 1, number: 3, rank: 2),
         generation: spawns.generation_of(
           state: released,
           spawn: 1,
@@ -1038,8 +1009,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
         burst: [news],
       ),
     )
-  assert relayed(snapshot)
-    == [#(2, map_support.stay(count: 2), map_message.News(news))]
+  assert relayed(snapshot) == [#(2, map_message.News(news))]
     as "a releasing creature's snapshot reaches the viewer that awaits it, for the stay of its relation"
   let #(_, broadcast_released) =
     told_by_a_creature(
@@ -1049,22 +1019,20 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
     )
   assert relayed(broadcast_released)
     == [
-      #(1, map_support.stay(count: 1), map_message.News(news)),
-      #(2, map_support.stay(count: 2), map_message.News(news)),
-      #(3, map_support.stay(count: 3), map_message.News(news)),
+      #(1, map_message.News(news)),
+      #(2, map_message.News(news)),
+      #(3, map_message.News(news)),
     ]
     as "a releasing creature's broadcast reaches each viewer that relays, as before the release"
   // Viewers 1 (relaying) and 2 (awaiting) leave and join again in new stays while the
   // creature lies released: the relations still name the stays they were made in.
   let rejoined =
-    list.fold([#(1, 11), #(2, 22)], released, fn(state, again) {
-      let #(connection, stay_count) = again
+    list.fold([1, 2], released, fn(state, connection) {
       let #(state, _) = spawns.leave(state:, at_ms: 7000, connection:)
-      spawns.join_in_stay(
+      spawns.join_hiding(
         state:,
         at_ms: 7100,
         connection:,
-        stay_count:,
         x: 0.0,
         alive: True,
         hidden: set.new(),
@@ -1077,7 +1045,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
       message: map_message.Snapshot(
         unit_id:,
         life:,
-        by: map_support.address_for(incarnation: 1, number: 3, joiner: 2),
+        by: map_support.address_for(incarnation: 1, number: 3, rank: 2),
         generation: spawns.generation_of(
           state: released,
           spawn: 1,
@@ -1094,8 +1062,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
       at_ms: 7300,
       message: map_message.Broadcast(unit_id:, life:, news:),
     )
-  assert relayed(broadcast_rejoined)
-    == [#(3, map_support.stay(count: 3), map_message.News(news))]
+  assert relayed(broadcast_rejoined) == [#(3, map_message.News(news))]
     as "a broadcast is relayed to no viewer under a stay it has left, here 1 and 2, and still to the one that stayed"
 }
 
@@ -1131,11 +1098,7 @@ pub fn a_snapshot_of_an_earlier_generation_relays_nothing_and_leaves_the_relatio
   assert relayed(stale) == []
     as "a snapshot of the sight that ended is dropped, whatever it carries"
   assert spawns.relation_of(state:, spawn: 1, connection: 2)
-    == Some(map.Relation(
-      generation: current,
-      stay: map_support.stay(count: 1),
-      state: map.AwaitingSnapshot,
-    ))
+    == Some(map.Relation(generation: current, state: map.AwaitingSnapshot))
     as "the relation still awaits the snapshot of its own generation"
   let #(_, own) =
     told_by_a_creature(
@@ -1149,7 +1112,6 @@ pub fn a_snapshot_of_an_earlier_generation_relays_nothing_and_leaves_the_relatio
         burst: [news],
       ),
     )
-  assert relayed(own)
-    == [#(2, map_support.stay(count: 1), map_message.News(news))]
+  assert relayed(own) == [#(2, map_message.News(news))]
     as "the snapshot of its own generation is relayed"
 }

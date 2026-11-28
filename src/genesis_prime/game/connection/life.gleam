@@ -303,7 +303,7 @@ pub fn carried(
                 connection_state.tells_the_map(
                   entered:,
                   request: client_connection.TellLifeChanged(
-                    connection: client_connection.connection(session.link),
+                    unit: entered.address,
                     alive:,
                   ),
                 ),
@@ -370,7 +370,6 @@ fn blow_carried(
             list.append(
               own,
               connection_landing.events_told(
-                session:,
                 entered:,
                 events: cast_proc.blow_events(blow:),
               ),

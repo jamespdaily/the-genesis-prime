@@ -97,7 +97,6 @@ import genesis_prime/step.{
   LogWarning, Unwatch,
 }
 import genesis_prime/store
-import genesis_prime/world_map/stay
 import gleam/list
 import gleam/option.{type Option}
 
@@ -604,9 +603,7 @@ fn leaving_the_map(
     request: AskMapRun(
       map: entered.map,
       incarnation: entered.incarnation,
-      message: map_message.Leave(connection: client_connection.connection(
-        session.link,
-      )),
+      message: map_message.Leave(unit: entered.address),
     ),
     before:,
   )
@@ -716,7 +713,6 @@ fn joining_at(
   health health: Option(Int),
   told told: Option(String),
 ) -> client_connection.Handled(Session) {
-  let stay = stay.next(session.last_stay)
   let #(entry, effects) =
     world_entry.rejoining(
       entered:,
@@ -724,12 +720,11 @@ fn joining_at(
       health:,
       told:,
       connection: client_connection.connection(session.link),
-      stay:,
       tables: session.settings.tables,
       visibility: session.settings.visibility,
     )
   connection_select.entering_world(
-    session: Session(..session, last_stay: stay),
+    session:,
     now:,
     holder:,
     entry:,
@@ -775,13 +770,11 @@ pub fn entry_answered(
         text: "the store is unavailable",
       )
     step.Answer(FromStore(store.ForWorld(answer))) -> {
-      let stay = stay.next(session.last_stay)
       case
         world_entry.loaded(
           entry,
           answer:,
           connection: client_connection.connection(session.link),
-          stay:,
           tables: session.settings.tables,
           visibility: session.settings.visibility,
           spawns: session.settings.loaded_spawns,
@@ -790,7 +783,7 @@ pub fn entry_answered(
         Ok(world_entry.Join(state:, effects:))
         | Ok(world_entry.Fill(state:, effects:)) ->
           connection_select.entering_world(
-            session: Session(..session, last_stay: stay),
+            session:,
             now:,
             holder:,
             entry: state,

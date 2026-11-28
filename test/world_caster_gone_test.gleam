@@ -14,7 +14,7 @@
 
 import crowd_control_support
 import driven_time
-import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
+import genesis_prime/client_connection.{type Message, ForUnit, SentByPeer}
 import genesis_prime/map/message as map_message
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/shared/strike_tell
@@ -53,11 +53,11 @@ fn heard(
     world_support.sent_before_the_marker(world: watched.world, id:, received:),
     fn(message) {
       case message {
-        ForStay(sent: SentByPeer(PeerNews(news: PropertiesChanged(..), ..)), ..) ->
+        ForUnit(sent: SentByPeer(PeerNews(news: PropertiesChanged(..), ..)), ..) ->
           Ok(PropertiesWritten)
-        ForStay(sent: SentByPeer(PeerNews(news: CrowdControlEnded(..), ..)), ..) ->
+        ForUnit(sent: SentByPeer(PeerNews(news: CrowdControlEnded(..), ..)), ..) ->
           Ok(ControlEnded)
-        ForStay(..)
+        ForUnit(..)
         | client_connection.SentBySessions(..)
         | client_connection.SentByChat(..) -> Error(Nil)
       }

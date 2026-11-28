@@ -29,10 +29,10 @@
 //// - A recording that cannot be written is logged and ends the process before that step's effects.
 //// - An ask (`EffectsThenAsk`): the step's effects run first, then the `directory` is called and a
 ////   monitored wait runs until the ask's deadline; an unanswered ask is kept by tag.
-//// - A tell: `Connection`/`ZoneChannel` through `deliver`, any other through its open watch's
-////   `Tellable`, dropped with a warning when none; a `Creature` tell is a rule bug.
-//// - `TellWatched` sends by the watch's own way, silently dropped when the watch found none.
-//// - `JoinGroup`/`LeaveGroup` go through the registry in effect order (`registry.join_group`).
+//// - A tell: `Connection`, `Unit` or `ZoneChannel` through `deliver`, any other through its open
+////   watch's `Tellable`, dropped with a warning when none; a `Creature` tell is a rule bug.
+//// - `TellWatched` sends by the watch's own way, dropped silently when the watch found none.
+//// - `JoinGroup`/`LeaveGroup` go through the registry in effect order.
 //// - A delivered message is taken between steps as `OwnEvent(Woken)`; one during an ask waits.
 //// - A watch: one `locate` call, the monitor kept under its id; a target no process holds becomes
 ////   `WatchEnded(id)` before the mailbox is read; an id already open ends the connection.
@@ -1091,16 +1091,10 @@ fn tell(
   request request: request,
 ) -> Nil {
   case to {
-    step.Connection(..) | step.ZoneChannel(..) -> {
+    step.Connection(..) | step.ZoneChannel(..) | step.Unit(..) -> {
       let _delivered = connection.settings.deliver(to, request)
       Nil
     }
-    step.Unit(..) ->
-      runtime.log(
-        LogError,
-        "a rule told a unit directly, which no process answers to in a map's inbox",
-        step.no_one,
-      )
     step.Creature(..) ->
       runtime.log(
         LogError,

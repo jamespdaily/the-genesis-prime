@@ -24,7 +24,7 @@ import gate_rule
 import genesis_prime/connection/script.{type Scripts, Issued, Script}
 import genesis_prime/map/message as map_message
 import genesis_prime/service
-import genesis_prime/step.{type Now, ConnectionId, Now}
+import genesis_prime/step.{type Now, Now}
 import genesis_prime/step/runtime
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/map_id.{MapId}
@@ -36,6 +36,7 @@ import gleam/otp/static_supervisor as supervisor
 import gleam/result
 import log_capture
 import mailbox_support
+import map_support
 import mug
 import open_wait
 import owned_test
@@ -659,7 +660,7 @@ fn start_asking_a_run(
         maps:,
         map: MapId(world_id: 3460, instance: 0),
         incarnation: 1,
-        message: map_message.Leave(connection: ConnectionId(1)),
+        message: map_message.Leave(unit: map_support.address(number: 1)),
         deadline_ms:,
         reply: fn(_answer) { Nil },
       )

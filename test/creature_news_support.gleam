@@ -2,7 +2,7 @@
 //// tests that read what a viewer was sent.
 
 import connection_rule_support as support
-import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
+import genesis_prime/client_connection.{type Message, ForUnit, SentByPeer}
 import genesis_prime/map/message as map_message
 import genesis_prime/shared/creature_turn
 import genesis_prime/shared/strike_tell.{
@@ -82,14 +82,14 @@ pub fn named_among(
 ) -> fn(Message) -> Result(String, Nil) {
   fn(message) {
     case message {
-      ForStay(sent: SentByPeer(PeerNews(news:, ..)), ..) -> {
+      ForUnit(sent: SentByPeer(PeerNews(news:, ..)), ..) -> {
         let name = name_of(news)
         case list.contains(names, name) {
           True -> Ok(name)
           False -> Error(Nil)
         }
       }
-      ForStay(..)
+      ForUnit(..)
       | client_connection.SentBySessions(..)
       | client_connection.SentByChat(..) -> Error(Nil)
     }
@@ -118,14 +118,14 @@ pub fn said_to_the_map(taken: ServiceStep(creature.Outgoing)) -> List(String) {
       creature.Broadcast(news: PeerNews(news:, ..), ..) ->
         name_of(news) <> " to all"
       creature.Snapshot(by:, ..) ->
-        "snapshot for " <> int.to_string(unit_address.joiner(address: by))
+        "snapshot for " <> int.to_string(unit_address.rank(address: by))
       creature.Expired(unit_id:, life:) ->
         "expired "
         <> int.to_string(unit_id)
         <> " of life "
         <> int.to_string(life)
       creature.Relay(to:, payload:, ..) -> {
-        let number = unit_address.joiner(address: to)
+        let number = unit_address.rank(address: to)
         case payload {
           map_message.Struck(answered: Answered(outcome: Landed(..), ..)) ->
             "answer to " <> int.to_string(number)
@@ -175,7 +175,7 @@ pub fn address_of(connection connection: ConnectionId) -> UnitAddress {
 
 /// The connection the address was issued for.
 pub fn connection_of(address address: UnitAddress) -> ConnectionId {
-  ConnectionId(unit_address.joiner(address:))
+  ConnectionId(unit_address.rank(address:))
 }
 
 /// The map's `Unseen` of the sight `seen` or a creature's start began.

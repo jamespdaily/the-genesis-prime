@@ -53,6 +53,7 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
 import map_spawn_support
+import map_support
 import order_explorer
 import spawn_support
 
@@ -446,7 +447,7 @@ fn news_outside_the_relation(
       case effect {
         OwnEffect(Send(
           to: Connection(ConnectionId(1)),
-          message: map_message.Relayed(delivered: map_message.News(..), ..),
+          message: map_message.Relayed(delivered: map_message.News(..)),
         )) -> True
         OwnEffect(_)
         | step.Watch(..)
@@ -465,7 +466,6 @@ fn news_outside_the_relation(
       Some(map.Relation(
         generation: held_generation,
         state: map.AwaitingSnapshot,
-        ..,
       ))
     -> generation == held_generation
     _, _ -> False
@@ -513,16 +513,20 @@ pub fn mail_of_the_map_for(
         result.map(creature.told_by_map(message), fn(told) {
           creature_mail(told:, to_the_next: next_life == Some(life))
         })
-      OwnEffect(Send(to: Connection(ConnectionId(1)), message:)) ->
-        case server.map_message(outgoing: message) {
-          Ok(sent) ->
-            Ok(order_explorer.Mail(
-              to: ViewerProcess,
-              from: FromMap,
-              input: ToViewer(OwnEvent(Woken(sent))),
-              name: "map " <> map_outgoing_name(message),
-            ))
-          Error(Nil) -> Error(Nil)
+      OwnEffect(Send(to: step.Unit(address), message:)) ->
+        case unit_address.number(address:) == 1 {
+          True ->
+            case server.map_message(to: step.Unit(address), outgoing: message) {
+              Ok(sent) ->
+                Ok(order_explorer.Mail(
+                  to: ViewerProcess,
+                  from: FromMap,
+                  input: ToViewer(OwnEvent(Woken(sent))),
+                  name: "map " <> map_outgoing_name(message),
+                ))
+              Error(Nil) -> Error(Nil)
+            }
+          False -> Error(Nil)
         }
       OwnEffect(_)
       | step.Watch(..)
@@ -646,7 +650,7 @@ fn creature_message_name(message: creature.Message) -> String {
 fn map_message_name(message: map_message.Message) -> String {
   case message {
     map_message.Snapshot(by:, ..) ->
-      "Snapshot for " <> int.to_string(unit_address.joiner(address: by))
+      "Snapshot for " <> int.to_string(unit_address.rank(address: by))
     map_message.Broadcast(..) -> "Broadcast"
     map_message.Relay(
       payload: map_message.Fight(told: strike_tell.Threatened(..)),
@@ -678,7 +682,7 @@ fn map_message_name(message: map_message.Message) -> String {
 fn map_outgoing_name(message: map_message.Outgoing) -> String {
   case message {
     map_message.Relayed(..) -> "Relayed"
-    map_message.Noticed(notice: map_message.UnitUnseen(..), ..) -> "Unseen"
+    map_message.Noticed(notice: map_message.UnitUnseen(..)) -> "Unseen"
     map_message.Noticed(..) -> "a notice"
     map_message.Joined(..)
     | map_message.NotJoined(..)
@@ -831,7 +835,7 @@ pub fn check(scene scene: Scene) -> Result(Nil, Violation) {
     Ok(map.Live(unit_id:, relations:, ..)) -> {
       let shown = shows(frames: scene.frames, unit_id:)
       let at_end = list.length(scene.frames)
-      case dict_get(relations, ConnectionId(1)), shown {
+      case dict_get(relations, map_support.address(number: 1)), shown {
         Some(map.Relation(state: map.Relaying, ..)), _ -> Ok(Nil)
         Some(map.Relation(state: map.AwaitingSnapshot, ..)), _ ->
           Error(Violation(RelationEndsMatchTheMap, at_end, unit_id))
@@ -844,10 +848,10 @@ pub fn check(scene scene: Scene) -> Result(Nil, Violation) {
 }
 
 fn dict_get(
-  relations: dict.Dict(step.ConnectionId, map.Relation),
-  connection: step.ConnectionId,
+  relations: dict.Dict(unit_address.UnitAddress, map.Relation),
+  address: unit_address.UnitAddress,
 ) -> Option(map.Relation) {
-  dict.get(relations, connection) |> option.from_result
+  dict.get(relations, address) |> option.from_result
 }
 
 /// Whether the frames leave the unit shown: its last 0x262 or 0x355 is a 0x262.

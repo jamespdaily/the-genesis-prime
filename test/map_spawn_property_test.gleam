@@ -22,6 +22,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/world_map/map.{type State, Live, Retiring}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/unit_address
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -148,7 +149,9 @@ fn settle(
           ),
           retired,
         )
-        OwnEffect(StartCreature(..))
+        OwnEffect(step.Register(..))
+        | OwnEffect(step.Unregister(..))
+        | OwnEffect(StartCreature(..))
         | OwnEffect(Send(..))
         | OwnEffect(Reply(..))
         | OwnEffect(CancelServiceTimer(..))
@@ -232,10 +235,9 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
             event: OwnEvent(step.Asked(
               caller: step.CallerId(connection),
               message: map_message.Join(
-                connection: ConnectionId(connection),
+                joiner: step.ConnectionId(connection),
                 character: map_support.character(100 + connection),
                 place: map_spawn_support.at(x_of(stop)),
-                stay: map_support.stay(count: 1),
                 alive: True,
                 hidden: set.new(),
               ),
@@ -255,7 +257,7 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
             ),
             event: OwnEvent(
               step.Told(message: map_message.Moved(
-                connection: ConnectionId(connection),
+                unit: map_support.unit(state: play.state, connection:),
                 place: map_spawn_support.at(x_of(stop)),
                 seq: stop,
               )),
@@ -272,7 +274,10 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
             play: Play(..play, players: dict.delete(play.players, connection)),
             event: OwnEvent(step.Asked(
               caller: step.CallerId(99),
-              message: map_message.Leave(connection: ConnectionId(connection)),
+              message: map_message.Leave(unit: map_support.unit(
+                state: play.state,
+                connection:,
+              )),
             )),
             connection:,
             fire_sweeps:,
@@ -333,8 +338,8 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
 /// What is wrong with a live spawn's viewers and its idle time, by the players who see it.
 fn live_spawn_problems(
   name name: String,
-  viewers viewers: set.Set(step.ConnectionId),
-  seen seen: set.Set(step.ConnectionId),
+  viewers viewers: set.Set(unit_address.UnitAddress),
+  seen seen: set.Set(unit_address.UnitAddress),
   idle_since_ms idle_since_ms: option.Option(Int),
   now_ms now_ms: Int,
 ) -> List(String) {
@@ -370,7 +375,9 @@ fn broken(play: Play) -> List(String) {
       as "a spawn"
     dict.to_list(play.players)
     |> list.filter(fn(player) { float_abs(player.1 -. spawn_x) <=. 1024.0 })
-    |> list.map(fn(player) { ConnectionId(player.0) })
+    |> list.map(fn(player) {
+      map_support.unit(state: play.state, connection: player.0)
+    })
     |> set.from_list
   }
   let spawn_problems =

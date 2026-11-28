@@ -174,11 +174,8 @@ import genesis_prime/shared/strike_tell.{
 }
 import genesis_prime/shared/unit_news.{type News}
 import genesis_prime/shared/unit_properties.{type Properties}
-import genesis_prime/step.{
-  type ConnectionId, type LogLevel, type Now, type TimerId, TimerId,
-}
+import genesis_prime/step.{type LogLevel, type Now, type TimerId, TimerId}
 import genesis_prime/table/id.{type Spell4EffectsId}
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bit_array
 import gleam/bool
@@ -198,8 +195,8 @@ pub const strike_timer = TimerId(3)
 const bytes_per_unit = hit.roll_bytes
 
 /// The caster as a selection and a strike take it: who it is, where it stands and
-/// faces, its place with the move sequence number and the stay its heals are told for
-/// (genesis_prime/shared/strike_tell `PlayerStrike`), its unit address, which its
+/// faces, its place with the move sequence number, its unit address, which its heals
+/// (genesis_prime/shared/strike_tell `PlayerStrike`) and its
 /// strikes on a creature name as their sender (`PlayerStriker`), its hit radius and
 /// player faction, what its damage formulas read (`stats`), its health and shield when
 /// the go or the tick is asked (`vitals`), its properties, whose BaseCritChance,
@@ -209,12 +206,10 @@ const bytes_per_unit = hit.roll_bytes
 pub type Attacker {
   Attacker(
     unit_id: Int,
-    connection: ConnectionId,
     address: UnitAddress,
     pose: Pose,
     place: start_place.Place,
     move_seq: Int,
-    stay: Stay,
     hit_radius: Float,
     faction: PlayerFaction,
     stats: damage.Attacker,
@@ -271,7 +266,7 @@ pub type Effect {
   /// Tell the creature the strike, through the caster's map (genesis_prime/world_map/map
   /// `TellCreature`): the connection names the creature by the unit and life here.
   TellStrike(unit_id: Int, life: Int, tell: Tell)
-  /// Tell the heal rows to a player's connection, for the stay its notice named
+  /// Tell the heal rows to the player's unit its notice named
   /// (genesis_prime/shared/strike_tell `PlayerStrike`); the answer comes back to this
   /// connection (`player_answered`).
   TellPlayerStrike(address: PlayerAddress, strike: strike_tell.PlayerStrike)
@@ -467,12 +462,7 @@ fn players_of_the_phase(
     True ->
       list.filter_map(allies, fn(unit_id) {
         case unit_id == attacker.unit_id {
-          True ->
-            Ok(PlayerAddress(
-              connection: attacker.connection,
-              unit_id:,
-              stay: attacker.stay,
-            ))
+          True -> Ok(PlayerAddress(address: attacker.address, unit_id:))
           False -> dict.get(attacker.players_in_sight, unit_id)
         }
       })
@@ -919,8 +909,7 @@ fn players_told(
                   occasion: strike_tell.AtGo(phase: selection.asked.phase),
                   unit_id:,
                 ),
-                from: attacker.connection,
-                stay: attacker.stay,
+                from: attacker.address,
                 outgoing: heal_split.scaling_of(properties: attacker.properties).outgoing,
                 heals: list.map(rows, fn(row) {
                   heal_tell(
@@ -1321,8 +1310,7 @@ pub fn begin_tick(
               address:,
               strike: strike_tell.PlayerStrike(
                 key:,
-                from: attacker.connection,
-                stay: attacker.stay,
+                from: attacker.address,
                 outgoing: heal_split.scaling_of(properties: attacker.properties).outgoing,
                 heals: [
                   heal_tell(

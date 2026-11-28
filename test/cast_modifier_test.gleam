@@ -583,9 +583,8 @@ fn pressed_at_a_player(at ms: Int) -> #(cast_state.State, List(Effect)) {
         #(
           armor_ally,
           player_address.PlayerAddress(
-            connection: step.ConnectionId(2),
+            address: map_support.address(number: 2),
             unit_id: armor_ally,
-            stay: map_support.stay(count: 2),
           ),
         ),
       ]),

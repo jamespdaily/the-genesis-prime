@@ -14,7 +14,7 @@ import game_client
 import genesis_prime/account_session.{Claim, Claimed, TakenOver}
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
-  AskSessions, AskStore, ForStay, FromHandOff, FromMap, FromSessions, FromStore,
+  AskSessions, AskStore, ForUnit, FromHandOff, FromMap, FromSessions, FromStore,
   SentByMap, SentByPeer, SentBySessions, TellChat, TellMoved,
 }
 import genesis_prime/connection/cipher.{type Cipher}
@@ -94,10 +94,10 @@ import genesis_prime/shared/unit_news.{
   type News, type PeerNews, Appeared, CreatureAppeared, PeerNews,
 }
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionId, type ConnectionStep, type Event,
-  type Outcome, type TimerId, CallerId, CancelTimer, ConnectionId,
-  EndedBeforeAnswer, Map, NoAnswerInTime, NotRunning, OwnEffect, OwnEvent,
-  StartTimer, TimerFired, TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
+  type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
+  type TimerId, CallerId, CancelTimer, ConnectionId, EndedBeforeAnswer, Map,
+  NoAnswerInTime, NotRunning, OwnEffect, OwnEvent, StartTimer, TimerFired,
+  TimerId, Unwatch, Watch, WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store.{
   AccountId, Character, CharacterId, CharacterLoaded, ForMove, ForSelect,
@@ -114,7 +114,6 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/int
@@ -697,10 +696,9 @@ pub fn map_of_world_with_four_players(
           OwnEvent(step.Asked(
             caller: CallerId(other),
             message: Join(
-              connection: ConnectionId(other),
+              joiner: ConnectionId(other),
               character: world_character(),
               place:,
-              stay: viewer_stay(other),
               alive: True,
               hidden: set.new(),
             ),
@@ -764,6 +762,18 @@ pub fn entered_from(
   character character: store.Character,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   entered_saved(in_character_select:, character:, saved_health: None)
+}
+
+/// `in_character_select` after a camp, the map that took the player once taking it again:
+/// the address it answers is the next one the real map issues, `own_address_again`.
+pub fn entered_again_from(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) =
+    joining_saved(in_character_select:, character:, saved_health: None)
+  let answer_of = mapped(map_state: map_after_a_stay(), taken:).1
+  answer(state:, taken:, outcome: step.Answer(FromMap(answer_of)))
 }
 
 /// `in_character_select` after the store gave `character` with the health its
@@ -1055,7 +1065,7 @@ pub fn summon_asked(
     map: camp_map(),
     incarnation:,
     message: Summon(
-      connection: ConnectionId(1),
+      unit: own_address(),
       creature_id: Creature2Id(creature2_id),
       level:,
     ),
@@ -1369,7 +1379,7 @@ pub fn leave_asked() -> Request {
 /// The ask of the leave of a player the map `map` took, for a player who joined
 /// another world than the tests' camp.
 pub fn leave_asked_from(map map: MapId) -> Request {
-  AskMapRun(map:, incarnation:, message: Leave(connection: ConnectionId(1)))
+  AskMapRun(map:, incarnation:, message: Leave(unit: own_address()))
 }
 
 /// The connection after the map answered `Left`: 0x594 is written and the
@@ -1469,8 +1479,7 @@ pub fn created_for(
       feed(
         state:,
         event: sent_by_the_map(SeenBy(
-          by: ConnectionId(viewer),
-          stay: viewer_stay(viewer),
+          by: viewer_address(viewer),
           unit_id: viewer_unit_id(viewer),
           generation: viewer_sight(viewer),
         )),
@@ -1492,8 +1501,7 @@ pub fn created_at(
       state:,
       ms:,
       event: sent_by_the_map(SeenBy(
-        by: ConnectionId(viewer),
-        stay: viewer_stay(viewer),
+        by: viewer_address(viewer),
         unit_id: viewer_unit_id(viewer),
         generation: viewer_sight(viewer),
       )),
@@ -1570,54 +1578,59 @@ pub fn mapped_logging(
   #(map_state, outgoing, support.logs(mapped))
 }
 
-/// A message for the stay `stay` of the tests' player.
-pub fn for_stay(
-  stay stay: Stay,
+/// A message sent to the unit `address` of the tests' player.
+pub fn for_unit(
+  address address: UnitAddress,
   sent sent: client_connection.StaySent,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  OwnEvent(Woken(ForStay(stay:, sent:)))
+  OwnEvent(Woken(ForUnit(address:, sent:)))
 }
 
-/// The same message as `event`, a message for the tests' player's first stay, for
-/// its second: the stay of its next join, after a camp or the Holocrypt.
-pub fn in_second_stay(
+/// The same message as `event`, sent to the tests' player's first unit, for
+/// its second: the address of its next join, after a camp or the Holocrypt.
+pub fn in_second_unit(
   event: Event(ConnectionEvent(Message, Answer)),
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  in_stay(count: 2, event:)
+  in_unit(count: 2, event:)
 }
 
-/// The same message as `event`, for the player's `count`th stay.
-pub fn in_stay(
+/// The same message as `event`, for the player's `count`th unit: the address the tests' map
+/// issues its connection `count - 1` joins after the first.
+pub fn in_unit(
   count count: Int,
   event event: Event(ConnectionEvent(Message, Answer)),
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  let assert OwnEvent(Woken(ForStay(sent:, ..))) = event
-    as "a message for a stay"
-  for_stay(stay: map_support.stay(count:), sent:)
+  let assert OwnEvent(Woken(ForUnit(sent:, ..))) = event
+    as "a message for a unit"
+  for_unit(
+    address: map_support.address_for(incarnation:, number: 4 + count, rank: 1),
+    sent:,
+  )
 }
 
 /// A notice of the map to the connection, for the tests' player's first stay.
 pub fn sent_by_the_map(
   notice: map_message.Notice,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  for_stay(stay: own_stay(), sent: SentByMap(notice))
+  for_unit(address: own_address(), sent: SentByMap(notice))
 }
 
 /// The address the tests' map (`map_with_four_players`) issues the tests' player, which is its
 /// fifth join: connection 1's, in the run the tests' connection watches.
 pub fn own_address() -> UnitAddress {
-  map_support.address_for(incarnation:, number: 5, joiner: 1)
+  map_support.address_for(incarnation:, number: 5, rank: 1)
 }
 
-/// The stay of the tests' player's first join: the connection's first.
-pub fn own_stay() -> Stay {
-  map_support.stay(count: 1)
+/// The address the tests' map issues the tests' player after its camp and entry again: the
+/// next of its connection's joins.
+pub fn own_address_again() -> UnitAddress {
+  map_support.address_for(incarnation:, number: 6, rank: 1)
 }
 
-/// The stay of the player of connection `viewer`, as the map's `SeenBy` names it:
-/// its `viewer`th, so each viewer's is its own.
-pub fn viewer_stay(viewer: Int) -> Stay {
-  map_support.stay(count: viewer)
+/// The address of the player of connection `viewer`, as the map's `SeenBy` names it:
+/// its `viewer`th join, so each viewer's is its own.
+pub fn viewer_address(viewer: Int) -> UnitAddress {
+  map_support.address(number: viewer)
 }
 
 /// The unit id the map gave the player of connection `viewer`, as the map's `SeenBy` names
@@ -1676,7 +1689,7 @@ pub fn moved_for(
 pub fn sent_by_a_mover(
   move: move_stamp.Move,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  for_stay(stay: own_stay(), sent: client_connection.SentByMove(move))
+  for_unit(address: own_address(), sent: client_connection.SentByMove(move))
 }
 
 /// The kind of each tell of a step that is a move to a viewer or the map's place, in order.
@@ -1697,24 +1710,25 @@ pub fn tells_no_player(taken taken: ConnectionStep(Request)) -> Bool {
   tells_to_players_but_moves(taken) == [] && move_tells(taken:) == []
 }
 
-/// The moves a step tells the connections of other players, without the stay.
+/// The moves a step tells the connections of other players: the number of the viewer's
+/// address and the chunk, in the order of the viewers' numbers and the order sent.
 pub fn viewer_moves(
   taken taken: ConnectionStep(Request),
 ) -> List(#(Int, move_stamp.Move)) {
-  list.map(move_tells(taken:), fn(tell) { #(tell.0, tell.2) })
+  move_tells(taken:)
 }
 
-/// The moves a step tells the connections of other players: the viewer's number, the stay
-/// it is told for and the chunk, in the order of the viewers' numbers and the order sent.
+/// The moves a step tells the connections of other players: the number of the viewer's
+/// address and the chunk, in the order of the viewers' numbers and the order sent.
 pub fn move_tells(
   taken taken: ConnectionStep(Request),
-) -> List(#(Int, Stay, move_stamp.Move)) {
+) -> List(#(Int, move_stamp.Move)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.Tell(
-        to: step.Connection(ConnectionId(viewer)),
-        request: client_connection.TellMove(stay:, move:),
-      )) -> Ok(#(viewer, stay, move))
+        to: step.Unit(address:),
+        request: client_connection.TellMove(move:),
+      )) -> Ok(#(unit_address.number(address:), move))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
@@ -1727,7 +1741,7 @@ pub fn move_tells(
 pub fn sent_by_a_peer(
   news: PeerNews,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  for_stay(stay: own_stay(), sent: SentByPeer(news))
+  for_unit(address: own_address(), sent: SentByPeer(news))
 }
 
 /// Another player's unit: the tests' player's own record, as unit 9.
@@ -1822,16 +1836,16 @@ pub fn event_of(step: Step) -> Event(ConnectionEvent(Message, Answer)) {
 }
 
 /// The news a step tells the map to relay to each viewer of the player's unit
-/// (`TellBroadcast`), in order, with the connection and stay it names.
+/// (`TellBroadcast`), in order, with the unit it names.
 pub fn broadcasts(
   taken: ConnectionStep(Request),
-) -> List(#(ConnectionId, Stay, PeerNews)) {
+) -> List(#(UnitAddress, PeerNews)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.Tell(
         to: Map(..),
-        request: client_connection.TellBroadcast(connection:, stay:, news:),
-      )) -> Ok(#(connection, stay, news))
+        request: client_connection.TellBroadcast(unit:, news:),
+      )) -> Ok(#(unit, news))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
@@ -1840,7 +1854,7 @@ pub fn broadcasts(
 
 /// The news a step tells the map to relay to the player's viewers, in order.
 pub fn news_broadcast(taken: ConnectionStep(Request)) -> List(News) {
-  list.map(broadcasts(taken), fn(broadcast) { { broadcast.2 }.news })
+  list.map(broadcasts(taken), fn(broadcast) { { broadcast.1 }.news })
 }
 
 /// The tells of a step to the connections of other players that are no move, with the
@@ -1852,11 +1866,13 @@ pub fn tells_to_players_but_moves(
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.Tell(
-        to: step.Connection(_),
+        to: step.Unit(_),
         request: client_connection.TellMove(..),
       )) -> Error(Nil)
       OwnEffect(step.Tell(to: step.Connection(ConnectionId(viewer)), request:)) ->
         Ok(#(viewer, request))
+      OwnEffect(step.Tell(to: step.Unit(address:), request:)) ->
+        Ok(#(unit_address.number(address:), request))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
@@ -1924,8 +1940,7 @@ pub fn watched_by(
     feed(
       state:,
       event: sent_by_the_map(SeenBy(
-        by: ConnectionId(viewer),
-        stay: viewer_stay(viewer),
+        by: viewer_address(viewer),
         unit_id: viewer_unit_id(viewer),
         generation: viewer_sight(viewer),
       )),
@@ -2655,8 +2670,8 @@ pub fn answered(
   key key: strike_tell.Key,
   outcome outcome: strike_tell.Outcome,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  for_stay(
-    stay: own_stay(),
+  for_unit(
+    address: own_address(),
     sent: client_connection.SentByTarget(answered: strike_tell.Answered(
       key:,
       outcome:,
@@ -2722,7 +2737,7 @@ pub fn fighter() -> step.Address {
 pub fn foe(
   fight: strike_tell.Fight,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  for_stay(stay: own_stay(), sent: client_connection.SentByFoe(fight:))
+  for_unit(address: own_address(), sent: client_connection.SentByFoe(fight:))
 }
 
 /// The tells of a step to creatures, as the creature's unit and what the map is told to pass
@@ -2799,21 +2814,19 @@ pub fn a_strike_of(
 }
 
 /// A heal strike of the caster's connection `from` on the tests' player, as the
-/// connection takes it for its first stay: the cast `cast_id`, the caster's stay `stay`
-/// (which the answer is told for) and the heal rows `heals` in order, each healing the
+/// connection takes it for its first unit: the cast `cast_id`, the caster `from`
+/// (whose unit the answer is told to) and the heal rows `heals` in order, each healing the
 /// vital by the amount before any multiplier, with the caster's HealingMultiplierOutgoing
 /// `outgoing`. The row `index` is Spell4Effects 62019 + `index`, which the answer echoes.
 pub fn a_player_strike(
   from from: Int,
-  stay stay: Stay,
   cast_id cast_id: Int,
   outgoing outgoing: Float,
   heals heals: List(#(effect_kind.Vital, Int)),
 ) -> client_connection.StaySent {
   client_connection.SentByPlayer(
     tell: client_connection.Strike(strike: strike_support.heal_strike(
-      from: ConnectionId(from),
-      stay:,
+      from: viewer_address(from),
       cast_id:,
       unit_id: own_unit_id,
       outgoing:,
@@ -2853,37 +2866,34 @@ pub fn tells(taken: ConnectionStep(Request)) -> List(#(step.Address, Request)) {
 }
 
 /// The heal strikes a step tells the map for the connections of players: the address of
-/// the told player's connection, the stay the strike is told for and the strike, in the
-/// order told.
+/// the told player's unit and the strike, in the order told.
 pub fn player_strikes(
   taken: ConnectionStep(Request),
-) -> List(#(step.Address, Stay, strike_tell.PlayerStrike)) {
+) -> List(#(step.Address, strike_tell.PlayerStrike)) {
   list.filter_map(tells(taken), fn(told) {
     case told.1 {
       client_connection.TellLanding(
         to:,
-        to_stay:,
         landing: map_message.HealStrike(strike:),
         ..,
-      ) -> Ok(#(step.Connection(to), to_stay, strike))
+      ) -> Ok(#(step.Unit(to), strike))
       _ -> Error(Nil)
     }
   })
 }
 
 /// The answers a step tells the map for the connections of casters: the caster's
-/// connection, the stay the answer is told for and the answer, in the order told.
+/// unit's address number and the answer, in the order told.
 pub fn player_answers(
   taken: ConnectionStep(Request),
-) -> List(#(Int, Stay, strike_tell.PlayerAnswered)) {
+) -> List(#(Int, strike_tell.PlayerAnswered)) {
   list.filter_map(tells(taken), fn(told) {
     case told.1 {
       client_connection.TellLanding(
-        to: ConnectionId(caster),
-        to_stay:,
+        to:,
         landing: map_message.HealAnswer(answered:),
         ..,
-      ) -> Ok(#(caster, to_stay, answered))
+      ) -> Ok(#(unit_address.number(address: to), answered))
       _ -> Error(Nil)
     }
   })
@@ -3557,8 +3567,7 @@ pub fn armor_pressed_at_the_ally(
     feed(
       state:,
       event: sent_by_the_map(SeenBy(
-        by: ConnectionId(ally_connection),
-        stay: viewer_stay(ally_connection),
+        by: viewer_address(ally_connection),
         unit_id: ally_unit,
         generation: viewer_sight(ally_connection),
       )),
@@ -3775,7 +3784,6 @@ pub fn session_in(status status: state.Status) -> state.Session {
     interaction_logged: set.new(),
     next_whisper: 1,
     move_seq: 0,
-    last_stay: stay.none_yet(),
     held: [],
     status:,
   )
@@ -3834,8 +3842,7 @@ pub fn spellslinger_holding_a_salve_on_the_ally() -> #(
     feed(
       state:,
       event: sent_by_the_map(SeenBy(
-        by: ConnectionId(3),
-        stay: viewer_stay(3),
+        by: viewer_address(3),
         unit_id: 9,
         generation: generation.first(),
       )),

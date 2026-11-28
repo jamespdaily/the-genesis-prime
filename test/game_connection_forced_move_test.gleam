@@ -29,10 +29,11 @@ import genesis_prime/message/movement_velocity.{MovementVelocity}
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/spell_go
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
-import genesis_prime/step.{type ConnectionStep, ConnectionId, Map, OwnEffect}
+import genesis_prime/step.{type ConnectionStep, Map, OwnEffect}
 import gleam/int
 import gleam/list
 import gleam/option.{None}
+import map_support
 import owned_test
 
 /// A Spellslinger on the fixture's rows, whose Gate 34355 is at bag index 2 (class 7's
@@ -118,7 +119,11 @@ pub fn a_blink_the_client_reports_after_the_go_is_taken_and_relayed_as_any_move_
     == [
       OwnEffect(step.Tell(
         to: Map(support.camp_map(), support.incarnation),
-        request: TellMoved(connection: ConnectionId(1), place: landing, seq: 1),
+        request: TellMoved(
+          unit: map_support.address(number: 1),
+          place: landing,
+          seq: 1,
+        ),
       )),
     ]
     as "the landing 20 m from where the player stood is the place the movement keeps: no forced-move check refuses it"

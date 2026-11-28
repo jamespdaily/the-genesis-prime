@@ -10,7 +10,7 @@
 ////   Tell(Map(..), TellCreature(a, unit, life, Strike(Strike(key, Unit(a), PlayerStriker(unit, place, seq, rolls), offence))))
 ////                                                            ─▶ hit rule ─▶ health, 0x937, 0x88c to its viewers
 ////   SentByTarget(Answered(key, outcome))   ◀─ Relay(to: a, Struck(Answered(key, outcome))) through the map,
-////                                             which sends it for the stay of a's join
+////                                             which sends it to Unit(a)
 ////
 ////   SentByFoe(Threatened(unit, life))      ◀─ the creature put the player on its threat list
 ////   SentByFoe(Attacks(Strike(key, Creature(..), CreatureStriker(unit, spell4_id), offence)))
@@ -18,18 +18,18 @@
 ////   hit rule on the player's health and shield, rolls from the player's seed
 ////   Tell(Map(..), TellCreature(a, unit, life, StrikeAnswered(Answered(key, outcome)))) ─▶ the creature's round
 ////   SentByFoe(Released(unit))              ◀─ the creature took the player off its threat list
-////   (each SentByFoe travels for the player's stay: ForStay(stay, SentByFoe(..)))
+////   (each SentByFoe is sent to the player's Unit and taken as ForUnit(a, SentByFoe(..)))
 ////
 //// caster's connection C                                     healed player's connection T
-////   Tell(map, TellLanding(C, stay_C, T, stay_T, HealStrike(PlayerStrike(key, C, stay_C, outgoing, heals))))
-////                                                            ─▶ the map: Relayed(stay_T, Landed(..)), then
+////   Tell(map, TellLanding(C, T, HealStrike(PlayerStrike(key, C, outgoing, heals))))
+////                                                            ─▶ the map: Relayed(Landed(..)) to Unit(T), then
 ////                                                               each heal row on T's life, in order
-////   SentByPlayer(Answer(PlayerAnswered(key, outcome))) ◀─ the map ◀─ Tell(map, TellLanding(T, stay_T, C, stay_C, HealAnswer(..))),
+////   SentByPlayer(Answer(PlayerAnswered(key, outcome))) ◀─ the map ◀─ Tell(map, TellLanding(T, C, HealAnswer(..))),
 ////                                                 then T's own news
 ////
 //// caster's connection C                                     ally's connection T (holds C's Proc row)
 ////   a creature's blow lands on T, T alive, C among T's viewers
-////   SentByPlayer(Event(PlayerEvent(T's unit, events))) ◀─ the map ◀─ Tell(map, TellLanding(T, stay_T, C, stay_C, AllyEvent(..))),
+////   SentByPlayer(Event(PlayerEvent(T's unit, events))) ◀─ the map ◀─ Tell(map, TellLanding(T, C, AllyEvent(..))),
 ////                                                 the events C's Proc rows on T wait for, never asked
 ////   ─▶ C raises each event with T's unit as its holder, draws the chances from its own
 ////      seed, and fires the rows C holds on T: the child cast of the row's spell
@@ -86,9 +86,8 @@ import genesis_prime/shared/heal_parts
 import genesis_prime/shared/hit.{type Description, type Offence, type Rolls}
 import genesis_prime/shared/prerequisite.{type Prerequisite}
 import genesis_prime/shared/proc_event
-import genesis_prime/step.{type Address, type ConnectionId}
+import genesis_prime/step.{type Address}
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/option.{type Option}
 
@@ -272,15 +271,14 @@ pub type HealTell {
 }
 
 /// What a caster's connection tells the connection of another player its cast heals:
-/// the strike's key, the caster's connection and the caster's stay, which the answer is
-/// told for, the caster's HealingMultiplierOutgoing (162) and the heal rows that passed
+/// the strike's key and the caster's unit, which the answer is
+/// told to, the caster's HealingMultiplierOutgoing (162) and the heal rows that passed
 /// the caster's gates, in the plan's rank order. It carries heals only, so no blow, state
 /// or gate can reach a player.
 pub type PlayerStrike {
   PlayerStrike(
     key: Key,
-    from: ConnectionId,
-    stay: Stay,
+    from: UnitAddress,
     outgoing: Float,
     heals: List(HealTell),
   )
@@ -319,8 +317,8 @@ pub type PlayerAnswered {
   PlayerAnswered(key: Key, outcome: PlayerOutcome)
 }
 
-/// What a creature that fights a player tells the player's connection, for the
-/// player's stay (genesis_prime/world_map/stay).
+/// What a creature that fights a player tells the player's connection, sent to the
+/// player's `Unit`.
 pub type Fight {
   /// The creature `unit_id` of life `life` put the player on its threat list.
   Threatened(unit_id: Int, life: Int)

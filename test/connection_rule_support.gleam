@@ -14,10 +14,11 @@ import genesis_prime/step.{
   type ConnectionStep, type Effect, type Event, type Input, type LogLevel,
   type LogLine, type ServiceStep, type Step, type WatchId, CancelServiceTimer,
   CancelTimer, Connection, ConnectionId, Effects, EffectsThenAsk, Input, Log,
-  Now, OwnEffect, Peer, Reply, Send, StartCreature, StartServiceTimer,
-  StartTimer, Stop, Unwatch, Watch, Write,
+  Now, OwnEffect, Peer, Register, Reply, Send, StartCreature, StartServiceTimer,
+  StartTimer, Stop, Unit, Unregister, Unwatch, Watch, Write,
 }
 import genesis_prime/store.{type Account, Account, AccountId}
+import genesis_prime/world_map/unit_address
 import gleam/bit_array
 import gleam/crypto
 import gleam/int
@@ -206,6 +207,8 @@ pub fn service_timers(
         Ok(#(timer, Some(after_ms)))
       OwnEffect(CancelServiceTimer(timer:)) -> Ok(#(timer, None))
       OwnEffect(Send(..))
+      | OwnEffect(Register(..))
+      | OwnEffect(Unregister(..))
       | OwnEffect(Reply(..))
       | OwnEffect(StartCreature(..))
       | Watch(..)
@@ -263,6 +266,8 @@ pub fn replies(step: ServiceStep(outgoing)) -> List(#(CallerId, outgoing)) {
     case effect {
       OwnEffect(Reply(caller:, answer:)) -> Ok(#(caller, answer))
       OwnEffect(Send(..))
+      | OwnEffect(Register(..))
+      | OwnEffect(Unregister(..))
       | OwnEffect(StartCreature(..))
       | OwnEffect(StartServiceTimer(..))
       | OwnEffect(CancelServiceTimer(..))
@@ -281,7 +286,11 @@ pub fn sends(step: ServiceStep(outgoing)) -> List(#(Int, outgoing)) {
     case effect {
       OwnEffect(Send(to: Connection(ConnectionId(number)), message:)) ->
         Ok(#(number, message))
+      OwnEffect(Send(to: Unit(address:), message:)) ->
+        Ok(#(unit_address.rank(address:), message))
       OwnEffect(Send(..))
+      | OwnEffect(Register(..))
+      | OwnEffect(Unregister(..))
       | OwnEffect(Reply(..))
       | OwnEffect(StartCreature(..))
       | OwnEffect(StartServiceTimer(..))

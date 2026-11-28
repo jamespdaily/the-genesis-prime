@@ -62,7 +62,6 @@ import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import item_expiry_support
-import map_support
 import owned_test
 import place_support
 import quest_support
@@ -718,7 +717,7 @@ pub fn a_go_in_the_same_world_places_the_player_at_once_and_tells_the_map_test()
       assert support.told_the_map_but_creatures(taken)
         == [
           support.map_tell(TellMoved(
-            connection: ConnectionId(1),
+            unit: support.own_address(),
             place: row.place,
             seq: 1,
           )),
@@ -969,12 +968,11 @@ pub fn a_go_to_another_world_leaves_the_map_then_joins_the_new_one_at_the_place_
       let #(state, joining) = dev_support.left_the_map(state:, leaving:)
       let assert AskMap(
         map: map_id,
-        message: map_message.Join(place:, stay:, alive:, ..),
+        message: map_message.Join(place:, alive:, ..),
       ) = support.ask_request(joining)
         as "the answer to the leave is the new world's join"
       assert map_id == MapId(world_id: 870, instance: 0) as row.why
       assert alive as "a player holding a health of 1 is alive"
-      assert stay == map_support.stay(count: 2) as "the join is a new stay"
       assert start_place.world_id(place) == 870
         && start_place.world_zone_id(place) == 1227
         && start_place.x(place) == row.x
@@ -1094,8 +1092,7 @@ pub fn what_other_processes_send_while_leaving_or_entering_is_dropped_test() -> 
   use <- owned_test.run(60_000)
   let seen_by =
     support.sent_by_the_map(map_message.SeenBy(
-      by: ConnectionId(4),
-      stay: support.viewer_stay(4),
+      by: support.viewer_address(4),
       unit_id: support.viewer_unit_id(4),
       generation: support.viewer_sight(4),
     ))

@@ -4,7 +4,7 @@
 //// another player: the map. The types hold most of it: the request has no variant for news,
 //// a landing or a local line to a connection, and a `TellChat` cannot carry a `Said` line
 //// (genesis_prime/shared/chat_tell). What the types cannot hold is the address: a `Tell` effect
-//// in `src/genesis_prime/game` whose `to:` is a `step.Connection(...)` address is a breach,
+//// in `src/genesis_prime/game` whose `to:` is a `step.Connection(...)` or `step.Unit(...)` address is a breach,
 //// reported at its line, unless it tells `TellMove`, a mover's chunk of its own move to a
 //// viewer in its own copy, which only `sends_the_move_to_the_viewers` of the mover
 //// (`genesis_prime/game/connection/movement`) may build, or `TellChat`, which goes between
@@ -68,7 +68,8 @@ fn gives_a_request(call call: syntax.Call) -> Bool {
   })
 }
 
-/// Whether the call is a `Tell` effect with a request to a `step.Connection(...)` address.
+/// Whether the call is a `Tell` effect with a request to a `step.Connection(...)` or a
+/// `step.Unit(...)` address.
 fn tells_a_connection(call call: syntax.Call) -> Bool {
   use <- bool.guard(
     when: !syntax.is_step_effect(call, name: "Tell") || !gives_a_request(call:),
@@ -83,12 +84,13 @@ fn tells_a_connection(call call: syntax.Call) -> Bool {
   {
     Some(address) ->
       syntax.calls_variant(address, qualifier: "step", name: "Connection")
+      || syntax.calls_variant(address, qualifier: "step", name: "Unit")
     None -> False
   }
 }
 
-/// The `Tell` effects of the file whose `to:` is a `step.Connection(...)` address, each with
-/// its line and what it tells.
+/// The `Tell` effects of the file whose `to:` is a `step.Connection(...)` or `step.Unit(...)`
+/// address, each with its line and what it tells.
 fn tells_to_a_connection(file file: SourceFile) -> List(Told) {
   syntax.calls(syntax.parse(file))
   |> list.filter(tells_a_connection)
@@ -141,18 +143,18 @@ pub fn a_player_tells_another_player_only_through_its_map_test() -> Nil {
   let planted_file =
     planted.file(path: game_directory <> "/connection/state.gleam", lines: [
       "fn news() {",
-      "  OwnEffect(step.Tell(to: step.Connection(viewer.0), request: TellBroadcast(connection: a, stay: b, news: c)))",
+      "  OwnEffect(step.Tell(to: step.Connection(viewer.0), request: TellBroadcast(unit: a, news: c)))",
       "}",
       "",
       "fn a_heal() {",
       "  OwnEffect(step.Tell(",
       "    to: step.Connection(connection: strike.from),",
-      "    request: TellLanding(connection: a, stay: b, to: c, to_stay: d, landing: e),",
+      "    request: TellLanding(unit: a, to: c, landing: e),",
       "  ))",
       "}",
       "",
       "fn a_line() {",
-      "  OwnEffect(step.Tell(to: step.Connection(to), request: TellSay(connection: a, stay: b, said: c)))",
+      "  OwnEffect(step.Tell(to: step.Connection(to), request: TellSay(unit: a, said: c)))",
       "}",
       "",
       "fn a_whisper() {",
@@ -164,7 +166,7 @@ pub fn a_player_tells_another_player_only_through_its_map_test() -> Nil {
       "}",
       "",
       "fn a_move() {",
-      "  OwnEffect(step.Tell(to: step.Connection(v), request: client_connection.TellMove(stay: s, move: m)))",
+      "  OwnEffect(step.Tell(to: step.Unit(v), request: client_connection.TellMove(move: m)))",
       "}",
     ])
   assert breaches(file: planted_file) == [2, 6, 13]

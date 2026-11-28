@@ -41,11 +41,12 @@ import genesis_prime/message/unit_position_command.{
 }
 import genesis_prime/shared/strike_tell
 import genesis_prime/step.{
-  type ConnectionStep, type TimerId, ConnectionId, OwnEvent, TimerFired,
+  type ConnectionStep, type TimerId, OwnEvent, TimerFired,
 }
 import genesis_prime/store
 import gleam/list
 import gleam/option.{Some}
+import map_support
 import owned_test
 import place_support
 import quest_support
@@ -311,7 +312,7 @@ pub fn the_combat_projector_moves_the_player_to_warfare_woods_at_the_casts_end_t
         unit_id: departures_support.terminal_unit,
       )),
       connection_support.map_tell(TellMoved(
-        connection: ConnectionId(1),
+        unit: map_support.address(number: 1),
         place: warfare_woods(),
         seq: 1,
       )),
@@ -540,7 +541,7 @@ pub fn a_move_before_the_clients_terrain_is_ready_still_tells_the_map_ready_test
   use <- owned_test.run(60_000)
   let expected = [
     connection_support.map_tell(client_connection.TellReady(
-      connection: ConnectionId(1),
+      unit: map_support.address(number: 1),
       seq: 1,
     )),
   ]

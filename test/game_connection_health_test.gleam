@@ -29,13 +29,13 @@ import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/unit_fields
 import genesis_prime/shared/unit_news.{Appeared, PeerNews}
 import genesis_prime/step.{
-  type ConnectionStep, ConnectionId, LogError, OwnEvent, PeerClosed, TimerFired,
-  TimerId,
+  type ConnectionStep, LogError, OwnEvent, PeerClosed, TimerFired, TimerId,
 }
 import genesis_prime/store.{ForMove, HealthRefused}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import map_support
 import owned_test
 
 /// What the tests' player has left of its full health after one of the Beast's
@@ -241,8 +241,7 @@ pub fn a_viewer_that_arrives_gets_the_health_the_player_entered_with_test() -> N
     game_connection_support.feed(
       state,
       game_connection_support.sent_by_the_map(SeenBy(
-        by: ConnectionId(3),
-        stay: game_connection_support.viewer_stay(3),
+        by: map_support.address(number: 3),
         unit_id: game_connection_support.viewer_unit_id(3),
         generation: game_connection_support.viewer_sight(3),
       )),

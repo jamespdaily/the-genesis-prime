@@ -30,7 +30,7 @@
 //// - **Stopping** gives the rule now + `shutdown_ms` to stop; past the deadline it is killed.
 //// - **A stray message** is dropped and logged by its kind, never contents (a possible secret).
 //// - **Stop** runs the other effects, then exits `shutdown`; `normal` is a supervisor failure.
-//// - **Send** finds `to` through the settings' `reach`; no process there drops it silently.
+//// - **Send**, **Register**, **Unregister** go through the settings' `reach`; none there drops it.
 //// - **Watch** monitors what `locate` finds, ending once as `WatchEnded(id)`; repeated ids crash.
 //// - **Unwatch** drops the monitor and flushes its DOWN; an id with no open watch does nothing.
 //// - **A restart** drops the process's watches and timers; a rule opens what it needs again.
@@ -46,9 +46,9 @@ import genesis_prime/step.{
   type Address, type CreatureStart, type Effect, type Event, type Now,
   type ServiceEffect, type ServiceEvent, type ServiceRule, type TimerId,
   type WatchId, Asked, CallerId, CancelServiceTimer, CreatureNotStarted, Effects,
-  EffectsThenAsk, Input, LogError, OwnEffect, OwnEvent, Reply, Send,
+  EffectsThenAsk, Input, LogError, OwnEffect, OwnEvent, Register, Reply, Send,
   ServiceTimerFired, StartCreature, StartServiceTimer, Started, Stopping, Told,
-  WatchEnded,
+  Unregister, WatchEnded,
 }
 import genesis_prime/step/runtime.{Shutdown}
 import genesis_prime/step/timer as timer_book
@@ -400,6 +400,14 @@ fn carry(
             effects: later,
             ending:,
           )
+        OwnEffect(Register(group:, member:)) -> {
+          running.settings.reach.register(group, member)
+          carry(running:, effects: later, ending:)
+        }
+        OwnEffect(Unregister(group:)) -> {
+          running.settings.reach.unregister(group)
+          carry(running:, effects: later, ending:)
+        }
         OwnEffect(StartServiceTimer(timer:, after_ms:)) ->
           carry(
             running: start_timer(running:, timer:, after_ms:),

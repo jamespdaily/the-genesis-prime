@@ -21,7 +21,6 @@ import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
 import item_expiry_support
-import map_support
 import owned_test
 import place_support
 import quest_support
@@ -92,7 +91,6 @@ pub fn a_departure_rejoin_keeps_the_players_health_test() -> Nil {
         health:,
         told: None,
         connection: ConnectionId(1),
-        stay: map_support.stay(count: 2),
         tables:,
         visibility: dict.new(),
       )
@@ -196,7 +194,6 @@ pub fn a_rejoin_keeps_what_the_player_holds_test() -> Nil {
       health: Some(1),
       told: None,
       connection: ConnectionId(1),
-      stay: map_support.stay(count: 2),
       tables:,
       visibility: dict.new(),
     )
@@ -246,7 +243,6 @@ pub fn a_rejoin_starts_in_world_loading_test() -> Nil {
       health: None,
       told: None,
       connection: ConnectionId(1),
-      stay: map_support.stay(count: 2),
       tables:,
       visibility: dict.new(),
     )

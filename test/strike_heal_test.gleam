@@ -38,7 +38,7 @@ import genesis_prime/shared/strike_tell.{
 }
 import genesis_prime/shared/target_mechanic
 import genesis_prime/shared/unit_properties
-import genesis_prime/step.{ConnectionId, Now}
+import genesis_prime/step.{Now}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
 import gleam/dict
 import gleam/list
@@ -60,11 +60,7 @@ const telekinetic_strike = 32_893
 
 /// The player the map named: connection 3, in the stay its notice named.
 fn ally(unit_id unit_id: Int) -> PlayerAddress {
-  PlayerAddress(
-    connection: ConnectionId(3),
-    unit_id:,
-    stay: map_support.stay(count: 2),
-  )
+  PlayerAddress(address: map_support.address(number: 3), unit_id:)
 }
 
 /// The areas of the fixture's rows with the area of Mind Over Body: the fixture's plans
@@ -1312,8 +1308,7 @@ fn heal_strike_of(
   heals heals: List(#(effect_kind.Vital, Int)),
 ) -> strike_tell.PlayerStrike {
   strike_support.heal_strike(
-    from: ConnectionId(2),
-    stay: map_support.stay(count: 1),
+    from: map_support.address(number: 2),
     cast_id: 5,
     unit_id: 9,
     outgoing: 1.25,
@@ -1398,8 +1393,7 @@ pub fn a_go_at_a_player_tells_its_connection_each_row_once_with_the_casters_outg
   }
   let heal_strike_on = fn(unit_id) {
     strike_support.heal_strike(
-      from: ConnectionId(2),
-      stay: map_support.stay(count: 1),
+      from: map_support.address(number: 2),
       cast_id: 5,
       unit_id:,
       outgoing: 1.25,
@@ -1870,8 +1864,7 @@ fn tick_strike_of(
       ),
       unit_id: 9,
     ),
-    from: ConnectionId(2),
-    stay: map_support.stay(count: 1),
+    from: map_support.address(number: 2),
     outgoing:,
     heals: [
       strike_tell.HealTell(

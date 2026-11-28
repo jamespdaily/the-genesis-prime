@@ -12,16 +12,16 @@
 import genesis_prime/map/message as map_message
 import genesis_prime/service.{type Reach}
 import genesis_prime/step
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/erlang/process
-import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import open_wait
 
 /// The reach of a world's maps with every send carried out by one forwarder process
-/// (`server.World.maps_reach`): a send to the viewer, the connection of the larger number
+/// (`server.World.maps_reach`): a send to the viewer, the unit of the larger number
 /// named by the first notice of sight the map sends (the numbers rise with the order the
-/// connections were accepted in, `runtime.unique_id`, so it is the one that entered second),
+/// units joined in, so it is the one that entered second),
 /// is carried out `delay_ms` after the map made it and behind the viewer's sends the map made
 /// before it; every other send is carried out when the forwarder takes it. The forwarder ends
 /// with `owner`, the process of the test.
@@ -79,7 +79,7 @@ fn forward(
   selector selector: process.Selector(Forwarding),
   inbox inbox: process.Subject(Forwarding),
   delay_ms delay_ms: Int,
-  viewer viewer: Option(Int),
+  viewer viewer: Option(UnitAddress),
   held held: List(Send),
 ) -> Nil {
   case process.selector_receive_forever(selector) {
@@ -95,18 +95,22 @@ fn forward(
     Sent(send: Send(to:, outgoing:, carry_out:) as send) -> {
       let viewer = case viewer, to, outgoing {
         None,
-          step.Connection(step.ConnectionId(told)),
-          map_message.Noticed(
-            notice: map_message.SeenBy(by: step.ConnectionId(by), ..),
-            ..,
+          step.Unit(told),
+          map_message.Noticed(notice: map_message.SeenBy(by:, ..))
+        ->
+          Some(
+            case
+              unit_address.number(address: told)
+              > unit_address.number(address: by)
+            {
+              True -> told
+              False -> by
+            },
           )
-        -> Some(int.max(told, by))
         _, _, _ -> viewer
       }
       case to, viewer {
-        step.Connection(step.ConnectionId(told)), Some(delayed)
-          if told == delayed
-        -> {
+        step.Unit(told), Some(delayed) if told == delayed -> {
           process.send_after(inbox, delay_ms, HoldEnded)
           forward(
             selector:,

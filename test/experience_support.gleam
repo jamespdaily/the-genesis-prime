@@ -16,7 +16,7 @@ import genesis_prime/shared/kill_credit.{Credit}
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store
 import genesis_prime/table/id.{Creature2Id, Faction2Id}
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/list
 import gleam/option.{type Option}
 
@@ -37,30 +37,30 @@ pub fn entered_at(
 }
 
 /// The credit of a kill of a creature of this Creature2 row and level, told to the
-/// connection for the stay `stay`. The creature has no faction (Faction2 0), which
+/// unit `address`. The creature has no faction (Faction2 0), which
 /// no experience rule reads.
 pub fn credited_in(
   state state: game_connection.State,
-  stay stay: Stay,
+  address address: UnitAddress,
   creature_id creature_id: Int,
   level level: Int,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  credited_of_faction(state:, stay:, creature_id:, faction_id: 0, level:)
+  credited_of_faction(state:, address:, creature_id:, faction_id: 0, level:)
 }
 
 /// The credit of a kill of a creature of this Creature2 row, Faction2 and level,
-/// told to the connection for the stay `stay`.
+/// told to the unit `address`.
 pub fn credited_of_faction(
   state state: game_connection.State,
-  stay stay: Stay,
+  address address: UnitAddress,
   creature_id creature_id: Int,
   faction_id faction_id: Int,
   level level: Int,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
   support.feed(
     state:,
-    event: support.for_stay(
-      stay:,
+    event: support.for_unit(
+      address:,
       sent: SentByKill(Credit(
         unit_id: creature_unit_id,
         creature_id: Creature2Id(creature_id),
@@ -77,7 +77,7 @@ pub fn credited(
   creature_id creature_id: Int,
   level level: Int,
 ) -> #(game_connection.State, ConnectionStep(Request)) {
-  credited_in(state:, stay: support.own_stay(), creature_id:, level:)
+  credited_in(state:, address: support.own_address(), creature_id:, level:)
 }
 
 /// The player camping out of the world: the state in character select, and the

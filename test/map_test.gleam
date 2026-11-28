@@ -112,10 +112,9 @@ fn join_as(
     OwnEvent(Asked(
       caller: CallerId(caller),
       message: Join(
-        connection: ConnectionId(connection),
+        joiner: step.ConnectionId(connection),
         character:,
         place: place_support.live_character_place(),
-        stay: map_support.stay(count: 1),
         alive: True,
         hidden: set.new(),
       ),
@@ -147,6 +146,8 @@ fn without_sends(
     case effect {
       OwnEffect(step.Send(..)) -> False
       OwnEffect(Reply(..))
+      | OwnEffect(step.Register(..))
+      | OwnEffect(step.Unregister(..))
       | OwnEffect(step.StartCreature(..))
       | OwnEffect(step.StartServiceTimer(..))
       | OwnEffect(step.CancelServiceTimer(..))
@@ -181,7 +182,7 @@ pub fn the_first_join_is_unit_1_with_a_watch_on_the_connection_and_the_maps_inca
           character: map_support.character(107),
           unit_id: 1,
           body: row_10_body(),
-          address: map_support.address_for(incarnation:, number: 1, joiner: 7),
+          address: map_support.address_for(incarnation:, number: 1, rank: 7),
         ),
       )),
     ]
@@ -218,7 +219,7 @@ pub fn each_join_gets_the_next_unit_id_and_its_own_watch_test() -> Nil {
           character: map_support.character(108),
           unit_id: 2,
           body: row_10_body(),
-          address: map_support.address_for(incarnation:, number: 2, joiner: 8),
+          address: map_support.address_for(incarnation:, number: 2, rank: 8),
         ),
       )),
     ]
@@ -324,7 +325,7 @@ pub fn a_character_whose_look_the_tables_lack_is_answered_with_fewer_visuals_tes
           character: unknown,
           unit_id: 1,
           body: [],
-          address: map_support.address_for(incarnation:, number: 1, joiner: 7),
+          address: map_support.address_for(incarnation:, number: 1, rank: 7),
         ),
       ),
     ]
@@ -385,7 +386,7 @@ fn leave(
     state,
     OwnEvent(Asked(
       caller: CallerId(caller),
-      message: Leave(connection: ConnectionId(connection)),
+      message: Leave(unit: map_support.address(number: connection)),
     )),
   )
 }
@@ -400,23 +401,17 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
       Unwatch(WatchId(1)),
       OwnEffect(step.Send(
         Connection(ConnectionId(8)),
-        map_message.Noticed(
-          stay: map_support.stay(count: 1),
-          notice: map_message.PlayerUnseen(
-            unit_id: unit_of(first, 1),
-            generation: generation.first(),
-          ),
-        ),
+        map_message.Noticed(notice: map_message.PlayerUnseen(
+          unit_id: unit_of(first, 1),
+          generation: generation.first(),
+        )),
       )),
       OwnEffect(step.Send(
         Connection(ConnectionId(8)),
-        map_message.Noticed(
-          stay: map_support.stay(count: 1),
-          notice: map_message.UnseenBy(
-            by: ConnectionId(7),
-            generation: generation.after(generation: generation.first()),
-          ),
-        ),
+        map_message.Noticed(notice: map_message.UnseenBy(
+          by: map_support.address_for(incarnation:, number: 1, rank: 7),
+          generation: generation.after(generation: generation.first()),
+        )),
       )),
       OwnEffect(Reply(CallerId(3), Left)),
     ]
@@ -441,10 +436,10 @@ pub fn a_leave_from_a_connection_not_in_the_map_logs_an_error_changes_nothing_an
   assert line.about
     == step.About(
       ..step.no_one,
-      connection: Some(ConnectionId(9)),
+      unit: Some(map_support.address(number: 9)),
       map: Some(MapId(world_id: 3460, instance: 0)),
     )
-    as "the line is about the connection and the map"
+    as "the line is about the unit and the map"
   assert support.replies(left) == [#(CallerId(2), Left)]
     as "the answer lets the connection go on"
   assert support.watches(left) == []

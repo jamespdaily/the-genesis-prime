@@ -41,7 +41,7 @@
 
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, Broken, Bytes, Connect,
-  Continue, ForStay, Inside, Otherwise, SentByChat, SentBySessions, Settled,
+  Continue, ForUnit, Inside, Otherwise, SentByChat, SentBySessions, Settled,
 }
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
@@ -107,7 +107,7 @@ import genesis_prime/step.{
   OwnEffect, OwnEvent, Stopping, TimerFired, WatchEnded, Woken, Write,
 }
 import genesis_prime/store.{AccountId}
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -187,7 +187,6 @@ pub fn step(
             interaction_logged: set.new(),
             next_whisper: 1,
             move_seq: 0,
-            last_stay: stay.none_yet(),
             held: [],
             status: AwaitingHelloReply,
           )),
@@ -215,8 +214,8 @@ fn connected(
         handled: connection_login.sessions_sent(session:, now:, message:),
         now:,
       )
-    OwnEvent(Woken(message: ForStay(stay:, sent:))) ->
-      settled(handled: stay_sent(session:, now:, stay:, sent:), now:)
+    OwnEvent(Woken(message: ForUnit(address:, sent:))) ->
+      settled(handled: unit_sent(session:, now:, address:, sent:), now:)
     OwnEvent(Woken(message: SentByChat(tell:))) ->
       settled(handled: connection_chat.chat_sent(session:, tell:), now:)
     WatchEnded(watch:) ->
@@ -1013,7 +1012,7 @@ fn superseded_dropped(
 }
 
 /// Takes what was held while the store worked, oldest first, each after the effects
-/// `told` that came before it: a message through `stay_sent`, a timer through
+/// `told` that came before it: a message through `unit_sent`, a timer through
 /// `timer_due`. A held item that starts an ask leaves the rest held for that ask's
 /// answer; one that ends the connection leaves the rest to go with the session. A
 /// timer's firing is taken only with the player in the world; in the claim made
@@ -1024,13 +1023,13 @@ fn take_held(
   told told: List(Effect(ConnectionEffect(Request))),
 ) -> client_connection.Handled(Session) {
   case session.held, connection_state.held_in_the_world(session.status) {
-    [connection_state.HeldSend(stay:, sent:), ..rest], Some(_) ->
+    [connection_state.HeldSend(address:, sent:), ..rest], Some(_) ->
       take_next(
         handled: connection_quest_turn_in.completing(
-          handled: stay_sent(
+          handled: unit_sent(
             session: Session(..session, held: rest),
             now:,
-            stay:,
+            address:,
             sent:,
           ),
           now:,
@@ -1207,24 +1206,24 @@ fn answered_by_status(
   }
 }
 
-/// What another process sent for a stay of the player (`ForStay`), taken at
+/// What another process sent to a unit of the connection (`ForUnit`), taken at
 /// this one entry point: only while the player is in the world, and only when
-/// the stay is the player's own (genesis_prime/world_map/stay). While the
+/// the address is the player's own (genesis_prime/world_map/unit_address). While the
 /// connection waits for an ask whose answer returns it to the world
 /// (`holds_map_messages`), the message is held and taken here again once the
-/// answer has returned the connection to the world. Any other is dropped: it
-/// was sent for an earlier stay, before a camp or the Holocrypt, and reaches a
-/// later one whose client holds none of the earlier units and whose creatures
-/// and viewers are others, or it reaches no stay at all. A dropped strike finds
+/// answer has returned the connection to the world, where `Joined` gave it an
+/// address. Any other is dropped: it was sent to an earlier unit of the connection,
+/// before a camp or the Holocrypt, and reaches a later one whose client holds none of
+/// the earlier units and whose creatures and viewers are others. A dropped strike finds
 /// no answer, and the caster's deadline leaves the player out.
-fn stay_sent(
+fn unit_sent(
   session session: Session,
   now now: Now,
-  stay stay: Stay,
+  address address: UnitAddress,
   sent sent: client_connection.StaySent,
 ) -> client_connection.Handled(Session) {
   case connection_state.held_in_the_world(session.status) {
-    Some(#(holder, entered)) if entered.stay == stay ->
+    Some(#(holder, entered)) if entered.address == address ->
       case sent {
         client_connection.SentByMap(notice:) ->
           connection_viewers.map_sent(session:, now:, entered:, notice:)
@@ -1281,7 +1280,7 @@ fn stay_sent(
             Session(
               ..session,
               held: list.append(session.held, [
-                connection_state.HeldSend(stay:, sent:),
+                connection_state.HeldSend(address:, sent:),
               ]),
             ),
             [],
@@ -1294,7 +1293,7 @@ fn stay_sent(
 /// One of the connection's own timers fired. While the connection waits for an ask
 /// whose answer returns it to the world (`holds_map_messages`) the firing is held and
 /// taken, through `timer_due`, once the answer has returned it there, as a message for
-/// a stay is (`stay_sent`): its work needs the player in the world, and a timer that
+/// a unit is (`unit_sent`): its work needs the player in the world, and a timer that
 /// fired once is not started again until its work has run.
 ///
 /// The save timer is the one exception, in a wait whose ask saves the place itself

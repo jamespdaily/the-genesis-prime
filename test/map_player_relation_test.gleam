@@ -21,12 +21,12 @@ import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_casts.{EndsAt, HeldEffect}
 import genesis_prime/shared/unit_news.{Health, PeerNews}
 import genesis_prime/shared/unit_properties.{Source}
-import genesis_prime/step.{type ServiceStep, ConnectionId, WatchEnded, WatchId}
+import genesis_prime/step.{type ServiceStep, WatchEnded, WatchId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address
+import gleam/bool
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -35,14 +35,50 @@ import gleam/set
 import gleam/string
 import map_player_support as players
 import map_spawn_support as spawns
+import map_support
 import owned_test
+
+/// The sight notice `notice` is when it names a unit issued for connection `connection`,
+/// as text with its generation's number.
+fn sight_notice_of(
+  notice notice: map_message.Notice,
+  connection connection: Int,
+) -> Result(String, Nil) {
+  case notice {
+    map_message.UnseenBy(by:, generation:) ->
+      named(
+        by:,
+        connection:,
+        text: "UnseenBy " <> int.to_string(generation.number(generation:)),
+      )
+    map_message.SeenBy(by:, generation:, ..) ->
+      named(
+        by:,
+        connection:,
+        text: "SeenBy " <> int.to_string(generation.number(generation:)),
+      )
+    _ -> Error(Nil)
+  }
+}
+
+fn named(
+  by by: unit_address.UnitAddress,
+  connection connection: Int,
+  text text: String,
+) -> Result(String, Nil) {
+  use <- bool.guard(
+    when: unit_address.rank(address: by) != connection,
+    return: Error(Nil),
+  )
+  Ok(text)
+}
 
 /// What a relayed delivery is, as the health the news carries.
 fn healths(
-  relayed relayed: List(#(Int, Stay, map_message.Delivered)),
+  relayed relayed: List(#(Int, map_message.Delivered)),
 ) -> List(#(Int, Int)) {
   list.filter_map(relayed, fn(delivery) {
-    case delivery.2 {
+    case delivery.1 {
       map_message.News(news: PeerNews(news: Health(health:, ..), ..)) ->
         Ok(#(delivery.0, health))
       map_message.News(..)
@@ -89,8 +125,6 @@ fn sight_of_viewer(
 
 /// What the viewer's connection is told of a snapshot relayed: its stay and the health in
 /// each item.
-const owner_stay_count = 1
-
 /// A snapshot of the sight `generation` that connection 2 has of connection 1, with two
 /// items, and what is relayed.
 fn snapshot_to_two(
@@ -98,47 +132,25 @@ fn snapshot_to_two(
   at_ms at_ms: Int,
   generation generation: Generation,
 ) -> #(map.State, ServiceStep(map_message.Outgoing)) {
-  players.snapshot(
-    state:,
-    at_ms:,
-    owner: 1,
-    owner_stay: players.stay(count: owner_stay_count),
-    viewer: 2,
-    generation:,
-    burst: [
-      players.health(connection: 1, health: 10),
-      players.health(connection: 1, health: 20),
-    ],
-  )
+  players.snapshot(state:, at_ms:, owner: 1, viewer: 2, generation:, burst: [
+    players.health(connection: 1, health: 10),
+    players.health(connection: 1, health: 20),
+  ])
 }
 
 pub fn a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relation_awaits_and_news_while_awaiting_is_dropped_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, sights, at_ms) = owner_and_viewers(viewers: [2])
   let sight = sight_of_viewer(sights:, viewer: 2)
-  let first_stay = players.stay(count: 1)
-  let held =
-    Some(map.Relation(
-      generation: sight,
-      stay: first_stay,
-      state: map.AwaitingSnapshot,
-    ))
+  let held = Some(map.Relation(generation: sight, state: map.AwaitingSnapshot))
   assert players.relation(state:, owner: 1, viewer: 2) == held
     as "a pair that came into sight awaits the owner's snapshot of its generation"
   // The held generation: relayed in order, each item for the viewer's stay, and relaying.
   let #(relaying, taken) = snapshot_to_two(state:, at_ms:, generation: sight)
   assert healths(relayed: players.relayed(taken:)) == [#(2, 10), #(2, 20)]
     as "the snapshot of the held generation is relayed to the viewer, in the owner's order"
-  assert list.all(players.relayed(taken:), fn(delivery) {
-    delivery.1 == first_stay
-  })
-    as "each item is relayed for the viewer's stay"
   assert players.relation(state: relaying, owner: 1, viewer: 2)
-    == Some(map.Relation(
-      generation: sight,
-      stay: first_stay,
-      state: map.Relaying,
-    ))
+    == Some(map.Relation(generation: sight, state: map.Relaying))
     as "the relation relays from the snapshot on"
   // A second snapshot of the same generation changes nothing.
   let #(again, taken) =
@@ -159,11 +171,7 @@ pub fn a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relati
   assert players.relayed(taken:) == []
     as "a snapshot of an earlier generation (the pair left and came back) is dropped"
   assert players.relation(state: after_a_return, owner: 1, viewer: 2)
-    == Some(map.Relation(
-      generation: g_again,
-      stay: first_stay,
-      state: map.AwaitingSnapshot,
-    ))
+    == Some(map.Relation(generation: g_again, state: map.AwaitingSnapshot))
     as "the relation still awaits the snapshot of its own generation"
   let #(_, taken) =
     snapshot_to_two(
@@ -189,11 +197,10 @@ pub fn a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relati
   // for a path that renews a stay and not the generation.
   let #(left, _) = spawns.leave(state:, at_ms: at_ms + 8, connection: 2)
   let #(rejoined, _) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state: left,
       at_ms: at_ms + 9,
       connection: 2,
-      stay_count: 2,
       x: 200.0,
       alive: True,
       hidden: set.new(),
@@ -202,20 +209,15 @@ pub fn a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relati
     snapshot_to_two(state: rejoined, at_ms: at_ms + 10, generation: sight)
   assert players.relayed(taken:) == []
     as "a snapshot of the sight the viewer had in its earlier stay is dropped"
-  let assert Some(map.Relation(generation: now, stay: now_stay, ..)) =
+  let assert Some(map.Relation(generation: now, ..)) =
     players.relation(state: rejoined, owner: 1, viewer: 2)
     as "the new stay's sight is held"
-  assert now_stay == players.stay(count: 2)
-    as "the relation names the viewer's new stay"
   assert generation.compare(now, sight) == order.Gt
     as "guard: a stay change gives the pair a new generation, so the old stay's snapshot is dropped by it alone"
   let #(_, taken) =
     snapshot_to_two(state: rejoined, at_ms: at_ms + 11, generation: now)
-  assert list.all(players.relayed(taken:), fn(delivery) {
-      delivery.1 == players.stay(count: 2)
-    })
-    && healths(relayed: players.relayed(taken:)) == [#(2, 10), #(2, 20)]
-    as "control: the new stay's snapshot is relayed for the new stay"
+  assert healths(relayed: players.relayed(taken:)) == [#(2, 10), #(2, 20)]
+    as "control: the new sight's snapshot is relayed"
   // A burst that does not begin with the owner's 0x262 of that generation is an error line
   // and is not relayed: the viewer releases its held moves by the generation that 0x262 names.
   let refused = fn(burst) {
@@ -224,7 +226,6 @@ pub fn a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relati
         state:,
         at_ms: at_ms + 12,
         owner: 1,
-        owner_stay: first_stay,
         viewer: 2,
         generation: sight,
         burst:,
@@ -249,26 +250,23 @@ pub fn a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relati
       state:,
       at_ms: at_ms + 13,
       owner: 1,
-      owner_stay: first_stay,
       news: players.health(connection: 1, health: 99),
     )
   assert players.relayed(taken:) == []
     as "news while the relation awaits its snapshot is dropped: the snapshot is built after everything the owner sent"
 }
 
-pub fn a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_and_news_naming_another_unit_is_dropped_test() -> Nil {
+pub fn a_players_news_is_relayed_to_each_relaying_viewer_in_the_order_of_their_addresses_and_to_no_awaiting_or_departed_viewer_and_news_naming_another_unit_is_dropped_test() -> Nil {
   use <- owned_test.run(5000)
   // Viewers 6 and 2 relay (6 joined first: the order of relaying is the connection's number,
   // not the order of joining), 3 awaits its snapshot, 4 left sight after it relayed, and 5
   // relayed in its first stay and has joined again.
   let #(state, sights, at_ms) = owner_and_viewers(viewers: [6, 2, 3, 4, 5])
-  let first_stay = players.stay(count: 1)
   let snapshotted = fn(state, viewer, at_ms) {
     players.snapshot(
       state:,
       at_ms:,
       owner: 1,
-      owner_stay: first_stay,
       viewer:,
       generation: sight_of_viewer(sights:, viewer:),
       burst: [players.health(connection: 1, health: 1)],
@@ -282,11 +280,10 @@ pub fn a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and
   let #(state, _) = spawns.move(state:, at_ms:, connection: 4, x: spawns.far)
   let #(state, _) = spawns.leave(state:, at_ms: at_ms + 1, connection: 5)
   let #(state, joined_again) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: at_ms + 2,
       connection: 5,
-      stay_count: 2,
       x: 500.0,
       alive: True,
       hidden: set.new(),
@@ -298,29 +295,16 @@ pub fn a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and
       state:,
       at_ms: at_ms + 3,
       owner: 1,
-      owner_stay: first_stay,
       news: players.health(connection: 1, health: 55),
     )
   assert healths(relayed: players.relayed(taken:)) == [#(2, 55), #(6, 55)]
-    as "the news reaches each relaying viewer in the order of the connections' numbers, and no viewer that awaits its snapshot, left sight or is in another stay"
-  // News from the owner's earlier stay is dropped.
-  let #(_, taken) =
-    players.broadcast(
-      state:,
-      at_ms: at_ms + 3,
-      owner: 1,
-      owner_stay: players.stay(count: 2),
-      news: players.health(connection: 1, health: 56),
-    )
-  assert players.relayed(taken:) == []
-    as "news of a stay the owner is not in is not relayed"
+    as "the news reaches each relaying viewer in the order of the connections' numbers, and no viewer that awaits its snapshot or left sight"
   // News that names another unit than the sender's is dropped and logged.
   let #(_, taken) =
     players.broadcast(
       state:,
       at_ms: at_ms + 4,
       owner: 1,
-      owner_stay: first_stay,
       news: PeerNews(unit_id: 99, news: Health(health: 1, dead: False)),
     )
   assert players.relayed(taken:) == []
@@ -331,18 +315,16 @@ pub fn a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and
     as "and the map logs an error that names the unit"
 }
 
-pub fn a_players_line_is_relayed_to_each_relaying_viewer_in_connection_order_for_its_stay_and_to_no_awaiting_or_departed_viewer_and_a_line_of_another_stay_or_unit_is_dropped_test() -> Nil {
+pub fn a_players_line_is_relayed_to_each_relaying_viewer_in_the_order_of_their_addresses_for_its_stay_and_to_no_awaiting_or_departed_viewer_and_a_line_of_another_stay_or_unit_is_dropped_test() -> Nil {
   use <- owned_test.run(5000)
   // The viewers are as in the news test: 6 and 2 relay, 3 awaits its snapshot, 4 left sight
   // after it relayed and 5 has joined again.
   let #(state, sights, at_ms) = owner_and_viewers(viewers: [6, 2, 3, 4, 5])
-  let first_stay = players.stay(count: 1)
   let snapshotted = fn(state, viewer, at_ms) {
     players.snapshot(
       state:,
       at_ms:,
       owner: 1,
-      owner_stay: first_stay,
       viewer:,
       generation: sight_of_viewer(sights:, viewer:),
       burst: [players.health(connection: 1, health: 1)],
@@ -356,37 +338,26 @@ pub fn a_players_line_is_relayed_to_each_relaying_viewer_in_connection_order_for
   let #(state, _) = spawns.move(state:, at_ms:, connection: 4, x: spawns.far)
   let #(state, _) = spawns.leave(state:, at_ms: at_ms + 1, connection: 5)
   let #(state, _) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: at_ms + 2,
       connection: 5,
-      stay_count: 2,
       x: 500.0,
       alive: True,
       hidden: set.new(),
     )
-  let said = fn(speaker_stay, line) {
-    players.say(state:, at_ms: at_ms + 3, speaker: 1, speaker_stay:, said: line).1
+  let said = fn(line) {
+    players.say(state:, at_ms: at_ms + 3, speaker: 1, said: line).1
   }
   let lines =
-    players.relayed(taken: said(
-      first_stay,
-      players.said_by(connection: 1, text: "Hi"),
-    ))
-  assert list.map(lines, fn(line) { #(line.0, line.1) })
-    == [#(2, players.stay(count: 1)), #(6, players.stay(count: 1))]
-    as "the line reaches each relaying viewer in the order of the connections' numbers, for the stay of its relation, and no viewer that awaits its snapshot, left sight or is in another stay"
+    players.relayed(taken: said(players.said_by(connection: 1, text: "Hi")))
+  assert list.map(lines, fn(line) { line.0 }) == [2, 6]
+    as "the line reaches each relaying viewer in the order of the connections' numbers, and no viewer that awaits its snapshot or left sight"
   assert list.all(lines, fn(line) {
-    line.2 == map_message.Said(said: players.said_by(connection: 1, text: "Hi"))
+    line.1 == map_message.Said(said: players.said_by(connection: 1, text: "Hi"))
   })
     as "the line is relayed as it was told"
-  assert players.relayed(taken: said(
-      players.stay(count: 2),
-      players.said_by(connection: 1, text: "Hi"),
-    ))
-    == []
-    as "a line of a stay the speaker is not in is not relayed"
-  let taken = said(first_stay, players.said_by(connection: 99, text: "Hi"))
+  let taken = said(players.said_by(connection: 99, text: "Hi"))
   assert players.relayed(taken:) == []
     as "a line whose speaker is another unit than the sender's is not relayed"
   assert list.any(support.logs_of(step: taken, level: step.LogError), fn(line) {
@@ -408,11 +379,10 @@ pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_f
   let one_sees_two = players.the_sight_of(taken: second, owner: 2, viewer: 1)
   let two_sees_one = players.the_sight_of(taken: second, owner: 1, viewer: 2)
   let #(state, again) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: 6030,
       connection: 1,
-      stay_count: 2,
       x: 0.0,
       alive: True,
       hidden: set.new(),
@@ -426,15 +396,7 @@ pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_f
   // Owner 2, viewer 1: the owner is told the sight ended, then the new one; the viewer is
   // told the unit is unseen, for the stay it had.
   let owner_two = players.notices_to(taken: again, connection: 2)
-  assert list.filter_map(owner_two, fn(notice) {
-      case notice.1 {
-        map_message.UnseenBy(by: ConnectionId(1), generation:) ->
-          Ok("UnseenBy " <> int.to_string(generation.number(generation:)))
-        map_message.SeenBy(by: ConnectionId(1), generation:, ..) ->
-          Ok("SeenBy " <> int.to_string(generation.number(generation:)))
-        _ -> Error(Nil)
-      }
-    })
+  assert list.filter_map(owner_two, sight_notice_of(_, connection: 1))
     == [
       "UnseenBy " <> int.to_string(generation.number(generation: one_sees_two)),
       "SeenBy "
@@ -442,31 +404,23 @@ pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_f
     ]
     as "owner 2 is told viewer 1's sight ended, then the new one"
   let owner_one = players.notices_to(taken: again, connection: 1)
-  assert list.filter_map(owner_one, fn(notice) {
-      case notice.1 {
-        map_message.UnseenBy(by: ConnectionId(2), generation:) ->
-          Ok("UnseenBy " <> int.to_string(generation.number(generation:)))
-        map_message.SeenBy(by: ConnectionId(2), generation:, ..) ->
-          Ok("SeenBy " <> int.to_string(generation.number(generation:)))
-        _ -> Error(Nil)
-      }
-    })
+  assert list.filter_map(owner_one, sight_notice_of(_, connection: 2))
     == [
       "SeenBy "
       <> int.to_string(generation.number(generation: new_two_sees_one)),
     ]
     as "the joiner's first unit is removed as a leave removes it, with nothing told to the connection that leaves: owner 1 is told only viewer 2's new sight"
   assert list.any(owner_two, fn(notice) {
-    notice.1 == map_message.PlayerUnseen(unit_id: 1, generation: two_sees_one)
+    notice == map_message.PlayerUnseen(unit_id: 1, generation: two_sees_one)
   })
     as "viewer 2 is told unit 1 is unseen from the sight that ended"
   assert !list.any(owner_one, fn(notice) {
-    notice.1 == map_message.PlayerUnseen(unit_id: 2, generation: one_sees_two)
+    notice == map_message.PlayerUnseen(unit_id: 2, generation: one_sees_two)
   })
     as "viewer 1 is told no unit unseen: its connection leaves the map and joins again, and the 0xAD of the new join removes every unit"
   assert players.notices_to(taken: again, connection: 3)
     |> list.filter(fn(notice) {
-      case notice.1 {
+      case notice {
         map_message.SeenBy(..)
         | map_message.UnseenBy(..)
         | map_message.PlayerUnseen(..) -> True
@@ -479,7 +433,6 @@ pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_f
   assert players.relation(state:, owner: 2, viewer: 1)
     == Some(map.Relation(
       generation: new_one_sees_two,
-      stay: players.stay(count: 2),
       state: map.AwaitingSnapshot,
     ))
     as "the joiner's sight of 2 awaits 2's snapshot, under the joiner's new stay"
@@ -488,14 +441,11 @@ pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_f
       state:,
       at_ms: 6040,
       owner: 2,
-      owner_stay: players.stay(count: 1),
       viewer: 1,
       generation: new_one_sees_two,
       burst: [players.health(connection: 2, health: 7)],
     )
-  assert list.all(players.relayed(taken:), fn(delivery) {
-      delivery.0 == 1 && delivery.1 == players.stay(count: 2)
-    })
+  assert list.all(players.relayed(taken:), fn(delivery) { delivery.0 == 1 })
     && healths(relayed: players.relayed(taken:)) == [#(1, 7)]
     && list.length(players.relayed(taken:)) == 2
     as "the new snapshot, the owner's 0x262 and its news, is relayed to the joiner for its new stay"
@@ -507,8 +457,7 @@ fn landings() -> List(#(String, map_message.Landing)) {
   let source = Source(cast_id: 5, effect_id: Spell4EffectsId(62_024))
   let starts =
     player_change.PlayerChangeStarts(
-      from: ConnectionId(1),
-      from_stay: players.stay(count: 1),
+      from: map_support.address(number: 1),
       source:,
       change: player_change.Applies(player_change.Absorb(amount: 5, mask: 7)),
       sight: player_change.EndsWhenUnseen,
@@ -529,8 +478,7 @@ fn landings() -> List(#(String, map_message.Landing)) {
             occasion: strike_tell.AtGo(phase: 0),
             unit_id: 2,
           ),
-          from: ConnectionId(1),
-          stay: players.stay(count: 1),
+          from: map_support.address(number: 1),
           outgoing: 1.0,
           heals: [],
         ),
@@ -541,14 +489,14 @@ fn landings() -> List(#(String, map_message.Landing)) {
     #(
       "change end",
       map_message.ChangeEnd(change: player_change.PlayerChangeEnds(
-        from: ConnectionId(1),
+        from: map_support.address(number: 1),
         source:,
       )),
     ),
     #(
       "cast went",
       map_message.CastWent(change: player_change.PlayerCastWent(
-        from: ConnectionId(1),
+        from: map_support.address(number: 1),
         cast_id: 5,
       )),
     ),
@@ -561,24 +509,17 @@ fn landings() -> List(#(String, map_message.Landing)) {
   ]
 }
 
-/// Whether the kind checks that the sender is in the stay the tell names for it: only a
-/// change's start does (`relay.landing_kind_of`).
-fn checks_the_source_stay(landing landing: map_message.Landing) -> Bool {
-  relay.landing_kind_of(landing:).source == relay.SenderStayIsCurrent
-}
-
 pub fn each_player_to_player_effect_is_delivered_by_its_kinds_checks_test() -> Nil {
   use <- owned_test.run(5000)
-  // Player 1 is the sender and player 2 the told player, in sight of it or not, in the stay
-  // the tell names or in another, or never joined.
+  // Player 1 is the sender and player 2 the told player, in sight of it or not, or never
+  // joined.
   let told_rows = [
-    #("T in the stay named, in sight", 2, 1, True, True),
-    #("T in the stay named, out of sight of C", 2, 1, False, True),
-    #("T in another stay than the tell names", 2, 0, True, False),
-    #("T never joined", 9, 1, True, False),
+    #("T a unit of the run, in sight", 2, True, True),
+    #("T a unit of the run, out of sight of C", 2, False, True),
+    #("T never joined", 9, True, False),
   ]
   list.each(told_rows, fn(row) {
-    let #(situation, told, told_stay_count, in_sight, delivered) = row
+    let #(situation, told, in_sight, delivered) = row
     list.each(landings(), fn(kind) {
       let #(name, landing) = kind
       let state = players.empty()
@@ -589,52 +530,14 @@ pub fn each_player_to_player_effect_is_delivered_by_its_kinds_checks_test() -> N
           False -> spawns.far
         })
       let #(_, taken) =
-        players.landing(
-          state:,
-          at_ms: 6020,
-          from: 1,
-          from_stay: players.stay(count: 1),
-          to: told,
-          to_stay: players.stay(count: told_stay_count),
-          landing:,
-        )
+        players.landing(state:, at_ms: 6020, from: 1, to: told, landing:)
       let expected = case delivered {
-        True -> [
-          #(
-            told,
-            players.stay(count: told_stay_count),
-            map_message.Landed(landing:),
-          ),
-        ]
+        True -> [#(told, map_message.Landed(landing:))]
         False -> []
       }
       assert players.relayed(taken:) == expected
         as { name <> ": " <> situation }
     })
-  })
-  // The change start also needs the sender to be in the stay the tell names for it: a tell
-  // from the sender's other stay is dropped, and every other kind is delivered all the same.
-  list.each(landings(), fn(kind) {
-    let #(name, landing) = kind
-    let state = players.empty()
-    let #(state, _) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
-    let #(state, _) = spawns.join(state:, at_ms: 6010, connection: 2, x: 300.0)
-    let #(_, taken) =
-      players.landing(
-        state:,
-        at_ms: 6020,
-        from: 1,
-        from_stay: players.stay(count: 0),
-        to: 2,
-        to_stay: players.stay(count: 1),
-        landing:,
-      )
-    let expected = case checks_the_source_stay(landing:) {
-      True -> []
-      False -> [#(2, players.stay(count: 1), map_message.Landed(landing:))]
-    }
-    assert players.relayed(taken:) == expected
-      as { name <> ": the sender is in another stay than the tell names" }
   })
   // A player that left the map is told nothing, whatever the kind.
   list.each(landings(), fn(kind) {
@@ -644,15 +547,7 @@ pub fn each_player_to_player_effect_is_delivered_by_its_kinds_checks_test() -> N
     let #(state, _) = spawns.join(state:, at_ms: 6010, connection: 2, x: 300.0)
     let #(state, _) = spawns.leave(state:, at_ms: 6015, connection: 2)
     let #(_, taken) =
-      players.landing(
-        state:,
-        at_ms: 6020,
-        from: 1,
-        from_stay: players.stay(count: 1),
-        to: 2,
-        to_stay: players.stay(count: 1),
-        landing:,
-      )
+      players.landing(state:, at_ms: 6020, from: 1, to: 2, landing:)
     assert players.relayed(taken:) == []
       as { name <> ": the told player left the map" }
   })
@@ -674,13 +569,11 @@ pub fn the_news_a_connection_sent_before_it_ended_is_relayed_before_its_removal_
   }
   let sight = told_sight(1, 2)
   let owners_sight = told_sight(2, 1)
-  let first_stay = players.stay(count: 1)
   let #(state, _) =
     players.snapshot(
       state:,
       at_ms:,
       owner: 1,
-      owner_stay: first_stay,
       viewer: 2,
       generation: sight,
       burst: [players.health(connection: 1, health: 1)],
@@ -692,7 +585,6 @@ pub fn the_news_a_connection_sent_before_it_ended_is_relayed_before_its_removal_
       state:,
       at_ms: at_ms + 1,
       owner: 1,
-      owner_stay: first_stay,
       news: players.health(connection: 1, health: 2),
     )
   let #(state, second) =
@@ -700,7 +592,6 @@ pub fn the_news_a_connection_sent_before_it_ended_is_relayed_before_its_removal_
       state:,
       at_ms: at_ms + 2,
       owner: 1,
-      owner_stay: first_stay,
       news: players.health(connection: 1, health: 3),
     )
   let #(_, ended) =
@@ -710,7 +601,7 @@ pub fn the_news_a_connection_sent_before_it_ended_is_relayed_before_its_removal_
     as "each news the connection sent is relayed when the map takes it, in order"
   let to_two =
     list.map(players.notices_to(taken: ended, connection: 2), fn(notice) {
-      notice.1
+      notice
     })
   let unseen = map_message.PlayerUnseen(unit_id: 1, generation: sight)
   assert list.contains(to_two, unseen)
@@ -720,7 +611,10 @@ pub fn the_news_a_connection_sent_before_it_ended_is_relayed_before_its_removal_
     as "then 2 is told the unit is unseen and then gone: the connection's end sends nothing of the unit before them"
   assert list.contains(
     to_two,
-    map_message.UnseenBy(by: ConnectionId(1), generation: owners_sight),
+    map_message.UnseenBy(
+      by: map_support.address(number: 1),
+      generation: owners_sight,
+    ),
   )
     as "2, as the owner of its own unit, is told that 1 no longer sees it, from the sight 1 had of it: its copy stops stamping moves to a connection that ended"
 }
@@ -732,7 +626,7 @@ pub fn a_pair_that_leaves_while_its_snapshot_is_awaited_tells_the_viewer_its_uns
   let #(state, moved) =
     spawns.move(state:, at_ms:, connection: 2, x: spawns.far)
   assert list.map(players.notices_to(taken: moved, connection: 2), fn(notice) {
-      notice.1
+      notice
     })
     |> list.contains(map_message.PlayerUnseen(unit_id: 1, generation: sight))
     as "the viewer is told the unit is unseen although it took no snapshot of the sight"
@@ -743,7 +637,6 @@ pub fn a_pair_that_leaves_while_its_snapshot_is_awaited_tells_the_viewer_its_uns
       state:,
       at_ms: at_ms + 1,
       owner: 1,
-      owner_stay: players.stay(count: 1),
       viewer: 2,
       generation: sight,
       burst: [players.health(connection: 1, health: 1)],
@@ -757,7 +650,6 @@ pub fn a_move_told_to_the_map_makes_it_decide_sight_and_send_no_move_test() -> N
   // Players 2, 3 and 4 stand at x 200, 300 and 400 and see player 1, at x 100 (sight 1024):
   // its move to x -700 leaves 2 and 3 in sight (900 and 1000 away) and takes 4 out (1100).
   let #(state, sights, at_ms) = owner_and_viewers(viewers: [2, 3, 4])
-  let first_stay = players.stay(count: 1)
   let #(state, at_ms) =
     list.fold([2, 3, 4], #(state, at_ms), fn(so_far, viewer) {
       let #(state, at_ms) = so_far
@@ -766,7 +658,6 @@ pub fn a_move_told_to_the_map_makes_it_decide_sight_and_send_no_move_test() -> N
           state:,
           at_ms:,
           owner: 1,
-          owner_stay: first_stay,
           viewer:,
           generation: sight_of_viewer(sights:, viewer:),
           burst: [players.health(connection: 1, health: 1)],
@@ -780,11 +671,12 @@ pub fn a_move_told_to_the_map_makes_it_decide_sight_and_send_no_move_test() -> N
   let sight_notices =
     list.filter_map(support.sends(taken), fn(sent) {
       case sent.1 {
-        map_message.Noticed(
-          notice: map_message.UnseenBy(by: ConnectionId(by), ..),
-          ..,
-        ) -> Ok(#(sent.0, "UnseenBy " <> int.to_string(by)))
-        map_message.Noticed(notice: map_message.PlayerUnseen(unit_id:, ..), ..) ->
+        map_message.Noticed(notice: map_message.UnseenBy(by:, ..)) ->
+          Ok(#(
+            sent.0,
+            "UnseenBy " <> int.to_string(unit_address.rank(address: by)),
+          ))
+        map_message.Noticed(notice: map_message.PlayerUnseen(unit_id:, ..)) ->
           Ok(#(sent.0, "PlayerUnseen " <> int.to_string(unit_id)))
         _ -> Error(Nil)
       }

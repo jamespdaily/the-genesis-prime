@@ -697,7 +697,7 @@ pub fn family_rows() -> List(Row) {
     Row(
       module: connection,
       type_name: "Message",
-      variants: ["ForStay"],
+      variants: ["ForUnit"],
       cover: Owner(
         "game_connection_held_map_test.a_held_message_for_another_stay_is_dropped_when_taken_test",
       ),

@@ -26,7 +26,7 @@ import cast_support
 import driven_time
 import fixture_tables
 import game_connection_support as connection_support
-import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
+import genesis_prime/client_connection.{type Message, ForUnit, SentByPeer}
 
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
@@ -192,7 +192,7 @@ type StateNews {
 fn state_news(unit_id unit_id: Int) -> fn(Message) -> Result(StateNews, Nil) {
   fn(message) {
     case message {
-      ForStay(
+      ForUnit(
         sent: SentByPeer(PeerNews(
           unit_id: from,
           news: unit_news.UnitStateHeld(state:, number:),
@@ -201,7 +201,7 @@ fn state_news(unit_id unit_id: Int) -> fn(Message) -> Result(StateNews, Nil) {
       )
         if from == unit_id
       -> Ok(Held(state:, number:))
-      ForStay(
+      ForUnit(
         sent: SentByPeer(PeerNews(
           unit_id: from,
           news: unit_news.UnitStateEnded(number:),
@@ -210,7 +210,7 @@ fn state_news(unit_id unit_id: Int) -> fn(Message) -> Result(StateNews, Nil) {
       )
         if from == unit_id
       -> Ok(Ended(number:))
-      ForStay(..)
+      ForUnit(..)
       | client_connection.SentBySessions(..)
       | client_connection.SentByChat(..) -> Error(Nil)
     }
@@ -249,7 +249,7 @@ fn health_of(
   message message: Message,
 ) -> Result(Int, Nil) {
   case message {
-    ForStay(
+    ForUnit(
       sent: SentByPeer(PeerNews(
         unit_id: from,
         news: unit_news.Health(health:, ..),
@@ -258,7 +258,7 @@ fn health_of(
     )
       if from == unit_id
     -> Ok(health)
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }

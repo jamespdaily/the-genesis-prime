@@ -15,7 +15,7 @@
 ////
 //// - A heal's answer goes before T's own news, as a creature's does (genesis_prime/game/strike).
 //// - A heal reads the healer's outgoing multiplier from the tell (genesis_prime/game/heal_split).
-//// - A start needs its caster among T's viewers with the tell's stay, T alive; an end its holder.
+//// - A start needs its caster among T's viewers with the tell's address, T alive; an end its holder.
 //// - A spell with propertyFlags 0x100 survives UnseenBy (fact `cast.target_node_end`).
 //// - With the caster's unit gone, T writes the cast's 0x7fe once its last source ends.
 //// - A cast's went starts it for the viewers from the ledger (`held_changes.cast_views`).
@@ -46,16 +46,15 @@ import genesis_prime/shared/proc_event
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
-import genesis_prime/step.{
-  type ConnectionEffect, type ConnectionId, type Effect, type Now,
-}
+import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bool
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
 
 /// The heal rows of `strike` applied to the player `entered`, and the answer told to
-/// the caster's connection for the stay the strike names, before the player's own news.
+/// the caster's unit, before the player's own news.
 pub fn struck(
   session session: Session,
   now now: Now,
@@ -72,10 +71,8 @@ pub fn struck(
     life_effect.life_changed(session:, now:, change: fn(_) { #(life, effects) })
   let answer: Effect(ConnectionEffect(Request)) =
     connection_state.tells_the_landing(
-      session:,
       entered:,
       to: strike.from,
-      to_stay: strike.stay,
       landing: map_message.HealAnswer(answered: strike_tell.PlayerAnswered(
         key: strike.key,
         outcome:,
@@ -119,8 +116,7 @@ pub fn ended(
 }
 
 /// What a caster's connection told the player (`PlayerTell.Change`). A start is taken
-/// only while the player is alive and the caster is one of its viewers with the stay the
-/// tell names; it is applied (`started`) and held for the caster. An end is taken only
+/// only while the player is alive and the caster is one of its viewers; it is applied (`started`) and held for the caster. An end is taken only
 /// from the caster that holds the source. A went is taken only from the caster that holds
 /// a source of the cast, and starts the cast for the viewers (`cast_went`).
 pub fn changed(
@@ -132,7 +128,6 @@ pub fn changed(
   case change {
     player_change.PlayerChangeStarts(
       from:,
-      from_stay:,
       source:,
       change:,
       sight:,
@@ -143,7 +138,7 @@ pub fn changed(
         player_life.state(life: entered.life),
         dict.get(entered.viewers, from)
       {
-        player_life.Alive, Ok(viewer) if viewer.stay == from_stay -> {
+        player_life.Alive, Ok(viewer) -> {
           let #(session, effects) = started(session:, now:, source:, change:)
           let session =
             connection_state.with_entered(session:, change: fn(entered) {
@@ -162,10 +157,8 @@ pub fn changed(
             })
           Continue(session, effects)
         }
-        player_life.Alive, Ok(_)
-        | player_life.Alive, Error(Nil)
-        | player_life.Dead, _
-        -> Continue(session, [])
+        player_life.Alive, Error(Nil) | player_life.Dead, _ ->
+          Continue(session, [])
       }
     player_change.PlayerChangeEnds(from:, source:) ->
       case held_changes.released(held: entered.held, source:) {
@@ -192,7 +185,7 @@ pub fn changed(
   }
 }
 
-/// The go of the cast `cast_id` that the caster of connection `from` started has told the
+/// The go of the cast `cast_id` that the caster `from` started has told the
 /// player its changes: the player tells the map the cast's start, built from the changes it
 /// holds of the cast, for the map to relay to its viewers. The ledger
 /// is the whole guard: a dead player holds nothing (`ended_at_death`).
@@ -200,7 +193,7 @@ fn cast_went(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
-  from from: step.ConnectionId,
+  from from: UnitAddress,
   cast_id cast_id: Int,
 ) -> client_connection.Handled(Session) {
   use <- bool.guard(
@@ -226,7 +219,6 @@ fn cast_went(
         )
       Continue(session, [
         connection_state.broadcast(
-          session:,
           entered:,
           news: unit_news.HeldCastStarted(start:, go:),
         ),
@@ -236,13 +228,13 @@ fn cast_went(
   }
 }
 
-/// The caster of connection `by` is no longer one of the player's viewers: each source of
+/// The caster `by` is no longer one of the player's viewers: each source of
 /// `by` that ends with its caster's sight is taken off, in the order they started; a
 /// source of a spell that outlives sight stays.
 pub fn caster_unseen(
   session session: Session,
   now now: Now,
-  by by: step.ConnectionId,
+  by by: UnitAddress,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   released_ended(session:, now:, release: held_changes.released_unseen(
     held: _,
@@ -265,10 +257,9 @@ pub fn caster_removed(
 
 /// What the player tells the casters of Proc rows it holds, for a creature's blow that raised
 /// `events` (`cast_proc.blow_events`): each caster among its viewers whose sources wait for
-/// one of them gets one tell with the stay it holds the viewer by, the player's unit and the
+/// one of them gets one tell, the player's unit and the
 /// events it waits for in the order they were raised. A dead player tells nobody.
 pub fn events_told(
-  session session: Session,
   entered entered: world_entry.Entered,
   events events: List(proc_event.Event),
 ) -> List(Effect(ConnectionEffect(Request))) {
@@ -281,12 +272,10 @@ pub fn events_told(
     let waited_for =
       list.filter(events, fn(event) { list.contains(triggers, event.trigger) })
     case dict.get(entered.viewers, caster), waited_for {
-      Ok(viewer), [_, ..] ->
+      Ok(_), [_, ..] ->
         Ok(connection_state.tells_the_landing(
-          session:,
           entered:,
           to: caster,
-          to_stay: viewer.stay,
           landing: map_message.AllyEvent(event: strike_tell.PlayerEvent(
             unit_id: entered.unit_id,
             events: waited_for,
@@ -311,8 +300,8 @@ pub fn ended_at_death(
 fn released_ended(
   session session: Session,
   now now: Now,
-  release release: fn(held_changes.Held(ConnectionId)) ->
-    #(held_changes.Held(ConnectionId), List(unit_properties.Source)),
+  release release: fn(held_changes.Held) ->
+    #(held_changes.Held, List(unit_properties.Source)),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case connection_state.entered_of(session.status) {
     None -> #(session, [])
@@ -356,7 +345,6 @@ fn viewers_told_ended(
         held_changes.casts_left(held: entered.held, released: sources),
         fn(cast_id) {
           connection_state.broadcast(
-            session:,
             entered:,
             news: unit_news.HeldCastEnded(cast_id:),
           )
@@ -421,7 +409,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A kept change (a spell with propertyFlags 0x100) that a caster put on a player stays on the player after the caster joins again under a new stay, as after the caster left sight: only the caster's end tell or the removal of its unit takes it off (`held_changes.released_unseen`); the change's other sources end with the caster's earlier sight.",
+      missing: "A kept change (a spell with propertyFlags 0x100) that a caster put on a player stays on the player after the caster joins again under a new address, as after the caster left sight: only the caster's end tell or the removal of its unit takes it off (`held_changes.released_unseen`); the change's other sources end with the caster's earlier sight.",
     ),
     gap.Entry(
       area: "Casting",

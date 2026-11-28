@@ -245,7 +245,7 @@ fn limits() -> List(Limit) {
       connection_landing.gaps(),
       "Casting",
       ["joins again", "kept change", "released_unseen"],
-      "a kept change a caster put on a player stays after the caster joins again under a new stay, as after it left sight, and only the caster's end tell or the removal of its unit takes it off",
+      "a kept change a caster put on a player stays after the caster joins again under a new address, as after it left sight, and only the caster's end tell or the removal of its unit takes it off",
     ),
     Limit(
       connection_landing.gaps(),

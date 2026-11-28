@@ -15,7 +15,7 @@ import code_rule/source
 import crowd_control_support
 import driven_time
 import genesis_prime/client_connection.{
-  type Message, ForStay, SentByFoe, SentByMap, SentByPeer, SentByTarget,
+  type Message, ForUnit, SentByFoe, SentByMap, SentByPeer, SentByTarget,
 }
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/shared/strike_tell.{Answered, Landed}
@@ -223,18 +223,18 @@ fn named(value value: a) -> String {
 /// carries by name, and how many casts a creature's 0x262 lists.
 fn described(message: Message) -> String {
   case message {
-    ForStay(
+    ForUnit(
       sent: SentByPeer(PeerNews(news: CreatureAppeared(unit:, ..), ..)),
       ..,
     ) ->
       "appeared with "
       <> int.to_string(list.length(unit.tail.casts))
       <> " casts"
-    ForStay(sent: SentByPeer(PeerNews(news:, ..)), ..) -> named(value: news)
-    ForStay(sent: SentByFoe(fight), ..) -> named(value: fight)
-    ForStay(sent: SentByTarget(..), ..) -> "answer to a strike"
-    ForStay(sent: SentByMap(notice), ..) -> named(value: notice)
-    ForStay(..) -> "another message to a stay"
+    ForUnit(sent: SentByPeer(PeerNews(news:, ..)), ..) -> named(value: news)
+    ForUnit(sent: SentByFoe(fight), ..) -> named(value: fight)
+    ForUnit(sent: SentByTarget(..), ..) -> "answer to a strike"
+    ForUnit(sent: SentByMap(notice), ..) -> named(value: notice)
+    ForUnit(..) -> "another message to a stay"
     client_connection.SentBySessions(..) | client_connection.SentByChat(..) ->
       "a message not for a stay"
   }

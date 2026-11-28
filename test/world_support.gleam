@@ -8,7 +8,7 @@ import character_tables
 import driven_time
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
-  type Message, ForStay, SentByChat, SentBySessions,
+  type Message, ForUnit, SentByChat, SentBySessions,
 }
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/group_registry
@@ -129,6 +129,8 @@ fn started(
       reach: service.Reach(
         locate: fn(address) { locate(connections:, address:) },
         send: fn(to, outgoing) { send(connections:, gate:, to:, outgoing:) },
+        register: fn(group, member) { register(connections:, group:, member:) },
+        unregister: fn(group) { registry.leave_unit(connections, group) },
         start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
       ),
     )
@@ -161,6 +163,31 @@ fn locate(
 ) -> Result(Pid, Nil) {
   case address {
     Connection(connection:) -> registry.find(connections, connection)
+    step.Unit(..) -> registry.find_unit(connections, address)
+    step.Sessions
+    | step.HandOff
+    | step.Store
+    | step.Maps
+    | step.Map(..)
+    | step.Creature(..)
+    | step.CharacterNamed(..)
+    | step.ZoneChannel(..) -> Error(Nil)
+  }
+}
+
+/// Makes the process of the connection `member` the member of the unit group `group`, as
+/// the server's reach does.
+fn register(
+  connections connections: Registry(Message),
+  group group: Address,
+  member member: Address,
+) -> Nil {
+  case member {
+    Connection(connection:) ->
+      case registry.find(connections, connection) {
+        Ok(pid) -> registry.join_unit(connections, group, pid)
+        Error(Nil) -> Nil
+      }
     step.Sessions
     | step.HandOff
     | step.Store
@@ -169,7 +196,7 @@ fn locate(
     | step.Unit(..)
     | step.Creature(..)
     | step.CharacterNamed(..)
-    | step.ZoneChannel(..) -> Error(Nil)
+    | step.ZoneChannel(..) -> Nil
   }
 }
 
@@ -180,12 +207,12 @@ fn send(
   outgoing outgoing: map_message.Outgoing,
 ) -> Result(Nil, Nil) {
   case to {
-    Connection(connection:) ->
+    step.Unit(..) ->
       case gate {
-        None -> deliver(connections:, connection:, outgoing:)
+        None -> deliver(connections:, to:, outgoing:)
         Some(gate) -> {
           send_gate.send(gate:, carry: fn() {
-            let _delivered = deliver(connections:, connection:, outgoing:)
+            let _delivered = deliver(connections:, to:, outgoing:)
             Nil
           })
           Ok(Nil)
@@ -196,7 +223,7 @@ fn send(
     | step.Store
     | step.Maps
     | step.Map(..)
-    | step.Unit(..)
+    | step.Connection(..)
     | step.Creature(..)
     | step.CharacterNamed(..)
     | step.ZoneChannel(..) -> Error(Nil)
@@ -205,11 +232,11 @@ fn send(
 
 fn deliver(
   connections connections: Registry(Message),
-  connection connection: step.ConnectionId,
+  to to: Address,
   outgoing outgoing: map_message.Outgoing,
 ) -> Result(Nil, Nil) {
-  server.map_message(outgoing:)
-  |> result.try(registry.deliver(connections, connection, _))
+  server.map_message(to:, outgoing:)
+  |> result.try(registry.deliver_unit(connections, to, _))
 }
 
 /// The gate the maps' sends to connections pass, of a world made with `start_gated`.
@@ -303,7 +330,7 @@ fn until_the_marker(
   {
     SentBySessions(message: account_session.Claimed) -> list.reverse(before)
     SentBySessions(message: account_session.TakenOver) as other
-    | ForStay(..) as other
+    | ForUnit(..) as other
     | SentByChat(..) as other ->
       until_the_marker(received:, before: [other, ..before])
   }

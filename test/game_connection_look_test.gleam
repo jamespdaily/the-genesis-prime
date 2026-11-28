@@ -38,11 +38,12 @@ import genesis_prime/shared/loadout
 import genesis_prime/shared/unit_news.{
   type News, Appeared, LookChanged, PeerNews, Removed,
 }
-import genesis_prime/step.{type ConnectionStep, ConnectionId}
+import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId, Spell4BaseId}
 import gleam/list
 import gleam/option.{None}
+import map_support
 import owned_test
 
 /// Slot 64 as 0x933 carries it: the display with colour set 0 and dye 0, and display 0
@@ -211,8 +212,7 @@ fn created_for(
       support.feed(
         state:,
         event: support.sent_by_the_map(SeenBy(
-          by: ConnectionId(viewer),
-          stay: support.viewer_stay(viewer),
+          by: map_support.address(number: viewer),
           unit_id: support.viewer_unit_id(viewer),
           generation: support.viewer_sight(viewer),
         )),
@@ -257,7 +257,7 @@ fn a_viewer_that_sees_the_player_again_gets_the_suit(
     support.feed(
       state: suited,
       event: support.sent_by_the_map(UnseenBy(
-        by: ConnectionId(2),
+        by: map_support.address(number: 2),
         generation: support.viewer_sight(2),
       )),
     )
@@ -323,13 +323,13 @@ pub fn a_look_news_of_an_earlier_stay_is_dropped_test() -> Nil {
   let #(_, taken) =
     support.feed(
       shown,
-      support.in_second_stay(support.news_sent_by_a_peer(
+      support.in_second_unit(support.news_sent_by_a_peer(
         unit_id: 9,
         news: LookChanged(item_visuals: [suit(display: 7221)]),
       )),
     )
   assert support.heard(taken, support.keyed()) == []
-    as "the news is for the player's second stay and the connection is in its first (ForStay)"
+    as "the news is for the player's second address and the connection holds its first (ForUnit)"
 }
 
 // ---- the end of the player's stay ----
@@ -378,7 +378,7 @@ fn a_camp_tells_the_viewers_removed_and_no_look(world world: World) -> Nil {
     as "the camp's own steps tell the map no LookChanged, whatever it carries; the unit's removal is the map's PlayerUnseen when it takes the leave (opcode.0x355)"
   // The next entry: a fresh Entered from the map's join, whose 0x262 lists the base.
   let #(_, entering) =
-    support.entered_from(
+    support.entered_again_from(
       in_character_select: camped,
       character: Character(..support.world_character(), class_id: ClassId(2)),
     )

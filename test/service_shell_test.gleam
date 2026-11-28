@@ -265,6 +265,8 @@ pub fn a_send_is_handed_to_the_receivers_address_and_one_to_a_receiver_not_runni
           False -> Error(Nil)
         }
       },
+      register: fn(_group, _member) { Nil },
+      unregister: fn(_group) { Nil },
       start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
     )
   let gate = process.new_name("gate")
@@ -508,6 +510,8 @@ fn watching(
         }
       },
       send: fn(_to, _message) { Error(Nil) },
+      register: fn(_group, _member) { Nil },
+      unregister: fn(_group) { Nil },
       start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
     ),
     time:,
@@ -695,6 +699,8 @@ pub fn a_service_found_at_an_address_is_found_there_when_its_first_step_sends_te
             open_wait.received(from: looked, what: "the lookup of the service")
           Ok(Nil)
         },
+        register: fn(_group, _member) { Nil },
+        unregister: fn(_group) { Nil },
         start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
       ),
       shutdown_ms: 1000,
@@ -749,6 +755,8 @@ fn clocked(
           process.send(sink, message)
           Ok(Nil)
         },
+        register: fn(_group, _member) { Nil },
+        unregister: fn(_group) { Nil },
         start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
       ),
       shutdown_ms: 1000,

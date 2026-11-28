@@ -1455,7 +1455,7 @@ fn carried_out(
         connection_state.to_client(session, frame),
       ])
       cast_state.Broadcast(news:), Some(entered) -> #(session, [
-        connection_state.broadcast(session:, entered:, news:),
+        connection_state.broadcast(entered:, news:),
       ])
       cast_state.Broadcast(..), None -> #(session, [])
       cast_state.StartTimer(timer:, after_ms:), _ -> #(session, [
@@ -1580,14 +1580,11 @@ fn carried_out(
         Some(entered)
       -> #(session, [
         connection_state.tells_the_landing(
-          session:,
           entered:,
-          to: address.connection,
-          to_stay: address.stay,
+          to: address.address,
           landing: map_message.ChangeStart(
             change: player_change.PlayerChangeStarts(
-              from: client_connection.connection(session.link),
-              from_stay: entered.stay,
+              from: entered.address,
               source:,
               change:,
               sight:,
@@ -1601,13 +1598,11 @@ fn carried_out(
         session,
         [
           connection_state.tells_the_landing(
-            session:,
             entered:,
-            to: address.connection,
-            to_stay: address.stay,
+            to: address.address,
             landing: map_message.ChangeEnd(
               change: player_change.PlayerChangeEnds(
-                from: client_connection.connection(session.link),
+                from: entered.address,
                 source:,
               ),
             ),
@@ -1618,12 +1613,10 @@ fn carried_out(
         session,
         [
           connection_state.tells_the_landing(
-            session:,
             entered:,
-            to: address.connection,
-            to_stay: address.stay,
+            to: address.address,
             landing: map_message.CastWent(change: player_change.PlayerCastWent(
-              from: client_connection.connection(session.link),
+              from: entered.address,
               cast_id:,
             )),
           ),
@@ -1647,7 +1640,6 @@ fn carried_out(
           ],
           [
             connection_state.broadcast(
-              session:,
               entered:,
               news: unit_news.Stealth(stealthed:),
             ),
@@ -1658,7 +1650,7 @@ fn carried_out(
             connection_state.tells_the_map(
               entered:,
               request: client_connection.TellStealthChanged(
-                connection: client_connection.connection(session.link),
+                unit: entered.address,
                 stealthed:,
               ),
             ),
@@ -2017,12 +2009,10 @@ fn attacker_of(
     as "a character's faction is Exile or Dominion (start_place)"
   strike.Attacker(
     unit_id: entered.unit_id,
-    connection: client_connection.connection(session.link),
     address: entered.address,
     pose: area.pose_of(place:),
     place:,
     move_seq: session.move_seq,
-    stay: entered.stay,
     hit_radius: hit_radius.of_playing(
       tables: session.settings.tables,
       race_id: entered.character.race_id,
@@ -2085,10 +2075,8 @@ fn strike_carried_out(
       ])
       strike.TellPlayerStrike(address:, strike:), Some(entered) -> #(session, [
         connection_state.tells_the_landing(
-          session:,
           entered:,
-          to: address.connection,
-          to_stay: address.stay,
+          to: address.address,
           landing: map_message.HealStrike(strike:),
         ),
       ])

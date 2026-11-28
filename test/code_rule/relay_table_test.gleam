@@ -5,7 +5,7 @@
 //// table (its kind, destination check and source check) and one arm of its own in
 //// `kind_of` or `inbound_kind_of`, which gives that kind. A variant with no row or no arm
 //// of its own, a row for no variant, an `Inbound` arm whose `source:` is not a bare
-//// variant, and an arm whose `NoSenderCheck` differs from its row's "none", is a breach. The rule is shown on a planted file,
+//// variant, and an arm whose `NoSourceCheck` differs from its row's "none", is a breach. The rule is shown on a planted file,
 //// then read over the real one.
 
 import code_rule/planted
@@ -104,7 +104,7 @@ fn tabled_without_sender_check(
   |> list.map(fn(row) { #(row.0, string.starts_with(row.1, "none")) })
 }
 
-/// Whether each arm of `inbound_kind_of` gives `NoSenderCheck` as the `source:` of its
+/// Whether each arm of `inbound_kind_of` gives `NoSourceCheck` as the `source:` of its
 /// `InboundKind`, by the variant's name; an arm whose body is not an `InboundKind(...)`
 /// call with a `source:` that is a bare variant is `Error(Nil)`, unread.
 fn armed_without_sender_check(
@@ -121,7 +121,7 @@ fn armed_without_sender_check(
             position: syntax.LastArgument,
           )
         {
-          Some(glance.Variable(name:, ..)) -> Ok(name == "NoSenderCheck")
+          Some(glance.Variable(name:, ..)) -> Ok(name == "NoSourceCheck")
           Some(_) | None -> Error(Nil)
         }
       _ -> Error(Nil)
@@ -204,7 +204,7 @@ pub fn the_relay_table_has_one_row_for_each_payload_and_each_row_names_its_desti
       "  case inbound {",
       "    Strike(..) ->",
       "      // a comment between the pattern and the body",
-      "      InboundKind(destination: RunningCreature, source: NoSenderCheck)",
+      "      InboundKind(destination: RunningCreature, source: NoSourceCheck)",
       "    TargetMoved(..) | Despawn(..) -> 2",
       "  }",
       "}",

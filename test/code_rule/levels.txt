@@ -296,5 +296,4 @@ genesis_prime/world_map/spawn_cell map
 genesis_prime/world_map/spawn_id data
 genesis_prime/world_map/spawn_source platform
 genesis_prime/world_map/static_object map
-genesis_prime/world_map/stay platform
 genesis_prime/world_map/unit_address platform

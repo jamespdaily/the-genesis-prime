@@ -24,11 +24,12 @@ import genesis_prime/shared/unit_casts.{
   type HeldEffect, CastView, EndsAt, HeldEffect, ViewTarget,
 }
 import genesis_prime/shared/unit_properties.{type Source, Source}
-import genesis_prime/step.{type ConnectionId, ConnectionId}
 import genesis_prime/table/id.{type Spell4Id, Spell4EffectsId, Spell4Id}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import map_support
 import owned_test
 import qcheck
 
@@ -54,14 +55,14 @@ type Start {
   Start(caster: Int, sight: Sight, cast_id: Int)
 }
 
-fn held_after(starts starts: List(Start)) -> #(Held(ConnectionId), List(Bool)) {
+fn held_after(starts starts: List(Start)) -> #(Held, List(Bool)) {
   let #(held, flags) =
     list.fold(starts, #(held_changes.new(), []), fn(so_far, start) {
       let #(held, flags) = so_far
       let #(held, started) =
         held_changes.started(
           held:,
-          by: ConnectionId(start.caster),
+          by: caster_address(start.caster),
           unit_id: 100 + start.caster,
           source: source(cast_id: start.cast_id),
           sight: start.sight,
@@ -78,13 +79,17 @@ fn cast_ids(sources: List(Source)) -> List(Int) {
   list.map(sources, fn(source) { source.cast_id })
 }
 
-fn number_of(by by: ConnectionId) -> Int {
-  let ConnectionId(number) = by
-  number
+/// The address the tests' map issues the caster of connection `number`.
+fn caster_address(number: Int) -> UnitAddress {
+  map_support.address(number:)
 }
 
-fn connection_numbers(held held: Held(ConnectionId)) -> List(Int) {
-  list.map(held_changes.connections(held:), fn(by) { number_of(by:) })
+fn number_of(by by: UnitAddress) -> Int {
+  unit_address.number(address: by)
+}
+
+fn connection_numbers(held held: Held) -> List(Int) {
+  list.map(held_changes.casters(held:), fn(by) { number_of(by:) })
 }
 
 pub fn a_source_started_twice_is_held_once_and_each_casters_sources_keep_their_start_order_test() -> Nil {
@@ -136,7 +141,7 @@ pub fn a_source_started_twice_is_held_once_and_each_casters_sources_keep_their_s
   let told = fn(held, by, cast_source: Source, spell, effect) {
     held_changes.started(
       held:,
-      by: ConnectionId(by),
+      by: caster_address(by),
       unit_id: 100 + by,
       source: cast_source,
       sight: EndsWhenUnseen,
@@ -284,9 +289,9 @@ pub fn ending_every_source_of_a_caster_takes_that_casters_alone_in_start_order_t
     let #(reason, release, taken, remaining, casters) = row
     let #(held, _) = held_after(starts:)
     let #(held, given) = case release {
-      By(caster:) -> held_changes.released_by(held:, by: ConnectionId(caster))
+      By(caster:) -> held_changes.released_by(held:, by: caster_address(caster))
       Unseen(caster:) ->
-        held_changes.released_unseen(held:, by: ConnectionId(caster))
+        held_changes.released_unseen(held:, by: caster_address(caster))
       WithUnit(unit_id:) -> held_changes.released_with_unit(held:, unit_id:)
     }
     assert cast_ids(given) == taken as reason
@@ -298,13 +303,13 @@ pub fn ending_every_source_of_a_caster_takes_that_casters_alone_in_start_order_t
 /// A release, as a number the property draws: 0 a caster's connection ending, 1 a caster out
 /// of sight, 2 a caster's unit gone.
 fn released_as(
-  held held: Held(ConnectionId),
+  held held: Held,
   kind kind: Int,
   caster caster: Int,
-) -> #(Held(ConnectionId), List(Source)) {
+) -> #(Held, List(Source)) {
   case kind {
-    0 -> held_changes.released_by(held:, by: ConnectionId(caster))
-    1 -> held_changes.released_unseen(held:, by: ConnectionId(caster))
+    0 -> held_changes.released_by(held:, by: caster_address(caster))
+    1 -> held_changes.released_unseen(held:, by: caster_address(caster))
     _ -> held_changes.released_with_unit(held:, unit_id: 100 + caster)
   }
 }
@@ -459,7 +464,7 @@ pub fn the_casts_a_player_holds_kept_from_a_caster_unit_and_whether_it_holds_a_c
         let #(held, _) =
           held_changes.started(
             held:,
-            by: ConnectionId(start.unit_id - 100),
+            by: caster_address(start.unit_id - 100),
             unit_id: start.unit_id,
             source: row_source(cast_id: start.cast_id, row: start.row),
             sight: start.sight,
@@ -509,11 +514,11 @@ type Listed {
   )
 }
 
-fn held_listed(listed listed: List(Listed)) -> Held(ConnectionId) {
+fn held_listed(listed listed: List(Listed)) -> Held {
   list.fold(listed, held_changes.new(), fn(held, one) {
     held_changes.started(
       held:,
-      by: ConnectionId(one.caster),
+      by: caster_address(one.caster),
       unit_id: 100 + one.caster,
       source: row_source(cast_id: one.cast_id, row: one.row),
       sight: KeptWhenUnseen,
@@ -667,9 +672,9 @@ pub fn the_casts_a_player_holds_are_listed_for_a_create_from_its_ledger_test() -
   })
   // A source with no caster unit (a creature's) is held but listed to nobody.
   let #(held, _) =
-    held_changes.started_by_connection(
+    held_changes.started_by_caster(
       held: held_changes.new(),
-      by: ConnectionId(3),
+      by: caster_address(3),
       source: source(cast_id: 7),
     )
   assert held_changes.cast_views(held:, holder_unit_id: holder, now_ms: 0) == []
@@ -688,10 +693,7 @@ pub fn the_casts_a_player_holds_are_listed_for_a_create_from_its_ledger_test() -
 
 /// Each effect the one cast of the held changes tells at `now_ms`: the row, the delay and
 /// the lifetime.
-fn told_effects(
-  held held: Held(ConnectionId),
-  now_ms now_ms: Int,
-) -> List(#(Int, Int, Int)) {
+fn told_effects(held held: Held, now_ms now_ms: Int) -> List(#(Int, Int, Int)) {
   let assert [view] =
     held_changes.cast_views(held:, holder_unit_id: holder, now_ms:)
   let assert Ok(entry) = unit_casts.entry_of(view:, now_ms:)
@@ -763,15 +765,15 @@ pub fn the_casts_a_release_leaves_with_no_source_are_named_once_each_in_cast_id_
 /// A start of the cast `cast_id` by caster `caster` that waits for `trigger` (none for a
 /// change the player applies), kept when its caster is unseen only when `sight` says so.
 fn waiting(
-  held held: Held(ConnectionId),
+  held held: Held,
   caster caster: Int,
   cast_id cast_id: Int,
   trigger trigger: option.Option(spell_plan.Trigger),
   sight sight: Sight,
-) -> Held(ConnectionId) {
+) -> Held {
   held_changes.started(
     held:,
-    by: ConnectionId(caster),
+    by: caster_address(caster),
     unit_id: 100 + caster,
     source: source(cast_id:),
     sight:,
@@ -782,9 +784,7 @@ fn waiting(
 }
 
 /// What `events_awaited` answers as connection numbers with their triggers.
-fn awaited(
-  held held: Held(ConnectionId),
-) -> List(#(Int, List(spell_plan.Trigger))) {
+fn awaited(held held: Held) -> List(#(Int, List(spell_plan.Trigger))) {
   list.map(held_changes.events_awaited(held:), fn(waiting) {
     #(number_of(by: waiting.0), waiting.1)
   })
@@ -860,8 +860,8 @@ pub fn events_awaited_name_each_caster_that_holds_a_proc_source_once_with_the_tr
       "the sources of a caster no longer seen that end when it is unseen are not awaited, and a source kept when unseen stays awaited",
       fn(held) {
         let #(held, _) =
-          held_changes.released_unseen(held:, by: ConnectionId(2))
-        held_changes.released_unseen(held:, by: ConnectionId(1)).0
+          held_changes.released_unseen(held:, by: caster_address(2))
+        held_changes.released_unseen(held:, by: caster_address(1)).0
       },
       [#(1, [spell_plan.TakesDamage, spell_plan.SuffersCritical])],
     ),
@@ -872,7 +872,7 @@ pub fn events_awaited_name_each_caster_that_holds_a_proc_source_once_with_the_tr
     ),
     #(
       "a caster's connection ending takes every source of it",
-      fn(held) { held_changes.released_by(held:, by: ConnectionId(2)).0 },
+      fn(held) { held_changes.released_by(held:, by: caster_address(2)).0 },
       [#(1, [spell_plan.TakesDamage, spell_plan.SuffersCritical])],
     ),
     #(

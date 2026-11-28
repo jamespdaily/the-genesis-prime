@@ -52,6 +52,7 @@ import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
+import genesis_prime/world_map/unit_address
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -60,6 +61,7 @@ import gleam/result
 import gleam/string
 import legal_order_support
 import map_spawn_support
+import map_support
 import order_explorer
 
 /// The processes of the scene, each a receiver of mail.
@@ -393,7 +395,7 @@ pub fn tells_the_map_it_moved(
         input: ToMap(
           OwnEvent(
             Told(message: map_message.Moved(
-              connection: ConnectionId(connection),
+              unit: map_support.address(number: connection),
               place:,
               seq:,
             )),
@@ -446,17 +448,17 @@ pub fn mail_of_the_map(
 ) -> List(Mail) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(step.Send(to: step.Connection(ConnectionId(number)), message:)) ->
-        case server.map_message(outgoing: message) {
+      OwnEffect(step.Send(to: step.Unit(address) as to, message:)) ->
+        case server.map_message(to:, outgoing: message) {
           Ok(sent) ->
             Ok(order_explorer.Mail(
-              to: ConnectionProcess(number),
+              to: ConnectionProcess(unit_address.number(address:)),
               from: FromMap,
               input: ToConnection(OwnEvent(Woken(sent))),
               name: "map "
                 <> outgoing_name(message:)
                 <> " to "
-                <> int_name(number),
+                <> int_name(unit_address.number(address:)),
             ))
           Error(Nil) -> Error(Nil)
         }
@@ -579,8 +581,11 @@ fn tells_of_the_connection(
               <> request_name(request:),
           )
         })
-      OwnEffect(step.Tell(to: step.Connection(ConnectionId(other)), request:)) ->
-        client_connection.told_to_a_connection(request:)
+      OwnEffect(step.Tell(
+        to: step.Connection(ConnectionId(other)) as to,
+        request:,
+      )) ->
+        client_connection.told_to_a_connection(to:, request:)
         |> result.map(fn(message) {
           order_explorer.Mail(
             to: ConnectionProcess(other),
@@ -590,6 +595,21 @@ fn tells_of_the_connection(
               <> int_name(connection)
               <> " to "
               <> int_name(other)
+              <> ": "
+              <> request_name(request:),
+          )
+        })
+      OwnEffect(step.Tell(to: step.Unit(address) as to, request:)) ->
+        client_connection.told_to_a_connection(to:, request:)
+        |> result.map(fn(message) {
+          order_explorer.Mail(
+            to: ConnectionProcess(unit_address.number(address:)),
+            from: FromConnection(connection),
+            input: ToConnection(OwnEvent(Woken(message))),
+            name: "tell of "
+              <> int_name(connection)
+              <> " to "
+              <> int_name(unit_address.number(address:))
               <> ": "
               <> request_name(request:),
           )
@@ -646,16 +666,16 @@ fn unit_news_name(news news: unit_news.News) -> String {
 /// The name of what a map sends, as the mail's name says it.
 fn outgoing_name(message message: map_message.Outgoing) -> String {
   case message {
-    map_message.Noticed(notice: map_message.SeenBy(..), ..) -> "SeenBy"
-    map_message.Noticed(notice: map_message.UnseenBy(..), ..) -> "UnseenBy"
-    map_message.Noticed(notice: map_message.PlayerUnseen(unit_id:, ..), ..) ->
+    map_message.Noticed(notice: map_message.SeenBy(..)) -> "SeenBy"
+    map_message.Noticed(notice: map_message.UnseenBy(..)) -> "UnseenBy"
+    map_message.Noticed(notice: map_message.PlayerUnseen(unit_id:, ..)) ->
       "PlayerUnseen " <> int_name(unit_id)
-    map_message.Noticed(notice: map_message.Gone(..), ..) -> "Gone"
+    map_message.Noticed(notice: map_message.Gone(..)) -> "Gone"
     map_message.Noticed(..) -> "a notice"
-    map_message.Relayed(
-      delivered: map_message.News(news: unit_news.PeerNews(unit_id:, news:)),
-      ..,
-    ) ->
+    map_message.Relayed(delivered: map_message.News(news: unit_news.PeerNews(
+      unit_id:,
+      news:,
+    ))) ->
       "Relayed "
       <> case news {
         unit_news.Appeared(..) -> "0x262"
@@ -665,9 +685,9 @@ fn outgoing_name(message message: map_message.Outgoing) -> String {
       }
       <> " of "
       <> int.to_string(unit_id)
-    map_message.Relayed(delivered: map_message.Landed(landing:), ..) ->
+    map_message.Relayed(delivered: map_message.Landed(landing:)) ->
       "Relayed " <> landing_name(landing:)
-    map_message.Relayed(delivered: map_message.Said(..), ..) -> "Relayed line"
+    map_message.Relayed(delivered: map_message.Said(..)) -> "Relayed line"
     map_message.Relayed(..) -> "Relayed"
     _ -> "another send"
   }

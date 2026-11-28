@@ -29,7 +29,6 @@ import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/int
@@ -48,10 +47,6 @@ const release_ms = 30_000
 /// A Virtual Defense Dagun's spawn at x = 100, hostile to the Dominion.
 fn dagun() -> Spawn {
   spawn_support.dagun(number: 1, x: 100.0)
-}
-
-fn first_stay() -> Stay {
-  map_support.stay(count: 1)
 }
 
 /// A map with a Dagun at x = 100 and two players: player 1 at x = 95, ready, in its ring,
@@ -165,7 +160,6 @@ pub fn a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one
   assert spawns.relation_of(state: started, spawn: 1, connection: 2)
     == Some(map.Relation(
       generation: second_generation,
-      stay: first_stay(),
       state: map.AwaitingSnapshot,
     ))
     as "its relation awaits the new life's snapshot"
@@ -189,11 +183,10 @@ pub fn a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one
 
   // A viewer that joined again in the gap is the relation's, in its new stay.
   let #(joined, taken) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state: respawning,
       at_ms: 7010,
       connection: 2,
-      stay_count: 2,
       x: 300.0,
       alive: True,
       hidden: set.new(),
@@ -207,7 +200,7 @@ pub fn a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one
   assert spawns.first_viewers(start: next)
     == [
       map_support.address(number: 1),
-      map_support.address_for(incarnation: 1, number: 3, joiner: 2),
+      map_support.address_for(incarnation: 1, number: 3, rank: 2),
     ]
     as "the viewers are the players in sight by their addresses: the joined-again player under its new one"
 

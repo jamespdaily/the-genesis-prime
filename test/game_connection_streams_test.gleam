@@ -21,32 +21,32 @@ import genesis_prime/shared/strike_tell.{
   HealLanded, HealsLanded, Key, PlayerAnswered,
 }
 import genesis_prime/shared/unit_news.{type PeerNews, Appeared, PeerNews}
-import genesis_prime/step.{type ConnectionId, type ConnectionStep, ConnectionId}
+import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/world_map/generation.{type Generation}
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/int
 import gleam/list
+import map_support
 import owned_test
 import planted_table
 
-/// The snapshots a step tells the map, each as the viewer, the stay, the generation and the
+/// The snapshots a step tells the map, each as the viewer's address, the generation and the
 /// burst.
 fn snapshots_told(
   taken taken: ConnectionStep(Request),
-) -> List(#(ConnectionId, Stay, Generation, List(PeerNews))) {
+) -> List(#(UnitAddress, Generation, List(PeerNews))) {
   list.filter_map(support.told_the_map(taken), fn(effect) {
     case effect {
       step.OwnEffect(step.Tell(
         request: client_connection.TellSnapshot(
-          stay:,
           viewer:,
           generation:,
           burst:,
           ..,
         ),
         ..,
-      )) -> Ok(#(viewer, stay, generation, burst))
+      )) -> Ok(#(viewer, generation, burst))
       _ -> Error(Nil)
     }
   })
@@ -59,8 +59,7 @@ fn seen_by(
   step.ConnectionEvent(client_connection.Message, client_connection.Answer),
 ) {
   support.sent_by_the_map(map_message.SeenBy(
-    by: ConnectionId(viewer),
-    stay: support.viewer_stay(viewer),
+    by: support.viewer_address(viewer),
     unit_id: support.viewer_unit_id(viewer),
     generation: support.viewer_sight(viewer),
   ))
@@ -80,13 +79,11 @@ pub fn an_owner_answers_the_seen_of_a_generation_with_one_snapshot_listing_its_l
   let #(state, taken) =
     support.feed(state: support.in_world(), event: seen_by(viewer: 2))
   assert list.map(snapshots_told(taken:), fn(snapshot) {
-      #(snapshot.0, snapshot.1, snapshot.2)
+      #(snapshot.0, snapshot.1)
     })
-    == [
-      #(ConnectionId(2), support.own_stay(), support.viewer_sight(2)),
-    ]
-    as "one snapshot, for the viewer the map named, of the generation named, in the owner's own stay: the map holds the viewer's stay in its relation and checks the owner's (`PlayerSnapshot`)"
-  let assert [#(_, _, _, burst)] = snapshots_told(taken:)
+    == [#(support.viewer_address(2), support.viewer_sight(2))]
+    as "one snapshot, for the viewer the map named, of the generation named (`PlayerSnapshot`)"
+  let assert [#(_, _, burst)] = snapshots_told(taken:)
   assert list.map(burst, fn(item) { item.unit_id }) == [support.own_unit_id]
     as "it holds the player's own unit"
   assert support.tells_to_players_but_moves(taken) == []
@@ -105,7 +102,7 @@ pub fn an_owner_answers_the_seen_of_a_generation_with_one_snapshot_listing_its_l
   // A stealthed player's snapshot carries create flag 16.
   let #(stealthed, _) = support.stealthed_stalker()
   let #(_, taken) = support.feed(state: stealthed, event: seen_by(viewer: 2))
-  let assert [#(_, _, _, stealth_burst)] = snapshots_told(taken:)
+  let assert [#(_, _, stealth_burst)] = snapshots_told(taken:)
   assert int.bitwise_and(create_flags(burst: stealth_burst), 16) == 16
     as "create flag 16 makes the unit stealthed from its creation (opcode.0x262.unit_fields)"
   // A player that is casting lists the cast its 0x262 holds.
@@ -121,7 +118,7 @@ pub fn an_owner_answers_the_seen_of_a_generation_with_one_snapshot_listing_its_l
   let #(caster, _) =
     support.armor_pressed_at_the_ally(tables:, ally_connection: 3, ally_unit: 9)
   let #(_, taken) = support.feed(state: caster, event: seen_by(viewer: 4))
-  let assert [#(_, _, _, casting_burst)] = snapshots_told(taken:)
+  let assert [#(_, _, casting_burst)] = snapshots_told(taken:)
   let assert [PeerNews(news: Appeared(unit:, ..), ..), ..] = casting_burst
     as "the snapshot begins with the player's unit"
   assert unit.tail.casts != []
@@ -156,11 +153,10 @@ pub fn a_heals_answer_precedes_the_targets_own_news_in_the_maps_stream_test() ->
   let #(_, taken) =
     support.feed(
       state:,
-      event: support.for_stay(
-        stay: support.own_stay(),
+      event: support.for_unit(
+        address: support.own_address(),
         sent: support.a_player_strike(
           from: 3,
-          stay: support.viewer_stay(3),
           cast_id: 100,
           outgoing: 1.0,
           heals: [#(effect_kind.Shield, 10), #(effect_kind.Health, 40)],
@@ -187,24 +183,20 @@ pub fn a_heals_answer_precedes_the_targets_own_news_in_the_maps_stream_test() ->
         ),
       ]),
     )
-  let own = ConnectionId(1)
+  let own = support.own_address()
   assert support.told_the_map_but_creatures(taken)
     == [
       support.map_tell(client_connection.TellLanding(
-        connection: own,
-        stay: support.own_stay(),
-        to: ConnectionId(3),
-        to_stay: support.viewer_stay(3),
+        unit: own,
+        to: map_support.address(number: 3),
         landing: map_message.HealAnswer(answered:),
       )),
       support.map_tell(client_connection.TellBroadcast(
-        connection: own,
-        stay: support.own_stay(),
+        unit: own,
         news: support.told(news: unit_news.Shield(shield: 450)),
       )),
       support.map_tell(client_connection.TellBroadcast(
-        connection: own,
-        stay: support.own_stay(),
+        unit: own,
         news: support.told(news: unit_news.Health(health: 736, dead: False)),
       )),
     ]
@@ -217,4 +209,21 @@ pub fn a_heals_answer_precedes_the_targets_own_news_in_the_maps_stream_test() ->
     })
     == []
     as "and nothing is told to another player's connection directly"
+}
+
+pub fn a_snapshot_names_the_players_own_address_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    support.feed(state: support.in_world(), event: seen_by(viewer: 2))
+  assert list.map(support.told_the_map(taken), fn(effect) {
+      case effect {
+        step.OwnEffect(step.Tell(
+          request: client_connection.TellSnapshot(unit:, viewer:, ..),
+          ..,
+        )) -> Ok(#(unit, viewer))
+        _ -> Error(Nil)
+      }
+    })
+    == [Ok(#(support.own_address(), support.viewer_address(2)))]
+    as "the snapshot names the player's own address as its owner and the viewer's address the notice named"
 }

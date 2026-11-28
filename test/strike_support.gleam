@@ -15,10 +15,10 @@ import genesis_prime/shared/spell_area.{DamageEffect}
 import genesis_prime/shared/spell_plan.{AimsAtArea}
 import genesis_prime/shared/spend
 import genesis_prime/shared/strike_tell
-import genesis_prime/step.{type LogLevel, type TimerId, ConnectionId}
+import genesis_prime/step.{type LogLevel, type TimerId}
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
 import genesis_prime/world_map/spawn_id.{SpawnId}
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option}
@@ -30,7 +30,6 @@ import properties_support
 pub fn attacker() -> Attacker {
   Attacker(
     unit_id: 7,
-    connection: ConnectionId(2),
     address: map_support.address(number: 2),
     pose: Pose(at: Point(x: 0.0, z: 0.0), yaw: 0.0),
     place: place_support.at(
@@ -41,7 +40,6 @@ pub fn attacker() -> Attacker {
       z: 0.0,
     ),
     move_seq: 1,
-    stay: map_support.stay(count: 1),
     hit_radius: place_support.player_hit_radius,
     faction: Exile,
     stats: attacker_support.fresh(),
@@ -51,14 +49,13 @@ pub fn attacker() -> Attacker {
   )
 }
 
-/// The heal strike of the caster's connection `from` on the unit `unit_id`, for the cast
-/// `cast_id`'s first phase: the caster's stay `stay` (which the answer is told for), the
+/// The heal strike of the caster's unit `from` on the unit `unit_id`, for the cast
+/// `cast_id`'s first phase: the caster's unit (which the answer is told to), the
 /// caster's HealingMultiplierOutgoing `outgoing` and the heal rows `heals` in order, each
 /// healing the vital by the amount before any multiplier. The row `index` is
 /// Spell4Effects 62019 + `index`, which the answer echoes.
 pub fn heal_strike(
-  from from: step.ConnectionId,
-  stay stay: Stay,
+  from from: UnitAddress,
   cast_id cast_id: Int,
   unit_id unit_id: Int,
   outgoing outgoing: Float,
@@ -71,7 +68,6 @@ pub fn heal_strike(
       unit_id:,
     ),
     from:,
-    stay:,
     outgoing:,
     heals: list.index_map(heals, fn(heal, index) {
       strike_tell.HealTell(

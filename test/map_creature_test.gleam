@@ -24,15 +24,14 @@ import connection_rule_support as support
 import genesis_prime/map/message as map_message
 import genesis_prime/shared/creature_kind.{Kind, Kinds}
 import genesis_prime/step.{
-  type ServiceStep, CancelServiceTimer, ConnectionId, CreatureNotStarted,
-  LogError, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired, StartCreature,
-  StartServiceTimer, WatchEnded, WatchId,
+  type ServiceStep, CancelServiceTimer, CreatureNotStarted, LogError, OwnEffect,
+  OwnEvent, Reply, Send, ServiceTimerFired, StartCreature, StartServiceTimer,
+  WatchEnded, WatchId,
 }
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/spawn_source
-import genesis_prime/world_map/unit_address
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -115,12 +114,8 @@ pub fn a_join_starts_exactly_the_spawns_within_1024_with_the_player_as_first_vie
           state:,
           spawn: spawn_of_unit(creatures:, unit_id: { start.1 }.unit_id),
         )
-      assert dict.get(relations, ConnectionId(1))
-        == Ok(map.Relation(
-          generation:,
-          stay: map_support.stay(count: 1),
-          state: map.AwaitingSnapshot,
-        ))
+      assert dict.get(relations, map_support.address(number: 1))
+        == Ok(map.Relation(generation:, state: map.AwaitingSnapshot))
         as "the map holds each first viewer's relation under the generation the start names, awaiting the creature's snapshot"
       generation
     })
@@ -135,7 +130,9 @@ pub fn a_join_starts_exactly_the_spawns_within_1024_with_the_player_as_first_vie
     list.map(support.effects_of(taken), fn(effect) {
       case effect {
         step.Watch(..) -> "watch"
-        OwnEffect(Reply(..)) -> "reply"
+        OwnEffect(step.Register(..))
+        | OwnEffect(step.Unregister(..))
+        | OwnEffect(Reply(..)) -> "reply"
         OwnEffect(StartCreature(..)) -> "start"
         OwnEffect(Send(..)) -> "send"
         OwnEffect(StartServiceTimer(..)) | OwnEffect(CancelServiceTimer(..)) ->
@@ -429,12 +426,8 @@ pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_un
       relations: dict.from_list(
         list.map(next.viewers, fn(viewer) {
           #(
-            ConnectionId(unit_address.joiner(address: viewer.0)),
-            map.Relation(
-              generation: viewer.1,
-              stay: map_support.stay(count: 1),
-              state: map.AwaitingSnapshot,
-            ),
+            viewer.0,
+            map.Relation(generation: viewer.1, state: map.AwaitingSnapshot),
           )
         }),
       ),

@@ -1,16 +1,16 @@
 //// Where the connections are found: OTP's `pg` (process groups). A group is
-//// named by an address (genesis_prime/step `Address`), and there are three
+//// named by an address (genesis_prime/step `Address`), and there are four
 //// kinds, each joined by connections only:
-//// - `Connection(id)`: one member, the connection, joined as the shell accepts
-////   it;
+//// - `Connection(id)`: one member, the connection, joined as the shell accepts it;
 //// - `CharacterNamed(folded name)`: one member, the connection whose player
 ////   is in the world under that name, joined and left by the rule's
 ////   `JoinGroup` and `LeaveGroup` effects;
 //// - `ZoneChannel(map, incarnation, top zone)`: every connection in that run
 ////   of the map whose player stands under that top zone, joined and left the
 ////   same way.
-//// A member leaves a group by ending, which `pg` notices by itself; no process
-//// keeps a list of connections and no atom is made per connection.
+//// - `Unit(address)`: the connection hosting the unit, joined and emptied by its issuing map.
+//// A member leaves a group by ending, which `pg` notices by itself; no process keeps a list of
+//// connections and no atom is made per connection.
 ////
 //// ```
 //// game supervisor (rest_for_one, 3 restarts in 10 s)
@@ -54,6 +54,7 @@
 import genesis_prime/group_registry.{type Scope}
 import genesis_prime/step.{type Address, type ConnectionId, Connection}
 import gleam/erlang/process.{type Pid, type Selector}
+import gleam/list
 import gleam/otp/supervision.{type ChildSpecification}
 
 /// The scope connections are found in: made once, with `new`, and given to the
@@ -103,6 +104,48 @@ pub fn leave_group(
   address address: Address,
 ) -> Nil {
   group_registry.leave(registry.scope, address, process.self())
+}
+
+/// Makes `pid`, a connection's process, the member of the group of the `Unit` at
+/// `address`; the map that issued the address calls it, so the group's one member is
+/// the connection that hosts the unit. A process that is a member already stays one.
+pub fn join_unit(
+  registry registry: Registry(message),
+  address address: Address,
+  pid pid: Pid,
+) -> Nil {
+  group_registry.join(registry.scope, address, pid)
+}
+
+/// Removes every member of the group of the `Unit` at `address`; nothing happens when
+/// it has none.
+pub fn leave_unit(
+  registry registry: Registry(message),
+  address address: Address,
+) -> Nil {
+  list.each(group_registry.members(registry.scope, address), fn(pid) {
+    group_registry.leave(registry.scope, address, pid)
+  })
+}
+
+/// The process that hosts the `Unit` at `address`, or `Error(Nil)` when its group has
+/// no member: the unit left, ended or never joined.
+pub fn find_unit(
+  registry registry: Registry(message),
+  address address: Address,
+) -> Result(Pid, Nil) {
+  group_registry.find(registry.scope, address)
+}
+
+/// Sends the process that hosts the `Unit` at `address` the message, which its shell
+/// takes as a `Woken` input; `Error(Nil)` when the group has no member, and nothing is
+/// sent.
+pub fn deliver_unit(
+  registry registry: Registry(message),
+  address address: Address,
+  message message: message,
+) -> Result(Nil, Nil) {
+  group_registry.deliver_one(registry.scope, address, message)
 }
 
 /// The process of the connection whose player is in the world under the folded

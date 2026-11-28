@@ -578,7 +578,7 @@ pub opaque type State {
     retiring: Bool,
     viewers: Dict(UnitAddress, Generation),
     properties: Properties,
-    held: held_changes.Held(UnitAddress),
+    held: held_changes.Held,
     views: Dict(Int, #(UnitAddress, unit_casts.CastView)),
     despawn_due_ms: Option(Int),
     unit_state: creature_unit_state.State,
@@ -1107,7 +1107,7 @@ fn modifier_started(
   let #(properties, changed) =
     unit_properties.apply(properties: state.properties, source:, modifier:)
   let #(held, _) =
-    held_changes.started_by_connection(held: state.held, by:, source:)
+    held_changes.started_by_caster(held: state.held, by:, source:)
   let state = State(..state, held:)
   let news = changed_news(state:, changed:)
   let #(state, revalued) = revalued(state:, properties:, now_ms:)
