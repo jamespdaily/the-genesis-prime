@@ -34,7 +34,7 @@ Hand back once, as a comment on the step's issue, then return under 150 words: t
 - Moved: for each test you moved to another file, what you broke and the pasted failure lines, or none
 - Passing last: for each test file you touched, the pasted last pass line of its last run
 - Test fixes: <test> - the cause and its evidence (the failing lines and the code that makes them), or none
-- Functions added: <name> - closest existing function or library call, and why it is not used
+- Functions added: <name> - closest existing function (from `dev/similar_functions.py origin/main HEAD`'s report) or library call, and why it is not used
 - Self-review: <repeat found and what it now calls>, or none
 - Failure-table rows: <row> - <test>
 - Deviations from the brief: <what and why>
