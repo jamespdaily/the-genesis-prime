@@ -439,8 +439,8 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
     as "a press with its back to the Beast strikes nobody: the go names no target and no 0x937 follows (the facing is the last kind 14 yaw)"
   // Facing the Beast, it presses until the Beast dies.
   game_client.face(game: first, yaw: toward, clock: 200)
-  let #(first_have, healths) =
-    press_until_dead(
+  let #(first_have, healths, fight) =
+    press_until_dead_reading(
       time:,
       game: first,
       have: first_have,
@@ -450,8 +450,13 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
       beast: beast_unit,
       cast_id: 2,
     )
-  assert healths == [38, 24, 10, 0]
-    as "a Medic of level 1 with the Novice gear (Assault Rating 203.0625, Support Rating 55.6875: Assault Power 50.77, Support Power 13.92): a hit of Paralytic Surge is 0.0935 x 50.77 + 0.0935 x 13.92 = 6.05, rounded to 6, plus 8.14 for the level, 14.14, rounded to 14 (Spell4Effects 96125, 0x140565600); the Beast has 52 health, never deflects and the player has no critical hit rating, so the health is 38, 24, 10 and 0, each 0x937 held until its go"
+  assert healths
+    == healths_after(
+      hits: critical_hits_on(beast_unit, in: fight),
+      normal: 14,
+      critical: 21,
+    )
+    as "a Medic of level 1 with the Novice gear (Assault Rating 203.0625, Support Rating 55.6875: Assault Power 50.77, Support Power 13.92): a hit of Paralytic Surge is 0.0935 x 50.77 + 0.0935 x 13.92 = 6.05, rounded to 6, plus 8.14 for the level, 14.14, rounded to 14 (Spell4Effects 96125, 0x140565600); the Beast has 52 health, never deflects, and each hit is 14, or 21 (14 x 1.5, UnitProperty2 127's default) when its combat result is a critical hit (a player's chance is 0.05, CreatureLevel row 101), so the health is 38, 24, 10 and 0 when none is, each 0x937 held until its go"
   let #(watched, second_have) =
     game_client.read_until(game: second, have: second_have, found: fn(frames) {
       list.any(game_client.deaths_in(frames:), fn(death) {
@@ -741,8 +746,8 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
     as "a press with its back to the Beasts strikes nobody: the go names no target, no 0x937 follows and Telekinetic Strike's Proxy 62204, aimed at the area (targetFlags 4), starts no child"
   // Facing the Beast ahead, it presses until that Beast dies.
   game_client.face(game: first, yaw: toward, clock: 200)
-  let #(first_have, healths) =
-    press_until_dead(
+  let #(first_have, healths, fight) =
+    press_until_dead_reading(
       time:,
       game: first,
       have: first_have,
@@ -752,8 +757,15 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
       beast: ahead,
       cast_id: 2,
     )
-  assert healths == [17, 0]
-    as "an Esper of level 1 with the Novice gear (Assault Rating 203.0625, Assault Power 50.77): a hit of Telekinetic Strike is 0.336 x 50.77 = 17.06, rounded to 17, plus 18.0 for the level, 35 (Spell4Effects 62159, 0x140565600); the Beast has 52 health and never deflects, so the health is 17 and then 0"
+  assert healths
+    == healths_after(
+      hits: critical_hits_on(ahead, in: fight),
+      normal: 35,
+      critical: 53,
+    )
+    as "an Esper of level 1 with the Novice gear (Assault Rating 203.0625, Assault Power 50.77): a hit of Telekinetic Strike is 0.336 x 50.77 = 17.06, rounded to 17, plus 18.0 for the level, 35 (Spell4Effects 62159, 0x140565600); the Beast has 52 health and never deflects, so the health is 17 and then 0 when no hit is critical; a critical hit is 1.5 times that, 52 or 53, so 53 is used: 52 or more (UnitProperty2 127's default 1.5, a player's chance 0.05, CreatureLevel row 101), which kills at once"
+  // Two hits kill it, or one when that hit is critical.
+  let hit_count = list.length(healths)
   let #(watched, second_have) =
     game_client.read_until(game: second, have: second_have, found: fn(frames) {
       list.any(game_client.deaths_in(frames:), fn(death) {
@@ -762,8 +774,8 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
       && list.count(game_client.go_targets_in(frames:), fn(go) {
         go.1 == [ahead]
       })
-      == 2
-      && psi_children(frames:) == 2
+      == hit_count
+      && psi_children(frames:) == hit_count
     })
   // The Beast ahead fights back every 1500 ms with its own attack, Spell4 5649,
   // whose go names the caster; the kill lands 1250 ms after the first hit, before
@@ -808,8 +820,8 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
     })
     == healths
     as "the watcher reads the same 0x937 the caster did, then 0x88c"
-  assert psi_children(frames: watched) == 2
-    as "Proxy 62204 starts the Psi Point child 30900 on each struck unit (Spell4Effects.targetFlags 4): two hits, two children"
+  assert psi_children(frames: watched) == hit_count
+    as "Proxy 62204 starts the Psi Point child 30900 on each struck unit (Spell4Effects.targetFlags 4): one child for each hit"
   // The Beast stands again after its respawn time, 1000 ms from the kill, which the
   // clock moves on by: 0x355, then a full 0x262.
   driven_time.advance(time:, ms: 1000)
@@ -890,32 +902,36 @@ fn press_until_a_hit(
   }
 }
 
-/// Presses the ability of the bag index, one cast after another, until the 0x88c of
-/// the Beast arrives: each press moves the clock on by the ability's cast time, and a
-/// press that leaves the Beast alive moves it on by `lingers_ms` more, to the end of
-/// the cast. The Beast's health after each hit, in order, and the bytes beyond.
-fn press_until_dead(
-  time time: driven_time.Time,
-  game game: game_client.Game,
-  have have: BitArray,
-  bag_index bag_index: Int,
-  cast_ms cast_ms: Int,
-  lingers_ms lingers_ms: Int,
-  beast beast: Int,
-  cast_id cast_id: Int,
-) -> #(BitArray, List(Int)) {
-  let #(have, healths, _) =
-    press_until_dead_reading(
-      time:,
-      game:,
-      have:,
-      bag_index:,
-      cast_ms:,
-      lingers_ms:,
-      beast:,
-      cast_id:,
+/// Whether each hit of the frames on the unit was a critical hit, in order.
+fn critical_hits_on(unit: Int, in frames: List(Frame)) -> List(Bool) {
+  game_client.fight_in(frames:)
+  |> list.flat_map(fn(event) {
+    case event {
+      game_client.Went(targets:, ..) -> targets
+      _ -> []
+    }
+  })
+  |> list.filter(fn(target) { target.0 == unit })
+  |> list.flat_map(fn(target) { list.map(target.1, fn(blow) { blow.critical }) })
+}
+
+/// The Beast's health after each hit, from its 52, a hit being `normal` or, when
+/// critical, `critical`, and never below 0.
+fn healths_after(
+  hits hits: List(Bool),
+  normal normal: Int,
+  critical critical: Int,
+) -> List(Int) {
+  list.scan(hits, 52, fn(health, is_critical) {
+    int.max(
+      health
+        - case is_critical {
+        True -> critical
+        False -> normal
+      },
+      0,
     )
-  #(have, healths)
+  })
 }
 
 // ------------------------------------------- a creature fights back, on the whole server
