@@ -1632,3 +1632,5 @@ Spell4	28771	Dash Right (Knockdown)	dash_test
 Spell4	28772	Dash Forward (Knockdown)	dash_test
 Spell4	28773	Dash Backward (Knockdown)	dash_test
 Creature2	25777	a flavor spotlight: flags bit 0, faction 218 Hostile, no attack row	spawn_test
+Creature2	32911	a quest creature (Q6941 Spiderweb) of flags bit 0 that the target group 3795 of Spell4Base 21672 names: faction 988, no attack row	shown_test
+Spell4Base	21672	a quest spell whose area group 3795 names Creature2 32911	shown_test
