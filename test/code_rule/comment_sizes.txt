@@ -145,7 +145,7 @@ genesis_prime/world_map/creature_fight item A go of the open charge is due (`Cas
 genesis_prime/world_map/creature_fight item The attack tick: with the target in reach and no round open the creature 13
 genesis_prime/world_map/creature_fight item What the creature fights with: its unit and address, the place of its spawn, 28
 genesis_prime/world_map/creature_fight item Where the strike go's area is centred, which is where the client draws it, or none when 18
-genesis_prime/world_map/creature_fight module A creature's fight: the feature of the creature's rule 653
+genesis_prime/world_map/creature_fight module A creature's fight: the feature of the creature's rule 652
 genesis_prime/world_map/game_number module The numbers the server chooses for a fight, as the content load checks them: 65
 genesis_prime/world_map/map item A development summon: the creature is made a run-only spawn at the place and 15
 genesis_prime/world_map/map item A map's players, its spawns that have a creature or a failure, the spawns' 13
@@ -153,7 +153,7 @@ genesis_prime/world_map/map item A player's use released the unit `unit_id` (`Re
 genesis_prime/world_map/map item One player in the map: the stay its connection's Join named, its unit, the 16
 genesis_prime/world_map/map item The map's server time at monotonic time `monotonic_ms`, for a map started at 12
 genesis_prime/world_map/map item The state and effects of the player of `connection` coming to see the spawns 12
-genesis_prime/world_map/map module One map: a world of the client's World table and one instance of it, with 707
+genesis_prime/world_map/map module One map: a world of the client's World table and one instance of it, with 706
 genesis_prime/world_map/objective_spawn item The ranks of the client's tables alone, so that no stored row, added or deleted, moves 12
 genesis_prime/world_map/objective_spawn item The rows to stand for the kill objectives, given the rows the stored spawn 16
 genesis_prime/world_map/registry module Maps: the registry that finds a map by its id and starts it on the first 74

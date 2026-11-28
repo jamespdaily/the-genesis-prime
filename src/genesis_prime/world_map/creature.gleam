@@ -20,10 +20,9 @@
 //// `Gone`, starts the spawn again as another unit after the respawn time if a
 //// player sees it then, with those players as its first viewers. In the diagrams
 //// `Broadcast(news)` is one send to the map for every viewer, `Snapshot` a viewer's first
-//// picture, and `Relay(a, payload)` a send to the player of the unit address a. A creature names a
-//// player by the address the map issued for its join (genesis_prime/world_map/unit_address),
-//// never by its connection or its stay: an address names one join of the run, so a message for
-//// a unit that ended names no unit the creature holds.
+//// picture, and `Relay(a, payload)` a send to the player of the unit address a, which
+//// the map issued for the player's join (genesis_prime/world_map/unit_address): a
+//// message for a unit that ended names no unit the creature holds.
 ////
 //// From the start to the end of a creature, and what the players in sight are
 //// sent:
@@ -52,8 +51,7 @@
 //// Unseen(by: a, g) ─────▶ when (a, g) is the viewer held: viewers - a, its threat entry and its fight
 ////                         copy of a; no 0x355 (the map tells a's connection); the fight's release of a:
 ////                         Send(map, Relay(unit, life, a, Released)); an Unseen of another
-////                         generation, or of an address that is no viewer (as one of an earlier
-////                         address of the same joiner is not), changes nothing
+////                         generation, or of an address that is no viewer, changes nothing
 //// a news of its unit ───▶ Send(map, Broadcast(unit, life, news)), once for all viewers
 //// an answer, a credit, a fight tell ─▶ Send(map, Relay(unit, life, to: a, payload))
 //// ```
@@ -176,11 +174,9 @@
 ////   the first and drops the second, which no longer awaits it. The second `Seen` names the
 ////   generation the creature holds that player by from then on.
 //// - **A player is named by its address.** A strike's answer goes to the address the strike
-////   named as its sender; the fight holds each player by the address of the message that put
-////   it in the fight (the map's `Approached`, the player's strike) and tells it by that
-////   address; a player's strike or move of an address that is not a viewer (one of an earlier
-////   join of the same player, whose `Unseen` or `Seen` the map sent) starts and moves nothing
-////   (genesis_prime/world_map/creature_fight).
+////   named as its sender; the fight holds and tells each player by the address of the
+////   message that put it in the fight; a strike or move of an address that is not a viewer
+////   starts and moves nothing (genesis_prime/world_map/creature_fight).
 //// - **A property modifier** of a player's spell is told by the caster's connection
 ////   through its map, as a strike is; the caster's cast owns
 ////   its time and the creature owns the values and every rule that reads them. A tell

@@ -198,16 +198,14 @@ pub const strike_timer = TimerId(3)
 const bytes_per_unit = hit.roll_bytes
 
 /// The caster as a selection and a strike take it: who it is, where it stands and
-/// faces, the place it stands at with the move sequence number of that place and
-/// the stay its heals are told for, which their answers come back in
-/// (genesis_prime/shared/strike_tell `PlayerStrike`), its unit address, which its strikes
-/// on a creature name as their sender (`PlayerStriker`), its hit radius, its player faction, what its
-/// damage formulas read (`stats`), its health and shield as they are when the go or
-/// the tick is asked (`vitals`) and its properties, whose BaseCritChance,
+/// faces, its place with the move sequence number and the stay its heals are told for
+/// (genesis_prime/shared/strike_tell `PlayerStrike`), its unit address, which its
+/// strikes on a creature name as their sender (`PlayerStriker`), its hit radius and
+/// player faction, what its damage formulas read (`stats`), its health and shield when
+/// the go or the tick is asked (`vitals`), its properties, whose BaseCritChance,
 /// CriticalHitSeverityMultiplier and BaseAvoidReduceChance values, a modifier's
 /// included, are the bases of its hit chances (`offence_of`), and the players in its
-/// sight the map named, by unit id (genesis_prime/game/player_address), which a heal is
-/// told to.
+/// sight by unit id (genesis_prime/game/player_address), which a heal is told to.
 pub type Attacker {
   Attacker(
     unit_id: Int,

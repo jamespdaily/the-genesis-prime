@@ -394,76 +394,46 @@
 ////   of the map that holds its player, not a later one started after this
 ////   one ended.
 //// - **The unit address** (genesis_prime/world_map/unit_address) is what a creature and
-////   a player's tell to a creature name a player's unit by. The map issues one for
-////   each join, in the join step, from a counter that never goes back, so an
-////   address of this run names one join and no other, and a message for a unit that
-////   ended names no unit of this run (`player_at` finds none). The map keeps each
-////   player's address (`Player.address`) and an index from the address to the
-////   joiner's connection (`by_address`). `Joined` carries it, the connection keeps it
-////   (`Entered.address`) and names it in every tell to a creature (`TellCreature`,
-////   a strike's `from`), and the map names it to a creature in `Seen`, `Unseen`,
-////   `Approached`, `Withdrew`, `PlayerDied`, `ToldCreature` and `CasterGone`, in
-////   `CreatureStart.viewers` and in `RingMember`. A creature names it back in
-////   `Snapshot` and `Relay`, and the map delivers to the connection that joined it
-////   (`Delivery`: the connection and its stay, the translation of `player_at`).
-////   Nothing is sent to an address: the registry holds no group for it.
-//// - **The stay** (genesis_prime/world_map/stay) of each player is the one its
-////   Join named, kept with the player: the connection counts its stays and fences
-////   by that count (`ForStay`, genesis_prime/game/connection), so a message for a
-////   player's earlier stay that reaches its connection after a leave and a new join
-////   is dropped there. Every notice to a player's connection names that player's stay
-////   (`Noticed`), every `SeenBy` names the watcher's, and a relation keeps the stay it
-////   was made in; the map relays a creature's news and tells only for the player's
-////   current stay. The stay is not in a message to a creature: the address replaces it.
-//// - **A message for an address that is not a unit of this run** is dropped (rows of the
-////   failure table below): the connection that joined an address is found only while its unit
-////   is in the map (`player_at`).
-//// - **Held until the player interface names addresses.** The connection's stay count
-////   and its fence, `Join.stay`, `Player.stay`, `Entered.stay`, the address-to-connection
-////   translation (`player_at`, `Delivery`), the `by_address` index, a `Player` found by
-////   its joiner's connection (`players` is keyed by connection) and the type parameter of
-////   genesis_prime/game/held_changes (a caster is a connection on a player's side and an
-////   address on a creature's) are the way a message to a player's connection still goes by
-////   connection and stay; each goes when the player's tells and the map's sends to a
-////   player name the address.
+////   a player's tell to a creature name a player's unit by. The map issues one for each
+////   join from a counter that never goes back, keeps it in `Player.address` and indexes
+////   it to the joiner's connection (`by_address`); `Joined` carries it, and a creature
+////   names it back in `Snapshot` and `Relay`, which the map delivers to the connection
+////   that joined it (`Delivery`, `player_at`). Nothing is sent to an address.
+//// - **The stay** (genesis_prime/world_map/stay) of each player is the one its Join
+////   named: the connection fences by its count (`ForStay`,
+////   genesis_prime/game/connection), so a message for an earlier stay is dropped there;
+////   every notice (`Noticed`) and `SeenBy` names it. A message to a creature has none.
+//// - **A message for an address that is not a unit of this run** is dropped (the failure
+////   table below): `player_at` finds a connection only while its unit is in the map.
+//// - **Held until the player interface names addresses.** The connection's stay count,
+////   `Join.stay`, `Player.stay`, `Entered.stay`, `player_at`, `Delivery`, `by_address`,
+////   `players` keyed by connection and the type parameter of
+////   genesis_prime/game/held_changes still route a message to a player by connection.
 //// - **Unit ids** start at 1 and are never given to two units at once, whoever
 ////   leaves or ends: the client refuses a 0x262 whose unit id it already holds
 ////   (opcode.0x262), and a 0x262 with unit id 0 makes the client's controlled unit
-////   (0x1403d9760). A player's id is given once. A spawn has one id for the run,
-////   given when its first creature starts and reused after a clean stop, since
-////   the client holds no unit of that id then (its 0x355 went with the last viewer)
-////   and takes a 0x262 for an id it removed (`death.creature_respawn`,
-////   `opcode.0x262`); a creature that crashed gave its id up with its `Gone`, and the
-////   spawn's next creature takes a new one. A static object's spawn has one id for
-////   the run too, given when a player first sees it. So the ids given are at most
-////   the players that joined, the spawns that ever had a creature or were seen as
-////   an object, and the crashes. They
-////   stay below 2^20, since a cast id is built from its caster's unit id in the
-////   rest of the 32 bits (`0x140561c30`): a map that has given them all crashes,
-////   and its players' connections end.
-//// - **A second Join from a connection in the map** answers the record built
-////   from the unit the map keeps, not from the new Join, keeps the new Join's stay
-////   but not its `alive` (the life is the connection's `LifeChanged`, so `inside` and
-////   the life never part), ends each sight of a pair (`UnseenBy` to each owner,
-////   `PlayerUnseen` to each viewer, for the stay it had) and begins it again under new
-////   generations with a `SeenBy` both ways, changes nothing else and logs an error: the
-////   connection's rule joins once.
+////   (0x1403d9760). A player's id is given once. A spawn has one id for the run, given
+////   when its first creature starts and reused after a clean stop, since the client
+////   holds no unit of that id then (its 0x355 went with the last viewer) and takes a
+////   0x262 for an id it removed (`death.creature_respawn`, `opcode.0x262`); a creature
+////   that crashed gave its id up with its `Gone`, and the spawn's next creature takes
+////   a new one. A static object's spawn has one id for the run, given when a player
+////   first sees it. The ids stay below 2^20, since a cast id is built from its
+////   caster's unit id in the rest of the 32 bits (`0x140561c30`): a map that has given
+////   them all crashes, and its players' connections end.
+//// - **A second Join from a connection in the map** removes the first unit as a Leave
+////   does, joins a new unit under a new address, and logs an error: the connection's
+////   rule joins once.
 //// - **A Leave** removes the connection's player with its unit and its watch, tells each
-////   player that saw it `UnseenBy` and `PlayerUnseen` (the camp sends its viewers nothing
-////   itself),
-////   and is answered `Left`, so the player's connection, which lives on in
-////   character select, is not watched by a map it has left; a later Join from
-////   it is a new player with a new unit id. A Leave from a connection that is
-////   not in the map (its player already gone, or never there) changes nothing,
-////   logs an error, and is answered `Left`: the connection's rule leaves once,
-////   so the line shows a bug, and the answer lets the connection go on.
-//// - **A player's connection ends.** Its watch comes back as `WatchEnded(w)`;
-////   the player whose watch is `w` is removed, and its unit with it, as a Leave
-////   removes it (each player that saw it is sent `PlayerUnseen` before `Gone`), and every
-////   player in the map is also sent `Gone(unit)`: the
-////   connection that ended cannot send its 0x355, so this is the one case the
-////   map speaks of a unit, and only after its owner has ended. A watch that
-////   names no player is a bug: logged as an error, and nothing changes.
+////   player that saw it `UnseenBy` and `PlayerUnseen`, and is answered `Left`, so the
+////   connection, which lives on in character select, is not watched by a map it has
+////   left. A Leave from a connection not in the map changes nothing, logs an error and
+////   is answered `Left`: the connection's rule leaves once.
+//// - **A player's connection ends.** Its watch comes back as `WatchEnded(w)`; the player
+////   whose watch is `w` is removed as a Leave removes it, and every player in the map
+////   is sent `Gone(unit)`: the ended connection cannot send its 0x355, so this is the
+////   one case the map speaks of a unit. A watch that names no player is logged as an
+////   error and changes nothing.
 //// - **A caller that ended before its answer** is dropped by the shell; the
 ////   player stays until its connection's watch ends, which the joining
 ////   connection's end then gives.
@@ -620,10 +590,10 @@
 ////         spawn is live, retiring, respawning or releasing under that life; then the destination
 ////         check of the payload's kind, `relay.kind_of`: a_P is a unit of this run) ─▶ Relayed(the
 ////         stay of a_P's join, payload) to the connection that joined a_P (`player_at`)
-//// told:   a player's connection P ─▶ TellCreature(a_P, unit, life, inbound) ─▶ map admits it (`admitted_inbound`:
-////         the spawn is live, retiring, respawning or releasing under that life; then the source check of the
-////         inbound's kind, `relay.inbound_kind_of`: a_P is a unit of this run; a `Strike` names a_P as its striker) ─▶
-////         ToldCreature(a_P, inbound) to that creature: a creature hears about a player from the map alone
+//// told:   a player's connection P ─▶ TellCreature(a_P, unit, life, inbound) ─▶ map admits it
+////         (`admitted_inbound`: the spawn check as above; then the source check of the inbound's
+////         kind, `relay.inbound_kind_of`: a_P is a unit of this run, and a `Strike` names a_P
+////         as its striker) ─▶ ToldCreature(a_P, inbound): a creature hears of a player from the map alone
 //// leave sight, Leave, a viewer's end:
 ////         map: the relation is removed in one step ─▶ creature Unseen(V, g), V Noticed(UnitUnseen(unit, g))
 ////         creature: the copy and the threat entry of V go; its release of V is one Relay(Released)
@@ -631,11 +601,8 @@
 ////         relations end, no one is told); WatchEnded(life) starts the next life, as drawn above
 //// crash:  WatchEnded(life) ─▶ Gone to every player; Live becomes WaitingForRestart; the relations go with Live
 //// re-entry: a Leave and a Join: Seen(a', g') with an address and a g' never given before
-//// second Join of a connection in the map: the first unit is removed as a Leave removes it (per running
-////         creature, in spawn order: Unseen(a, g) per relation, then CasterGone(a); `UnseenBy`, `PlayerUnseen`
-////         to the players who saw it), then a new unit is joined as a first join is, under a new
-////         address a', which `Joined` carries; the connection never sends it, since it joins again only
-////         after a `Left`
+//// second Join of a connection in the map: the first unit is removed as a Leave removes
+////         it, then a new unit joins under a new address a'
 //// ```
 ////
 //// | Point | What happens |

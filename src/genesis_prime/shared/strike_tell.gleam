@@ -3,8 +3,7 @@
 //// with one tell type, and what a creature that fights a player tells that
 //// player's connection. They sit apart from both processes' rules so the
 //// connection's request type (genesis_prime/client_connection) and the creature's
-//// rule (genesis_prime/world_map/creature) share them with no import between the
-//// two.
+//// rule (genesis_prime/world_map/creature) share them with no import between the two.
 ////
 //// ```
 //// player's connection                                       creature
