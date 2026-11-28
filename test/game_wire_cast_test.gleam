@@ -232,8 +232,12 @@ pub fn a_medics_discharge_pulses_three_times_and_a_player_in_sight_reads_the_sam
   assert cast_support.cast_lines(frames: list.append(pressed, later))
     == ["confirmed k1", ..pulses]
     as "Spell4.58832, Discharge, the Medic's first level-1 ability (SpellLevel 631): the accept, then a go for each of its three pulses (channelPulseTime 410, channelMaxTime 1250: 0x14053d1f0), each starting its Proxy 80382 (Spell4Effects 173926, phaseFlags -1) with the pulse index as its phase (opcode.0x7f4.phase); 80382's Proxies 212835 (42569, gate Prerequisite 33154: fewer than 2 stacks) start Power Charge on pulses 0 and 1 and 212838 (80383, gate 32921: exactly 2 stacks) starts 80383 on pulse 2, whose Proxy 212837 starts 42568; then the finish"
+  // The viewer's frames come through the map, a second hop that its own pong does not follow:
+  // its connection is read until the last of the casts, the finish of the first.
   let #(seen, _) =
-    game_client.read_until_pong(game: second, have: second_have, number: 1)
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.contains(cast_support.cast_lines(frames:), "finished k1")
+    })
   assert cast_support.cast_lines(frames: seen)
     == ["started k1 58832 root 58832 parent 0", ..pulses]
     as "opcode.0x7ff, 0x7f4 and 0x7fe: a player in sight reads the same casts, started by unit 1 with no parent"
@@ -290,12 +294,18 @@ pub fn a_viewer_joining_beside_a_casting_player_shows_its_cast_bar_and_writes_it
   assert created.tail.cast_id == cast_id
     as "and names it as the cast in progress, which the client looks up in that list (SetUnitCast 0x1404697a0)"
   driven_time.advance(time:, ms: 1250)
-  // The first player's pong comes after the go and the finish the clock moved, so the
-  // viewer's connection has been told them by the time its own pong comes.
   let #(_, _) =
     game_client.read_until_pong(game: first, have: first_have, number: 2)
+  // The viewer is told through the map, a second hop that its own pong does not follow: its
+  // connection is read until the cast's go and finish arrive.
   let #(later, _) =
-    game_client.read_until_pong(game: second, have: second_have, number: 1)
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.count(game_client.casts_in(frames:), fn(event) {
+        event == game_client.CastWent(cast_id:, phase: 0)
+        || event == game_client.CastFinished(cast_id:)
+      })
+      == 2
+    })
   let own_events = [
     game_client.CastWent(cast_id:, phase: 0),
     game_client.CastFinished(cast_id:),
@@ -401,8 +411,14 @@ pub fn a_viewer_joining_beside_a_medic_holding_power_charges_lists_them_and_writ
   driven_time.advance(time:, ms: 800)
   let #(_, _) =
     game_client.read_until_pong(game: first, have: first_have, number: 3)
+  // The viewer is told through the map, a second hop that its own pong does not follow.
   let #(later, _) =
-    game_client.read_until_pong(game: second, have: second_have, number: 1)
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      list.contains(
+        game_client.targets_removed_in(frames:),
+        #(power_charge.cast_id, [1]),
+      )
+    })
   assert list.contains(
     game_client.targets_removed_in(frames: later),
     #(power_charge.cast_id, [1]),
@@ -4157,20 +4173,57 @@ fn barrier_pressed_with_an_ally(metres metres: Float) -> BarrierRound {
     bag_index:,
     target: 0,
   )
-  // As the Runes of Protection test reads: the caster's connection writes every start and the
-  // tells of the go in one input, so its pong follows them all, and what it told the ally's
-  // connection is held before that connection's own pong.
+  // The caster's connection writes every start and the tells of the go in one input, so its
+  // pong follows them all. What it tells the ally comes through the map, a second hop that the
+  // ally's own pong (from another sender) does not follow: when the ally is in the area, its
+  // connection is read on until the 0x7ff and the change arrive; when it is not, the read ends
+  // at the pong, since nothing is to arrive.
+  let ally_in_area = metres >. 0.0
   let #(caster_read, first_have) =
     game_client.read_until_pong(game: first, have: first_have, number: 1)
   let #(ally_read, second_have) =
     game_client.read_until_pong(game: second, have: second_have, number: 1)
+  let #(ally_read, second_have) = case ally_in_area {
+    True ->
+      read_on_until(
+        game: second,
+        have: second_have,
+        read: ally_read,
+        found: fn(frames) {
+          started_targets_of(frames:, spell4_id: 41_369) != []
+          && list.any(
+            property_entries_of(frames:, unit_id: ally, property_id: 175),
+            fn(entry) { entry.value != entry.base },
+          )
+        },
+      )
+    False -> #(ally_read, second_have)
+  }
   assert refusals(frames: caster_read) == []
     as "opcode.0x7fc: Barrier is planned, so the press is not refused"
   driven_time.advance(time:, ms: 5000)
   let #(_, _) =
     game_client.read_until_pong(game: first, have: first_have, number: 2)
-  let #(ally_ended, _) =
+  let #(ally_ended, second_have) =
     game_client.read_until_pong(game: second, have: second_have, number: 2)
+  let #(ally_ended, _) = case ally_in_area {
+    True ->
+      read_on_until(
+        game: second,
+        have: second_have,
+        read: ally_ended,
+        found: fn(frames) {
+          list.last(property_entries_of(
+            frames:,
+            unit_id: ally,
+            property_id: 175,
+          ))
+          |> result.map(fn(entry) { entry.value == entry.base })
+          == Ok(True)
+        },
+      )
+    False -> #(ally_ended, second_have)
+  }
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)
