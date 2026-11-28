@@ -358,13 +358,14 @@ fn kind_of(cost: Cost) -> String {
   }
 }
 
-/// The kind a cost type is read as (`0x1403b3320`), a slot cost with the EMM id 7 spending
-/// every point held.
+/// The kind an innate cost type is read as (`0x1403b3320`), a slot cost with the EMM id 7
+/// spending every point held. Type 16 is the dash energy, resource slot 7 (`opcode.0x15c`):
+/// Spell4 28336 (innateCostType0 16, innateCost0 12) is checked against it like the dash spells.
 fn expected_kind(cost: #(Int, Int)) -> String {
   case cost.0, cost.1 {
     3, _ -> "unheld 176"
     15, _ -> "focus"
-    16, _ -> "unheld 177"
+    16, _ -> "slot"
     4, _ -> "class vital"
     5, 7 | 6, 7 | 7, 7 | 8, 7 | 10, 7 -> "spend all"
     5, _ | 6, _ | 7, _ | 8, _ | 10, _ -> "slot"

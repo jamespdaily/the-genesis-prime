@@ -337,6 +337,12 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
             stat_id: 3,
             value: unit_stat_value.Float(UnitStatFloat(value: 0)),
           ),
+          // The dash energy, slot 7: stat 9 in the float form at its maximum, 200.0
+          // (opcode.0x15c).
+          UnitStat(
+            stat_id: 9,
+            value: unit_stat_value.Float(UnitStatFloat(value: 0x43480000)),
+          ),
         ],
         server_time_estimate_start: 0,
         movement_commands: [
@@ -360,6 +366,10 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
           UnitProperty(property_id: 10, base: 0x42C80000, value: 0x42C80000),
           UnitProperty(property_id: 35, base: 0x434B1000, value: 0x434B1000),
           UnitProperty(property_id: 36, base: 0x425EC000, value: 0x425EC000),
+          // ResourceMax_7 (UnitProperty2.ResourceMax_7.dash) at 200.0, and 39
+          // (ResourceRegenMultiplier_7) at 1.0, the factor the dash refill is multiplied by.
+          UnitProperty(property_id: 38, base: 0x43480000, value: 0x43480000),
+          UnitProperty(property_id: 39, base: 0x3F800000, value: 0x3F800000),
           UnitProperty(property_id: 41, base: 0x43E10000, value: 0x43E10000),
           UnitProperty(property_id: 42, base: 0x437A0000, value: 0x437A0000),
           UnitProperty(property_id: 175, base: 0x3F200000, value: 0x3F200000),

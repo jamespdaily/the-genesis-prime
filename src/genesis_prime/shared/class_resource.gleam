@@ -21,11 +21,13 @@
 //// the combat flag clears (player_life) ─▶ a Medic below its max: StartTimer(refill_timer)
 ////                                         an Esper above 0: StartTimer(empty_timer, 10000)
 ////                                         an Engineer above 0: StartTimer(empty_timer, 5000)
+//// a dash (slot 7, genesis_prime/game/dash) ─▶ pay ─▶ Changed(7, value) ─▶ 0x935 of stat 9; below the maximum: StartTimer(dash_timer, 250)
+//// dash_timer ─▶ + 6.25 x property 39, clamped to the maximum (property 38) ─▶ Changed; below it again ─▶ StartTimer(dash_timer)
 //// the combat flag sets ─▶ CancelTimer(refill_timer), CancelTimer(empty_timer)
 //// refill_timer ─▶ the slot at its max ─▶ Changed
 //// empty_timer ─▶ the slot at 0 ─▶ Changed
-//// died ─▶ every timer cancelled;  came_back ─▶ the slot at its start, Focus at its pool ─▶ Changed when they moved
-//// the player's properties change (genesis_prime/shared/unit_properties) ─▶ properties_followed: Focus's pool and numbers
+//// died ─▶ every timer cancelled;  came_back ─▶ the slot at its start, Focus at its pool, the dash energy at its maximum ─▶ Changed when they moved
+//// the player's properties change (genesis_prime/shared/unit_properties) ─▶ properties_followed: Focus's pool and numbers, the dash energy's maximum and factor
 //// ```
 ////
 //// - **The slot** a class's resource lives in is the one its bar reads: 1 for the
@@ -77,6 +79,17 @@
 ////   pool x the share x the tick (genesis_prime/shared/focus), on `focus_timer`, which runs
 ////   exactly while the pool is below its maximum and the player lives. A class that holds
 ////   no Focus holds 0 of it with a maximum of 0 and ignores a payment of it.
+//// - **Dash energy** is a third pool held beside the class slot and Focus by every class, as
+////   slot 7: stat 9 of the player's unit and 0x935 (`ApplyUnitStat` 0x1403d9a60 case 9), with
+////   its maximum the player's property 38 (at least 0) and its refill factor property 39
+////   (`UnitProperty2.ResourceMax_7.dash`). Each dash pays 100 of it (genesis_prime/game/dash).
+////   It starts full at the maximum the 0x262 lists (`dash_maximum`, 200), refills
+////   `dash_refill_per_second` in `dash_tick_ms` ticks times the factor (both guesses: no
+////   client table holds a rate), on `dash_timer`, which runs exactly while the player lives,
+////   the energy is below its maximum and the factor is above 0. A change of either property
+////   follows (`properties_followed`): a lowered maximum clamps the energy, a maximum of 0
+////   empties it. Coming back fills it, as health and shield come back full (the server's
+////   choice).
 //// - **Death** stops every timer; **coming back** sets the slot to its start (the
 ////   server's choice, as health and shield come back full). The resources are not
 ////   saved: each entry starts at the start.
@@ -439,7 +452,16 @@ pub opaque type Resources {
     running: Set(TimerId),
     /// The Focus held; none for a class that holds none.
     focus: Option(Pool),
+    /// The dash energy held, slot 7.
+    dash: DashEnergy,
   )
+}
+
+/// The dash energy held, resource slot 7 (stat 9), whatever the class: its value, its
+/// maximum (the player's property 38, at least 0) and the factor the refill is
+/// multiplied by (property 39).
+type DashEnergy {
+  DashEnergy(value: Float, maximum: Float, refill_factor: Float)
 }
 
 /// The Focus held now, the numbers its rules read and the formulas it reads them through.
@@ -499,6 +521,31 @@ pub const empty_timer = TimerId(7)
 /// to 13, and below the cast rule's from 1000.
 pub const focus_timer = TimerId(14)
 
+/// The timer of the dash energy's refill.
+pub const dash_timer = TimerId(15)
+
+/// The resource slot of the dash energy: stat 9 (`opcode.0x15c`).
+pub const dash_slot = 7
+
+/// The dash energy a new player holds and the maximum its 0x262 lists as property 38:
+/// two dashes of 100, since eight spells that disable dashing take 200 off the
+/// property and four add 100 for one more (`UnitProperty2.ResourceMax_7.dash`).
+pub const dash_maximum = 200.0
+
+/// The dash energy's refill in points a second, before property 39's factor: a guess,
+/// since no client table holds a refill rate.
+const dash_refill_per_second = 25.0
+
+/// The time between ticks of the dash energy's refill: a guess, as the rate is.
+const dash_tick_ms = 250
+
+/// What a new player's property 39 is, the factor the dash refill is multiplied by: a
+/// guess of 1, since the client's default (UnitProperty2 39 defaultValue 0.0) would stop the
+/// refill. The support: Dasher 52936's Spell4Effects 125516 sets property 39 with a
+/// multiplier of 1.16 (dataBits02 0x3f947ae1) and no flat amount, which moves only a base
+/// above 0.
+pub const dash_refill_factor = 1.0
+
 /// Every timer of this rule, in timer-id order.
 const timers = [
   regen_timer,
@@ -506,6 +553,7 @@ const timers = [
   drain_timer,
   empty_timer,
   focus_timer,
+  dash_timer,
 ]
 
 /// Whether the timer is one of this rule's, for the connection to hand it to
@@ -552,6 +600,28 @@ pub fn new(
       }
       None -> None
     },
+    dash: dash_of(properties:),
+  )
+}
+
+/// The dash energy of a player entering with these properties: full.
+fn dash_of(properties properties: Properties) -> DashEnergy {
+  let energy = dash_numbers(properties:)
+  DashEnergy(..energy, value: float32.rounded(energy.maximum))
+}
+
+/// The dash energy's maximum and refill factor from the properties, with the value 0.
+fn dash_numbers(properties properties: Properties) -> DashEnergy {
+  DashEnergy(
+    value: 0.0,
+    maximum: float.max(
+      0.0,
+      unit_properties.value(properties:, property: unit_properties.dash_maximum),
+    ),
+    refill_factor: unit_properties.value(
+      properties:,
+      property: unit_properties.dash_refill_multiplier,
+    ),
   )
 }
 
@@ -605,6 +675,7 @@ pub fn value(resources resources: Resources, slot slot: Int) -> Float {
     Some(pool) -> pool.value
     None -> 0.0
   })
+  use <- bool.guard(when: slot == dash_slot, return: resources.dash.value)
   use <- bool.guard(when: slot != resources.resource.slot, return: 0.0)
   resources.value
 }
@@ -615,6 +686,7 @@ pub fn max(resources resources: Resources, slot slot: Int) -> Float {
     Some(pool) -> pool.numbers.maximum
     None -> 0.0
   })
+  use <- bool.guard(when: slot == dash_slot, return: resources.dash.maximum)
   use <- bool.guard(when: slot != resources.resource.slot, return: 0.0)
   resources.resource.max
 }
@@ -705,10 +777,24 @@ pub fn paid(
   list.fold(payments, resources, fn(resources, payment) {
     let points = int.to_float(int.absolute_value(payment.amount))
     case payment.slot == resources.resource.slot, payment.slot == focus_slot {
+      _, _ if payment.slot == dash_slot ->
+        Resources(
+          ..resources,
+          dash: DashEnergy(
+            ..resources.dash,
+            value: clamped_to(
+              value: resources.dash.value -. points,
+              maximum: resources.dash.maximum,
+            ),
+          ),
+        )
       True, _ ->
         Resources(
           ..resources,
-          value: clamped(resources:, value: resources.value -. points),
+          value: clamped_to(
+            value: resources.value -. points,
+            maximum: resources.resource.max,
+          ),
         )
       False, True ->
         case resources.focus {
@@ -718,7 +804,10 @@ pub fn paid(
               focus: Some(
                 Pool(
                   ..pool,
-                  value: focus_clamped(pool:, value: pool.value -. points),
+                  value: clamped_to(
+                    value: pool.value -. points,
+                    maximum: pool.numbers.maximum,
+                  ),
                 ),
               ),
             )
@@ -729,8 +818,8 @@ pub fn paid(
   })
 }
 
-/// The payments taken: a change for each one of the class's slot or of Focus, then the
-/// timers a slot below its max starts and the Focus timer a pool below its maximum starts.
+/// The payments taken: a change for each one of the class's slot, of Focus or of the dash
+/// energy, then the timers a pool below its maximum starts.
 pub fn pay(
   resources resources: Resources,
   payments payments: List(Payment),
@@ -740,6 +829,7 @@ pub fn pay(
       let #(resources, changes) = so_far
       case
         payment.slot == resources.resource.slot
+        || payment.slot == dash_slot
         || { payment.slot == focus_slot && option.is_some(resources.focus) }
       {
         False -> so_far
@@ -757,7 +847,11 @@ pub fn pay(
     })
   let #(resources, timers) = refills(resources:)
   let #(resources, focus_timers) = focus_refills(resources:)
-  #(resources, list.flatten([list.reverse(changes), timers, focus_timers]))
+  let #(resources, dash_timers) = dash_refills(resources:)
+  #(
+    resources,
+    list.flatten([list.reverse(changes), timers, focus_timers, dash_timers]),
+  )
 }
 
 /// The gains of a go, each applied in the order given and clamped to [0, max] where it
@@ -807,14 +901,15 @@ pub fn gain(
     list.fold(slot_amounts, #(resources, []), fn(so_far, amount) {
       let #(resources, changes) = so_far
       let next =
-        clamped(resources:, value: resources.value +. int.to_float(amount))
-      let changes = case next == resources.value {
-        True -> changes
-        False -> [
-          Changed(slot: resources.resource.slot, value: next),
-          ..changes
-        ]
-      }
+        clamped_to(
+          value: resources.value +. int.to_float(amount),
+          maximum: resources.resource.max,
+        )
+      let changes =
+        list.append(
+          moved(slot: resources.resource.slot, from: resources.value, to: next),
+          changes,
+        )
       #(Resources(..resources, value: next), changes)
     })
   let #(resources, focus_changes) =
@@ -828,11 +923,16 @@ pub fn gain(
               float32.product(left: share, right: pool.numbers.maximum)
             FocusByPoints(amount:) -> int.to_float(amount)
           }
-          let next = focus_clamped(pool:, value: pool.value +. points)
-          let changes = case next == pool.value {
-            True -> changes
-            False -> [Changed(slot: focus_slot, value: next), ..changes]
-          }
+          let next =
+            clamped_to(
+              value: pool.value +. points,
+              maximum: pool.numbers.maximum,
+            )
+          let changes =
+            list.append(
+              moved(slot: focus_slot, from: pool.value, to: next),
+              changes,
+            )
           #(
             Resources(..resources, focus: Some(Pool(..pool, value: next))),
             changes,
@@ -926,7 +1026,8 @@ fn started(
 }
 
 /// A timer of the rule fired: a tick of the refill over time, the Medic's refill, a
-/// tick of the Warrior's drain, or the Esper's empty. A timer that fires after its
+/// tick of the Warrior's drain, the Esper's empty, or a tick of Focus's or the dash energy's
+/// refill. A timer that fires after its
 /// cancel, or after death, changes nothing.
 pub fn timer_fired(
   resources resources: Resources,
@@ -941,6 +1042,7 @@ pub fn timer_fired(
     when: timer == focus_timer,
     return: focus_ticked(resources:),
   )
+  use <- bool.guard(when: timer == dash_timer, return: dash_ticked(resources:))
   case timer, resources.resource {
     _, Resource(regen: Some(Regen(per_tick:, ..)), ..) if timer == regen_timer ->
       changed_to(resources:, value: resources.value +. per_tick)
@@ -973,23 +1075,25 @@ fn changed_to(
   resources resources: Resources,
   value value: Float,
 ) -> #(Resources, List(Effect)) {
-  let next = clamped(resources:, value:)
-  let change = case next == resources.value {
-    True -> []
-    False -> [Changed(slot: resources.resource.slot, value: next)]
-  }
+  let next = clamped_to(value:, maximum: resources.resource.max)
+  let change =
+    moved(slot: resources.resource.slot, from: resources.value, to: next)
   let #(resources, timers) =
     refills(resources: Resources(..resources, value: next))
   #(resources, list.append(change, timers))
 }
 
-fn clamped(resources resources: Resources, value value: Float) -> Float {
-  float32.rounded(float.clamp(value, min: 0.0, max: resources.resource.max))
+/// `value` clamped to [0, `maximum`] and held as a 32-bit float, for any of the pools.
+fn clamped_to(value value: Float, maximum maximum: Float) -> Float {
+  float32.rounded(float.clamp(value, min: 0.0, max: maximum))
 }
 
-/// Focus set to `value`, clamped to [0, its maximum] and held as a 32-bit float.
-fn focus_clamped(pool pool: Pool, value value: Float) -> Float {
-  float32.rounded(float.clamp(value, min: 0.0, max: pool.numbers.maximum))
+/// The change of slot `slot` from `from` to `to`: one when the value moved, none when not.
+fn moved(slot slot: Int, from from: Float, to to: Float) -> List(Effect) {
+  case to == from {
+    True -> []
+    False -> [Changed(slot:, value: to)]
+  }
 }
 
 /// Focus set to `value`: a change when it moved, then the timer a living player below its
@@ -1001,11 +1105,8 @@ fn focus_changed_to(
   case resources.focus {
     None -> #(resources, [])
     Some(pool) -> {
-      let next = focus_clamped(pool:, value:)
-      let change = case next == pool.value {
-        True -> []
-        False -> [Changed(slot: focus_slot, value: next)]
-      }
+      let next = clamped_to(value:, maximum: pool.numbers.maximum)
+      let change = moved(slot: focus_slot, from: pool.value, to: next)
       let #(resources, timers) =
         focus_refills(
           resources: Resources(
@@ -1022,19 +1123,31 @@ fn focus_changed_to(
 /// maximum: started when it should run and does not, cancelled when it runs and should not.
 fn focus_refills(resources resources: Resources) -> #(Resources, List(Effect)) {
   case resources.focus {
-    Some(Pool(formulas:, ..) as pool) -> {
-      let wanted = resources.alive && pool.value <. pool.numbers.maximum
-      case wanted, is_running(resources:, timer: focus_timer) {
-        True, False -> #(running_with(resources:, timer: focus_timer), [
-          StartTimer(timer: focus_timer, after_ms: formulas.tick_ms),
-        ])
-        False, True -> #(running_without(resources:, timer: focus_timer), [
-          CancelTimer(timer: focus_timer),
-        ])
-        True, True | False, False -> #(resources, [])
-      }
-    }
+    Some(Pool(formulas:, ..) as pool) ->
+      timer_kept(
+        resources:,
+        timer: focus_timer,
+        wanted: resources.alive && pool.value <. pool.numbers.maximum,
+        after_ms: formulas.tick_ms,
+      )
     None -> #(resources, [])
+  }
+}
+
+/// A timer made to run exactly when it is `wanted`: started after `after_ms` when it should
+/// run and does not, cancelled when it runs and should not.
+fn timer_kept(
+  resources resources: Resources,
+  timer timer: TimerId,
+  wanted wanted: Bool,
+  after_ms after_ms: Int,
+) -> #(Resources, List(Effect)) {
+  case wanted, is_running(resources:, timer:) {
+    True, False -> #(running_with(resources:, timer:), [
+      StartTimer(timer:, after_ms:),
+    ])
+    False, True -> #(running_without(resources:, timer:), [CancelTimer(timer:)])
+    True, True | False, False -> #(resources, [])
   }
 }
 
@@ -1058,15 +1171,78 @@ fn focus_ticked(resources resources: Resources) -> #(Resources, List(Effect)) {
   }
 }
 
+/// The dash energy set to `value`: a change when it moved, then the timer a living player
+/// below the maximum needs (`dash_refills`).
+fn dash_changed_to(
+  resources resources: Resources,
+  value value: Float,
+) -> #(Resources, List(Effect)) {
+  let next = clamped_to(value:, maximum: resources.dash.maximum)
+  let change = moved(slot: dash_slot, from: resources.dash.value, to: next)
+  let #(resources, timers) =
+    dash_refills(
+      resources: Resources(
+        ..resources,
+        dash: DashEnergy(..resources.dash, value: next),
+      ),
+    )
+  #(resources, list.append(change, timers))
+}
+
+/// The dash timer, which runs exactly while the player lives, the energy is below its
+/// maximum and the refill factor is above 0 (`timer_kept`).
+fn dash_refills(resources resources: Resources) -> #(Resources, List(Effect)) {
+  let dash = resources.dash
+  timer_kept(
+    resources:,
+    timer: dash_timer,
+    wanted: resources.alive
+      && dash.value <. dash.maximum
+      && dash.refill_factor >. 0.0,
+    after_ms: dash_tick_ms,
+  )
+}
+
+/// A tick of the dash energy's refill: the rate a second over the tick, times the factor.
+fn dash_ticked(resources resources: Resources) -> #(Resources, List(Effect)) {
+  let per_tick =
+    dash_refill_per_second
+    *. int.to_float(dash_tick_ms)
+    /. 1000.0
+    *. resources.dash.refill_factor
+  dash_changed_to(resources:, value: resources.dash.value +. per_tick)
+}
+
+/// The dash energy taking the maximum and refill factor of the player's properties as they
+/// now stand: a value above a lowered maximum is clamped to it, and the timer follows.
+fn dash_followed(
+  resources resources: Resources,
+  properties properties: Properties,
+) -> #(Resources, List(Effect)) {
+  let numbers = dash_numbers(properties:)
+  dash_changed_to(
+    resources: Resources(
+      ..resources,
+      dash: DashEnergy(
+        ..resources.dash,
+        maximum: numbers.maximum,
+        refill_factor: numbers.refill_factor,
+      ),
+    ),
+    value: resources.dash.value,
+  )
+}
+
 /// The player's properties changed (genesis_prime/shared/unit_properties): Focus takes the
 /// new numbers, the pool and the shares the tick reads, the cost modifier and the level,
 /// a pool above a lowered maximum is clamped to it (one change), and a raised maximum
-/// starts the timer. A class that holds no Focus changes nothing.
+/// starts the timer; the dash energy takes the new maximum and refill factor the same way.
+/// A class that holds no Focus has none to change.
 pub fn properties_followed(
   resources resources: Resources,
   properties properties: Properties,
 ) -> #(Resources, List(Effect)) {
-  case resources.focus {
+  let #(resources, focus_effects) = case resources.focus {
     None -> #(resources, [])
     Some(pool) ->
       focus_changed_to(
@@ -1077,6 +1253,8 @@ pub fn properties_followed(
         value: pool.value,
       )
   }
+  let #(resources, dash_effects) = dash_followed(resources:, properties:)
+  #(resources, list.append(focus_effects, dash_effects))
 }
 
 /// The player's combat flag changed (genesis_prime/game/player_life): in combat the
@@ -1121,7 +1299,9 @@ pub fn came_back(resources resources: Resources) -> #(Resources, List(Effect)) {
     )
   let #(resources, focus) =
     focus_changed_to(resources:, value: max(resources:, slot: focus_slot))
-  #(resources, list.append(slot, focus))
+  let #(resources, dash) =
+    dash_changed_to(resources:, value: resources.dash.maximum)
+  #(resources, list.flatten([slot, focus, dash]))
 }
 
 /// The player left the world, or its connection ended: every timer is cancelled,
@@ -1139,6 +1319,10 @@ pub fn gaps() -> List(gap.Entry) {
     gap.Entry(
       area: "Focus",
       missing: "the Focus pool of an Esper, a Medic and a Spellslinger is a flat 1000 points at every level plus what worn items add, a guess, as the client's tables hold no pool by class or level",
+    ),
+    gap.Entry(
+      area: "Dash energy",
+      missing: "the refill of the dash energy, 25 points a second in 250 ms ticks, and the factor of 1 a new player's refill is multiplied by are guesses, as the client's tables hold no refill rate and its default for the factor is 0; the maximum of 200 is read from the rows that disable a dash or add one",
     ),
   ]
 }

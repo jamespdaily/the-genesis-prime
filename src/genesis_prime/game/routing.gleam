@@ -8,7 +8,7 @@
 ////                                                 ─▶ Hello, CharacterSelect(message), WorldEntry or WorldMessage
 //// the frame inside 0x038C                    ─▶ route(stage, InsideWorldMessage, id)
 ////                                                 ─▶ Movement(message), Camp(message), Chat(message), Cast(message),
-////                                                    Activation, Shortcut, UnitActivation, ItemUse, Life(message), Innate(message), LevelUp, LimitedActionSet, Interaction(message), Quest(message),
+////                                                    Activation, Shortcut, UnitActivation, ItemUse, Life(message), Innate(message), LevelUp, Dash, LimitedActionSet, Interaction(message), Quest(message),
 ////                                                    QuestTurnIn, Inventory(message), VendorPurchase, VendorBuyback, VendorSale, VendorSellJunk or Dropped(message)
 //// a message with no row, or one not taken at the stage ─▶ Error(Nil): the rule logs it as unhandled
 //// ```
@@ -63,6 +63,7 @@ import genesis_prime/message/client_option
 import genesis_prime/message/client_side_interaction_result
 import genesis_prime/message/create_character_carrier
 import genesis_prime/message/credd_exchange_request
+import genesis_prime/message/dash
 import genesis_prime/message/delete_character
 import genesis_prime/message/dialog_responses_shown
 import genesis_prime/message/fell_below_floor
@@ -141,6 +142,8 @@ pub type Feature {
   Innate(message: innate_choice.Message)
   /// The client's request for the fanfare of a level, 0x07A5 (genesis_prime/game/level_up).
   LevelUp
+  /// The player's dash, 0x015C (genesis_prime/game/dash).
+  Dash
   /// The ability builder's Save, 0x00B1 (genesis_prime/game/limited_action_set).
   LimitedActionSet
   /// The player's request to talk to a unit, and the client's note that a dialog
@@ -348,6 +351,7 @@ const table = [
     [AtWorld],
   ),
   Row(replay_level_up.message_id, InsideWorldMessage, LevelUp, [AtWorld]),
+  Row(dash.message_id, InsideWorldMessage, Dash, [AtWorld]),
   Row(
     action_set_save.message_id,
     InsideWorldMessage,

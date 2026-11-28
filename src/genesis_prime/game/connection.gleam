@@ -152,6 +152,7 @@ import genesis_prime/game/character_select
 import genesis_prime/game/chat
 import genesis_prime/game/connection/casting as connection_casting
 import genesis_prime/game/connection/chat as connection_chat
+import genesis_prime/game/connection/dash as connection_dash
 import genesis_prime/game/connection/departures as connection_departures
 import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/connection/dropped as connection_dropped
@@ -610,6 +611,7 @@ fn routed(
     | Ok(routing.Life(..))
     | Ok(routing.Innate(..))
     | Ok(routing.LevelUp)
+    | Ok(routing.Dash)
     | Ok(routing.LimitedActionSet)
     | Ok(routing.Interaction(..))
     | Ok(routing.Quest(..))
@@ -835,6 +837,13 @@ fn world_carried(
                   )
                 Ok(routing.LevelUp) ->
                   connection_level_up.take_message(
+                    session:,
+                    now:,
+                    entered:,
+                    inner: whole,
+                  )
+                Ok(routing.Dash) ->
+                  connection_dash.take_message(
                     session:,
                     now:,
                     entered:,

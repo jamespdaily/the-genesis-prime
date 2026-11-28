@@ -228,6 +228,7 @@ import genesis_prime/shared/creature_path
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/hit_radius
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionId, type Effect, type Now,
 }
@@ -1793,9 +1794,10 @@ fn creature_casts_kept(
 /// (`opcode.0x938`) and its Interrupt Armor as stat 21 while it is above 0
 /// (`opcode.0x938.interrupt_armor`: the create's stat list sets it) and its absorption as
 /// stat 22 while it is above 0 (`opcode.0x938`, `0x14064fb40`: the create's stat list sets
-/// it), without its class resource and its Focus: the stat and the ResourceMax
-/// property of the player's own 0x262, and stat 1, are left out, since a 0x935 goes to the
-/// player alone (`opcode.0x262.resource_stats`); property 5, the Focus maximum, stays, a gear
+/// it), without its class resource, its Focus and its dash energy: the stat and the ResourceMax
+/// property of the player's own 0x262, stat 1 and stat 9 with properties 38 and 39, are left
+/// out, since a 0x935 goes to the player alone (`opcode.0x262.resource_stats`); property 5,
+/// the Focus maximum, stays, a gear
 /// property like the rest that 0x93a keeps current; stamped from the map's clock,
 /// from the origin `Joined` carried (`map.server_time`). Its list holds the player's own
 /// casts and the casts other players' casts hold on it (`held_changes.cast_views`), in cast
@@ -1818,6 +1820,11 @@ fn appearance(
   let resource_stat = unit_fields.resource_stat_id(slot:)
   let focus_stat = unit_fields.resource_stat_id(slot: class_resource.focus_slot)
   let resource_max = unit_fields.resource_max_property(slot:)
+  let dash_stat = unit_fields.resource_stat_id(slot: class_resource.dash_slot)
+  let dash_properties = [
+    unit_properties.dash_maximum.value,
+    unit_properties.dash_refill_multiplier.value,
+  ]
   UnitCreatePlayer(
     ..unit,
     tail: UnitCreateTail(
@@ -1841,7 +1848,8 @@ fn appearance(
               Ok(unit_fields.integer_stat(stat_id: id, value: health))
             id if id == unit_fields.shield_stat ->
               Ok(unit_fields.integer_stat(stat_id: id, value: shield))
-            id if id == resource_stat || id == focus_stat -> Error(Nil)
+            id if id == resource_stat || id == focus_stat || id == dash_stat ->
+              Error(Nil)
             _ -> Ok(stat)
           }
         }),
@@ -1858,6 +1866,7 @@ fn appearance(
       ),
       properties: list.filter(unit.tail.properties, fn(property) {
         property.property_id != resource_max
+        && !list.contains(dash_properties, property.property_id)
       }),
     ),
   )

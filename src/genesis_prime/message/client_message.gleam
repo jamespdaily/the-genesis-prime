@@ -32,6 +32,7 @@ import genesis_prime/message/create_character_carrier.{
   type CreateCharacterCarrier,
 }
 import genesis_prime/message/credd_exchange_request.{type CreddExchangeRequest}
+import genesis_prime/message/dash.{type Dash}
 import genesis_prime/message/delete_character.{type DeleteCharacter}
 import genesis_prime/message/dialog_responses_shown.{type DialogResponsesShown}
 import genesis_prime/message/fell_below_floor.{type FellBelowFloor}
@@ -129,6 +130,7 @@ pub type ClientMessage {
   ItemSplit(message: ItemSplit)
   ItemDelete(message: ItemDelete)
   ActionSetSave(message: ActionSetSave)
+  Dash(message: Dash)
   InnateIndexChosen(message: InnateIndexChosen)
   ReplayLevelUp(message: ReplayLevelUp)
   CancelCast(message: CancelCast)
@@ -246,6 +248,7 @@ pub fn decode(
     0x017D -> decoded(body, message_id, item_split.decode, ItemSplit)
     0x0149 -> decoded(body, message_id, item_delete.decode, ItemDelete)
     0x00B1 -> decoded(body, message_id, action_set_save.decode, ActionSetSave)
+    0x015C -> decoded(body, message_id, dash.decode, Dash)
     0x016F ->
       decoded(body, message_id, innate_index_chosen.decode, InnateIndexChosen)
     0x07A5 -> decoded(body, message_id, replay_level_up.decode, ReplayLevelUp)
@@ -357,6 +360,7 @@ pub fn encode(message: ClientMessage) -> Result(BitArray, EncodeError) {
     ItemSplit(message:) -> item_split.encode(message)
     ItemDelete(message:) -> item_delete.encode(message)
     ActionSetSave(message:) -> action_set_save.encode(message)
+    Dash(message:) -> dash.encode(message)
     InnateIndexChosen(message:) -> innate_index_chosen.encode(message)
     ReplayLevelUp(message:) -> replay_level_up.encode(message)
     CancelCast(message:) -> cancel_cast.encode(message)
@@ -433,6 +437,7 @@ pub fn message_id(message: ClientMessage) -> Int {
     ItemSplit(..) -> item_split.message_id
     ItemDelete(..) -> item_delete.message_id
     ActionSetSave(..) -> action_set_save.message_id
+    Dash(..) -> dash.message_id
     InnateIndexChosen(..) -> innate_index_chosen.message_id
     ReplayLevelUp(..) -> replay_level_up.message_id
     CancelCast(..) -> cancel_cast.message_id
@@ -507,6 +512,7 @@ pub fn name(message: ClientMessage) -> String {
     ItemSplit(..) -> "item_split"
     ItemDelete(..) -> "item_delete"
     ActionSetSave(..) -> "action_set_save"
+    Dash(..) -> "dash"
     InnateIndexChosen(..) -> "innate_index_chosen"
     ReplayLevelUp(..) -> "replay_level_up"
     CancelCast(..) -> "cancel_cast"

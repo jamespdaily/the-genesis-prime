@@ -138,6 +138,14 @@ pub const assault_rating = UnitProperty2Id(35)
 /// SupportRating (36): the rating the damage formulas read.
 pub const support_rating = UnitProperty2Id(36)
 
+/// ResourceMax_7 (38): the maximum of the dash energy, resource slot 7 (stat 9)
+/// (`UnitProperty2.ResourceMax_7.dash`).
+pub const dash_maximum = UnitProperty2Id(38)
+
+/// ResourceRegenMultiplier_7 (39): what the dash energy's refill is multiplied by
+/// (`UnitProperty2.ResourceMax_7.dash`).
+pub const dash_refill_multiplier = UnitProperty2Id(39)
+
 /// Stamina (40): the attribute a formula's parameter type 11 reads (`0x140566d40`).
 pub const stamina = UnitProperty2Id(40)
 
@@ -304,6 +312,8 @@ const named = [
   health_regen_multiplier,
   assault_rating,
   support_rating,
+  dash_maximum,
+  dash_refill_multiplier,
   shield_capacity_max,
   armor,
   interrupt_armor_threshold,
