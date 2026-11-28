@@ -24,7 +24,8 @@ jobs:
   # `tested` empty, and every job runs.
   tested:
     if: github.event_name == 'push'
-    runs-on: ubuntu-latest
+    # ubuntu-24.04, not ubuntu-latest: the llvm-18 package and the prebuilt OTP the jobs install exist for it.
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
       tested: ${{ steps.tree.outputs.tested }}
@@ -52,7 +53,7 @@ jobs:
     name: tools
     needs: tested
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -79,7 +80,7 @@ jobs:
   scope:
     name: scope
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     outputs:
       light: ${{ steps.scope.outputs.light }}
@@ -110,7 +111,7 @@ jobs:
     name: ${{ matrix.name }}
     needs: [tested, scope]
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # A part that keeps using CPU is
     # stopped and named by the check at its wall cap of 1500 s (GENESIS_CHECK_WALL_CAP_SECONDS
     # below), so 30 minutes covers the cold setup, that cap and the steps after it.
@@ -263,7 +264,7 @@ jobs:
     name: check
     needs: [tested, scope, tools, part]
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 3
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -287,7 +288,7 @@ jobs:
   repeat:
     name: repeat
     if: ${{ github.event_name == 'pull_request' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:
@@ -345,7 +346,7 @@ jobs:
     name: warm-caches
     needs: tested
     if: ${{ !cancelled() && needs.tested.outputs.tested == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
