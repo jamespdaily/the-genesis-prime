@@ -190,8 +190,7 @@ pub fn describe(error error: HealthError) -> String {
       <> int.to_string(level)
       <> ", so the player's maximum health is unknown"
     NoBaseCombatRow ->
-      "CreatureLevel has no row 101 with the columns of the player's base combat properties"
-      <> ", so the player's base chances are unknown"
+      "CreatureLevel has no row 101 with the columns of the player's base combat properties, so the player's base chances are unknown"
   }
 }
 

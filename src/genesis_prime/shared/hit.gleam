@@ -232,17 +232,15 @@ pub type Outcome {
   Deflected
 }
 
-/// A unit's defence from its properties, one rule for a creature and a player: `value`
-/// reads the unit's number for a UnitProperty2 id. A player's ratings (33, 43, 58, 61) are
-/// item properties (flag 4, valuePerPoint 10) that its worn items' budgets give, so a player
-/// reads them as a creature does; the resists (26 to 28) are no item property and stay at
-/// their default for a player. Each chance is a rating formula's result from the unit's base
-/// and rating properties at its level (`0x140463340` deflect, `0x140463ac0` critical
-/// deflect, `0x140461a30` glance chance, `0x1404615f0` glance amount); a mitigation is the
-/// formula of GameFormula 1234 from Armor plus the resist of its damage type and the two
-/// offsets (`0x140464240`). The damage taken of each type is its multiplier and offset
-/// properties (`UnitProperty2.damage_heal_multipliers`). `shield_mitigation_max` is the
-/// unit's ShieldMitigationMax (175): 0 for a creature, which has no shield.
+/// A unit's defence from its properties, one rule for a creature and a player: `value` reads
+/// the unit's number for a UnitProperty2 id. A player's ratings (33, 43, 58, 61) are item
+/// properties (flag 4, valuePerPoint 10) its worn items give, so it reads them as a creature
+/// does; the resists (26 to 28) are no item property and stay at their default for it. Each
+/// chance is a rating formula's result from the base and rating at the level (`0x140463340`
+/// deflect, `0x140463ac0` critical deflect, `0x140461a30` glance chance, `0x1404615f0` glance
+/// amount); a mitigation is GameFormula 1234 from Armor plus the resist of its type and the two
+/// offsets (`0x140464240`); the damage taken of a type is its multiplier and offset
+/// (`UnitProperty2.damage_heal_multipliers`). `shield_mitigation_max` (175) is 0 for a creature.
 pub fn defence_of(
   formulas formulas: Formulas,
   level level: Int,
