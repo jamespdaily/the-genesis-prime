@@ -211,7 +211,13 @@ pub fn bases(
   level level: Int,
   focus_pool focus_pool: Float,
 ) -> Result(List(#(UnitProperty2Id, Float)), HealthError) {
-  use health <- result.map(max_health(tables:, gear:, level:))
+  use health <- result.try(max_health(tables:, gear:, level:))
+  use combat <- result.map(
+    unit_properties.player_combat_bases(tables:)
+    |> result.replace_error(NoCreatureLevel(
+      level: unit_properties.high_property_creature_level,
+    )),
+  )
   let defaults = unit_properties.defaults(tables:)
   let properties = gear.properties
   let #(capacity, mitigation, regen, reboot) = case properties.shield {
@@ -252,7 +258,7 @@ pub fn bases(
         },
       )
     })
-  list.append(fixed, budget)
+  list.flatten([fixed, budget, combat])
 }
 
 /// The worn shield's capacity, which is stat 20 of the player's unit when it is created:

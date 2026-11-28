@@ -24,15 +24,19 @@
 //// - An item the reader leaves unread: the PvP flags 0x8000 and `0x1404445d0` (the flags
 ////   0x4000), as `item_property` records.
 
+import character_support
 import fixture_tables
 import genesis_prime/game/gear.{EquipSpell}
 import genesis_prime/message/float32
 import genesis_prime/message/item_visual.{ItemVisual}
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/item_property.{ItemProperties}
 import genesis_prime/shared/loadout
+import genesis_prime/shared/player_unit
 import genesis_prime/shared/worn_visual
 import genesis_prime/store.{type HeldItem, HeldItem}
 import genesis_prime/table/id.{ClassId, Item2Id, UnitProperty2Id}
+import genesis_prime/table/unit_property2
 import gleam/dict
 import gleam/float
 import gleam/int
@@ -42,7 +46,11 @@ import gleam/result
 import gleam/string
 import novice_tables.{type Set}
 import owned_test
+import place_support
 import planted_table.{Integer}
+import properties_support
+import qcheck
+import unit_support
 import worn_item_support
 
 /// The armor a class's Novice set gives: heavy 250, medium 200, light 150.
@@ -782,4 +790,111 @@ pub fn the_list_drops_an_exact_repeat_and_keeps_the_worn_order_test() -> Nil {
         as "the list follows the worn order, the bag index, whatever order the items are held in"
     },
   )
+}
+
+/// The bases of the gear of the Warrior's Novice set, or of no gear, at `level`.
+fn bases_of(
+  worn worn: Bool,
+  level level: Int,
+) -> List(#(id.UnitProperty2Id, Float)) {
+  let tables = fixture_tables.shared()
+  let items = case worn {
+    True -> held_at(set: warrior_167(), location: 0)
+    False -> []
+  }
+  let assert Ok(bases) =
+    gear.bases(
+      tables:,
+      gear: gear.of_items(tables:, level:, items:),
+      level:,
+      focus_pool: 0.0,
+    )
+    as "the fixture holds CreatureLevel rows 1 to 101"
+  bases
+}
+
+/// The 26 base combat properties of `bases`, as (id, 32-bit word) in the order listed.
+fn combat_words(
+  bases bases: List(#(id.UnitProperty2Id, Float)),
+) -> List(#(Int, Int)) {
+  let ids = list.map(properties_support.base_combat_rows, fn(row) { row.0 })
+  list.filter_map(bases, fn(base) {
+    case list.contains(ids, { base.0 }.value) {
+      True -> Ok(#({ base.0 }.value, float32.to_bits(base.1)))
+      False -> Error(Nil)
+    }
+  })
+}
+
+pub fn no_base_combat_property_is_a_gear_budget_property_or_one_the_gear_sets_itself_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let bases = bases_of(worn: True, level: 1)
+  let ids = list.map(bases, fn(base) { { base.0 }.value })
+  assert list.length(list.unique(ids)) == list.length(ids)
+    as "each property is listed once, so none of the 26 is also one the gear sets (7, 35, 36, 41, 42, 175, 176, 178) or a budget property"
+  list.each(properties_support.base_combat_rows, fn(row) {
+    assert list.contains(ids, row.0) as "every base combat property is listed"
+    let assert Ok(unit_property) =
+      unit_property2.get(tables:, id: UnitProperty2Id(row.0))
+      as "UnitProperty2 has the row"
+    assert unit_property.value_per_point == 0.0
+      as "a property worth nothing per point is no item budget property"
+  })
+}
+
+pub fn a_players_base_combat_properties_are_the_same_at_every_level_and_with_any_gear_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let expected =
+    list.map(properties_support.base_combat_rows, fn(row) {
+      #(row.0, float32.to_bits(row.1))
+    })
+  qcheck.given(
+    qcheck.tuple2(qcheck.bounded_int(from: 1, to: 50), qcheck.bool()),
+    fn(drawn) {
+      let #(level, worn) = drawn
+      assert combat_words(bases: bases_of(worn:, level:)) == expected
+        as "CreatureLevel row 101's columns, whatever the level and the worn items (`0x1404585c0`)"
+    },
+  )
+}
+
+pub fn the_entry_lists_only_the_base_combat_properties_that_differ_from_their_default_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let unit =
+    player_unit.create(
+      unit: unit_support.bare_unit(
+        character: character_support.character(number: 1),
+        place: place_support.live_character_place(),
+        unit_id: 1,
+        body: [],
+      ),
+      realm_id: 1,
+    )
+    |> player_unit.with_gear(
+      replacing: [],
+      item_visuals: [],
+      bases: bases_of(worn: True, level: 1),
+      defaults: properties_support.defaults(),
+      shield: None,
+    )
+  let ids = list.map(properties_support.base_combat_rows, fn(row) { row.0 })
+  let listed =
+    list.filter(unit.tail.properties, fn(property) {
+      list.contains(ids, property.property_id)
+    })
+  assert listed
+    == [
+      UnitProperty(
+        property_id: 101,
+        base: float32.to_bits(0.05),
+        value: float32.to_bits(0.05),
+      ),
+      UnitProperty(
+        property_id: 102,
+        base: float32.to_bits(0.05),
+        value: float32.to_bits(0.05),
+      ),
+    ]
+    as "only 101 and 102 differ from UnitProperty2's defaults (0.0); 165 is 1.0 as its default is, and the 23 others are 0.0"
 }

@@ -76,6 +76,20 @@ fn defence_of(class_id: Int) -> hit.Defence {
   )
 }
 
+/// The defence of the class's Dominion Novice at level 1 as its entry makes it: the gear's
+/// properties and the base combat properties.
+fn defence_entered(class_id: Int) -> hit.Defence {
+  let tables = character_tables.shared()
+  let assert Ok(loadout) =
+    loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
+    as "the class has a Dominion Novice set"
+  player_life.defence(
+    properties: properties_support.wearing_with_base_combat(loadout:),
+    level: 1,
+    formulas: rating.formulas(tables:),
+  )
+}
+
 pub fn a_level_1_players_defence_has_no_deflect_crit_deflect_or_glance_and_its_armors_mitigation_test() -> Nil {
   use <- owned_test.run(60_000)
   let esper = defence_of(3)
@@ -93,6 +107,93 @@ pub fn a_level_1_players_defence_has_no_deflect_crit_deflect_or_glance_and_its_a
   assert warrior.physical_mitigation == 0.75
     as "Armor 250 reaches the 0.75 cap (GameFormula 1234's 75)"
   assert esper.shield_mitigation_max == 0.625 as "ShieldMitigationMax 0.625"
+  let entered = defence_entered(3)
+  assert near(value: entered.deflect_chance, to: 0.05)
+    as "a player's BaseAvoidChance is CreatureLevel row 101's 0.05 (the server's guess: no archetype, difficulty or tier factor), 0x1404585c0"
+  assert entered.crit_deflect_chance == 0.0
+    && entered.glance_chance == 0.0
+    && entered.glance_amount == 0.0
+    as "row 101's critical deflect, glance chance and glance amount are 0"
+}
+
+/// The defence of a level-1 player whose 0x262 lists exactly `listed`, each as base and
+/// value: every other property at its default, so no rating.
+fn defence_listing(listed listed: List(#(Int, Float))) -> hit.Defence {
+  player_life.defence(
+    properties: properties_support.listing(level: 1, listed:),
+    level: 1,
+    formulas: rating.formulas(tables: character_tables.shared()),
+  )
+}
+
+fn near(value value: Float, to expected: Float) -> Bool {
+  float.loosely_equals(value, with: expected, tolerating: 0.0000001)
+}
+
+/// The four chances and the glance amount of a defence, in the order of the rows.
+fn chances_of(defence defence: hit.Defence) -> List(Float) {
+  [
+    defence.deflect_chance,
+    defence.crit_deflect_chance,
+    defence.glance_chance,
+    defence.glance_amount,
+  ]
+}
+
+/// Each row lists one base property of the 26 at 0.02: the defence's chance of the
+/// formula that reads it is the base (the formulas give 0 at rating 0: GameFormula 1231,
+/// 1235, 1236 and 1245 have int0 0) and no other chance moves. The properties are
+/// BaseAvoidChance 101 (deflect, `0x140463340`), BaseAvoidCritChance 105 (critical
+/// deflect, `0x140463ac0`), BaseGlanceChance 164 (`0x140461a30`) and BaseGlanceAmount
+/// 195 (`0x1404615f0`).
+pub fn a_players_defence_reads_its_base_deflect_critical_deflect_glance_and_glance_amount_test() -> Nil {
+  use <- owned_test.run(10_000)
+  [
+    #(101, [0.02, 0.0, 0.0, 0.0], "BaseAvoidChance is the deflect chance"),
+    #(105, [0.0, 0.02, 0.0, 0.0], "BaseAvoidCritChance is the critical deflect"),
+    #(164, [0.0, 0.0, 0.02, 0.0], "BaseGlanceChance is the glance chance"),
+    #(195, [0.0, 0.0, 0.0, 0.02], "BaseGlanceAmount is the glance amount"),
+  ]
+  |> list.each(fn(row) {
+    let #(property, expected, reason) = row
+    let found =
+      chances_of(defence: defence_listing(listed: [#(property, 0.02)]))
+    assert list.zip(found, expected)
+      |> list.all(fn(pair) { near(value: pair.0, to: pair.1) })
+      as reason
+  })
+}
+
+/// Each row lists the mitigation offsets: DamageMitigationPctOffset 103 adds to all three
+/// types and 144, 145 and 146 each to its own (Physical, Tech, Magic), added to the
+/// formula's base before the Armor's rating, which is 0 here (`0x140464240`).
+pub fn a_players_mitigation_adds_the_two_mitigation_offsets_to_its_base_test() -> Nil {
+  use <- owned_test.run(10_000)
+  [
+    #([#(103, 0.1)], [0.1, 0.1, 0.1], "103 is every type's"),
+    #([#(144, 0.1)], [0.1, 0.0, 0.0], "144 is Physical's alone"),
+    #([#(145, 0.1)], [0.0, 0.1, 0.0], "145 is Tech's alone"),
+    #([#(146, 0.1)], [0.0, 0.0, 0.1], "146 is Magic's alone"),
+    #(
+      [#(103, 0.1), #(144, 0.02), #(145, 0.03), #(146, 0.04)],
+      [0.12, 0.13, 0.14],
+      "a type's mitigation is the two offsets added",
+    ),
+  ]
+  |> list.each(fn(row) {
+    let #(listed, expected, reason) = row
+    let defence = defence_listing(listed:)
+    assert list.zip(
+        [
+          defence.physical_mitigation,
+          defence.tech_mitigation,
+          defence.magic_mitigation,
+        ],
+        expected,
+      )
+      |> list.all(fn(pair) { near(value: pair.0, to: pair.1) })
+      as reason
+  })
 }
 
 pub fn a_creatures_hit_takes_the_shield_first_up_to_its_share_and_the_rest_from_health_test() -> Nil {

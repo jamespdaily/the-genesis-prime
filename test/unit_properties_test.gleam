@@ -17,9 +17,12 @@ import fixture_tables
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/unit_properties.{type Properties, Change, Changed}
+import genesis_prime/table/creature_level
 import genesis_prime/table/id.{UnitProperty2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table/unit_property2
+import genesis_prime/world_map/creature_columns
+import gleam/float
 import gleam/int
 import gleam/list
 import owned_test
@@ -535,4 +538,44 @@ pub fn a_rebase_keeps_a_live_modifier_and_reports_only_changes_test() -> Nil {
       #(UnitProperty2Id(35), 50.0),
     ])
   assert again == []
+}
+
+pub fn every_base_combat_property_is_the_last_creature_level_rows_value_at_its_id_less_100_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let tables = fixture_tables.shared()
+  let assert Ok(bases) = unit_properties.player_combat_bases(tables:)
+    as "the fixture holds CreatureLevel row 101"
+  assert list.map(bases, fn(base) { { base.0 }.value })
+    == list.map(properties_support.base_combat_rows, fn(row) { row.0 })
+    as "the 26 ids, in id order"
+  let assert Ok(last) =
+    creature_level.get(
+      tables:,
+      id: id.CreatureLevelId(unit_properties.high_property_creature_level),
+    )
+    as "the fixture holds the rows 1 to 101"
+  let columns = creature_columns.level_values(row: last)
+  list.each(properties_support.base_combat_rows, fn(row) {
+    let #(property, expected) = row
+    let assert Ok(base) = list.key_find(bases, UnitProperty2Id(property))
+      as "every id of the 26 has a base"
+    assert float32.to_bits(base) == float32.to_bits(expected)
+      as {
+        "UnitProperty2 "
+        <> int.to_string(property)
+        <> " is CreatureLevel row 101's column "
+        <> int.to_string(property - 100)
+        <> ", "
+        <> float.to_string(expected)
+      }
+    let assert Ok(column) = columns |> list.drop(property - 100) |> list.first
+      as "row 101 holds the columns 0 to 99"
+    assert float32.to_bits(column) == float32.to_bits(base)
+      as "the same word as the creature path reads (`0x1404585c0`)"
+    let assert Ok(row) =
+      unit_property2.get(tables:, id: UnitProperty2Id(property))
+      as "UnitProperty2 has the row"
+    assert int.bitwise_and(row.flags, 1) == 0
+      as "the client reads CreatureLevel for a creature's property only when flags bit 0 is clear (`0x1404585c0`)"
+  })
 }
