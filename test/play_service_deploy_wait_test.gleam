@@ -59,7 +59,7 @@ fn wait_clock_path(scene: Scene) -> String {
 }
 
 pub fn a_recording_the_server_stopped_writing_is_no_connection_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let open = "game_connection_open " <> deployed
   {
     use scene <- support.with_scene
@@ -81,7 +81,7 @@ pub fn a_recording_the_server_stopped_writing_is_no_connection_test() -> Nil {
 }
 
 pub fn a_stopped_server_is_not_waited_for_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use scene <- support.with_scene
   plant_recording(scene, last: read_line)
   assert returns(scene, wait("true")) == Ok(0)
@@ -91,7 +91,7 @@ pub fn a_stopped_server_is_not_waited_for_test() -> Nil {
 }
 
 pub fn a_wait_starts_again_after_a_run_that_found_no_connection_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use scene <- support.with_scene
   // A wait that began long ago, then a connection that closed.
   support.plant_home_file(
@@ -110,7 +110,7 @@ pub fn a_wait_starts_again_after_a_run_that_found_no_connection_test() -> Nil {
 }
 
 pub fn a_wait_goes_on_while_the_connection_stays_open_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use scene <- support.with_scene
   support.plant_home_file(
     scene:,
@@ -140,9 +140,14 @@ fn repository(containerfile: String) -> String {
 }
 
 pub fn an_image_input_form_the_reader_does_not_know_is_not_taken_as_no_change_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let rows = [
     #("a plain COPY", "FROM x\nCOPY src src\nRUN true", True),
+    #(
+      "a source named by two COPY lines",
+      "FROM x\nCOPY src src\nCOPY src s2",
+      True,
+    ),
     #("a COPY from ./", "FROM x\nCOPY ./src src", True),
     #("an ADD", "FROM x\nADD src src", False),
     #("a continued COPY", "FROM x\nCOPY src \\\n  src", False),
@@ -170,7 +175,7 @@ pub fn an_image_input_form_the_reader_does_not_know_is_not_taken_as_no_change_te
 }
 
 pub fn the_containerfile_is_an_image_input_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   use scene <- support.with_scene
   let both =
     repository("FROM x\nCOPY src src\nRUN one")

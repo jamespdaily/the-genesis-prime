@@ -17,13 +17,17 @@
 #   main's commit new, its check run passed, and its image   records it as deployed ($state/recorded) and
 #     inputs (what release/Containerfile copies, and           logs one line; no build, no migration, no
 #     priv/migrations, compared by git blob hashes) those      restart, so a merge of tools, tests or
-#     of the commit the server runs                            guidance never touches the running server
-#   main's commit new and its check run passed, a game       waits (one log line): no migration, no restart,
-#     connection open (the newest sitting folder of the        asked again at the next run; the wait is
-#     running commit holds a game connection recording         at most 3 hours from the first run that saw
-#     whose last line is not a closed line)                    the commit
-#   main's commit new and its check run passed, no game      applies the new migrations to the play
-#     connection open, or the 3 hours passed                   database, then replaces the server container
+#     of the commit the server runs                            guidance never touches the running server;
+#                                                            its dev/play_service scripts are installed
+#                                                            (the launcher takes effect at the next start)
+#   main's commit new and its check run passed, the server   waits (one log line): no migration, no restart,
+#     runs and a game connection is open (the newest           asked again at the next run; the wait is
+#     sitting folder of the running commit holds a game        at most 3 hours from the first run that
+#     connection recording written in the last 5 minutes       waited, and its clock starts again at any
+#     whose last line is not a closed line)                    run that finds no connection open
+#   main's commit new and its check run passed, the server   applies the new migrations to the play
+#     stopped, or no game connection open, or the 3 hours      database, then replaces the server container
+#     passed
 #                                                            and waits for its ready line; after 3 hours
 #                                                            with a connection open it logs one line and
 #                                                            posts one alert line (alert in lib.sh)
@@ -40,7 +44,8 @@
 #   main's commit holds no release/Containerfile           nothing, and it is not asked about again
 #                                                            (the commits before the service existed)
 #   this Mac's address changed, or the server stopped      replaces the server container with the same
-#                                                            image, no build
+#                                                            image, no build (also at the end of a run
+#                                                            that recorded a commit)
 #   none of these                                          nothing
 #
 # The server container is not started before Postgres answers, and restarts at
@@ -49,11 +54,13 @@
 # labelled with the commit and the address it was given, which is how the next
 # run knows what is deployed (a running container's labels cannot change, so a commit
 # recorded without a restart is a line "COMMIT DEPLOYED" in $state/recorded, valid while the
-# container still runs DEPLOYED; $state/waiting_since holds the newest commit a deploy waits for
-# and the epoch second of the first run that waited, kept while newer commits arrive); $state/good names the last commit that came up and
-# $state/skipped the commits not to try again. Before a deploy the installed copies
-# of these scripts (in $state/bin) are replaced with the new commit's and read again, so
-# the new commit's launcher starts the new container.
+# container still runs DEPLOYED; $state/waiting_since holds "DEPLOYED SINCE", the commit the
+# server runs and the epoch second of the first run that waited for a connection of it, kept
+# while newer commits arrive and removed by any run that finds no connection open);
+# $state/good names the last commit that came up and
+# $state/skipped the commits not to try again. Before a deploy, and when a commit is
+# recorded, the installed copies of these scripts (in $state/bin) are replaced with the
+# commit's and read again, so the new commit's launcher starts the next container.
 #
 # Only one run goes at a time: the lock is the folder $state/update.lock, whose
 # owner file (the process id) is written whole by a move. A lock whose owner is
@@ -83,6 +90,7 @@ here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=lib.sh
 . "$here/lib.sh"
 
+forget_closed_wait
 alert_stale_stands
 if live_lock_held; then
   log_once "a live session holds $home/live.lock; nothing done"
@@ -275,6 +283,20 @@ deploy() {
   return 1
 }
 
+# restart_when_needed: replaces the server container with the same image when this Mac's
+# address changed or the server is not running, unless a live session holds the lock.
+restart_when_needed() {
+  if [ -n "$deployed_commit" ] && { [ "$deployed_address" != "$address" ] || [ "$running" != true ]; }; then
+    if live_lock_held; then
+      log_once "a live session holds $home/live.lock; the server is not replaced"
+      return 0
+    fi
+    log "replacing $server_container: $deployed_commit, address $deployed_address -> $address, running $running"
+    run_server "genesis-play:$deployed_commit" "$deployed_commit" "$address"
+    wait_up || exit 1
+  fi
+}
+
 address=$GENESIS_PLAY_ADDRESS
 read -r deployed_commit deployed_address running <<<"$(server_state)"
 deployed_commit=${deployed_commit:-}
@@ -313,9 +335,15 @@ if [ -n "$main_commit" ] && [ "$main_commit" != "$deployed_commit" ]; then
       if [ -n "$deployed_commit" ] &&
         wanted=$(image_inputs "$main_commit") && held=$(image_inputs "$deployed_commit") &&
         [ "$wanted" = "$held" ]; then
+        # The scripts are installed first: a commit that changed only them is recorded too.
+        install_scripts "$main_commit" || { log "the scripts of $main_commit could not be installed; it is not recorded"; exit 1; }
         echo "$main_commit $deployed_commit" >"$state/recorded"
         rm -f "$state/waiting_since"
-        log "$main_commit has the image inputs of $deployed_commit; recorded as deployed, no rebuild and no restart"
+        log "$main_commit has the image inputs of $deployed_commit; recorded as deployed, scripts installed, no rebuild and no restart"
+        # shellcheck source=lib.sh
+        . "$here/lib.sh"
+        load_environment
+        restart_when_needed
         exit 0
       fi
       if ! podman image exists "genesis-play:$main_commit"; then
@@ -354,12 +382,4 @@ if [ -n "$main_commit" ] && [ "$main_commit" != "$deployed_commit" ]; then
   esac
 fi
 
-if [ -n "$deployed_commit" ] && { [ "$deployed_address" != "$address" ] || [ "$running" != true ]; }; then
-  if live_lock_held; then
-    log_once "a live session holds $home/live.lock; the server is not replaced"
-    exit 0
-  fi
-  log "replacing $server_container: $deployed_commit, address $deployed_address -> $address, running $running"
-  run_server "genesis-play:$deployed_commit" "$deployed_commit" "$address"
-  wait_up || exit 1
-fi
+restart_when_needed
