@@ -8,9 +8,8 @@ Settings come from the environment; on a development machine
 $GENESIS_HOME/env.sh (default ~/.genesis-prime/env.sh) sets them, and
 ./setup-check and the full check read it (setup_check/environment.sh).
 GENESIS_NO_CLIENT=1 marks a machine without the client, such as a fork's CI: the
-client and the client query process are not checked there. The patched OTP is
-checked there only when GENESIS_OTP_DIR is set, as CI does for the build it
-caches. GENESIS_NO_QUERY_PROCESS=1 marks a machine that has the client's files
+client and the client query process are not checked there.
+GENESIS_NO_QUERY_PROCESS=1 marks a machine that has the client's files
 and no Ghidra, such as CI with the client's data (dev/client_data.sh): the
 client query process is not checked there, the client's files still are.
 
@@ -20,7 +19,6 @@ Usage: ./setup-check
 import hashlib
 import os
 import re
-import shutil
 import subprocess
 import sys
 import time
@@ -39,8 +37,6 @@ import ghidra_env  # noqa: E402
 TARGET_BUILD = extract_tables.TARGET_BUILD
 POSTGRES_MAJOR = 18  # Jim's choice
 CLOCK_TOLERANCE_SECONDS = 1.0
-MARKER = "GENESIS_PATCHES"
-BUILD_SCRIPT = "setup_check/build_patched_otp.sh"
 
 
 @dataclass(frozen=True)
@@ -78,11 +74,12 @@ def _first_line(text: str) -> str:
     return lines[0] if lines else "no output"
 
 
-def _tool(machine: Machine, tool: str, name: str, command: list[str], pattern: str) -> list[Missing]:
-    """A tool whose version command prints the first match of pattern."""
+def _tool(machine: Machine, tool: str, name: str, command: list[str], pattern: str, also: str = "") -> list[Missing]:
+    """A tool whose version command prints the first match of pattern; `also` is
+    more fix text after the asdf command."""
     pinned = tool_versions(machine)[tool]
     part = "%s %s" % (name, pinned)
-    fix = "install %s %s, the version in .tool-versions (asdf install %s %s)" % (name, pinned, tool, pinned)
+    fix = "install %s %s, the version in .tool-versions (asdf install %s %s%s)" % (name, pinned, tool, pinned, also)
     code, output = machine.run(command)
     if code != 0:
         return [Missing(part, "nothing" if code == 127 else _first_line(output), fix)]
@@ -105,64 +102,13 @@ OTP_VERSION_COMMAND = (
 
 
 def check_erlang(machine: Machine) -> list[Missing]:
-    """OTP as pinned, and the patched build the full check runs on
-    (GENESIS_OTP_DIR, with its patch marker, and the erl found on PATH being
-    that build's), except where GENESIS_NO_CLIENT=1 and GENESIS_OTP_DIR is
-    unset."""
-    missing = _tool(machine, "erlang", "Erlang/OTP", ["erl", "-noshell", "-eval", OTP_VERSION_COMMAND], r"^(\d+(?:\.\d+)*)\s*$")
-    if _no_client(machine) and not machine.env.get("GENESIS_OTP_DIR"):
-        return missing
-    return missing + _patched_otp(machine) + _erl_on_path(machine)
-
-
-def _otp_dir(machine: Machine) -> Path:
-    if machine.env.get("GENESIS_OTP_DIR"):
-        return Path(machine.env["GENESIS_OTP_DIR"])
-    home = machine.env.get("GENESIS_HOME") or os.path.join(machine.env.get("HOME") or os.path.expanduser("~"), ".genesis-prime")
-    return Path(home) / ("otp-%s-gc-marker" % tool_versions(machine)["erlang"])
-
-
-def _patched_otp(machine: Machine) -> list[Missing]:
-    """The build in GENESIS_OTP_DIR, with a line in GENESIS_PATCHES, naming the
-    patch and its SHA-256, for every setup_check/*.patch."""
-    version = tool_versions(machine)["erlang"]
-    directory = _otp_dir(machine)
-    patches = sorted((machine.repository / "setup_check").glob("*.patch"))
-    names = ", ".join(patch.name for patch in patches) or "no patch"
-    fix = "rebuild the patched OTP with %s (builds into GENESIS_OTP_DIR=%s, applying %s)" % (BUILD_SCRIPT, directory, names)
-    if not (directory / "bin" / "erl").is_file():
-        return [Missing("Patched OTP %s at %s (%s)" % (version, directory, names), "nothing", fix)]
-    marker = directory / MARKER
-    if not marker.is_file():
-        return [Missing("Patched OTP %s with %s" % (version, names), "no %s in %s" % (MARKER, directory), fix)]
-    built = dict(line.split()[:2] for line in marker.read_text().splitlines() if len(line.split()) >= 2)
-    missing = []
-    for patch in patches:
-        wanted = hashlib.sha256(patch.read_bytes()).hexdigest()
-        if patch.name not in built:
-            found = "no line for %s in %s" % (patch.name, marker)
-        elif built[patch.name] != wanted:
-            found = "built from %s with SHA-256 %s, the file in setup_check/ has %s" % (patch.name, built[patch.name], wanted)
-        else:
-            continue
-        missing.append(Missing("Patched OTP %s with %s" % (version, patch.name), found, fix))
-    return missing
-
-
-def _erl_on_path(machine: Machine) -> list[Missing]:
-    """The erl PATH finds first is the file bin/erl of the build in
-    GENESIS_OTP_DIR, symbolic links resolved on both sides. Nothing to say when
-    the build has no bin/erl or PATH finds no erl: the checks above name those."""
-    directory = _otp_dir(machine)
-    patched = directory / "bin" / "erl"
-    found = shutil.which("erl", path=machine.env.get("PATH", ""))
-    if not patched.is_file() or found is None:
-        return []
-    if Path(found).resolve() == patched.resolve():
-        return []
-    fix = "load the environment in this shell, `. setup_check/environment.sh`, which puts the patched OTP's bin first on PATH (PATH=%s:$PATH)" % (directory / "bin")
-    return [Missing("the erl on PATH from the patched OTP at %s" % patched,
-                    "%s resolves to %s, not %s" % (found, Path(found).resolve(), patched.resolve()), fix)]
+    """The erl on PATH is OTP as pinned. Homebrew's `erlang` is the Mac's, and the
+    pin is the version it holds; the release image and CI install the pin."""
+    return _tool(machine, "erlang", "Erlang/OTP", ["erl", "-noshell", "-eval", OTP_VERSION_COMMAND],
+                 r"^(\d+(?:\.\d+)*)\s*$",
+                 "; on a Mac with Homebrew, brew upgrade erlang then brew pin erlang when its OTP is older than"
+                 " the pin; Homebrew cannot install an older OTP, so when its OTP is newer, move the erlang pin"
+                 " in .tool-versions to it in a pull request")
 
 
 def check_rebar(machine: Machine) -> list[Missing]:

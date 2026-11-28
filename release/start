@@ -4,7 +4,7 @@
 # host name or address, not a socket directory), PGPORT, PGUSER, PGDATABASE,
 # PGPASSWORD (optional), GENESIS_TABLE_DIR and GENESIS_TERRAIN_DIR. The VM's
 # flags are in vm.args beside this script, and `erl` is the first one on PATH,
-# which must be the patched OTP.
+# which must be the OTP of .tool-versions.
 
 set -eu
 
