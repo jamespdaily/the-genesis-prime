@@ -59,16 +59,29 @@ pub fn relayed(
   })
 }
 
+/// What a step sends as a notice (`Noticed`), each as the connection, the stay it is sent
+/// for and the notice, in the order sent.
+pub fn notices(
+  taken taken: ServiceStep(map_message.Outgoing),
+) -> List(#(Int, Stay, map_message.Notice)) {
+  list.filter_map(support.sends(taken), fn(sent) {
+    case sent.1 {
+      map_message.Noticed(stay:, notice:) -> Ok(#(sent.0, stay, notice))
+      _ -> Error(Nil)
+    }
+  })
+}
+
 /// The notices the step sends to connection `connection`, each with the stay it is sent
 /// for, in order.
 pub fn notices_to(
   taken taken: ServiceStep(map_message.Outgoing),
   connection connection: Int,
 ) -> List(#(Stay, map_message.Notice)) {
-  list.filter_map(sent_to(taken:, connection:), fn(sent) {
-    case sent {
-      map_message.Noticed(stay:, notice:) -> Ok(#(stay, notice))
-      _ -> Error(Nil)
+  list.filter_map(notices(taken:), fn(sent) {
+    case sent.0 == connection {
+      True -> Ok(#(sent.1, sent.2))
+      False -> Error(Nil)
     }
   })
 }

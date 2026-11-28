@@ -26,7 +26,7 @@
 //// connection c1                      map                                      shell
 ////   Join(c1, character, place, stay, alive, hidden) ─▶ Asked ─▶ loadout of its class and faction
 ////                                          a c1 that is in the map already is removed as a Leave
-////                                            removes it (its creatures told `Unseen`, `Withdrew`,
+////                                            removes it (its creatures told `Unseen` and
 ////                                            `CasterGone` of its old address), then joins as below
 ////                                          unit id u = next unit id; next + 1
 ////                                          address a1 = the next address of this run (`issue_address`)
@@ -407,8 +407,9 @@
 ////   table below): `player_at` finds a connection only while its unit is in the map.
 //// - **Held until the player interface names addresses.** The connection's stay count,
 ////   `Join.stay`, `Player.stay`, `Entered.stay`, `player_at`, `Delivery`, `by_address`,
-////   `players` keyed by connection and the type parameter of
-////   genesis_prime/game/held_changes still route a message to a player by connection.
+////   `UnitAddress.joiner` (a creature's tie-break by connection, kept when it goes),
+////   `players` keyed by connection and the type parameter of genesis_prime/game/held_changes
+////   still route a message to a player by connection.
 //// - **Unit ids** start at 1 and are never given to two units at once, whoever
 ////   leaves or ends: the client refuses a 0x262 whose unit id it already holds
 ////   (opcode.0x262), and a 0x262 with unit id 0 makes the client's controlled unit
@@ -422,8 +423,7 @@
 ////   caster's unit id in the rest of the 32 bits (`0x140561c30`): a map that has given
 ////   them all crashes, and its players' connections end.
 //// - **A second Join from a connection in the map** removes the first unit as a Leave
-////   does, joins a new unit under a new address, and logs an error: the connection's
-////   rule joins once.
+////   does, then joins a new unit under a new address, and logs nothing.
 //// - **A Leave** removes the connection's player with its unit and its watch, tells each
 ////   player that saw it `UnseenBy` and `PlayerUnseen`, and is answered `Left`, so the
 ////   connection, which lives on in character select, is not watched by a map it has
@@ -639,7 +639,7 @@
 //// | a `Snapshot` names such an address | dropped, as a snapshot of a pair that ended is (`a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test`) |
 //// | a creature takes `Unseen` of a joiner's earlier address after `Seen` of its later one | the later viewer stays: viewers are keyed by address (`a_creature_names_a_viewer_by_its_address_and_an_unseen_of_an_earlier_address_keeps_the_later_viewer_test`) |
 //// | a creature is told `Seen` of a joiner's new address while it charges a telegraph at the first | the row bound to the first address is gone and the new unit, never its target, is struck by nothing: the client drops a telegraph when its unit is gone (`0x14054b1b0.unit_gone`) and the 0xAD of the new join removes every unit (`a_telegraph_whose_target_left_and_joined_again_during_the_charge_strikes_nobody_test`) |
-//// | a creature picks among players that tie (the first target, a tie of threat, a capped area) | the lowest connection of the joiners, as it did when it named connections: a server's choice, the client holds no rule (`a_creature_that_ranks_players_ties_by_their_connection_and_not_by_the_order_they_joined_test`) |
+//// | a creature picks among players that tie (the first target, a tie of threat) | the lowest connection of the joiners, as it did when it named connections: a server's choice, the client holds no rule (`a_creature_that_ranks_players_ties_by_their_connection_and_not_by_the_order_they_joined_test`) |
 //// | two runs of a map both issue the connection the number 1 | the host's own stay count fences, as the address is in no player-bound message (`a_map_change_between_two_runs_that_both_issue_stay_1_drops_the_first_runs_notice_test`) |
 //// | a creature relays to an address of the run | the map delivers it to the connection that joined it, for the stay of that join (`a_creature_relay_reaches_the_host_by_the_connection_and_the_connections_stay_test`) |
 //// | a join is answered with an address | the next of the run, never one a join of the run had, a restarted run's apart (`a_map_run_never_issues_one_address_twice_over_any_sequence_of_joins_leaves_and_ends_test`, `a_restarted_run_that_reuses_a_wire_unit_id_names_another_address_test`, `a_join_issues_the_next_address_and_keeps_the_connections_stay_test`) |

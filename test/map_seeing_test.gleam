@@ -20,9 +20,7 @@
 
 import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/map/message.{
-  Join, Joined, Leave, Moved, Noticed, SeenBy, UnseenBy,
-} as map_message
+import genesis_prime/map/message.{Join, Joined, Leave, Moved, SeenBy, UnseenBy} as map_message
 import genesis_prime/shared/sight
 import genesis_prime/step.{
   type ServiceStep, Asked, CallerId, ConnectionId, LogError, OwnEvent, Started,
@@ -35,6 +33,7 @@ import gleam/int
 import gleam/list
 import gleam/set
 import gleam/string
+import map_player_support as player_support
 import map_spawn_support
 import map_support
 import owned_test
@@ -158,24 +157,10 @@ fn two_players(x: Float) -> #(State, ServiceStep(map_message.Outgoing)) {
 fn notices(
   taken: ServiceStep(map_message.Outgoing),
 ) -> List(#(Int, stay.Stay, map_message.Notice)) {
-  list.filter_map(support.sends(taken), fn(sent) {
-    case sent.1 {
-      Noticed(notice: map_message.PlayerUnseen(..), ..) -> Error(Nil)
-      Noticed(stay:, notice:) -> Ok(#(sent.0, stay, notice))
-      Joined(..)
-      | map_message.NotJoined(..)
-      | map_message.Summoned(..)
-      | map_message.NotSummoned(..)
-      | map_message.Left
-      | map_message.Seen(..)
-      | map_message.Unseen(..)
-      | map_message.Relayed(..)
-      | map_message.Retire
-      | map_message.Approached(..)
-      | map_message.Withdrew(..)
-      | map_message.PlayerDied(..)
-      | map_message.CasterGone(..)
-      | map_message.ToldCreature(..) -> Error(Nil)
+  list.filter(player_support.notices(taken:), fn(sent) {
+    case sent.2 {
+      map_message.PlayerUnseen(..) -> False
+      _ -> True
     }
   })
 }

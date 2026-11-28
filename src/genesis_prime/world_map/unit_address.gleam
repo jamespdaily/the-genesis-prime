@@ -54,8 +54,8 @@ pub fn number(address address: UnitAddress) -> Int {
 /// The order of two addresses: the number of the connection each was issued for, as a
 /// creature ordered connections, then the number of the address, then the run, so two
 /// addresses of one connection (it joined again) and of two runs are ordered too. Where a
-/// creature picks among players that tie (the first target, a tie of threat, the players of
-/// a capped area), it picks the lowest by this order: a choice of the server's, since the
+/// creature picks among players that tie (the first target, a tie of threat), it picks the
+/// lowest by this order: a choice of the server's, since the
 /// client holds no rule for it, and the one it made before addresses named players.
 pub fn compare(
   first first: UnitAddress,
@@ -66,13 +66,13 @@ pub fn compare(
   |> order.break_tie(int.compare(first.incarnation, second.incarnation))
 }
 
-/// The addresses of a set in the order of their numbers, so what is sent to each is the
-/// same on every run.
+/// The addresses of a set in the order of `compare`, so what is sent to each is the same
+/// on every run.
 pub fn sorted(addresses addresses: Set(UnitAddress)) -> List(UnitAddress) {
   list.sort(set.to_list(addresses), compare)
 }
 
-/// The entries of a dict keyed by address in the order of the addresses' numbers, so
+/// The entries of a dict keyed by address in the order of `compare` of the addresses, so
 /// what is sent to each is the same on every run.
 pub fn sorted_entries(
   entries entries: Dict(UnitAddress, value),

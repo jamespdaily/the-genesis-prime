@@ -528,7 +528,7 @@ pub type GoRound {
 }
 
 /// The strikes of a go not answered yet. `Pending` holds the generation of the go's
-/// `StrikeDeadline` timer with the key of each strike not answered, each with the connection it
+/// `StrikeDeadline` timer with the key of each strike not answered, each with the address it
 /// went to. It is built only by `pending` and `without_answer`, which give `Complete` for no
 /// key, so a go never awaits an answer with no deadline to end the wait, and a deadline is
 /// never held for a go that awaits nothing.
@@ -571,7 +571,7 @@ pub type Start {
 
 /// The unit a charge is cast on, which the 0x7ff names as its primary target and the client
 /// draws a client-placed target row on (`opcode.0x7ff`, `0x140546e60.placement_branches`): its
-/// connection, and its unit and place when the cast began, the one value the entries are made
+/// address, and its unit and place when the cast began, the one value the entries are made
 /// from and a fixed row is struck around. It is the target the creature had then; the 0x908
 /// target of a later moment does not change it.
 pub type CastTarget {
@@ -1805,7 +1805,7 @@ fn tick_after(
 }
 
 /// The creature casts its attack on its target: 0x7ff to its viewers, the strike to
-/// the target's connection, and the round's deadline.
+/// the target's address, and the round's deadline.
 fn strikes(
   state state: State,
   fighter fighter: Fighter,
@@ -1918,7 +1918,7 @@ fn answered_strike(
   }
 }
 
-/// The entry of `round` that awaits the answer of `key`, with the connection it went to.
+/// The entry of `round` that awaits the answer of `key`, with the address it went to.
 fn answered_entry(
   round round: Round,
   key key: Key,
@@ -2335,9 +2335,9 @@ fn strikes_sent(
   let #(state, deadline) = generation(state)
   let keyed =
     list.map(struck, fn(found) {
-      let #(connection, threat, sighting) = found
+      let #(address, threat, sighting) = found
       #(
-        connection,
+        address,
         threat,
         strike_tell.Key(
           cast_id: round.cast_id,
@@ -2459,7 +2459,7 @@ fn centre_of(
 }
 
 /// The unit the round's charge is cast on while it is in the viewers' world, which is while
-/// its connection is a viewer of the creature.
+/// its address is a viewer of the creature.
 fn cast_target_in_world(
   round round: Round,
   viewers viewers: Set(UnitAddress),

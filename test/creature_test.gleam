@@ -301,10 +301,10 @@ pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothi
 
 pub fn a_creature_names_a_viewer_by_its_address_and_an_unseen_of_an_earlier_address_keeps_the_later_viewer_test() -> Nil {
   use <- owned_test.run(5000)
-  // One joiner, two joins of one run: the map names the first unit by address 5 and the
-  // second by address 6, each under its own sight.
+  // One connection (5), two joins of one run: the map names the first unit by address 5
+  // and the second by address 6, each under its own sight.
   let earlier = map_support.address(number: 5)
-  let later = map_support.address(number: 6)
+  let later = map_support.address_for(incarnation: 1, number: 6, joiner: 5)
   let #(state, _) =
     feed(state: creature(), at_ms: 5000, event: OwnEvent(Started))
   let #(state, _) =
@@ -322,8 +322,14 @@ pub fn a_creature_names_a_viewer_by_its_address_and_an_unseen_of_an_earlier_addr
         generation: generation.after(generation: generation.first()),
       ),
     )
-  assert list.map(snapshots(snapshot), fn(sent) { #(sent.0, sent.1) })
-    == [#(6, generation.after(generation: generation.first()))]
+  assert list.filter_map(creature_news_support.to_the_map(snapshot), fn(sent) {
+      case sent {
+        creature.Snapshot(by:, generation:, ..) -> Ok(#(by, generation))
+        creature.Broadcast(..) | creature.Relay(..) | creature.Expired(..) ->
+          Error(Nil)
+      }
+    })
+    == [#(later, generation.after(generation: generation.first()))]
     as "the second Seen is answered with a snapshot for its own address"
   let #(state, _) =
     told(

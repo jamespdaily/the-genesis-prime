@@ -229,7 +229,8 @@ pub type Message {
   /// A tell of the player of the unit `from` to the creature `unit_id` of life `life`: a
   /// strike, a move, an answer or an effect of its casts (`map_message.Inbound`). A tell,
   /// from a connection. The map admits it by the creature's state, the payload's kind and
-  /// whether `from` is a unit of this run (a tell of a unit that ended is dropped), and
+  /// whether `from` is a unit of this run (only a `TargetMoved`, `ModifierStarts` or `CastViewSet`
+  /// of a unit that ended is dropped; the other kinds are delivered), and
   /// sends the creature `ToldCreature` (`told_creature`).
   TellCreature(from: UnitAddress, unit_id: Int, life: Int, payload: Inbound)
   /// The owner's snapshot of the sight `generation` that `viewer` has of the player of

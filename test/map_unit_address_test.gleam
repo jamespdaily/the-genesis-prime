@@ -12,7 +12,7 @@
 ////   its Leave, so the map's old second-join path is gone.
 
 import connection_rule_support as support
-import genesis_prime/map/message.{Joined, Noticed} as map_message
+import genesis_prime/map/message.{Joined} as map_message
 import genesis_prime/shared/strike_tell
 import genesis_prime/step.{type ServiceStep, OwnEvent, Started, Told, WatchEnded}
 import genesis_prime/world_map/map.{type State}
@@ -21,6 +21,7 @@ import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/list
 import gleam/set
+import map_player_support as player_support
 import map_spawn_support as spawns
 import map_support
 import owned_test
@@ -160,12 +161,7 @@ pub fn a_restarted_run_that_reuses_a_wire_unit_id_names_another_address_test() -
 fn notice_stays(
   taken: ServiceStep(map_message.Outgoing),
 ) -> List(#(Int, stay.Stay)) {
-  list.filter_map(support.sends(taken), fn(sent) {
-    case sent.1 {
-      Noticed(stay:, ..) -> Ok(#(sent.0, stay))
-      _ -> Error(Nil)
-    }
-  })
+  list.map(player_support.notices(taken:), fn(sent) { #(sent.0, sent.1) })
 }
 
 pub fn a_join_issues_the_next_address_and_keeps_the_connections_stay_test() -> Nil {
