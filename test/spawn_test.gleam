@@ -2690,7 +2690,7 @@ pub fn a_creature_with_flags_bit_0_and_a_recorded_auto_attack_special_or_kind_ro
       "an auto-attack row",
     ),
     #(
-      spawn_support.kinds_with_specials(creature_id: 8047, spell4_ids: [5649]),
+      spawn_support.kinds_with_specials(creature_id: 8047, spell4_ids: [55_317]),
       "a special row",
     ),
     #(

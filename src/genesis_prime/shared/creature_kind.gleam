@@ -456,5 +456,5 @@ pub fn kind_of(kinds kinds: Kinds, creature2_id creature2_id: Int) -> Kind {
 /// Whether the creature has an attack row of its own: a kind row, an auto-attack row or a
 /// special row. The default row 0 is no creature's own.
 pub fn has_row(kinds kinds: Kinds, creature2_id creature2_id: Int) -> Bool {
-  !dict.has_key(kinds.by_creature, creature2_id)
+  dict.has_key(kinds.by_creature, creature2_id)
 }

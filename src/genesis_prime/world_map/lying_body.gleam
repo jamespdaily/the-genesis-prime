@@ -1,10 +1,13 @@
 //// Which creatures take part in combat: a creature the client draws as a lying body does
-//// not, unless a kill objective names it. The load asks it once for each shared combat
+//// not, nor does one a player cannot target that has no attack row of its own, unless a kill
+//// objective names it. The load asks it once for each shared combat
 //// (`spawn`), and the answer is `creature_life.Combat.fights`.
 ////
 //// ```
 //// the tables' kill objectives ─▶ kill_named ─▶ the creature ids they name
-//// Creature2 row + that set    ─▶ fights     ─▶ False: aggroes no one (map ring), no strike or approach
+//// Creature2 row, that set,
+//// and whether the kinds hold
+//// a row of its own for it     ─▶ fights     ─▶ False: aggroes no one (map ring), no strike or approach
 ////                                                     starts a fight (creature_fight), no area picks it (shown)
 ////                                              True:  as every creature fights
 //// ```
@@ -13,6 +16,11 @@
 ////   its 0x262 carries, and no health write changes it (`Creature2.uiFlags.bit8`,
 ////   `0x140456960`, `0x1404602e0`). The server keeps such a creature standing, so the client
 ////   draws what the data says: a body that does nothing.
+//// - A creature whose flags have bit 0 is one a player cannot target: only its own activate
+////   spell, or a spell whose cast group names it, reaches it (`Creature2.flags.bit0`,
+////   `0x1403b44b0`). The client holds no attack for any creature, so without a row of its
+////   own in `creature_kind`, `creature_auto_attack` or `creature_special` (the retail record;
+////   the default row 0 is no creature's own) such a creature fights no one: a server choice.
 //// - A creature a kill objective names keeps fighting. Which creatures an objective names is
 ////   the mapping the objective's creatures are placed by (`target_group.placed_creatures`):
 ////   the creature of a type 2 objective and the creatures its type 8 or 16 TargetGroup lists.
@@ -37,6 +45,10 @@ import gleam/set.{type Set}
 /// The Creature2 uiFlags bit the client draws a lying body by (`Creature2.uiFlags.bit8`).
 const drawn_dead_flag = 0x100
 
+/// The Creature2 flags bit that lets only a creature's own activate spell, or a spell whose
+/// cast group names it, target it (`Creature2.flags.bit0`, `0x1403b44b0`).
+const untargetable_flag = 0x1
+
 /// The Creature2 ids the kill objectives of the tables name, for `fights`, read once for a
 /// load.
 pub fn kill_named(tables tables: table_store.Tables) -> Set(Int) {
@@ -50,26 +62,29 @@ pub fn kill_named(tables tables: table_store.Tables) -> Set(Int) {
   |> set.from_list
 }
 
-/// Whether the creature of the Creature2 row takes part in combat: a creature the client
-/// draws as a lying body does not, unless a kill objective names it (`kill_named`).
+/// Whether the creature of the Creature2 row takes part in combat. A creature a kill objective
+/// names does (`kill_named`). Any other does not when the client draws it as a lying body, or
+/// when its flags have bit 0 (a player cannot target it) and it has no attack row of its own
+/// (`has_attack_row`, `creature_kind.has_row`): the client holds no attack for a creature, so
+/// only a retail record gives one.
 pub fn fights(
   kill_named kill_named: Set(Int),
   has_attack_row has_attack_row: Bool,
   creature creature: Creature2,
 ) -> Bool {
-  {
-    int.bitwise_and(creature.ui_flags, drawn_dead_flag) == 0
-    || set.contains(kill_named, creature.id)
-  }
-  && has_attack_row
+  let drawn_dead = int.bitwise_and(creature.ui_flags, drawn_dead_flag) != 0
+  let untargetable_and_unarmed =
+    int.bitwise_and(creature.flags, untargetable_flag) != 0 && !has_attack_row
+  set.contains(kill_named, creature.id)
+  || { !drawn_dead && !untargetable_and_unarmed }
 }
 
 /// What the rule leaves undone, for the coverage measure.
 pub fn gaps() -> List(gap.Entry) {
   [
     gap.Entry(
-      area: "Creatures that cannot be attacked",
-      missing: "a creature whose Creature2 flags have bit 0 and not uiFlags bit 8 (a guard, a trap, a quest giver, a vendor, a captive) aggroes and fights a player on sight, though the client refuses every cast of a player's at it that has no cast group: only a spell its cast group names, or its own activate spell, reaches it; of the world database's 48,170 NonPlayer spawns, 6,216 (2,337 creature rows) are Hostile to a player faction, have no kill objective and are such a creature, 198 of them with retail-recorded spells",
+      area: "Creatures that cannot be attacked and strike",
+      missing: "a creature whose Creature2 flags have bit 0 and that has no attack row of its own (kind, auto-attack or special) never fights, since the client holds no creature attack and a player cannot target it; a bit 0 creature that retail records as striking (traps, turrets, scripted bosses: 64 creatures by the retail record) waits for the import of its retail rows, and so does each hazard without a record, a mine or a security beam, which hurts no one until then",
     ),
     gap.Entry(
       area: "Creatures drawn dead",
