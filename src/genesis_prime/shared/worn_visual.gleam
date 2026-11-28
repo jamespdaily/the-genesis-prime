@@ -1,7 +1,10 @@
 //// How a worn item is drawn on its wearer: the model slot and the display the
 //// client sets for it. The client draws a unit's armor and weapon only from the
 //// item visuals of its 0x262, never from the items it holds, so the server
-//// sends one per worn item (`opcode.0x262.worn_visuals`).
+//// sends one per worn item (`opcode.0x262.worn_visuals`). The character list
+//// carries the same visuals and a slot mask over them, since the select screen
+//// draws an armour or weapon slot only where its mask bit is set
+//// (`opcode.0x117.costume_slots`).
 ////
 //// ```
 //// Item2 row ─▶ type ─▶ ItemSlot id ───────────────────────────────▶ slot
@@ -31,8 +34,8 @@
 
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/table/id.{
-  type ItemDisplayId, type ItemSlotId, Item2Id, Item2TypeId, ItemDisplayId,
-  ItemSlotId,
+  type Item2Id, type ItemDisplayId, type ItemSlotId, Item2Id, Item2TypeId,
+  ItemDisplayId, ItemSlotId,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/item2_type
@@ -78,6 +81,17 @@ pub fn describe(error error: WornVisualError) -> String {
       <> ", which dresses the item "
       <> int.to_string(item2_id)
   }
+}
+
+/// The sentence for a worn item that is not drawn, for the log.
+pub fn describe_undrawn(
+  item2_id item2_id: Item2Id,
+  error error: WornVisualError,
+) -> String {
+  "the worn item "
+  <> int.to_string(item2_id.value)
+  <> " is not drawn: "
+  <> describe(error:)
 }
 
 /// Item2.flags 0x4000: an item the client never dresses (0x140444130).
@@ -145,6 +159,100 @@ fn display_of(
           ))
       }
     display, _ -> Ok(Some(ItemDisplayId(display)))
+  }
+}
+
+/// A drawn visual and the item that gave it.
+pub type Drawn {
+  Drawn(item2_id: Item2Id, visual: WornVisual)
+}
+
+/// What a list of worn items is drawn as: the visual of each that is drawn, in
+/// slot order (items of one slot in the order given), and each item whose
+/// visual the tables cannot give, with the reason. An item with no display, and
+/// one the client never dresses, is in neither.
+pub type Worn {
+  Worn(drawn: List(Drawn), undrawn: List(#(Item2Id, WornVisualError)))
+}
+
+/// The visuals of worn items, in slot order. One rule for the world, which
+/// sends them in 0x262 (`game/gear`), and the character list.
+pub fn of_items(
+  tables tables: table_store.Tables,
+  item2_ids item2_ids: List(Item2Id),
+) -> Worn {
+  let seen =
+    list.map(item2_ids, fn(item2_id) {
+      #(item2_id, of_item(tables:, item2_id: item2_id.value))
+    })
+  let drawn =
+    list.filter_map(seen, fn(pair) {
+      case pair.1 {
+        Ok(Some(visual)) -> Ok(Drawn(item2_id: pair.0, visual:))
+        Ok(None) | Error(_) -> Error(Nil)
+      }
+    })
+    |> list.sort(fn(first, second) {
+      int.compare(first.visual.slot.value, second.visual.slot.value)
+    })
+  let undrawn =
+    list.filter_map(seen, fn(pair) {
+      case pair.1 {
+        Error(error) -> Ok(#(pair.0, error))
+        Ok(_) -> Error(Nil)
+      }
+    })
+  Worn(drawn:, undrawn:)
+}
+
+/// The slot mask, item ids and dyes of the character list's entry
+/// (`CharacterListEntry.costume_slot_mask`, `costume_item_ids`, `costume_dyes`).
+/// The ids and dyes are empty when the mask is 0 and seven long otherwise, the
+/// slots the client reads.
+pub type SlotMask {
+  SlotMask(mask: Int, item2_ids: List(Item2Id), dyes: List(Int))
+}
+
+/// The mask bit the select screen reads for an armour or weapon slot: slots 1 to
+/// 6 are bits 0 to 5 and slot 20 is bit 6; any other slot is drawn from the list
+/// alone (`LuaApplyCharacterToActor` 0x140027380).
+fn mask_bit(slot slot: Int) -> Result(Int, Nil) {
+  case slot {
+    20 -> Ok(6)
+    slot if slot >= 1 && slot <= 6 -> Ok(slot - 1)
+    _ -> Error(Nil)
+  }
+}
+
+/// The slot mask of drawn visuals: a bit for each armour or weapon slot with a
+/// visual, and the id of the item that gave it in the bit's place, 0 elsewhere,
+/// with a dye of 0 beside each (the dye of a visual is 0 as in `item_visual`). The
+/// client draws these slots from the item the bit names, which for an item
+/// with no display of its own (`itemDisplayId` 0) falls back to the list's
+/// visual (`opcode.0x117.costume_slots`).
+pub fn slot_mask(drawn drawn: List(Drawn)) -> SlotMask {
+  let bits =
+    list.filter_map(drawn, fn(item) {
+      case mask_bit(slot: item.visual.slot.value) {
+        Ok(bit) -> Ok(#(bit, item.item2_id))
+        Error(Nil) -> Error(Nil)
+      }
+    })
+  case bits {
+    [] -> SlotMask(mask: 0, item2_ids: [], dyes: [])
+    _ ->
+      SlotMask(
+        mask: list.fold(bits, 0, fn(mask, pair) {
+          int.bitwise_or(mask, int.bitwise_shift_left(1, pair.0))
+        }),
+        item2_ids: list.map([0, 1, 2, 3, 4, 5, 6], fn(bit) {
+          case list.key_find(list.reverse(bits), bit) {
+            Ok(item2_id) -> item2_id
+            Error(Nil) -> Item2Id(0)
+          }
+        }),
+        dyes: [0, 0, 0, 0, 0, 0, 0],
+      )
   }
 }
 

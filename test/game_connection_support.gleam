@@ -391,7 +391,11 @@ pub fn listed(
   answer(
     state:,
     taken:,
-    outcome: step.Answer(FromStore(ForSelect(Listed(characters:)))),
+    outcome: step.Answer(
+      FromStore(
+        ForSelect(Listed(characters: character_support.unequipped(characters))),
+      ),
+    ),
   )
 }
 

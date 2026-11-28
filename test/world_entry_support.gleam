@@ -315,10 +315,10 @@ pub fn answered(
 /// other class or faction holds none.
 pub fn novice_items(character character: Character) -> List(HeldItem) {
   case
-    list.find(novice_tables.sets(), fn(set) {
-      set.class_id == character.class_id.value
-      && set.faction_id == character.faction_id
-    })
+    novice_tables.set_of(
+      class_id: character.class_id.value,
+      faction_id: character.faction_id,
+    )
   {
     Ok(set) ->
       list.index_map(novice_tables.equipped_of(set:), fn(pair, index) {

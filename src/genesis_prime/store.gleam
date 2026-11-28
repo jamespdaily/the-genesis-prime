@@ -821,12 +821,18 @@ pub type ItemsAnswer {
   SaveRefused(constraint: String)
 }
 
+/// One character of the account's list with the Item2 ids of the items it holds
+/// at location 0 (worn), in bag order, which the select screen draws on it.
+pub type ListedCharacter {
+  ListedCharacter(character: Character, worn: List(Item2Id))
+}
+
 /// What the store answers character select, one variant for each of its
 /// requests.
 pub type SelectAnswer {
   /// The account's characters, in the order they were created; none when it
   /// has none, or when no such account exists.
-  Listed(characters: List(Character))
+  Listed(characters: List(ListedCharacter))
   Created(answer: CreateAnswer)
   Deleted(answer: DeleteAnswer)
   Renamed(answer: RenameAnswer)

@@ -201,10 +201,12 @@ pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_then_0
       outcome: step.Answer(
         FromStore(
           ForSelect(
-            Listed([
-              game_connection_support.character(id: 5, name: "Eve", seed: 2),
-              new,
-            ]),
+            Listed(
+              character_support.unequipped([
+                game_connection_support.character(id: 5, name: "Eve", seed: 2),
+                new,
+              ]),
+            ),
           ),
         ),
       ),

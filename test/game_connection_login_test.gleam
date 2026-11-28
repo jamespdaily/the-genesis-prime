@@ -23,6 +23,7 @@
 ////   that the game connection never stops without telling the client after
 ////   the hello.
 
+import character_support
 import character_tables
 import connection_rule_support as support
 import game_client
@@ -675,9 +676,11 @@ pub fn a_second_0x07e0_asks_the_store_again_and_sends_a_new_list_test() -> Nil {
       outcome: step.Answer(
         FromStore(
           ForSelect(
-            Listed([
-              game_connection_support.character(id: 5, name: "Eve", seed: 1),
-            ]),
+            Listed(
+              character_support.unequipped([
+                game_connection_support.character(id: 5, name: "Eve", seed: 1),
+              ]),
+            ),
           ),
         ),
       ),

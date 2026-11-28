@@ -26,7 +26,7 @@ import genesis_prime/store.{
   type AccountId, type NewCharacter, type NewItem, AccountId, NewItem,
 }
 import genesis_prime/table/character_creation as creation_table
-import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
+import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map_id.{MapId}
@@ -116,11 +116,7 @@ fn hold_novice_set(
   character_id character_id: Int,
   class_id class_id: Int,
 ) -> Nil {
-  case
-    list.find(novice_tables.sets(), fn(set) {
-      set.class_id == class_id && set.faction_id == 166
-    })
-  {
+  case novice_tables.set_of(class_id:, faction_id: 166) {
     Error(Nil) -> Nil
     Ok(set) ->
       list.each(novice_tables.equipped_of(set:), fn(pair) {
@@ -482,4 +478,23 @@ pub fn split_body(
     ))
     as "a guid, a place and a count fit 0x17D"
   body
+}
+
+/// The characters as the store lists them when none holds a worn item.
+pub fn unequipped(
+  characters characters: List(store.Character),
+) -> List(store.ListedCharacter) {
+  list.map(characters, fn(character) {
+    store.ListedCharacter(character:, worn: [])
+  })
+}
+
+/// The Item2 ids a character of the Dominion class holds at location 0 once `insert` has
+/// stored its Novice set, in bag order; none for a class the client has no Dominion set for.
+pub fn novice_worn(class_id class_id: Int) -> List(Item2Id) {
+  case novice_tables.set_of(class_id:, faction_id: 166) {
+    Ok(set) ->
+      list.map(novice_tables.equipped_of(set:), fn(pair) { Item2Id(pair.0) })
+    Error(Nil) -> []
+  }
 }
