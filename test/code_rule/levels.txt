@@ -271,6 +271,7 @@ genesis_prime/wire_recording platform
 genesis_prime/wire_recording/fixture platform
 genesis_prime/wire_recording/recorder platform
 genesis_prime/world_map/checklist_index data
+genesis_prime/world_map/combatant data
 genesis_prime/world_map/creation_type data
 genesis_prime/world_map/creature unit
 genesis_prime/world_map/creature_columns map
@@ -285,7 +286,6 @@ genesis_prime/world_map/creature_unit unit
 genesis_prime/world_map/creature_unit_state unit
 genesis_prime/world_map/game_number data
 genesis_prime/world_map/generation platform
-genesis_prime/world_map/lying_body data
 genesis_prime/world_map/map map
 genesis_prime/world_map/map_id platform
 genesis_prime/world_map/objective_spawn map

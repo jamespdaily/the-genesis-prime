@@ -283,6 +283,7 @@ pub fn beast_combat() -> creature_combat.Combat {
     specials: [],
     interrupt_armor: creature_combat.NoArmor,
     fights: True,
+    area_pickable: True,
   )
 }
 

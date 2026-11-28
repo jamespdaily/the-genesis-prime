@@ -72,10 +72,10 @@ import genesis_prime/shared/spell_plan
 import genesis_prime/shared/ticking
 import genesis_prime/shared/unit_properties
 import genesis_prime/wire_recording/fixture as wire_recording_fixture
+import genesis_prime/world_map/combatant
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight
-import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/objective_spawn
 import gleam/int
 import gleam/list
@@ -94,7 +94,7 @@ pub fn registry() -> List(Entry) {
     item_use.gaps(),
     random_stat.gaps(),
     target_group.gaps(),
-    lying_body.gaps(),
+    combatant.gaps(),
     interaction.gaps(),
     vendor_purchase.gaps(),
     dev_command.gaps(),

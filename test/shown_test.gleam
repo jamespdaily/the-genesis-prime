@@ -88,7 +88,7 @@ fn creature(
     unit_states: [],
     face: option.None,
     faced_yaw: option.None,
-    fights: True,
+    area_pickable: True,
   )
 }
 
@@ -162,17 +162,17 @@ pub fn a_creature_no_player_faction_may_attack_is_never_a_strike_candidate_test(
   })
 }
 
-pub fn a_creature_that_never_fights_is_no_candidate_of_an_area_test() -> Nil {
+pub fn a_creature_drawn_as_a_lying_body_is_no_candidate_of_an_area_test() -> Nil {
   use <- owned_test.run(5000)
-  // A creature drawn as a lying body (`Creature2.uiFlags.bit8`) takes no part in combat, so an
-  // area passes over it though its faction is Hostile and attackable; unit 1, the same creature
-  // that fights, is the control.
+  // A creature drawn as a lying body (`Creature2.uiFlags.bit8`) is no pick of an area though
+  // its faction is Hostile and attackable; unit 1, the same creature an area may pick, is the
+  // control.
   let assert ShownCreature(..) as standing =
     creature(x: 3.0, attackable: both, alive: True)
   let picture =
     dict.from_list([
       #(1, standing),
-      #(6, ShownCreature(..standing, fights: False)),
+      #(6, ShownCreature(..standing, area_pickable: False)),
     ])
   list.each([Exile, Dominion], fn(faction) {
     assert list.map(
@@ -180,7 +180,7 @@ pub fn a_creature_that_never_fights_is_no_candidate_of_an_area_test() -> Nil {
         fn(candidate) { candidate.unit_id },
       )
       == [1]
-      as "only the creature that fights is a candidate, for either faction"
+      as "only the creature an area may pick is a candidate, for either faction"
   })
 }
 
@@ -212,7 +212,10 @@ pub fn an_area_spell_whose_target_group_names_a_creature_that_never_fights_still
     creature(x: 3.0, attackable: started.combat.attackable, alive: True)
   let picture =
     dict.from_list([
-      #(1, ShownCreature(..standing, fights: started.combat.fights)),
+      #(
+        1,
+        ShownCreature(..standing, area_pickable: started.combat.area_pickable),
+      ),
     ])
   assert list.any([Exile, Dominion], fn(faction) {
     list.map(
@@ -356,7 +359,7 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
     unit_states: [],
     face: option.None,
     faced_yaw: option.None,
-    fights: True,
+    area_pickable: True,
   )
 }
 
