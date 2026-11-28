@@ -18,14 +18,12 @@
 ////   (`table_rows -- UnitProperty2 7 42 47 60`).
 
 import cast_support
-import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/unit_properties.{
   type Properties, Change, Changed, Conversion,
 }
 import genesis_prime/table/id.{UnitProperty2Id}
 import gleam/float
-import gleam/list
 import owned_test
 import properties_support
 
@@ -54,18 +52,6 @@ fn started(
   )
 }
 
-/// A properties holding the 0x262's base for these properties, a level-1 player.
-fn holding(bases bases: List(#(Int, Float))) -> Properties {
-  unit_properties.new(
-    defaults: properties_support.defaults(),
-    listed: list.map(bases, fn(base) {
-      let bits = float32.to_bits(base.1)
-      UnitProperty(property_id: base.0, base: bits, value: bits)
-    }),
-    level: 1,
-  )
-}
-
 /// A type 11 row's change that adds `flat` to the property.
 fn adds(
   property property: id.UnitProperty2Id,
@@ -86,7 +72,7 @@ pub fn a_conversion_adds_its_share_of_the_sources_value_to_the_target_test() -> 
   // plus 25.
   let #(_, changed) =
     started(
-      properties: holding(bases: [#(47, 100.0)]),
+      properties: properties_support.listing(level: 1, listed: [#(47, 100.0)]),
       effect_id: 229_304,
       modifier: Conversion(from: crit_severity, to: multi_hit, share: 0.25),
     )
@@ -98,7 +84,7 @@ pub fn a_change_of_the_source_that_starts_after_the_conversion_moves_the_target_
   use <- owned_test.run(5000)
   let #(properties, _) =
     started(
-      properties: holding(bases: [#(47, 100.0)]),
+      properties: properties_support.listing(level: 1, listed: [#(47, 100.0)]),
       effect_id: 229_304,
       modifier: Conversion(from: crit_severity, to: multi_hit, share: 0.25),
     )
@@ -137,7 +123,10 @@ pub fn two_conversions_apply_in_the_order_they_started_after_every_change_test()
   // 200 = 20 to Base Health.
   let #(properties, _) =
     started(
-      properties: holding(bases: [#(7, 1000.0), #(42, 0.0)]),
+      properties: properties_support.listing(level: 1, listed: [
+        #(7, 1000.0),
+        #(42, 0.0),
+      ]),
       effect_id: 226_750,
       modifier: Conversion(from: base_health, to: armor, share: a_fifth),
     )
@@ -185,7 +174,7 @@ pub fn ending_a_conversion_works_the_values_out_again_from_the_bases_and_the_liv
   use <- owned_test.run(5000)
   let #(properties, _) =
     started(
-      properties: holding(bases: [#(47, 100.0)]),
+      properties: properties_support.listing(level: 1, listed: [#(47, 100.0)]),
       effect_id: 1,
       modifier: adds(property: crit_severity, flat: 40.0),
     )

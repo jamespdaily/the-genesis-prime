@@ -65,31 +65,26 @@ fn attack(cast_id: Int) -> strike_tell.Tell {
   )
 }
 
-/// The defence of the class's Dominion Novice at level 1, on the planted tables.
-fn defence_of(class_id: Int) -> hit.Defence {
+/// The defence of the class's Dominion Novice at level 1, on the planted tables, from the
+/// properties `of` makes of its loadout.
+fn defence_with(
+  class_id: Int,
+  of properties_of: fn(loadout.Loadout) -> unit_properties.Properties,
+) -> hit.Defence {
   let tables = character_tables.shared()
   let assert Ok(loadout) =
     loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
     as "the class has a Dominion Novice set"
   player_life.defence(
-    properties: properties_support.wearing(loadout:),
+    properties: properties_of(loadout),
     level: 1,
     formulas: rating.formulas(tables:),
   )
 }
 
-/// The defence of the class's Dominion Novice at level 1 as its entry makes it: the gear's
-/// properties and the base combat properties.
-fn defence_entered(class_id: Int) -> hit.Defence {
-  let tables = character_tables.shared()
-  let assert Ok(loadout) =
-    loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
-    as "the class has a Dominion Novice set"
-  player_life.defence(
-    properties: properties_support.wearing_with_base_combat(loadout:),
-    level: 1,
-    formulas: rating.formulas(tables:),
-  )
+/// The defence of the class's Dominion Novice at level 1: its gear's properties alone.
+fn defence_of(class_id: Int) -> hit.Defence {
+  defence_with(class_id, of: properties_support.wearing)
 }
 
 pub fn a_level_1_players_defence_has_no_deflect_crit_deflect_or_glance_and_its_armors_mitigation_test() -> Nil {
@@ -109,8 +104,12 @@ pub fn a_level_1_players_defence_has_no_deflect_crit_deflect_or_glance_and_its_a
   assert warrior.physical_mitigation == 0.75
     as "Armor 250 reaches the 0.75 cap (GameFormula 1234's 75)"
   assert esper.shield_mitigation_max == 0.625 as "ShieldMitigationMax 0.625"
-  let entered = defence_entered(3)
-  assert near(value: entered.deflect_chance, to: 0.05)
+  let entered = defence_with(3, of: properties_support.wearing_with_base_combat)
+  assert float.loosely_equals(
+    entered.deflect_chance,
+    with: 0.05,
+    tolerating: 0.0000001,
+  )
     as "a player's BaseAvoidChance is CreatureLevel row 101's 0.05 (the server's guess: no archetype, difficulty or tier factor), 0x1404585c0"
   assert entered.crit_deflect_chance == 0.0
     && entered.glance_chance == 0.0
@@ -128,8 +127,12 @@ fn defence_listing(listed listed: List(#(Int, Float))) -> hit.Defence {
   )
 }
 
-fn near(value value: Float, to expected: Float) -> Bool {
-  float.loosely_equals(value, with: expected, tolerating: 0.0000001)
+/// Whether each number found is the one expected, to the 32-bit floats' error.
+fn all_near(found found: List(Float), expected expected: List(Float)) -> Bool {
+  list.zip(found, expected)
+  |> list.all(fn(pair) {
+    float.loosely_equals(pair.0, with: pair.1, tolerating: 0.0000001)
+  })
 }
 
 /// The four chances and the glance amount of a defence, in the order of the rows.
@@ -160,9 +163,7 @@ pub fn a_players_defence_reads_its_base_deflect_critical_deflect_glance_and_glan
     let #(property, expected, reason) = row
     let found =
       chances_of(defence: defence_listing(listed: [#(property, 0.02)]))
-    assert list.zip(found, expected)
-      |> list.all(fn(pair) { near(value: pair.0, to: pair.1) })
-      as reason
+    assert all_near(found:, expected:) as reason
   })
 }
 
@@ -185,15 +186,14 @@ pub fn a_players_mitigation_adds_the_two_mitigation_offsets_to_its_base_test() -
   |> list.each(fn(row) {
     let #(listed, expected, reason) = row
     let defence = defence_listing(listed:)
-    assert list.zip(
-        [
-          defence.physical_mitigation,
-          defence.tech_mitigation,
-          defence.magic_mitigation,
-        ],
-        expected,
-      )
-      |> list.all(fn(pair) { near(value: pair.0, to: pair.1) })
+    assert all_near(
+      found: [
+        defence.physical_mitigation,
+        defence.tech_mitigation,
+        defence.magic_mitigation,
+      ],
+      expected:,
+    )
       as reason
   })
 }

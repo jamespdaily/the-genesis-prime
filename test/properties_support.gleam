@@ -6,7 +6,7 @@ import character_support
 import fixture_tables
 import genesis_prime/game/gear.{type Gear}
 import genesis_prime/message/float32
-import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/item_property.{Shield}
 import genesis_prime/shared/loadout.{type Loadout}
 import genesis_prime/shared/player_unit
@@ -31,11 +31,7 @@ pub fn fresh(level level: Int) -> Properties {
 /// A level-1 player wearing the loadout, as its 0x262 lists the gear, with the maximum
 /// health 1.
 pub fn wearing(loadout loadout: Loadout) -> Properties {
-  unit_properties.new(
-    defaults: defaults(),
-    listed: listed_by(loadout:, max_health: 1),
-    level: 1,
-  )
+  listing(level: 1, listed: listed_by(loadout:, max_health: 1))
 }
 
 /// The properties with `modifier` live from `source`, the changes it reports dropped.
@@ -50,28 +46,20 @@ pub fn with_modifier(
 /// A level-1 player wearing the loadout, as its entry makes it: the gear's properties
 /// as `wearing` lists them and the 26 base combat properties (`base_combat_rows`).
 pub fn wearing_with_base_combat(loadout loadout: Loadout) -> Properties {
-  unit_properties.new(
-    defaults: defaults(),
-    listed: list.append(
-      listed_by(loadout:, max_health: 1),
-      list.map(base_combat_rows, fn(row) {
-        let bits = float32.to_bits(row.1)
-        UnitProperty(property_id: row.0, base: bits, value: bits)
-      }),
-    ),
+  listing(
     level: 1,
+    listed: list.append(listed_by(loadout:, max_health: 1), base_combat_rows),
   )
 }
 
-/// The properties a player's 0x262 lists for its loadout's gear, in id order, each with
-/// its base and value alike: `max_health` as Base Health (7), the Assault Rating (35),
+/// The properties a player's 0x262 lists for its loadout's gear, in id order, as (id, number): `max_health` as Base Health (7), the Assault Rating (35),
 /// Support Rating (36) and Armor (42), and the shield's ShieldCapacityMax (41),
 /// ShieldMitigationMax (175), ShieldRegenPct (176) and ShieldRebootTime (178) when the
 /// loadout holds a shield.
 fn listed_by(
   loadout loadout: Loadout,
   max_health max_health: Int,
-) -> List(UnitProperty) {
+) -> List(#(Int, Float)) {
   let gear = loadout.properties
   let shield_properties = case gear.shield {
     Some(Shield(capacity_max:, mitigation_max:, regen_percent:, reboot_time_ms:)) -> [
@@ -92,10 +80,6 @@ fn listed_by(
     shield_properties,
   ])
   |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
-  |> list.map(fn(pair) {
-    let bits = float32.to_bits(pair.1)
-    UnitProperty(property_id: pair.0, base: bits, value: bits)
-  })
 }
 
 /// The 26 combat properties a player holds and the value of each in CreatureLevel

@@ -189,12 +189,12 @@ pub fn a_stalker_pressing_stealth_twice_gets_the_procs_casts_and_empower_for_3_s
     as "Procs 147132 and 211002 cast 60769 and 79932 after the 0x8f5 {P, 0}"
   assert property_values(taken: leaving)
     == [
-      #(102, 1_045_220_557),
+      #(102, 1_048_576_000),
       #(141, 1_066_024_305),
       #(142, 1_066_024_305),
       #(143, 1_066_024_305),
     ]
-    as "Spell4.79932: BaseCritChance 0.2 (0x3e4ccccd) and the three DamageDealtMultipliers 1.08 (0x3f8a3d71)"
+    as "Spell4.79932: BaseCritChance 0.2 on a player's base 0.05 (CreatureLevel row 101, 0x3d4ccccd), 0.25 (0x3e800000), and the three DamageDealtMultipliers 1.08 (0x3f8a3d71)"
   assert told_of(
       taken: entering,
       start: start_of(taken: entering, spell4_id: 60_724),
@@ -226,12 +226,12 @@ pub fn a_stalker_pressing_stealth_twice_gets_the_procs_casts_and_empower_for_3_s
       fn(first, second) { int.compare(first.0, second.0) },
     )
     == [
-      #(102, 0),
+      #(102, 1_028_443_341),
       #(141, 1_065_353_216),
       #(142, 1_065_353_216),
       #(143, 1_065_353_216),
     ]
-    as "after 3000 ms the properties are back at their defaults, 0.0 and 1.0"
+    as "after 3000 ms the properties are back at their bases: BaseCritChance 0.05 (0x3d4ccccd) and the multipliers 1.0"
   assert list.contains(cast_support.ids(frames: later), 0x07FE)
     as "and 79932's cast ends with its 0x7fe"
 }
