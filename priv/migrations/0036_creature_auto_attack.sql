@@ -14,7 +14,7 @@
 -- "Auto-Attack #1", "#2") but no client table links a creature to a spell, so each row is
 -- a retail record of the creature's abilities, and the order of several auto-attacks a
 -- server choice marked as a guess in `reason`. The load checks each row against the
--- client's tables (genesis_prime/shared/creature_auto_attack).
+-- client's tables (genesis_prime/world_map/creature_auto_attack).
 --
 -- The migration also adds `retail_record_import` and, to both this table and
 -- `creature_special`, the columns that tie a row to the import runs that wrote and retired it.

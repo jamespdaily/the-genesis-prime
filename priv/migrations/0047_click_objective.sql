@@ -12,7 +12,7 @@
 -- no rule that says which of these objectives only asks for a click, so each row is the server's
 -- choice, read from the objective's text, with the text in its reason. A row is only a click on a
 -- creature the client offers a click on (an activate spell for the player, no path lock, no
--- datacube, genesis_prime/shared/activate `offers_click`) that is not hostile to a player faction its
+-- datacube, genesis_prime/game/activate `offers_click`) that is not hostile to a player faction its
 -- quest allows, whose spell the server builds, that starts in the world of its marker (a world with a
 -- stored spawn, and a creature Friendly to both player factions with no quest or link does not start,
 -- genesis_prime/world_map/spawn `left_out_of`): any other objective stays done when the quest is
