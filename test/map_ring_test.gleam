@@ -288,7 +288,7 @@ fn approaches_in_full(
         ..,
       )) ->
         Ok(#(
-          unit_address.number(address: by),
+          unit_address.joiner(address: by),
           unit_id,
           start_place.x(place),
           seq,
@@ -938,27 +938,6 @@ pub fn a_life_changed_of_the_value_held_sends_nothing_and_one_from_a_connection_
   assert map_spawn_support.sends(late) == [] as "nothing is sent"
   assert list.length(support.logs_of(step: late, level: LogError)) == 1
     as "one error line, as a Moved after the connection's Leave"
-}
-
-pub fn a_second_join_of_a_player_in_a_ring_names_no_life_and_the_map_keeps_the_one_it_holds_test() -> Nil {
-  use <- owned_test.run(5000)
-  let state = one_dagun_and_a_ready_player()
-  let #(state, _) =
-    map_spawn_support.move(state:, at_ms: 6000, connection: 1, x: 92.0)
-  let #(state, _) =
-    map_spawn_support.join_as(
-      state:,
-      at_ms: 6100,
-      connection: 1,
-      x: 92.0,
-      alive: False,
-    )
-  let #(unchanged, alive) = life(state:, at_ms: 6200, alive: True)
-  assert support.effects_of(alive) == [] && unchanged == state
-    as "the second Join's alive False was not kept: the map still holds the player alive, in its ring"
-  let #(_, died) = life(state:, at_ms: 6300, alive: False)
-  assert map_spawn_support.death_sends(died) == [#(2, "PlayerDied by 1")]
-    as "the connection's own tell of the death is a change, and the creature is told"
 }
 
 /// The place the recording stood at among the Crash Site bodies, inside the 10-unit ring of each

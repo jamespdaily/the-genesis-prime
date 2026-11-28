@@ -198,14 +198,18 @@ pub fn a_spawn_whose_creature_expired_is_respawning_and_each_later_event_has_one
       alive: True,
       hidden: set.new(),
     )
-  assert spawns.lives_told(taken) == [] && spawns.starts(taken) == []
-    as "a respawning spawn is told nothing of a join again"
+  assert spawns.lives_told(taken) == [#(life, "CasterGone by 2")]
+    && spawns.starts(taken) == []
+    as "a respawning spawn is told what a leave tells a running creature of the first unit, and nothing of the new one"
   let #(_, ended) =
     spawns.creature_ended(state: joined, at_ms: 7100, watch: WatchId(life))
   let assert [#(_, next)] = spawns.starts(ended)
   assert spawns.first_viewers(start: next)
-    == [map_support.address(number: 1), map_support.address(number: 2)]
-    as "the player's new stay is the relation's"
+    == [
+      map_support.address(number: 1),
+      map_support.address_for(incarnation: 1, number: 3, joiner: 2),
+    ]
+    as "the viewers are the players in sight by their addresses: the joined-again player under its new one"
 
   // `Respawning` and a release: the spawn waits the release time at the creature's end.
   let #(released, taken) =

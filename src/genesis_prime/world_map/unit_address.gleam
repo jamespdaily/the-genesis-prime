@@ -51,13 +51,19 @@ pub fn number(address address: UnitAddress) -> Int {
   address.number
 }
 
-/// The order of two addresses issued in one run: the order of their numbers, which is
-/// the order of the joins. This is the stub of the ranking `joiner` names.
+/// The order of two addresses: the number of the connection each was issued for, as a
+/// creature ordered connections, then the number of the address, then the run, so two
+/// addresses of one connection (it joined again) and of two runs are ordered too. Where a
+/// creature picks among players that tie (the first target, a tie of threat, the players of
+/// a capped area), it picks the lowest by this order: a choice of the server's, since the
+/// client holds no rule for it, and the one it made before addresses named players.
 pub fn compare(
   first first: UnitAddress,
   second second: UnitAddress,
 ) -> order.Order {
-  int.compare(first.number, second.number)
+  int.compare(first.joiner, second.joiner)
+  |> order.break_tie(int.compare(first.number, second.number))
+  |> order.break_tie(int.compare(first.incarnation, second.incarnation))
 }
 
 /// The addresses of a set in the order of their numbers, so what is sent to each is the

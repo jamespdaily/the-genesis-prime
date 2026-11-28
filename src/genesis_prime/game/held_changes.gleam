@@ -135,8 +135,8 @@ pub fn started(
   }
 }
 
-/// The source `source` held for the connection `by`, whose unit is not known and whose
-/// change ends with the connection: as `started`. A source held this way (a creature's)
+/// The source `source` held for the caster `by`, whose unit is not known and whose
+/// change ends with it: as `started`. A source held this way (a creature's)
 /// has no sight rule and lists nothing, and is taken only by `released_by` and `released`.
 pub fn started_by_connection(
   held held: Held(by),
@@ -154,7 +154,7 @@ fn added(held held: Held(by), entry entry: Entry(by)) -> #(Held(by), Bool) {
   #(Held(entries: list.append(held.entries, [entry])), True)
 }
 
-/// The connection that holds `source`, when it is held.
+/// The caster that holds `source`, when it is held.
 pub fn holder_of(
   held held: Held(by),
   source source: Source,
@@ -163,7 +163,7 @@ pub fn holder_of(
   |> result.map(fn(entry) { entry.by })
 }
 
-/// `source` taken out, with the connection that held it; `Error` when it is not held.
+/// `source` taken out, with the caster that held it; `Error` when it is not held.
 pub fn released(
   held held: Held(by),
   source source: Source,
@@ -172,7 +172,7 @@ pub fn released(
   #(Held(entries: list.filter(held.entries, fn(e) { e.source != source })), by)
 }
 
-/// Every source of the connection `by` taken out, in the order they started.
+/// Every source of the caster `by` taken out, in the order they started.
 pub fn released_by(
   held held: Held(by),
   by by: by,

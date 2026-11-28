@@ -118,14 +118,14 @@ pub fn said_to_the_map(taken: ServiceStep(creature.Outgoing)) -> List(String) {
       creature.Broadcast(news: PeerNews(news:, ..), ..) ->
         name_of(news) <> " to all"
       creature.Snapshot(by:, ..) ->
-        "snapshot for " <> int.to_string(unit_address.number(address: by))
+        "snapshot for " <> int.to_string(unit_address.joiner(address: by))
       creature.Expired(unit_id:, life:) ->
         "expired "
         <> int.to_string(unit_id)
         <> " of life "
         <> int.to_string(life)
       creature.Relay(to:, payload:, ..) -> {
-        let number = unit_address.number(address: to)
+        let number = unit_address.joiner(address: to)
         case payload {
           map_message.Struck(answered: Answered(outcome: Landed(..), ..)) ->
             "answer to " <> int.to_string(number)

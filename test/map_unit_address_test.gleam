@@ -133,10 +133,8 @@ pub fn a_map_run_never_issues_one_address_twice_over_any_sequence_of_joins_leave
   let addresses = issued(ops: list.map(numbers, op_of))
   assert list.length(list.unique(addresses)) == list.length(addresses)
     as "every join of the run, a second join of one connection and a join after a leave or an end included, is given an address no other join had"
-  assert addresses
-    == list.index_map(addresses, fn(_, index) {
-      map_support.address(number: index + 1)
-    })
+  assert list.map(addresses, fn(address) { unit_address.number(address:) })
+    == list.index_map(addresses, fn(_, index) { index + 1 })
     as "the addresses are the run's own, numbered from 1 in the order of the joins"
 }
 
@@ -238,7 +236,8 @@ pub fn a_second_join_of_one_joiner_removes_its_first_unit_as_a_leave_does_and_jo
     )
   let old = map_support.address(number: 1)
   assert joined_address(first) == Ok(old)
-  assert joined_address(again) == Ok(map_support.address(number: 3))
+  assert joined_address(again)
+    == Ok(map_support.address_for(incarnation: 1, number: 3, joiner: 1))
     as "the second join is a new unit under the next address of the run"
   assert joined_unit_id(again) != joined_unit_id(first)
     as "with a unit id of its own: the first unit is gone, the map keeps no unit for it"
@@ -249,7 +248,7 @@ pub fn a_second_join_of_one_joiner_removes_its_first_unit_as_a_leave_does_and_jo
   assert list.contains(spawns.creatures_told(again), #(
     unit_id,
     life,
-    "Seen by 3",
+    "Seen by 1",
   ))
     as "and then Seen of the new address"
   assert support.logs_of(step: again, level: step.LogError) == []
@@ -282,7 +281,7 @@ pub fn a_creature_relay_reaches_the_host_by_the_connection_and_the_connections_s
         Told(message: map_message.Relay(
           unit_id:,
           life:,
-          to: map_support.address(number: 1),
+          to: map_support.address_for(incarnation: 1, number: 1, joiner: 7),
           payload:,
         )),
       ),

@@ -315,7 +315,7 @@
 //// | P dies and C's killing answer and the map's `PlayerDied` both reach C | one sender, in the order P's connection told them: the answer drops P from `near` and the threat list, `PlayerDied` finds nothing | `a_creature_told_player_died_for_its_target_erases_its_entry_names_the_next_and_never_strikes_the_body_test`, `player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test` |
 //// | P died and C's home timer fires before `PlayerDied` reaches C | C aggroes the body; P drops `Threatened`, C's first strike is refused `Dead`, and C releases P and drops it from `near`: at most one swing, in the window of one map hop | `a_creature_that_kills_its_only_target_in_its_ring_does_not_aggro_the_body_at_its_home_timer_test`, `a_creature_whose_strike_is_refused_dead_does_not_aggro_the_body_at_its_home_timer_test` |
 //// | P died and C's map starts C's next life: the ring `CreatureStart.ring` holds P only when the map took the death after the start; a death the map took first leaves P out of the ring | P in the ring: the next life aggroes P, the strike is refused `Dead` and `PlayerDied` drops it; P out of it: nothing | `a_death_a_stealth_or_a_wake_decides_the_new_lifes_ring_by_whether_the_map_took_it_before_the_start_test` |
-//// | the map starts C's next life with a ring | every ring player is sighted and near, and one fight starts over those who are viewers: the first is the target, each other is named | `a_creature_started_with_a_ring_answers_each_viewer_then_aggroes_the_ring_players_it_has_as_viewers_in_one_step_test`, `a_ring_at_a_start_puts_every_ring_player_into_near_and_aggroes_the_viewers_of_the_stay_it_names_in_one_fight_test` |
+//// | the map starts C's next life with a ring | every ring player is sighted and near, and one fight starts over those who are viewers: the first is the target, each other is named | `a_creature_started_with_a_ring_answers_each_viewer_then_aggroes_the_ring_players_it_has_as_viewers_in_one_step_test`, `a_ring_at_a_start_puts_every_ring_player_into_near_and_aggroes_the_viewers_in_one_fight_test` |
 //// | a strike P's connection tells after its death (a `Died` proc's cast, a standing spell's tick) reaches C after `PlayerDied` | `StruckBy` adds P to the threat list: C keeps no list of the dead; C's first strike is refused `Dead` and releases it | `a_strike_told_after_the_players_death_threatens_the_creature_and_its_first_strike_is_refused_dead_test` |
 //// | `PlayerDied` for a player on neither `near` nor the threat list (its `Unseen` came first, or the killing answer dropped it) | nothing | `player_died_for_a_player_neither_near_nor_on_the_list_changes_nothing_test` |
 //// | C is Returning, or dead, when `PlayerDied` reaches it | Returning: P out of `near`, nothing sent; dead: the send is dropped, and the map's `inside` holds no dead player for C's next start | `a_near_player_told_player_died_is_not_aggroed_at_the_home_timer_and_one_approached_again_is_test` |
@@ -1099,12 +1099,12 @@ pub fn in_combat(state state: State) -> Bool {
   }
 }
 
-/// The connections of the players in the creature's ring that it holds as near, for a test.
+/// The addresses of the players in the creature's ring that it holds as near, for a test.
 pub fn near(state state: State) -> Set(UnitAddress) {
   state.near
 }
 
-/// The connections on the threat list: none unless Fighting.
+/// The addresses on the threat list: none unless Fighting.
 pub fn threatened(state state: State) -> Set(UnitAddress) {
   case state.status {
     Fighting(threat:, ..) -> set.from_list(dict.keys(threat))
@@ -1395,7 +1395,9 @@ fn unit_of(state state: State, by by: UnitAddress) -> Int {
   }
 }
 
-/// The near players the creature sees now, in the order of their addresses.
+/// The near players the creature sees now, in the order of `unit_address.compare` (the
+/// joiners' connections): the first aggroed is the fight's first target, a server's choice that
+/// the client holds no rule for.
 fn near_viewers(
   state state: State,
   viewers viewers: Set(UnitAddress),
@@ -1577,7 +1579,10 @@ fn threat_news(entry: Threat) -> News {
   unit_news.Threat(other_unit_id: entry.unit_id, threat: whole(entry.amount))
 }
 
-/// The top entry of a threat list: the most threat, the lowest address on a tie.
+/// The top entry of a threat list: the most threat, and on a tie the lowest by
+/// `unit_address.compare`, which ranks by the joiner's connection as the creature did when it
+/// named connections. The tie rule is a server's choice: the client holds no rule for which of
+/// several equal threats a creature takes.
 fn top_of(entries: Dict(UnitAddress, Threat)) -> #(UnitAddress, Threat) {
   let assert [top, ..] =
     dict.to_list(entries)

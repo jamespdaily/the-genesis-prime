@@ -1346,7 +1346,7 @@ pub fn a_creature_started_with_a_ring_answers_each_viewer_then_aggroes_the_ring_
   )
 }
 
-pub fn a_ring_at_a_start_puts_every_ring_player_into_near_and_aggroes_the_viewers_of_the_stay_it_names_in_one_fight_test() -> Nil {
+pub fn a_ring_at_a_start_puts_every_ring_player_into_near_and_aggroes_the_viewers_in_one_fight_test() -> Nil {
   use <- owned_test.run(5000)
   // The players of the ring are near; the creature fights those of them whose stay is the
   // stay of the viewer they are (`aggro`), the first of them as target.
@@ -1355,14 +1355,6 @@ pub fn a_ring_at_a_start_puts_every_ring_player_into_near_and_aggroes_the_viewer
   list.each(
     [
       #("every ring player a viewer", [2, 5], [two, five], True, [2, 5], [2, 5]),
-      #(
-        "one ring player in another stay than its viewer's",
-        [2, 5],
-        [two, ring_member(5)],
-        True,
-        [2],
-        [2, 5],
-      ),
       #(
         "one ring player who is not a viewer",
         [2, 5],
@@ -2260,11 +2252,11 @@ pub fn a_player_back_in_the_ring_under_a_new_unit_with_the_same_sequence_number_
     as "the threat goes to the unit the newest Seen named"
 }
 
-pub fn a_strike_of_a_players_earlier_stay_that_reaches_the_creature_after_its_rejoin_threatens_nothing_test() -> Nil {
+pub fn a_strike_of_a_players_earlier_address_that_reaches_the_creature_after_its_rejoin_threatens_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   // The player struck the Beast, then left the map and joined it again: the map
-  // sent the Beast Unwatched and the new stay's Watched. The strike, delayed, lands
-  // after both.
+  // sent the Beast `Unseen` of the first address and `Seen` of the new one. The strike,
+  // delayed, lands after both.
   let #(state, _) =
     tell(
       state: beast(viewers: [2]),
@@ -2275,7 +2267,10 @@ pub fn a_strike_of_a_players_earlier_stay_that_reaches_the_creature_after_its_re
     tell(
       state:,
       at_ms: 100,
-      message: creature_news_support.seen(by: ConnectionId(2)),
+      message: creature.Seen(
+        by: map_support.address_for(incarnation: 1, number: 9, joiner: 2),
+        generation: generation.after(generation: generation.first()),
+      ),
     )
   let #(_, struck) =
     tell(
@@ -2284,7 +2279,7 @@ pub fn a_strike_of_a_players_earlier_stay_that_reaches_the_creature_after_its_re
       message: strike_of(number: 2, cast_id: 1, blows: [#(1, 10, 1.0)]),
     )
   assert fights_told(struck) == []
-    as "a strike of the earlier stay starts no fight with the player's new stay"
+    as "a strike of the earlier address starts no fight with the player's new address"
 }
 
 pub fn a_player_that_stops_seeing_the_creature_is_told_its_release_for_the_stay_it_had_test() -> Nil {
@@ -10691,9 +10686,11 @@ pub fn a_player_who_wakes_in_a_ring_after_its_killing_answer_and_death_is_near_a
     as "and the death after it finds nothing to drop"
   // The wake, as a viewer of the creature in the stay it names and as a player that is not.
   let a_viewer_wakes = approached(number: 2, x: 5.0, seq: 3)
+  let stranger_address =
+    map_support.address_for(incarnation: 1, number: 9, joiner: 2)
   let a_stranger_wakes =
     creature.Approached(member: step.RingMember(
-      by: player,
+      by: stranger_address,
       unit_id: unit_of(2),
       place: map_spawn_support.at(5.0),
       seq: 3,
@@ -10706,11 +10703,14 @@ pub fn a_player_who_wakes_in_a_ring_after_its_killing_answer_and_death_is_near_a
     && list.contains(said(at_home), "Threatened(7, 3) to 2")
     as "and the home timer aggroes it: it is told it is threatened and is the target"
   let #(stranger, _) = tell(state: died, at_ms: 1700, message: a_stranger_wakes)
-  assert near_and_listed(stranger).0
-    as "a player that wakes in the ring in a stay the creature has no sight of is near too"
+  assert set.contains(
+    creature_fight.near(state: creature.fight(state: stranger)),
+    stranger_address,
+  )
+    as "a player that wakes in the ring under an address the creature has no sight of is near too"
   let #(_, at_home) = fire(state: stranger, at_ms: 1800, timer: home)
   assert !aggroes(at_home)
-    as "but the creature aggroes only a viewer of the stay: no threat for it"
+    as "but the creature aggroes only a viewer: no threat for it"
   // The wake with no answer before it (the answer lost to the deadline or never sent).
   let #(state, _) = struck_once_among(viewers: [2, 5])
   let #(state, death_step) =

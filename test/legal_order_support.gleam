@@ -646,7 +646,7 @@ fn creature_message_name(message: creature.Message) -> String {
 fn map_message_name(message: map_message.Message) -> String {
   case message {
     map_message.Snapshot(by:, ..) ->
-      "Snapshot for " <> int.to_string(unit_address.number(address: by))
+      "Snapshot for " <> int.to_string(unit_address.joiner(address: by))
     map_message.Broadcast(..) -> "Broadcast"
     map_message.Relay(
       payload: map_message.Fight(told: strike_tell.Threatened(..)),

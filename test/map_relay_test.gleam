@@ -61,7 +61,7 @@ fn told(taken: ServiceStep(map_message.Outgoing)) -> List(Told) {
         let #(by, generation) = viewer
         Started(
           unit_id: { start.1 }.unit_id,
-          by: unit_address.number(address: by),
+          by: unit_address.joiner(address: by),
           generation:,
         )
       })
@@ -70,9 +70,9 @@ fn told(taken: ServiceStep(map_message.Outgoing)) -> List(Told) {
     list.filter_map(spawns.sends(taken), fn(sent) {
       case sent {
         #(Creature(unit_id:, ..), map_message.Seen(by:, generation:)) ->
-          Ok(Seen(unit_id:, by: unit_address.number(address: by), generation:))
+          Ok(Seen(unit_id:, by: unit_address.joiner(address: by), generation:))
         #(Creature(unit_id:, ..), map_message.Unseen(by:, generation:)) ->
-          Ok(Unseen(unit_id:, by: unit_address.number(address: by), generation:))
+          Ok(Unseen(unit_id:, by: unit_address.joiner(address: by), generation:))
         _ -> Error(Nil)
       }
     })
@@ -128,10 +128,11 @@ fn a_strike(unit_id unit_id: Int) -> strike_tell.Tell {
   tell
 }
 
-pub fn a_second_join_unsees_then_sees_each_kept_creature_under_a_new_generation_test() -> Nil {
+pub fn a_second_join_unsees_each_creature_the_first_unit_saw_and_sees_those_in_sight_of_the_new_unit_under_new_generations_test() -> Nil {
   use <- owned_test.run(5000)
   // Four spawns, and a player 1 that stands where it sees them all: a second player 2
-  // keeps 1, 2 and 4 live, 3 retires while no one sees it, and the second join hides 4.
+  // keeps 1, 2 and 4 live, 3 retires while no one sees it, and the second join of 1, which
+  // is a leave and a join, hides 4.
   let state =
     spawns.started_with_spawns(spawns: [
       spawn_support.battle_beast(number: 1, x: 200.0),
@@ -171,12 +172,12 @@ pub fn a_second_join_unsees_then_sees_each_kept_creature_under_a_new_generation_
   assert told(taken)
     == [
       Unseen(unit_id: unit_1, by: 1, generation: first),
-      Seen(unit_id: unit_1, by: 1, generation: now_1),
       Unseen(unit_id: unit_2, by: 1, generation: second),
-      Seen(unit_id: unit_2, by: 1, generation: now_2),
       Unseen(unit_id: unit_4, by: 1, generation: fourth),
+      Seen(unit_id: unit_1, by: 1, generation: now_1),
+      Seen(unit_id: unit_2, by: 1, generation: now_2),
     ]
-    as "each kept live creature in spawn order: Unseen of the sight that ends, then Seen of a new one; the newly hidden spawn Unseen only; the retiring spawn told nothing"
+    as "the first unit's removal: each live creature it saw, in spawn order, is told Unseen of the sight that ends (the retiring spawn nothing); then the new unit's join: Seen of a new sight of each creature in sight and not hidden"
   assert generation.compare(now_1, first) == order.Gt
     && generation.compare(now_2, second) == order.Gt
     && now_1 != now_2
@@ -249,7 +250,7 @@ pub fn a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test() -> N
     ),
     #(
       "a unit of the run whose player does not see the creature",
-      map_support.address(number: 4),
+      map_support.address_for(incarnation: 1, number: 4, joiner: 2),
       2,
       2,
       True,
@@ -500,7 +501,7 @@ fn told_creatures(
   list.filter_map(spawns.sends(taken), fn(sent) {
     case sent {
       #(Creature(unit_id:, life:, ..), map_message.ToldCreature(by:, payload:)) ->
-        Ok(#(unit_id, life, unit_address.number(address: by), payload))
+        Ok(#(unit_id, life, unit_address.joiner(address: by), payload))
       _ -> Error(Nil)
     }
   })
@@ -989,7 +990,15 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
         message: map_message.Snapshot(
           unit_id:,
           life:,
-          by: map_support.address(number: connection),
+          by: map_support.address_for(
+            incarnation: 1,
+            number: case connection {
+              3 -> 1
+              1 -> 2
+              _ -> 4
+            },
+            joiner: connection,
+          ),
           generation: spawns.generation_of(state:, spawn: 1, connection:),
           burst: [],
         ),
@@ -1019,7 +1028,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
       message: map_message.Snapshot(
         unit_id:,
         life:,
-        by: map_support.address(number: 2),
+        by: map_support.address_for(incarnation: 1, number: 3, joiner: 2),
         generation: spawns.generation_of(
           state: released,
           spawn: 1,
@@ -1067,7 +1076,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
       message: map_message.Snapshot(
         unit_id:,
         life:,
-        by: map_support.address(number: 2),
+        by: map_support.address_for(incarnation: 1, number: 3, joiner: 2),
         generation: spawns.generation_of(
           state: released,
           spawn: 1,

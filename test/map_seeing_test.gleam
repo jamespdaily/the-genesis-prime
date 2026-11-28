@@ -256,59 +256,6 @@ pub fn a_notice_names_the_stay_of_the_player_it_is_for_and_seen_by_names_the_wat
     as "an UnseenBy goes for the stay of the player still in the map"
 }
 
-pub fn a_second_join_keeps_the_new_joins_stay_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, first_join) =
-    join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 100)
-  let #(state, second_join) =
-    join(state:, connection: 2, place: at(10.0), elapsed_ms: 200)
-  let #(_, again) =
-    join_for(state:, connection: 1, place: at(0.0), elapsed_ms: 300, stay: 7)
-  assert notices(again)
-    == [
-      #(
-        1,
-        map_support.stay(count: 1),
-        UnseenBy(by: ConnectionId(2), generation: generation.first()),
-      ),
-      #(
-        2,
-        map_support.stay(count: 2),
-        UnseenBy(
-          by: ConnectionId(1),
-          generation: generation.after(generation: generation.first()),
-        ),
-      ),
-      #(
-        1,
-        map_support.stay(count: 7),
-        SeenBy(
-          by: ConnectionId(2),
-          stay: map_support.stay(count: 2),
-          unit_id: joined_unit_id(second_join),
-          generation: generation.after(
-            generation: generation.after(
-              generation: generation.after(generation: generation.first()),
-            ),
-          ),
-        ),
-      ),
-      #(
-        2,
-        map_support.stay(count: 2),
-        SeenBy(
-          by: ConnectionId(1),
-          stay: map_support.stay(count: 7),
-          unit_id: joined_unit_id(first_join),
-          generation: generation.after(
-            generation: generation.after(generation: generation.first()),
-          ),
-        ),
-      ),
-    ]
-    as "the connection's newest join names the stay it takes messages for, and the unit it kept; the sights of its earlier stay end in that stay"
-}
-
 /// The end of the connection `connection`'s watch: the watch the join opened as
 /// the connection's number.
 fn ends(
@@ -515,24 +462,6 @@ pub fn a_connection_ending_tells_gone_to_every_player_in_the_map_even_one_that_n
       #(3, "Unwatched by 1"),
     ]
     as "C saw A, so it is told Unwatched, that the unit is unseen and Gone; V no longer did, and is told Gone all the same, since A's connection cannot send V its 0x355"
-}
-
-pub fn a_second_join_resends_the_joiner_a_watched_for_each_player_it_sees_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, _) = two_players(100.0)
-  let #(_, again) =
-    join(state: state, connection: 2, place: at(100.0), elapsed_ms: 300)
-  assert shape(again)
-    == [
-      #(2, "Player unseen 1"),
-      #(2, "Unwatched by 1"),
-      #(1, "Player unseen 2"),
-      #(1, "Unwatched by 2"),
-      #(2, "Watched by 1"),
-      #(1, "Watched by 2"),
-    ]
-    as "each sight of the pair ends and a new one begins: the joiner is told the player it sees is its viewer, so one that lost its viewers has them again, and that player is told the joiner is its viewer, so it sends its 0x262 again, as well as the error line"
-  assert support.logs_of(step: again, level: LogError) != []
 }
 
 // ---- the map's clock ----

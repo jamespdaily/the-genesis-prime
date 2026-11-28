@@ -39,6 +39,7 @@ import genesis_prime/table/id.{ClassId, RaceId}
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/map_id.{MapId}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/int
@@ -72,6 +73,7 @@ fn answer_of(
   character character: Character,
   unit_id unit_id: Int,
   body body: List(ItemVisual),
+  address address: UnitAddress,
 ) -> map_message.Outgoing {
   let unit =
     unit_support.novice_unit(
@@ -84,7 +86,7 @@ fn answer_of(
   Joined(
     unit: player_unit.create(unit:, realm_id:),
     loadout: player_unit.loadout(unit:),
-    address: map_support.address(number: 1),
+    address:,
     incarnation:,
     clock_origin_ms: 0,
   )
@@ -179,6 +181,7 @@ pub fn the_first_join_is_unit_1_with_a_watch_on_the_connection_and_the_maps_inca
           character: map_support.character(107),
           unit_id: 1,
           body: row_10_body(),
+          address: map_support.address_for(incarnation:, number: 1, joiner: 7),
         ),
       )),
     ]
@@ -215,6 +218,7 @@ pub fn each_join_gets_the_next_unit_id_and_its_own_watch_test() -> Nil {
           character: map_support.character(108),
           unit_id: 2,
           body: row_10_body(),
+          address: map_support.address_for(incarnation:, number: 2, joiner: 8),
         ),
       )),
     ]
@@ -307,51 +311,6 @@ pub fn a_players_connection_ending_removes_the_player_so_its_next_join_is_a_new_
     as "no error: it is not a second join of a connection in the map"
 }
 
-pub fn a_second_join_from_a_connection_in_the_map_answers_the_unit_it_keeps_and_logs_an_error_test() -> Nil {
-  use <- owned_test.run(5000)
-  let #(state, first) = join(state: started(), connection: 7, caller: 1)
-  let #(state, second) =
-    join_as(
-      state:,
-      connection: 7,
-      caller: 2,
-      character: map_support.character(900),
-    )
-  assert unit_of(second, 2) == unit_of(first, 1)
-    as "the join is answered with the unit id the connection has"
-  assert support.replies(second)
-    == [
-      #(
-        CallerId(2),
-        answer_of(
-          character: map_support.character(107),
-          unit_id: 1,
-          body: row_10_body(),
-        ),
-      ),
-    ]
-    as "the answer is the record of the unit the map keeps, character 107, not one built from the second Join's character 900"
-  let assert [line] = support.logs_of(step: second, level: LogError)
-    as "the connection's rule joins once: a second is a bug, logged as an error"
-  assert line.about
-    == step.About(
-      ..step.no_one,
-      connection: Some(ConnectionId(7)),
-      character_id: Some(900),
-      map: Some(MapId(world_id: 3460, instance: 0)),
-    )
-    as "the line is about the connection, the character of the second Join and the map, in its metadata"
-  assert line.text
-    == "the connection joined the map a second time, as character 900; it is already unit 1 of character 107"
-    as "the text names the second Join's character and the unit and character the map keeps"
-  assert support.watches(second) == [] as "no second watch is opened"
-  assert list.length(support.effects_of(second)) == 2
-    as "the error and the answer are all the step holds: nothing else changes"
-  let #(_, third) = join(state:, connection: 8, caller: 3)
-  assert unit_of(third, 3) == 2
-    as "the next unit id is not spent by the second join"
-}
-
 pub fn a_character_whose_look_the_tables_lack_is_answered_with_fewer_visuals_test() -> Nil {
   use <- owned_test.run(5000)
   let unknown = Character(..map_support.character(107), race_id: RaceId(3))
@@ -359,7 +318,15 @@ pub fn a_character_whose_look_the_tables_lack_is_answered_with_fewer_visuals_tes
     join_as(state: started(), connection: 7, caller: 1, character: unknown)
   assert support.replies(taken)
     == [
-      #(CallerId(1), answer_of(character: unknown, unit_id: 1, body: [])),
+      #(
+        CallerId(1),
+        answer_of(
+          character: unknown,
+          unit_id: 1,
+          body: [],
+          address: map_support.address_for(incarnation:, number: 1, joiner: 7),
+        ),
+      ),
     ]
     as "the tables hold no CharacterCustomization row of race 3, so the body is empty, the Novice set is still worn and the join is still answered with the unit, as for any character"
   assert support.logs_of(step: taken, level: LogError) == []
@@ -401,9 +368,9 @@ pub fn a_watch_that_names_no_player_is_an_error_and_changes_nothing_test() -> Ni
   assert line.about
     == step.About(..step.no_one, map: Some(MapId(world_id: 3460, instance: 0)))
     as "the line is about the map only: no connection or character is known"
-  let #(_, second) = join(state:, connection: 7, caller: 2)
-  assert unit_of(second, 2) == unit_of(first, 1)
-    as "the player of connection 7 is still in the map"
+  let #(_, second) = join(state:, connection: 8, caller: 2)
+  assert unit_of(first, 1) == 1 && unit_of(second, 2) == 2
+    as "the stray watch end changed nothing: the next join is the next unit id"
 }
 
 // ---- a player leaves ----
@@ -455,7 +422,7 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
     ]
     as "the connection's watch, which the join opened as watch 1, is dropped: the connection goes on after its camp, so the map must not hold it as a player; the other player, who saw it, is told its unit is unseen (its 0x355) and its viewer 7 is gone; then the leave is answered"
   assert support.logs(left) == []
-  let #(state, again) = join(state:, connection: 7, caller: 4)
+  let #(_, again) = join(state:, connection: 7, caller: 4)
   assert unit_of(first, 1) == 1 && unit_of(other, 2) == 2
   assert unit_of(again, 4) == 3
     as "opcode.0x262: a later play is a new unit with a unit id never given before, the client refuses one it has seen"
@@ -463,9 +430,6 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
     as "the connection was not in the map any more, so its join is no second join"
   assert support.watches(again) == [#(WatchId(3), Connection(ConnectionId(7)))]
     as "and it is watched again, under a new watch id"
-  let #(_, still_there) = join(state:, connection: 8, caller: 5)
-  assert unit_of(still_there, 5) == 2
-    as "the other player, which did not leave, is still unit 2: a second join answers the unit the map keeps"
 }
 
 pub fn a_leave_from_a_connection_not_in_the_map_logs_an_error_changes_nothing_and_is_answered_left_test() -> Nil {

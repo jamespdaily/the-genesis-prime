@@ -464,9 +464,9 @@ pub fn said(message: map_message.Outgoing) -> String {
       ..,
     ) -> "Unwatched by " <> int.to_string(number)
     map_message.Seen(by:, ..) ->
-      "Seen by " <> int.to_string(unit_address.number(address: by))
+      "Seen by " <> int.to_string(unit_address.joiner(address: by))
     map_message.Unseen(by:, ..) ->
-      "Unseen by " <> int.to_string(unit_address.number(address: by))
+      "Unseen by " <> int.to_string(unit_address.joiner(address: by))
     map_message.Noticed(notice: map_message.UnitUnseen(unit_id:, ..), ..) ->
       "Creature unseen " <> int.to_string(unit_id)
     map_message.Noticed(notice: map_message.PlayerUnseen(unit_id:, ..), ..) ->
@@ -474,18 +474,18 @@ pub fn said(message: map_message.Outgoing) -> String {
     map_message.Relayed(..) -> "Relayed"
     map_message.Retire -> "Retire"
     map_message.Approached(member: step.RingMember(by:, ..)) ->
-      "Approached by " <> int.to_string(unit_address.number(address: by))
+      "Approached by " <> int.to_string(unit_address.joiner(address: by))
     map_message.Withdrew(by:) ->
-      "Withdrew by " <> int.to_string(unit_address.number(address: by))
+      "Withdrew by " <> int.to_string(unit_address.joiner(address: by))
     map_message.PlayerDied(by:) ->
-      "PlayerDied by " <> int.to_string(unit_address.number(address: by))
+      "PlayerDied by " <> int.to_string(unit_address.joiner(address: by))
     map_message.CasterGone(by:) ->
-      "CasterGone by " <> int.to_string(unit_address.number(address: by))
+      "CasterGone by " <> int.to_string(unit_address.joiner(address: by))
     map_message.ToldCreature(by:, payload:) ->
       "Told "
       <> inbound_name(payload)
       <> " by "
-      <> int.to_string(unit_address.number(address: by))
+      <> int.to_string(unit_address.joiner(address: by))
     map_message.Joined(..)
     | map_message.NotJoined(..)
     | map_message.Summoned(..)
@@ -673,7 +673,7 @@ pub fn expired(
 /// The connections of the players a creature's start carries in its ring, in the order
 /// carried.
 pub fn ring_of(start start: step.CreatureStart) -> List(Int) {
-  list.map(start.ring, fn(member) { unit_address.number(address: member.by) })
+  list.map(start.ring, fn(member) { unit_address.joiner(address: member.by) })
 }
 
 /// What the step tells creatures, by the life of the creature told and what it says

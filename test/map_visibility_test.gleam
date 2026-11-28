@@ -538,10 +538,12 @@ pub fn a_second_join_with_a_newly_hidden_unit_removes_it_and_replays_the_rest_te
   assert answers_the_join(again) as "the second join is answered"
   assert seen_creatures(again) == [#(1, [72_051])]
     as "the replay writes only the object still shown: the arrow, newly hidden, gets no create"
-  assert unseen_ids(again) == [#(1, [arrow_unit_id])]
-    as "and one ObjectsUnseen removes the arrow the first join showed, under the unit id it was shown with"
-  assert spawns.creature_sends(again) == [#(creature, "Unseen by 1")]
-    as "and the creature, newly hidden, is told the player no longer watches it, not that it does"
+  assert unseen_ids(again) == []
+    as "no ObjectsUnseen: the first unit is removed as a leave removes it, and the 0xAD of the new join removes the units the client shows"
+  assert arrow_unit_id > 0 as "the arrow had its own unit id in the first join"
+  assert spawns.creature_sends(again)
+    == [#(creature, "Unseen by 1"), #(creature, "CasterGone by 1")]
+    as "and the creature is told what a leave tells it of the first address, and nothing of the new one, which hides it"
   // The map's sight now matches the hidden set, so showing again sends the arrow.
   let #(_, shown) =
     spawns.visibility_changed(

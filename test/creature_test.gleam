@@ -314,7 +314,7 @@ pub fn a_creature_names_a_viewer_by_its_address_and_an_unseen_of_an_earlier_addr
       message: creature.Seen(by: earlier, generation: generation.first()),
     )
   let #(state, snapshot) =
-    told(
+    told_raw(
       state:,
       at_ms: 6100,
       message: creature.Seen(
@@ -443,7 +443,7 @@ fn snapshots(
   list.filter_map(creature_news_support.to_the_map(taken), fn(sent) {
     case sent {
       creature.Snapshot(by:, generation:, burst:, ..) ->
-        Ok(#(unit_address.number(address: by), generation, burst))
+        Ok(#(unit_address.joiner(address: by), generation, burst))
       creature.Broadcast(..) | creature.Relay(..) | creature.Expired(..) ->
         Error(Nil)
     }
@@ -3724,7 +3724,7 @@ pub fn a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_tim
     map_message.Snapshot(
       unit_id:,
       life:,
-      by: map_support.address(number: 9),
+      by: map_support.address_for(incarnation: 1, number: 1, joiner: 9),
       generation: held,
       burst: [
         PeerNews(unit_id:, news: unit_news.Health(health: 52, dead: False)),

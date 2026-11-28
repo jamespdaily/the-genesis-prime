@@ -429,7 +429,7 @@ pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_un
       relations: dict.from_list(
         list.map(next.viewers, fn(viewer) {
           #(
-            ConnectionId(unit_address.number(address: viewer.0)),
+            ConnectionId(unit_address.joiner(address: viewer.0)),
             map.Relation(
               generation: viewer.1,
               stay: map_support.stay(count: 1),
