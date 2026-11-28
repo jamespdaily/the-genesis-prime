@@ -210,3 +210,20 @@ pub fn a_heals_answer_precedes_the_targets_own_news_in_the_maps_stream_test() ->
     == []
     as "and nothing is told to another player's connection directly"
 }
+
+pub fn a_snapshot_names_the_players_own_address_test() -> Nil {
+  use <- owned_test.run(10_000)
+  let #(_, taken) =
+    support.feed(state: support.in_world(), event: seen_by(viewer: 2))
+  assert list.map(support.told_the_map(taken), fn(effect) {
+      case effect {
+        step.OwnEffect(step.Tell(
+          request: client_connection.TellSnapshot(unit:, viewer:, ..),
+          ..,
+        )) -> Ok(#(unit, viewer))
+        _ -> Error(Nil)
+      }
+    })
+    == [Ok(#(support.own_address(), support.viewer_address(2)))]
+    as "the snapshot names the player's own address as its owner and the viewer's address the notice named"
+}

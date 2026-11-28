@@ -2867,7 +2867,7 @@ fn stunning_strike_without_blows(cast_id cast_id: Int) -> creature.Message {
   )
 }
 
-pub fn a_held_unit_state_is_told_to_each_viewer_in_connection_order_and_ended_by_timer_4_test() -> Nil {
+pub fn a_held_unit_state_is_told_to_each_viewer_in_the_order_of_their_addresses_and_ended_by_timer_4_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, taken) =
     told(

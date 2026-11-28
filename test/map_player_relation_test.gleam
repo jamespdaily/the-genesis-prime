@@ -256,7 +256,7 @@ pub fn a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relati
     as "news while the relation awaits its snapshot is dropped: the snapshot is built after everything the owner sent"
 }
 
-pub fn a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_and_news_naming_another_unit_is_dropped_test() -> Nil {
+pub fn a_players_news_is_relayed_to_each_relaying_viewer_in_the_order_of_their_addresses_and_to_no_awaiting_or_departed_viewer_and_news_naming_another_unit_is_dropped_test() -> Nil {
   use <- owned_test.run(5000)
   // Viewers 6 and 2 relay (6 joined first: the order of relaying is the connection's number,
   // not the order of joining), 3 awaits its snapshot, 4 left sight after it relayed, and 5
@@ -315,7 +315,7 @@ pub fn a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and
     as "and the map logs an error that names the unit"
 }
 
-pub fn a_players_line_is_relayed_to_each_relaying_viewer_in_connection_order_for_its_stay_and_to_no_awaiting_or_departed_viewer_and_a_line_of_another_stay_or_unit_is_dropped_test() -> Nil {
+pub fn a_players_line_is_relayed_to_each_relaying_viewer_in_the_order_of_their_addresses_for_its_stay_and_to_no_awaiting_or_departed_viewer_and_a_line_of_another_stay_or_unit_is_dropped_test() -> Nil {
   use <- owned_test.run(5000)
   // The viewers are as in the news test: 6 and 2 relay, 3 awaits its snapshot, 4 left sight
   // after it relayed and 5 has joined again.

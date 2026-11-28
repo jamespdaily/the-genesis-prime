@@ -909,7 +909,7 @@ pub fn the_map_numbers_each_creature_relation_through_join_move_leave_crash_re_e
     as "with fresh generations"
 }
 
-pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_test() -> Nil {
+pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_the_order_of_their_addresses_and_to_no_awaiting_or_departed_viewer_test() -> Nil {
   use <- owned_test.run(5000)
   // Four players join in the order 3, 1, 2, 4, each in a stay of its own. Players 3, 1 and 4
   // have their snapshots taken, 2 does not, and 4 leaves.

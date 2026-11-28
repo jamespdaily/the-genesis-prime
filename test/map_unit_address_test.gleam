@@ -156,7 +156,7 @@ pub fn a_restarted_run_that_reuses_a_wire_unit_id_names_another_address_test() -
     as "so a message for the first run's unit names no unit of the second"
 }
 
-pub fn a_join_issues_the_next_address_and_keeps_the_connections_stay_test() -> Nil {
+pub fn a_join_issues_the_next_address_and_sends_the_notices_to_each_units_address_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) =
     spawns.join_hiding(
@@ -225,7 +225,7 @@ pub fn a_second_join_of_one_joiner_removes_its_first_unit_as_a_leave_does_and_jo
     as "a join of a connection in the map is no error: the connection never sends it, and the rule is a leave and a join"
 }
 
-pub fn a_creature_relay_reaches_the_host_by_the_connection_and_the_connections_stay_test() -> Nil {
+pub fn a_creature_relay_is_sent_to_the_unit_address_it_names_test() -> Nil {
   use <- owned_test.run(5000)
   let state =
     spawns.started_with_spawns(spawns: [
@@ -259,5 +259,5 @@ pub fn a_creature_relay_reaches_the_host_by_the_connection_and_the_connections_s
     == [
       #(7, map_message.Relayed(delivered: map_message.Tell(payload:))),
     ]
-    as "the relay to the address goes to the connection that joined it, for the stay of that join"
+    as "the relay to the address is sent to that unit"
 }
