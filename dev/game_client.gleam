@@ -661,19 +661,37 @@ pub fn missed_in(frames frames: List(Frame)) -> List(#(Int, List(Int))) {
 pub fn ticks_in(
   frames frames: List(Frame),
 ) -> List(#(Int, Int, Int, List(Int))) {
+  list.map(decoded_ticks(frames:), fn(tick) {
+    #(
+      tick.cast_id,
+      tick.spell4_effects_id,
+      tick.unit_id,
+      list.map(tick.descriptions, fn(description) {
+        description.health_damage_with_overkill - description.overkill
+      }),
+    )
+  })
+}
+
+/// Whether each 0x7f8 among the frames, in order, has a description whose combat
+/// result is a critical hit (opcode.0x7f8).
+pub fn critical_ticks_in(frames frames: List(Frame)) -> List(Bool) {
+  list.map(decoded_ticks(frames:), fn(tick) {
+    list.any(tick.descriptions, fn(description) {
+      description.combat_result == combat_result.Critical
+    })
+  })
+}
+
+fn decoded_ticks(
+  frames frames: List(Frame),
+) -> List(spell_effect_tick.SpellEffectTick) {
   list.filter_map(frames, fn(frame) {
     case frame.message_id {
       0x07F8 -> {
         let assert Ok(tick) = spell_effect_tick.decode(frame.body)
           as "0x7f8 decodes"
-        Ok(#(
-          tick.cast_id,
-          tick.spell4_effects_id,
-          tick.unit_id,
-          list.map(tick.descriptions, fn(description) {
-            description.health_damage_with_overkill - description.overkill
-          }),
-        ))
+        Ok(tick)
       }
       _ -> Error(Nil)
     }

@@ -87,7 +87,7 @@ fn defence_of(class_id: Int) -> hit.Defence {
   defence_with(class_id, of: properties_support.wearing)
 }
 
-pub fn a_level_1_players_defence_has_no_deflect_crit_deflect_or_glance_and_its_armors_mitigation_test() -> Nil {
+pub fn a_level_1_players_defence_is_its_base_deflect_with_no_crit_deflect_or_glance_and_its_armors_mitigation_test() -> Nil {
   use <- owned_test.run(60_000)
   let esper = defence_of(3)
   let warrior = defence_of(1)

@@ -582,14 +582,23 @@ pub fn three_ticks_reach_the_client_and_health_falls_three_times_test() -> Nil {
       let #(round, have) = game_client.read_until_pong(game:, have:, number:)
       #(list.append(rounds, [round]), have)
     })
-  list.each(rounds, fn(round) {
-    assert game_client.ticks_in(frames: round)
-      == [#(cast_id, 96_125, beast_unit, [14])]
-      as "opcode.0x7f8: one tick each 2000 ms, naming the go's cast, the row 96125 and the Beast, with one damage description; a hit of Paralytic Surge by a Medic of level 1 with the Novice gear is 14 (Spell4Effects 96125, 0x140565600), worked out from the caster at the tick, and the Beast never deflects"
-  })
+  // Each tick's crit roll is from the connection's random seed, so a tick is a
+  // critical hit or not by chance: 14, or 14 x 1.5 = 21 when it is (the player's
+  // severity is UnitProperty2 127's default, 1.5, and its chance 0.05, CreatureLevel
+  // row 101).
+  let tick_damages =
+    list.map(rounds, fn(round) {
+      let assert [critical] = game_client.critical_ticks_in(frames: round)
+        as "one 0x7f8 in each round"
+      assert game_client.ticks_in(frames: round)
+        == [#(cast_id, 96_125, beast_unit, [damage_of_tick(critical:)])]
+        as "opcode.0x7f8: one tick each 2000 ms, naming the go's cast, the row 96125 and the Beast, with one damage description; a hit of Paralytic Surge by a Medic of level 1 with the Novice gear is 14 (Spell4Effects 96125, 0x140565600), or 21 when critical, worked out from the caster at the tick, and the Beast never deflects"
+      damage_of_tick(critical:)
+    })
   assert list.map(rounds, beast_health_in(frames: _, beast: beast_unit))
-    == [[38], [24], [10]]
-    as "opcode.0x937 after each 0x7f8, from the creature itself: the Beast's 52 health falls by its tick's 14, three times"
+    == list.scan(tick_damages, 52, fn(health, damage) { health - damage })
+    |> list.map(fn(health) { [health] })
+    as "opcode.0x937 after each 0x7f8, from the creature itself: the Beast's 52 health falls by its tick's damage, three times"
   let assert [first_round, second_round, last_round] = rounds
   assert !finishes(frames: first_round, cast_id:)
     && !finishes(frames: second_round, cast_id:)
@@ -617,6 +626,12 @@ pub fn three_ticks_reach_the_client_and_health_falls_three_times_test() -> Nil {
     as "the ticks stop with the row's three: no 0x7f8 and no fall of the Beast's health 2000 ms later"
   game_client.close(game:)
   login_support.stop(started)
+}
+
+/// The health a Paralytic Surge tick of the level-1 Medic takes: 14, or 21 when critical.
+fn damage_of_tick(critical critical: Bool) -> Int {
+  use <- bool.guard(critical, 21)
+  14
 }
 
 /// How many times the frames start Telekinetic Strike's Psi Point child, 30900, under
