@@ -106,10 +106,14 @@ kind(Message) when is_function(Message) -> "a function";
 kind(Message) when is_port(Message) -> "a port";
 kind(_Message) -> "a term of another kind".
 
-metadata({about, Connection, Peer, Account, Character, Map, Message}) ->
+metadata({about, Connection, Peer, Account, Character, Map, Unit, Message}) ->
     Fields = [{connection, Connection}, {peer, Peer}, {account_id, Account},
               {character_id, Character}, {map, Map}, {message, Message}],
-    maps:from_list([{Key, Value} || {Key, {some, Value}} <- Fields]).
+    Known = maps:from_list([{Key, Value} || {Key, {some, Value}} <- Fields]),
+    case Unit of
+        {some, Address} -> Known#{unit => term_text(Address)};
+        none -> Known
+    end.
 
 level(log_error) -> error;
 level(log_warning) -> warning;

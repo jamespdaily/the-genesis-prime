@@ -475,6 +475,8 @@ pub type About {
     account_id: Option(Int),
     character_id: Option(Int),
     map: Option(MapId),
+    /// The unit of a player the line is about (genesis_prime/world_map/unit_address).
+    unit: Option(UnitAddress),
     /// The client message the line is about: its name and its number.
     message: Option(#(String, Int)),
   )
@@ -488,6 +490,7 @@ pub const no_one =
     account_id: None,
     character_id: None,
     map: None,
+    unit: None,
     message: None,
   )
 

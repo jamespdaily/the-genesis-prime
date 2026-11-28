@@ -12,8 +12,10 @@
 ////   its address as one that sees this player: the picture alone holds no connection to
 ////   tell, and a viewer alone is a player the client has not been sent (the client's cast
 ////   names only a unit it shows, `opcode.0x9a`).
-//// - A viewer's address is the one its latest `SeenBy` named, so a player that camped and came
-////   back is addressed by its new address.
+//// - Viewers are keyed by address, so a viewer that camped and came back holds two entries
+////   until the old one goes. It holds one because the map sends each owner `UnseenBy` for
+////   the old address before `SeenBy` for the new one, in one sender's order, so a player
+////   that came back is addressed by its new address only.
 
 import genesis_prime/game/player_state.{type PlayerState}
 import genesis_prime/game/shown

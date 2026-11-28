@@ -1681,8 +1681,13 @@ fn in_run(state state: State, address address: UnitAddress) -> Bool {
 /// unit is in the map, nothing else when it is not.
 fn about_unit(state state: State, address address: UnitAddress) -> step.About {
   case dict.get(state.players, address) {
-    Ok(player) -> step.About(..step.no_one, connection: Some(player.joiner))
-    Error(Nil) -> step.no_one
+    Ok(player) ->
+      step.About(
+        ..step.no_one,
+        connection: Some(player.joiner),
+        unit: Some(address),
+      )
+    Error(Nil) -> step.About(..step.no_one, unit: Some(address))
   }
 }
 
@@ -3053,7 +3058,7 @@ fn moved(
       Effects([
         log_error(
           state:,
-          about: step.no_one,
+          about: about_unit(state:, address: unit),
           text: "a unit moved in the map, but it is not in it",
         ),
       ]),
@@ -3193,7 +3198,7 @@ fn told_about_player(
       Effects([
         log_error(
           state:,
-          about: step.no_one,
+          about: about_unit(state:, address: unit),
           text: "a unit told its "
             <> about
             <> " to the map, but it is not in it",
@@ -3229,7 +3234,7 @@ fn visibility_changed(
       Effects([
         log_error(
           state:,
-          about: step.no_one,
+          about: about_unit(state:, address: unit),
           text: "a unit told its visibility to the map, but it is not in it",
         ),
       ]),
@@ -3477,7 +3482,7 @@ fn left(
       Effects([
         log_error(
           state:,
-          about: step.no_one,
+          about: about_unit(state:, address: unit),
           text: "a unit left the map, but it is not in it",
         ),
         OwnEffect(Reply(caller, Left)),

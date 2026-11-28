@@ -436,10 +436,10 @@ pub fn a_leave_from_a_connection_not_in_the_map_logs_an_error_changes_nothing_an
   assert line.about
     == step.About(
       ..step.no_one,
-      connection: Some(ConnectionId(9)),
+      unit: Some(map_support.address(number: 9)),
       map: Some(MapId(world_id: 3460, instance: 0)),
     )
-    as "the line is about the connection and the map"
+    as "the line is about the unit and the map"
   assert support.replies(left) == [#(CallerId(2), Left)]
     as "the answer lets the connection go on"
   assert support.watches(left) == []
