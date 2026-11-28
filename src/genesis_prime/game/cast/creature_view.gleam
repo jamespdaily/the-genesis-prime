@@ -31,8 +31,8 @@ import gleam/order
 import gleam/pair
 
 import genesis_prime/game/cast/state.{type State, type Told, State, Told}
-import genesis_prime/game/unit_casts
 import genesis_prime/shared/lasting
+import genesis_prime/shared/unit_casts
 
 /// What the creature is told of one cast.
 pub type Change {

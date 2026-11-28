@@ -36,10 +36,10 @@ import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_float.{UnitStatFloat}
 import genesis_prime/message/unit_stat_value
 import genesis_prime/shared/class_resource
+import genesis_prime/shared/player_unit
 import genesis_prime/shared/unit_fields
 import genesis_prime/store
 import genesis_prime/table/id.{ClassId}
-import genesis_prime/world_map/player_unit
 import gleam/list
 import gleam/result
 import message_support

@@ -22,9 +22,9 @@ import cast_support
 import genesis_prime/game/player_life.{
   type Life, OwnInterruptArmor, Regeneration, ToClient, ToViewers,
 }
-import genesis_prime/game/unit_news
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties.{
   type Changed, type Properties, type Source, Change, Changed,
 }

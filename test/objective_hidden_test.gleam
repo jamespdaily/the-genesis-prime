@@ -35,9 +35,9 @@ import genesis_prime/game/objective.{
   type Advanced, Advanced, CompleteByServer, SendProgress, SendState,
 }
 import genesis_prime/game/objective_kind
-import genesis_prime/game/objective_link
 import genesis_prime/game/quest_log
 import genesis_prime/message/quest_log as quest_message
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/quest_view
 import genesis_prime/store.{type HeldItem, type QuestRow, HeldItem}

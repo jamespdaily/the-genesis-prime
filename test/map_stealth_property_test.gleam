@@ -15,6 +15,7 @@
 //// The two Dagun spawns stand at x = 100 and 104. A creature is Live except between a
 //// crash and its restart, which the test gives together; it fires no sweep.
 
+import genesis_prime/map/message as map_message
 import genesis_prime/step.{OwnEvent}
 import genesis_prime/world_map/map.{type State}
 import gleam/dict.{type Dict}
@@ -166,7 +167,7 @@ fn parse(said: String) -> Result(#(String, Int), Nil) {
 /// stealthed and alive.
 fn noted(
   play play: Play,
-  taken taken: step.ServiceStep(map.Outgoing),
+  taken taken: step.ServiceStep(map_message.Outgoing),
   after after: String,
 ) -> Play {
   list.fold(map_spawn_support.ring_and_death_sends(taken), play, fn(play, sent) {

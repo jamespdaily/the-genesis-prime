@@ -72,25 +72,32 @@
 ////   faction level of 0 to 2 toward each player faction), its own attack, from its
 ////   kind's spell, the alternates it strikes with after it in turn, from the kind's other
 ////   auto-attacks, and its specials, each a spell of its kind's list with its gos and hold
-////   from the plan (genesis_prime/world_map/creature_kind,
+////   from the plan (genesis_prime/shared/creature_kind,
 ////   genesis_prime/world_map/creature_life `Attack`, `Special`). Each spell is checked for the
 ////   creature's difficulty by the one rule the kind load takes too
-////   (genesis_prime/world_map/creature_attack `formulas`).
+////   (genesis_prime/shared/creature_attack `formulas`).
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/objective_kind
-import genesis_prime/game/objective_link
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
-import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_attack
+import genesis_prime/shared/creature_combat.{
+  type Attack, type Combat, Attackable, Combat, Hostile,
+}
+import genesis_prime/shared/creature_kind.{type Kind, type Kinds}
+import genesis_prime/shared/creature_unit_type.{
+  type CreatureUnitType, NonPlayer, Turret,
+}
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/damage
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/hit
 import genesis_prime/shared/hit_radius
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/prerequisite.{type Prerequisite}
 import genesis_prime/shared/rating.{type Formulas}
 import genesis_prime/shared/spell_area
@@ -129,16 +136,8 @@ import genesis_prime/table/unit_property2
 import genesis_prime/table/world
 import genesis_prime/world_map/checklist_index
 import genesis_prime/world_map/creation_type
-import genesis_prime/world_map/creature_attack
 import genesis_prime/world_map/creature_columns
 import genesis_prime/world_map/creature_faction.{type Factions}
-import genesis_prime/world_map/creature_kind.{type Kind, type Kinds}
-import genesis_prime/world_map/creature_life.{
-  type Attack, type Combat, Attackable, Combat, Hostile,
-}
-import genesis_prime/world_map/creature_unit_type.{
-  type CreatureUnitType, NonPlayer, Turret,
-}
 import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{
@@ -298,7 +297,7 @@ pub fn values_of(
   ) = spawn.context
   let combat = spawn.combat
   let worked = fn(attack: Attack, effects: List(AttackEffect)) {
-    creature_life.Attack(
+    creature_combat.Attack(
       ..attack,
       offence: offence_of(
         formulas:,
@@ -330,7 +329,7 @@ pub fn values_of(
         combat.specials,
         special_effects,
         fn(special, effects) {
-          creature_life.Special(
+          creature_combat.Special(
             ..special,
             attack: worked(special.attack, effects),
           )
@@ -535,7 +534,7 @@ pub type SpawnError {
     reason: prerequisite.LoadError,
   )
   /// A damage effect of the creature's attack spell has a caster prerequisite the
-  /// server does not evaluate (genesis_prime/world_map/creature_attack).
+  /// server does not evaluate (genesis_prime/shared/creature_attack).
   AttackNotEvaluated(
     creature_id: Creature2Id,
     unevaluated: creature_attack.Unevaluated,
@@ -620,7 +619,7 @@ pub fn select(
   formulas formulas: Formulas,
   kinds kinds: Kinds,
   factions factions: Factions,
-  vendors vendors: Vendors,
+  vendor_creatures vendor_creatures: Set(Creature2Id),
 ) -> Selection {
   let catalog = catalog(tables:, kinds:)
   let refused = fn(row: Row, error) {
@@ -643,7 +642,7 @@ pub fn select(
               catalog:,
               formulas:,
               kinds:,
-              vendors:,
+              vendor_creatures:,
               shared:,
               row: with_chosen_faction(factions:, row:),
               unit_type: creature_type,
@@ -816,7 +815,7 @@ pub opaque type SummonChecks {
     formulas: Formulas,
     kinds: Kinds,
     factions: Factions,
-    vendors: Vendors,
+    vendor_creatures: Set(Creature2Id),
   )
 }
 
@@ -826,14 +825,14 @@ pub fn summon_checks(
   formulas formulas: Formulas,
   kinds kinds: Kinds,
   factions factions: Factions,
-  vendors vendors: Vendors,
+  vendor_creatures vendor_creatures: Set(Creature2Id),
 ) -> SummonChecks {
   SummonChecks(
     catalog: catalog(tables:, kinds:),
     formulas:,
     kinds:,
     factions:,
-    vendors:,
+    vendor_creatures:,
   )
 }
 
@@ -873,7 +872,8 @@ pub fn summoned(
   checks checks: SummonChecks,
   summoned summoned: Summoned,
 ) -> Result(Spawn, SummonRefusal) {
-  let SummonChecks(catalog:, formulas:, kinds:, factions:, vendors:) = checks
+  let SummonChecks(catalog:, formulas:, kinds:, factions:, vendor_creatures:) =
+    checks
   let Summoned(id:, creature_id:, level:, place:) = summoned
   use creature <- result.try(
     valid_creature(catalog:, creature_id:)
@@ -903,7 +903,7 @@ pub fn summoned(
       catalog:,
       formulas:,
       kinds:,
-      vendors:,
+      vendor_creatures:,
       shared: dict.new(),
       row:,
       unit_type: creature_unit_type.of_creation_type(
@@ -1255,7 +1255,7 @@ fn combat_of(
       )
       |> result.map(fn(built) {
         #(
-          creature_life.Special(attack: built.0, cooldown_ms: ref.cooldown_ms),
+          creature_combat.Special(attack: built.0, cooldown_ms: ref.cooldown_ms),
           built.2,
         )
       })
@@ -1311,8 +1311,8 @@ fn value_in(bases bases: Bases) -> Value {
 
 /// The creature's Interrupt Armor: its property 44 is the maximum
 /// (`UnitProperty2.InterruptArmor_Threshold`).
-fn interrupt_armor_in(value value: Value) -> creature_life.InterruptArmor {
-  creature_life.interrupt_armor_of(maximum: value(
+fn interrupt_armor_in(value value: Value) -> creature_combat.InterruptArmor {
+  creature_combat.interrupt_armor_of(maximum: value(
     unit_properties.interrupt_armor_threshold.value,
   ))
 }
@@ -1499,7 +1499,7 @@ fn attack_of(
     Special -> False
   }
   use cast <- result.try(case instant {
-    True -> Ok(creature_life.Instant)
+    True -> Ok(creature_combat.Instant)
     False ->
       case
         spell_area.area_of_spell(tables: catalog.tables, spell4_id: spell4_id)
@@ -1517,7 +1517,7 @@ fn attack_of(
             applied: list.map(effects, fn(applied) { applied.0 }),
             inside:,
           ))
-          creature_life.Charged(
+          creature_combat.Charged(
             cast_ms: spell.cast_time,
             area: area_row,
             inside:,
@@ -1537,7 +1537,7 @@ fn attack_of(
       }
   })
   let #(reach, adds_target_radius) = case cast {
-    creature_life.Charged(area: row, inside:, anchor:, ..) ->
+    creature_combat.Charged(area: row, inside:, anchor:, ..) ->
       case anchor {
         area.FollowsCaster | area.FixedAtCaster -> #(
           case area.farthest_of(inside:) {
@@ -1555,13 +1555,13 @@ fn attack_of(
             )
           }
       }
-    creature_life.Instant -> #(
+    creature_combat.Instant -> #(
       spell.target_max_range +. hit_radius.of_creature(display:),
       False,
     )
   }
   let attack =
-    creature_life.Attack(
+    creature_combat.Attack(
       spell4_id: spell4_id,
       offence: offence_of(
         formulas:,
@@ -1599,7 +1599,7 @@ fn timeline_of(
   cast_ms cast_ms: Int,
   applied applied: List(spell4_effects.Spell4Effects),
   inside inside: area.Inside,
-) -> Result(#(List(creature_life.Go), Int), SpawnError) {
+) -> Result(#(List(creature_combat.Go), Int), SpawnError) {
   let plan = case role {
     AutoAttack -> Error(Nil)
     Special -> dict.get(catalog.special_plans, spell4_id.value)
@@ -1608,9 +1608,9 @@ fn timeline_of(
     Error(Nil) ->
       Ok(#(
         [
-          creature_life.Go(
+          creature_combat.Go(
             at_ms: cast_ms,
-            strike: Some(creature_life.GoStrike(
+            strike: Some(creature_combat.GoStrike(
               spell4_effects_ids: list.map(applied, fn(row) { row.id }),
               inside:,
             )),
@@ -1646,7 +1646,7 @@ fn timeline_of(
       #(
         list.zip(times_ms, shapes)
           |> list.index_map(fn(go, index) {
-            creature_life.Go(
+            creature_combat.Go(
               at_ms: go.0,
               strike: strike_of_go(applied:, go: index, inside: go.1),
             )
@@ -1664,7 +1664,7 @@ fn strike_of_go(
   applied applied: List(spell4_effects.Spell4Effects),
   go go: Int,
   inside inside: Option(area.Inside),
-) -> Option(creature_life.GoStrike) {
+) -> Option(creature_combat.GoStrike) {
   let named =
     list.filter(applied, fn(row) {
       spell_effect.names_phase(phase_flags: row.phase_flags, phase: go)
@@ -1672,7 +1672,7 @@ fn strike_of_go(
   case named, inside {
     [], _ | _, None -> None
     rows, Some(inside) ->
-      Some(creature_life.GoStrike(
+      Some(creature_combat.GoStrike(
         spell4_effects_ids: list.map(rows, fn(row) { row.id }),
         inside:,
       ))
@@ -1877,7 +1877,7 @@ fn attackable_by(
 pub fn hostile_to_players(
   levels levels: faction_level.Levels,
   faction_id faction_id: Int,
-) -> creature_life.Hostile {
+) -> creature_combat.Hostile {
   Hostile(
     exile: faction_level.hostile(levels:, from: exile_faction, to: faction_id),
     dominion: faction_level.hostile(
@@ -2264,7 +2264,7 @@ fn load_checks(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
   kinds kinds: Kinds,
-  vendors vendors: Vendors,
+  vendor_creatures vendor_creatures: Set(Creature2Id),
   shared shared: SharedCombats,
   row row: Row,
   unit_type unit_type: CreatureUnitType,
@@ -2329,7 +2329,7 @@ fn load_checks(
         combat:,
         bases:,
         context:,
-        vendor: vendor.is_vendor(vendors:, creature_id:),
+        vendor: set.contains(vendor_creatures, creature_id),
         unit_type:,
         world_object_id: row.world_object_id,
         visibility: visibility_of(creature:),

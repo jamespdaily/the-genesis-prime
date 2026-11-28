@@ -15,6 +15,7 @@ import gleam/int
 import gleam/list
 import gleam/string
 import owned_test
+import simplifile
 import unitest
 
 /// A planted module of `src` with the named imports, one to a line from
@@ -63,7 +64,39 @@ pub fn every_hand_written_module_is_in_the_levels_table_once_test() -> Nil {
     |> list.sort(string.compare)
   assert list.map(table, fn(row) { row.module }) == tree_modules
     as "the table's modules differ from the files of src"
+  // The modules the map level reads from the unit and character levels are shared
+  // vocabulary, and the two table readers only the map and the root read are map.
+  list.each(
+    [
+      #(Shared, shared_by_the_map_split),
+      #(Map, [
+        "genesis_prime/map/message",
+        "genesis_prime/world_map/creature_columns",
+        "genesis_prime/world_map/creature_faction",
+      ]),
+    ],
+    fn(expected) {
+      list.each(expected.1, fn(module) {
+        assert level.level_of(rows: table, module:) == Ok(expected.0)
+          as { module <> " has the level " <> level.name(expected.0) }
+      })
+    },
+  )
 }
+
+/// The 16 modules the map level's types come from, now under `shared/`.
+const shared_by_the_map_split = [
+  "genesis_prime/shared/activate", "genesis_prime/shared/chat_channel",
+  "genesis_prime/shared/chat_tell", "genesis_prime/shared/creature_attack",
+  "genesis_prime/shared/creature_auto_attack",
+  "genesis_prime/shared/creature_guard_spells",
+  "genesis_prime/shared/creature_kind", "genesis_prime/shared/creature_special",
+  "genesis_prime/shared/creature_turn",
+  "genesis_prime/shared/creature_unit_type",
+  "genesis_prime/shared/objective_link", "genesis_prime/shared/player_unit",
+  "genesis_prime/shared/strike_tell", "genesis_prime/shared/target_info",
+  "genesis_prime/shared/unit_casts", "genesis_prime/shared/unit_news",
+]
 
 pub fn a_levels_table_row_for_a_deleted_module_fails_test() -> Nil {
   use <- owned_test.run(5000)
@@ -326,6 +359,7 @@ pub fn the_enforced_set_equals_the_levels_the_doc_names_as_enforced_test() -> Ni
     as "the doc names the enforced levels on one line"
   assert list.sort(words(named), string.compare)
     == list.sort(list.map(level.enforced, level.name), string.compare)
+  assert list.contains(words(named), "map") as "the doc names map as enforced"
 }
 
 pub fn the_levels_diagram_and_the_matrix_agree_test() -> Nil {
@@ -359,11 +393,36 @@ pub fn the_levels_diagram_and_the_matrix_agree_test() -> Nil {
       == names(level.message_levels(each))
       as { level.name(each) <> " messages" }
   })
+  // A message module a level's contract names, when the tree has it, has that level's row.
+  let table = level.parse_rows(source.read(level.list_path))
+  list.each(level.all_levels(), fn(each) {
+    list.each(level.contract(each), fn(module) {
+      case simplifile.is_file("src/" <> module <> ".gleam") {
+        Ok(True) -> {
+          assert level.level_of(rows: table, module:) == Ok(each)
+            as { module <> " is a message module of " <> level.name(each) }
+          Nil
+        }
+        _ -> Nil
+      }
+    })
+  })
 }
 
 pub fn the_real_tree_imports_no_level_its_matrix_row_forbids_test() -> Nil {
   use <- owned_test.run(10_000)
   use <- unitest.tag("code_rule")
+  assert level.enforced == [Data, Platform, Shared, Map]
+    as "data, platform, shared and map are enforced"
+  assert list.map(
+      level.parse_allowed(source.read(level.allowed_path)),
+      fn(allowed) { allowed.importer },
+    )
+    == [
+      "genesis_prime/login/auth_connection",
+      "genesis_prime/login/sts_connection",
+    ]
+    as "the list of allowed imports holds only the two login rows"
   let breaches =
     level.import_breaches(
       files: repository.sources(under: ["src"]),

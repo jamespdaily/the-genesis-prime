@@ -20,7 +20,7 @@ import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
-import genesis_prime/world_map/player_unit
+import genesis_prime/shared/player_unit
 import genesis_prime/world_map/static_object
 import gleam/dict
 import gleam/list

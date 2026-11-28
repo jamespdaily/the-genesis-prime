@@ -15,7 +15,7 @@
 //// - The own-path tests state what a modifier and a pool write
 ////   (`game_connection_properties_test`, `player_life_absorb_test`); a told change writes
 ////   the same.
-//// - `map.Notice`: `UnseenBy` is sent by distance, by leaving the map or by the caster's
+//// - `map_message.Notice`: `UnseenBy` is sent by distance, by leaving the map or by the caster's
 ////   connection ending; `Gone` is sent to every player when a connection's unit is gone.
 //// - Client fact `cast.target_node_end`: the removal of a caster's unit finishes the casts it
 ////   made and so ends their buffs on other units, unless the spell's propertyFlags hold
@@ -34,18 +34,9 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/connection/state as connection_state
-import genesis_prime/game/held_changes.{
-  type PlayerChange, type Sight, type Told, EndsWhenUnseen, KeptWhenUnseen,
-  PlayerCastWent, PlayerChangeEnds, PlayerChangeStarts,
-}
-import genesis_prime/game/proc
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
-import genesis_prime/game/unit_news.{
-  type News, Absorption, Appeared, CastFinished, CastStarted, HeldCastEnded,
-  HeldCastStarted, InterruptArmor, PropertiesChanged, Removed,
-}
+import genesis_prime/game/held_changes
 import genesis_prime/game/world_entry
+import genesis_prime/map/message as map_message
 import genesis_prime/message/float32
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go.{type SpellGo}
@@ -63,7 +54,18 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/shared/hit
+import genesis_prime/shared/player_change.{
+  type PlayerChange, type Sight, type Told, EndsWhenUnseen, KeptWhenUnseen,
+  PlayerCastWent, PlayerChangeEnds, PlayerChangeStarts,
+}
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
+import genesis_prime/shared/unit_news.{
+  type News, Absorption, Appeared, CastFinished, CastStarted, HeldCastEnded,
+  HeldCastStarted, InterruptArmor, PropertiesChanged, Removed,
+}
 import genesis_prime/shared/unit_properties.{type Source, Change, Source}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId, OwnEffect,
@@ -72,8 +74,6 @@ import genesis_prime/table/id.{
   type Spell4Id, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
@@ -93,8 +93,8 @@ const armored_bits = 1_062_836_634
 fn armor() -> Told {
   let assert Ok(multiplier) = float32.of_column(armored_bits)
     as "dataBits02 of row 203798 is a finite float"
-  held_changes.Applies(
-    held_changes.Property(Change(
+  player_change.Applies(
+    player_change.Property(Change(
       property: UnitProperty2Id(161),
       mode: 3,
       multiplier:,
@@ -106,13 +106,13 @@ fn armor() -> Told {
 
 /// The pool of an absorb row, `amount` taking every damage type (mask 7, row 62024).
 fn pool(amount amount: Int) -> Told {
-  held_changes.Applies(held_changes.Absorb(amount:, mask: 7))
+  player_change.Applies(player_change.Absorb(amount:, mask: 7))
 }
 
 /// The Proc row 86457 a caster holds on the player (Healing Salve's allies' row, kind 16 takes
 /// damage, Spell4 39386, 12 000 ms): the player applies nothing of it.
 fn watches() -> Told {
-  held_changes.Awaits(trigger: spell_plan.TakesDamage)
+  player_change.Awaits(trigger: spell_plan.TakesDamage)
 }
 
 fn watch_source(cast_id cast_id: Int) -> Source {
@@ -150,8 +150,8 @@ fn armor_entry(value value: Int) -> UnitProperty {
 /// The Interrupt Armor row 199192 (`table_rows -- Spell4Effects 199192`): +1 flat on property
 /// 44, the armor's maximum (default 0.0), for 5000 ms.
 fn interrupt_armor() -> Told {
-  held_changes.Applies(
-    held_changes.Property(unit_properties.Change(
+  player_change.Applies(
+    player_change.Property(unit_properties.Change(
       property: unit_properties.interrupt_armor_threshold,
       mode: 0,
       multiplier: 1.0,
@@ -554,7 +554,7 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
     let #(_, unseen) =
       support.feed(
         state:,
-        event: support.sent_by_the_map(map.UnseenBy(
+        event: support.sent_by_the_map(map_message.UnseenBy(
           by: ConnectionId(caster),
           generation: support.viewer_sight(caster),
         )),
@@ -736,7 +736,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
           source: armor_source(cast_id: 100),
         )),
       ]).0,
-      event: support.sent_by_the_map(map.UnseenBy(
+      event: support.sent_by_the_map(map_message.UnseenBy(
         by: ConnectionId(3),
         generation: support.viewer_sight(3),
       )),
@@ -751,14 +751,15 @@ type Notice {
   UnitGone(caster: Int)
 }
 
-fn notice_of(notice notice: Notice) -> map.Notice {
+fn notice_of(notice notice: Notice) -> map_message.Notice {
   case notice {
     Unseen(caster:) ->
-      map.UnseenBy(
+      map_message.UnseenBy(
         by: ConnectionId(caster),
         generation: support.viewer_sight(caster),
       )
-    UnitGone(caster:) -> map.Gone(unit_id: support.viewer_unit_id(caster))
+    UnitGone(caster:) ->
+      map_message.Gone(unit_id: support.viewer_unit_id(caster))
   }
 }
 
@@ -1137,7 +1138,9 @@ fn departed(
   case departure {
     Removal -> from_caster(caster:, news: Removed)
     UnitGoneFromTheMap ->
-      support.sent_by_the_map(map.Gone(unit_id: support.viewer_unit_id(caster)))
+      support.sent_by_the_map(
+        map_message.Gone(unit_id: support.viewer_unit_id(caster)),
+      )
   }
 }
 
@@ -1411,13 +1414,13 @@ pub fn the_end_of_a_kept_change_whose_caster_left_the_players_sight_writes_the_c
           CasterFinishes ->
             from_caster(caster: 3, news: CastFinished(cast_id: 100))
           MapUnseen ->
-            support.sent_by_the_map(map.UnseenBy(
+            support.sent_by_the_map(map_message.UnseenBy(
               by: ConnectionId(3),
               generation: support.viewer_sight(3),
             ))
           MapGone ->
             support.sent_by_the_map(
-              map.Gone(unit_id: support.viewer_unit_id(3)),
+              map_message.Gone(unit_id: support.viewer_unit_id(3)),
             )
           CasterRemoved -> from_caster(caster: 3, news: Removed)
         }
@@ -1862,7 +1865,7 @@ pub fn a_went_tell_makes_the_ally_tell_the_map_the_casts_start_once_for_its_view
   let #(_, arrived) =
     support.feed(
       state:,
-      event: support.sent_by_the_map(map.SeenBy(
+      event: support.sent_by_the_map(map_message.SeenBy(
         by: ConnectionId(6),
         stay: support.viewer_stay(6),
         unit_id: support.viewer_unit_id(6),
@@ -1908,7 +1911,7 @@ pub fn a_went_tell_makes_the_ally_tell_the_map_the_casts_start_once_for_its_view
       let #(unseen, _) =
         support.feed(
           state: holding_for_caster_4(holds: [hold]),
-          event: support.sent_by_the_map(map.UnseenBy(
+          event: support.sent_by_the_map(map_message.UnseenBy(
             by: ConnectionId(4),
             generation: support.viewer_sight(4),
           )),
@@ -1940,7 +1943,7 @@ fn events_told(
         client_connection.TellLanding(
           to: ConnectionId(caster),
           to_stay: stay,
-          landing: relay.AllyEvent(event:),
+          landing: map_message.AllyEvent(event:),
           ..,
         ),
       ) -> Ok(#(caster, stay, event))
@@ -1956,7 +1959,7 @@ fn waits(
   cast_id cast_id: Int,
   trigger trigger: spell_plan.Trigger,
 ) -> Hold {
-  Hold(..watch_hold(cast_id:), caster:, change: held_changes.Awaits(trigger:))
+  Hold(..watch_hold(cast_id:), caster:, change: player_change.Awaits(trigger:))
 }
 
 /// A creature's strike on the player of the Beast's attack Spell4 5649, each blow dealing
@@ -1983,11 +1986,11 @@ fn beast_blow(
 /// attack Spell4 5649 raises it: the Beast 7 as the other unit, and the spell's groups 6, 9,
 /// 134 and 333 (Spell4GroupList 657) and school 1 (Spell4Base 4947), read with
 /// `table_rows -- Spell4 5649`, `Spell4GroupList 657` and `Spell4Base 4947`.
-fn beast_takes_damage() -> proc.Event {
-  proc.Event(
+fn beast_takes_damage() -> proc_event.Event {
+  proc_event.Event(
     trigger: spell_plan.TakesDamage,
     other_unit: Some(7),
-    spell: Some(proc.EventSpell(
+    spell: Some(proc_event.EventSpell(
       spell4_id: Spell4Id(5649),
       spell4_base_id: Spell4BaseId(4947),
       groups: [6, 9, 134, 333],
@@ -1999,8 +2002,8 @@ fn beast_takes_damage() -> proc.Event {
 
 /// The event of the same blow of kind `trigger`: the Beast 7 and its attack Spell4 5649 name
 /// each event of one blow alike (`cast_proc.blow_events`).
-fn beast_event(trigger trigger: spell_plan.Trigger) -> proc.Event {
-  proc.Event(..beast_takes_damage(), trigger:)
+fn beast_event(trigger trigger: spell_plan.Trigger) -> proc_event.Event {
+  proc_event.Event(..beast_takes_damage(), trigger:)
 }
 
 /// A creature's blow of the Beast's attack Spell4 5649 that is a critical (a crit chance of 1.0
@@ -2029,7 +2032,7 @@ fn beast_critical_blow(
 /// The tell of `events` caster `caster` is sent for the player, as the caster's stay names it.
 fn told_to(
   caster caster: Int,
-  events events: List(proc.Event),
+  events events: List(proc_event.Event),
 ) -> #(Int, Stay, strike_tell.PlayerEvent) {
   #(
     caster,
@@ -2206,7 +2209,7 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
       case effect {
         OwnEffect(step.Tell(
           request: client_connection.TellLanding(
-            landing: relay.AllyEvent(..),
+            landing: map_message.AllyEvent(..),
             ..,
           ),
           ..,
@@ -2227,7 +2230,7 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
       state: holding(holds: [
         waits(caster: 3, cast_id: 103, trigger: spell_plan.TakesDamage),
       ]),
-      event: support.sent_by_the_map(map.UnseenBy(
+      event: support.sent_by_the_map(map_message.UnseenBy(
         by: ConnectionId(3),
         generation: support.viewer_sight(3),
       )),
@@ -2320,7 +2323,7 @@ pub fn a_unit_leaves_a_viewer_by_one_message_that_finishes_its_casts_removes_it_
       cast_id: 100,
     )
   let unseen =
-    support.sent_by_the_map(map.PlayerUnseen(
+    support.sent_by_the_map(map_message.PlayerUnseen(
       unit_id: support.viewer_unit_id(3),
       generation: support.viewer_sight(3),
     ))
@@ -2369,7 +2372,7 @@ pub fn a_caster_that_joins_again_ends_the_sources_of_its_earlier_stay_that_end_w
   let #(state, unseen) =
     support.feed(
       state:,
-      event: support.sent_by_the_map(map.PlayerUnseen(
+      event: support.sent_by_the_map(map_message.PlayerUnseen(
         unit_id: support.viewer_unit_id(3),
         generation: support.viewer_sight(3),
       )),
@@ -2383,7 +2386,7 @@ pub fn a_caster_that_joins_again_ends_the_sources_of_its_earlier_stay_that_end_w
   let #(state, _) =
     support.feed(
       state:,
-      event: support.sent_by_the_map(map.SeenBy(
+      event: support.sent_by_the_map(map_message.SeenBy(
         by: ConnectionId(3),
         stay: new_stay,
         unit_id: support.viewer_unit_id(3),

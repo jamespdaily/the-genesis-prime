@@ -21,6 +21,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
 import genesis_prime/game/zone_welcome
 import genesis_prime/hand_off.{type Holder}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/shared/hit_radius
 import genesis_prime/shared/top_zone
@@ -29,7 +30,6 @@ import genesis_prime/step.{
   OwnEffect,
 }
 import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import gleam/int
 import gleam/list
 import gleam/set
@@ -294,7 +294,7 @@ pub fn tells_a_fighter_the_place(
     connection:,
     unit_id: fighter.0,
     life: fighter.1,
-    payload: relay.TargetMoved(place:, seq:, hit_radius:),
+    payload: map_message.TargetMoved(place:, seq:, hit_radius:),
   )
 }
 

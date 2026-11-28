@@ -28,15 +28,15 @@ import genesis_prime/game/player_life.{
   OwnResurrectionWindow, OwnShield, StartTimer, StreamTo, ToClient, ToViewers,
 }
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell.{
-  Answered, CreatureStriker, Key, Landed, Refused, Strike,
-}
-import genesis_prime/game/unit_news
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/hit
 import genesis_prime/shared/loadout
 import genesis_prime/shared/rating
+import genesis_prime/shared/strike_tell.{
+  Answered, CreatureStriker, Key, Landed, Refused, Strike,
+}
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{TimerId}
 import genesis_prime/table/id.{

@@ -29,14 +29,11 @@ import genesis_prime/game/strike.{
   type Attacker, type Effect, type Selection, type State, Aimed, Attacker,
   Selection,
 }
-import genesis_prime/game/strike_tell.{
-  Answered, Dead, Deflected, Key, Landed, Refused,
-}
-import genesis_prime/game/unit_news
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/shared/area.{Point, Pose}
 import genesis_prime/shared/class_resource.{Resource}
+import genesis_prime/shared/creature_combat.{Attackable, Hostile}
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
@@ -46,11 +43,14 @@ import genesis_prime/shared/lasts
 import genesis_prime/shared/spell_area.{DamageEffect}
 import genesis_prime/shared/spell_plan.{AimsAtArea}
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell.{
+  Answered, Dead, Deflected, Key, Landed, Refused,
+}
 import genesis_prime/shared/target_mechanic
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId, Spell4Id}
-import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/int

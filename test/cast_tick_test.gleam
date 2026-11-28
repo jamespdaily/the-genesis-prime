@@ -14,8 +14,6 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/held_changes
-import genesis_prime/game/unit_news.{type News, CastTicked}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_result
@@ -37,10 +35,12 @@ import genesis_prime/shared/damage.{Formula, Parameter}
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/hit
 import genesis_prime/shared/lasting
+import genesis_prime/shared/player_change
 import genesis_prime/shared/spell_area.{DamageEffect, TickingDamage}
 import genesis_prime/shared/spell_plan.{type Spell, AimsAtArea, AimsAtCaster}
 import genesis_prime/shared/spend
 import genesis_prime/shared/ticking.{Schedule, Ticks}
+import genesis_prime/shared/unit_news.{type News, CastTicked}
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}
 import gleam/dict
@@ -1974,9 +1974,9 @@ fn heals(
     case start.1 {
       cast_state.Heal(vital:, amount:) ->
         Ok(#({ start.0 }.effect_id.value, vital, amount))
-      cast_state.HeldChange(held_changes.Property(..))
+      cast_state.HeldChange(player_change.Property(..))
       | cast_state.Look(..)
-      | cast_state.HeldChange(held_changes.Absorb(..)) -> Error(Nil)
+      | cast_state.HeldChange(player_change.Absorb(..)) -> Error(Nil)
     }
   })
 }

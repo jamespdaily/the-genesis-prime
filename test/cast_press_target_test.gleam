@@ -23,16 +23,12 @@
 
 import cast_support as support
 import class_resource_support
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
-import genesis_prime/game/heal_split
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/player_state.{type PlayerState, PlayerState}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{CastTicked}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
@@ -44,12 +40,16 @@ import genesis_prime/message/spell_effect_tick.{
   type SpellEffectTick, SpellEffectTick,
 }
 import genesis_prime/message/spell_finished
+import genesis_prime/shared/activate
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/faction_level
+import genesis_prime/shared/heal_parts
 import genesis_prime/shared/spell_plan.{type Plans, type Spell, Spell}
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/target_mechanic.{Targeted, Targeting}
 import genesis_prime/shared/ticking.{Schedule, Ticks}
+import genesis_prime/shared/unit_news.{CastTicked}
 import genesis_prime/step.{ConnectionId, LogWarning}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict.{type Dict}
@@ -316,7 +316,7 @@ pub fn a_heal_pressed_at_another_player_does_not_heal_the_caster_test() -> Nil {
         strike_tell.HealLanded(
           effect_id: Spell4EffectsId(62_019),
           vital: effect_kind.Health,
-          split: heal_split.Split(
+          split: heal_parts.Split(
             amount: 121,
             shield: 0,
             health: 100,
@@ -375,7 +375,7 @@ fn targets_named(effects effects: List(Effect)) -> List(Int) {
 fn landed(
   effect_id effect_id: Int,
   vital vital: effect_kind.Vital,
-  split split: heal_split.Split,
+  split split: heal_parts.Split,
 ) -> strike_tell.HealLanded {
   strike_tell.HealLanded(effect_id: Spell4EffectsId(effect_id), vital:, split:)
 }
@@ -499,7 +499,7 @@ pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_
           landed(
             effect_id: 62_019,
             vital: health,
-            split: heal_split.Split(
+            split: heal_parts.Split(
               amount: 77,
               shield: 0,
               health: 50,
@@ -529,7 +529,7 @@ pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_
           landed(
             effect_id: 62_019,
             vital: health,
-            split: heal_split.Split(
+            split: heal_parts.Split(
               amount: 121,
               shield: 0,
               health: 0,
@@ -567,7 +567,7 @@ pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_
           landed(
             effect_id: 70_001,
             vital: effect_kind.Shield,
-            split: heal_split.Split(
+            split: heal_parts.Split(
               amount: 56,
               shield: 50,
               health: 0,
@@ -577,7 +577,7 @@ pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_
           landed(
             effect_id: 70_002,
             vital: health,
-            split: heal_split.Split(
+            split: heal_parts.Split(
               amount: 121,
               shield: 0,
               health: 100,
@@ -619,7 +619,7 @@ pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_
           landed(
             effect_id: 62_019,
             vital: health,
-            split: heal_split.Split(
+            split: heal_parts.Split(
               amount: 121,
               shield: 0,
               health: 100,
@@ -683,7 +683,7 @@ pub fn a_go_lists_each_heal_the_ally_answered_with_the_answers_own_split_in_the_
     landed(
       effect_id: 62_019,
       vital: effect_kind.Health,
-      split: heal_split.Split(amount:, shield: 0, health:, overheal:),
+      split: heal_parts.Split(amount:, shield: 0, health:, overheal:),
     )
   }
   let answered_by = fn(unit_id, heals) {
@@ -951,7 +951,7 @@ pub fn a_go_lists_the_heals_the_ally_answered_and_no_others_whatever_the_casters
     landed(
       effect_id:,
       vital: effect_kind.Health,
-      split: heal_split.Split(amount: 121, shield: 0, health: 100, overheal: 21),
+      split: heal_parts.Split(amount: 121, shield: 0, health: 100, overheal: 21),
     )
   }
   list.each(
@@ -1302,7 +1302,7 @@ pub fn a_tick_on_an_ally_asks_for_it_and_the_0x7f8_lists_what_the_ally_applied_t
         answered: landed(
           effect_id: 80_077,
           vital: effect_kind.Health,
-          split: heal_split.Split(
+          split: heal_parts.Split(
             amount: 77,
             shield: 0,
             health: 50,
@@ -1321,7 +1321,7 @@ pub fn a_tick_on_an_ally_asks_for_it_and_the_0x7f8_lists_what_the_ally_applied_t
         answered: landed(
           effect_id: 80_077,
           vital: effect_kind.Health,
-          split: heal_split.Split(
+          split: heal_parts.Split(
             amount: 121,
             shield: 0,
             health: 0,
@@ -1340,7 +1340,7 @@ pub fn a_tick_on_an_ally_asks_for_it_and_the_0x7f8_lists_what_the_ally_applied_t
         answered: landed(
           effect_id: 80_077,
           vital: effect_kind.Shield,
-          split: heal_split.Split(
+          split: heal_parts.Split(
             amount: 56,
             shield: 50,
             health: 0,
@@ -1465,7 +1465,7 @@ pub fn a_heal_tick_with_no_answer_ends_the_ally_ticks_and_its_node_like_a_creatu
         landed(
           effect_id: 80_077,
           vital: effect_kind.Health,
-          split: heal_split.Split(
+          split: heal_parts.Split(
             amount: 77,
             shield: 0,
             health: 50,

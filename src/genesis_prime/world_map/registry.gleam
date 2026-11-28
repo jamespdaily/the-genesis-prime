@@ -73,9 +73,9 @@
 ////   `NoAnswerInTime`, a watch's end is `WatchEnded`, each ending the
 ////   connection), so the reply goes with it.
 
+import genesis_prime/map/message as map_message
 import genesis_prime/service.{type Call, type Sent, NoReplyInTime}
 import genesis_prime/step/runtime
-import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Monitor, type Name, type Pid, type Subject}
@@ -89,7 +89,7 @@ import gleam/result
 pub type MapProcess {
   MapProcess(
     pid: Pid,
-    subject: Subject(Call(map.Message, map.Outgoing)),
+    subject: Subject(Call(map_message.Message, map_message.Outgoing)),
     incarnation: Int,
   )
 }
@@ -102,7 +102,10 @@ pub type MapStart {
 
 /// The map supervisor's messages.
 pub type MapSupervisor =
-  factory_supervisor.Message(MapStart, Subject(Call(map.Message, map.Outgoing)))
+  factory_supervisor.Message(
+    MapStart,
+    Subject(Call(map_message.Message, map_message.Outgoing)),
+  )
 
 /// What a find does when the map is not running.
 pub type Lookup {
@@ -164,11 +167,11 @@ pub fn map_supervisor(
   name name: Name(MapSupervisor),
   shutdown_ms shutdown_ms: Int,
   start start: fn(MapStart) ->
-    actor.StartResult(Subject(Call(map.Message, map.Outgoing))),
+    actor.StartResult(Subject(Call(map_message.Message, map_message.Outgoing))),
 ) -> ChildSpecification(
   factory_supervisor.Supervisor(
     MapStart,
-    Subject(Call(map.Message, map.Outgoing)),
+    Subject(Call(map_message.Message, map_message.Outgoing)),
   ),
 ) {
   service.temporary_factory(name:, shutdown_ms:, start:)
@@ -225,9 +228,9 @@ pub fn ask_run(
   maps maps: Name(Message),
   map map: MapId,
   incarnation incarnation: Int,
-  message message: map.Message,
+  message message: map_message.Message,
   deadline_ms deadline_ms: Int,
-  reply reply: fn(map.Outgoing) -> Nil,
+  reply reply: fn(map_message.Outgoing) -> Nil,
 ) -> Result(Sent, Nil) {
   case find(maps:, map:, incarnation:, deadline_ms:) {
     Ok(found) -> service.call_subject(found.subject, message, reply)

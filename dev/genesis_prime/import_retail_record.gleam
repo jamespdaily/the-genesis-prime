@@ -62,12 +62,12 @@ import genesis_prime/language_file
 import genesis_prime/retail_creature_spell.{
   type Auto, type Outcome, type Special, Matched, Unmatched,
 }
+import genesis_prime/shared/creature_unit_type
 import genesis_prime/table
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/table_folder
-import genesis_prime/world_map/creature_unit_type
 import gleam/bit_array
 import gleam/dict.{type Dict}
 import gleam/int

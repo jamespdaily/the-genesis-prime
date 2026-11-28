@@ -1,7 +1,7 @@
 //// What a CCStateSet effect (`Spell4Effects.effectType.4`) is to the server before
 //// any creature holds it: the columns of its row and the instance id its go gives
 //// it. The caster's strike carries the row's state to the creature that owns the
-//// struck unit (genesis_prime/game/strike_tell `ControlTell`), the creature holds it
+//// struck unit (genesis_prime/shared/strike_tell `ControlTell`), the creature holds it
 //// and ends it (genesis_prime/world_map/creature_control), and the cast rule lists
 //// it in the go (genesis_prime/game/cast).
 ////

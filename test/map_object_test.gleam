@@ -17,6 +17,7 @@
 ////   a join at 6000 of a map started at 5000 stamps 1000.
 
 import connection_rule_support as support
+import genesis_prime/map/message as map_message
 import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/step.{
   type ServiceStep, Asked, CallerId, ConnectionId, OwnEffect, OwnEvent, Reply,
@@ -79,32 +80,34 @@ fn holoring_message(created: static_object.Created) -> UnitCreateStatic {
   message
 }
 
-fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
+fn object_notices(
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(ObjectNotice) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      map.Noticed(notice: map.ObjectsSeen(units:), ..) ->
+      map_message.Noticed(notice: map_message.ObjectsSeen(units:), ..) ->
         Ok(Seen(sent.0, list.map(units, fn(unit) { holoring_message(unit.1) })))
-      map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->
+      map_message.Noticed(notice: map_message.ObjectsUnseen(unit_ids:), ..) ->
         Ok(Unseen(sent.0, unit_ids))
-      map.Noticed(notice: map.SeenBy(..), ..)
-      | map.Noticed(notice: map.UnseenBy(..), ..)
-      | map.Noticed(notice: map.Gone(..), ..)
-      | map.Noticed(notice: map.UnitUnseen(..), ..)
-      | map.Noticed(notice: map.PlayerUnseen(..), ..)
-      | map.Joined(..)
-      | map.NotJoined(..)
-      | map.Left
-      | map.Summoned(..)
-      | map.NotSummoned(..)
-      | map.Seen(..)
-      | map.Unseen(..)
-      | map.Relayed(..)
-      | map.Retire
-      | map.Approached(..)
-      | map.Withdrew(..)
-      | map.PlayerDied(..)
-      | map.CasterGone(..)
-      | map.ToldCreature(..) -> Error(Nil)
+      map_message.Noticed(notice: map_message.SeenBy(..), ..)
+      | map_message.Noticed(notice: map_message.UnseenBy(..), ..)
+      | map_message.Noticed(notice: map_message.Gone(..), ..)
+      | map_message.Noticed(notice: map_message.UnitUnseen(..), ..)
+      | map_message.Noticed(notice: map_message.PlayerUnseen(..), ..)
+      | map_message.Joined(..)
+      | map_message.NotJoined(..)
+      | map_message.Left
+      | map_message.Summoned(..)
+      | map_message.NotSummoned(..)
+      | map_message.Seen(..)
+      | map_message.Unseen(..)
+      | map_message.Relayed(..)
+      | map_message.Retire
+      | map_message.Approached(..)
+      | map_message.Withdrew(..)
+      | map_message.PlayerDied(..)
+      | map_message.CasterGone(..)
+      | map_message.ToldCreature(..) -> Error(Nil)
     }
   })
 }
@@ -115,12 +118,14 @@ fn ids(units: List(UnitCreateStatic)) -> List(Int) {
 }
 
 /// The kinds of the step's effects, in order, for the order of a join.
-fn kinds_of(taken: ServiceStep(map.Outgoing)) -> List(String) {
+fn kinds_of(taken: ServiceStep(map_message.Outgoing)) -> List(String) {
   list.map(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(Reply(answer: map.Joined(..), ..)) -> "Joined"
-      OwnEffect(Send(message: map.Noticed(notice: map.ObjectsSeen(..), ..), ..)) ->
-        "ObjectsSeen"
+      OwnEffect(Reply(answer: map_message.Joined(..), ..)) -> "Joined"
+      OwnEffect(Send(
+        message: map_message.Noticed(notice: map_message.ObjectsSeen(..), ..),
+        ..,
+      )) -> "ObjectsSeen"
       OwnEffect(step.StartCreature(..)) -> "StartCreature"
       step.Watch(..) -> "Watch"
       OwnEffect(Reply(..))
@@ -161,7 +166,7 @@ pub fn an_object_notice_names_the_objects_spawn_and_not_its_unit_id_test() -> Ni
   // spawn of each object it is told of: spawns 101 and 102 here, under unit ids 2 and 3.
   let state = started(creatures: [], objects: [0.0, 1.0])
   let #(_, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
-  let assert [map.Noticed(notice: map.ObjectsSeen(units:), ..)] =
+  let assert [map_message.Noticed(notice: map_message.ObjectsSeen(units:), ..)] =
     list.map(support.sends(taken), fn(sent) { sent.1 })
     as "one notice of objects"
   assert list.map(units, fn(unit) { unit.0 }) == [SpawnId(101), SpawnId(102)]
@@ -204,21 +209,21 @@ pub fn objects_creatures_and_players_share_one_id_space_test() -> Nil {
     list.flat_map([first, second], fn(taken) {
       list.filter_map(support.replies(taken), fn(reply) {
         case reply.1 {
-          map.Joined(unit:, ..) -> Ok(unit.unit_id)
-          map.NotJoined(..)
-          | map.Summoned(..)
-          | map.NotSummoned(..)
-          | map.Left
-          | map.Noticed(..)
-          | map.Seen(..)
-          | map.Unseen(..)
-          | map.Relayed(..)
-          | map.Retire
-          | map.Approached(..)
-          | map.Withdrew(..)
-          | map.PlayerDied(..)
-          | map.CasterGone(..)
-          | map.ToldCreature(..) -> Error(Nil)
+          map_message.Joined(unit:, ..) -> Ok(unit.unit_id)
+          map_message.NotJoined(..)
+          | map_message.Summoned(..)
+          | map_message.NotSummoned(..)
+          | map_message.Left
+          | map_message.Noticed(..)
+          | map_message.Seen(..)
+          | map_message.Unseen(..)
+          | map_message.Relayed(..)
+          | map_message.Retire
+          | map_message.Approached(..)
+          | map_message.Withdrew(..)
+          | map_message.PlayerDied(..)
+          | map_message.CasterGone(..)
+          | map_message.ToldCreature(..) -> Error(Nil)
         }
       })
     })
@@ -276,7 +281,7 @@ pub fn a_leave_sends_nothing_about_objects_and_a_join_again_sees_them_under_the_
       at_ms: 8000,
       event: OwnEvent(Asked(
         caller: CallerId(1),
-        message: map.Join(
+        message: map_message.Join(
           connection: ConnectionId(1),
           character: map_support.character(101),
           place: spawns.at(0.0),

@@ -29,8 +29,8 @@ import genesis_prime/game/player_life.{
   type Effect, type Life, CancelTimer, OwnCombatState, OwnHealth, OwnShield,
   Regeneration, StartTimer, ToClient, ToViewers,
 }
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{TimerId}
 import gleam/list
 import gleam/option.{None, Some}

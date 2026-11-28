@@ -19,11 +19,11 @@
 ////   at its respawn, as a corpse does (the effect's removal is the client's 0x355,
 ////   `opcode.0x355`; the respawn time is the kind's, `death.creature_respawn`).
 
-import genesis_prime/game/strike_tell.{
-  Answered, Dead, Deflected, Despawned, Key, Landed, Refused, Strike,
-}
 import genesis_prime/shared/damage
 import genesis_prime/shared/hit.{Blow, Offence, Rolls, Worked}
+import genesis_prime/shared/strike_tell.{
+  Answered, Dead, Deflected, Despawned, Key, Landed, Refused, Strike,
+}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/world_map/creature_life.{

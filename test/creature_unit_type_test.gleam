@@ -1,9 +1,9 @@
-//// Whether a creature may move (`genesis_prime/world_map/creature_unit_type`).
+//// Whether a creature may move (`genesis_prime/shared/creature_unit_type`).
 //// Expected values are the rule itself, a server choice: a Turret
 //// never moves, and a NonPlayer moves unless it is placed as part of a map object,
 //// the world database's `active_prop_id` not 0.
 
-import genesis_prime/world_map/creature_unit_type.{NonPlayer, Turret}
+import genesis_prime/shared/creature_unit_type.{NonPlayer, Turret}
 import gleam/list
 import owned_test
 

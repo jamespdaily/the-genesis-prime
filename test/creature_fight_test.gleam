@@ -28,14 +28,7 @@ import creature_news_support
 import crowd_control_support
 import fixture_tables
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell.{
-  type Key, Answered, Attacks, CreatureStriker, Immune, Key, Landed,
-  PlayerStriker, Refused, Released, Strike, Threatened,
-}
-import genesis_prime/game/unit_news.{
-  type News, CastFinished, CastStarted, CastWent, CreatureAppeared,
-  CreatureFaces, CreatureMoved, CreaturePlaced, PeerNews,
-}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
@@ -48,13 +41,25 @@ import genesis_prime/message/spell_target_info.{SpellTargetInfo}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/message/spell_telegraph_position.{SpellTelegraphPosition}
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_combat
+import genesis_prime/shared/creature_kind.{type Kind, type Kinds, Kind}
 import genesis_prime/shared/creature_path.{Running, Timed}
+import genesis_prime/shared/creature_turn
+import genesis_prime/shared/creature_unit_type
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/shared/lasts
+import genesis_prime/shared/strike_tell.{
+  type Key, Answered, Attacks, CreatureStriker, Immune, Key, Landed,
+  PlayerStriker, Refused, Released, Strike, Threatened,
+}
 import genesis_prime/shared/telegraph_entries
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{
+  type News, CastFinished, CastStarted, CastWent, CreatureAppeared,
+  CreatureFaces, CreatureMoved, CreaturePlaced, PeerNews,
+}
 import genesis_prime/shared/unit_properties.{type Modifier, Change}
 import genesis_prime/step.{
   type ConnectionId, type ServiceStep, Connection, ConnectionId, CreatureStart,
@@ -64,13 +69,8 @@ import genesis_prime/table/id.{Creature2Id, Spell4Id, UnitProperty2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature.{type State, Settings}
 import genesis_prime/world_map/creature_fight
-import genesis_prime/world_map/creature_kind.{type Kind, type Kinds, Kind}
-import genesis_prime/world_map/creature_life
-import genesis_prime/world_map/creature_turn
-import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
@@ -103,13 +103,13 @@ const start_ms = 10_000
 
 /// A Beast at x = 0 started for these viewers, its `Started` taken.
 fn beast(viewers viewers: List(Int)) -> State {
-  beast_with(viewers:, armor: creature_life.NoArmor)
+  beast_with(viewers:, armor: creature_combat.NoArmor)
 }
 
 /// A Beast with this Interrupt Armor.
 fn beast_with(
   viewers viewers: List(Int),
-  armor armor: creature_life.InterruptArmor,
+  armor armor: creature_combat.InterruptArmor,
 ) -> State {
   beast_from(
     source: spawn_source.Stored(id: SpawnId(1)),
@@ -137,7 +137,7 @@ fn beast_from(
   source source: spawn_source.SpawnSource,
   spawn spawn: Spawn,
   viewers viewers: List(Int),
-  armor armor: creature_life.InterruptArmor,
+  armor armor: creature_combat.InterruptArmor,
 ) -> State {
   started_from(source:, spawn:, kind: beast_kind(), viewers:, armor:)
 }
@@ -148,7 +148,7 @@ fn started_from(
   spawn spawn: Spawn,
   kind kind: Kind,
   viewers viewers: List(Int),
-  armor armor: creature_life.InterruptArmor,
+  armor armor: creature_combat.InterruptArmor,
 ) -> State {
   let #(state, _) = started_with(source:, spawn:, kind:, viewers:, armor:)
   state
@@ -161,7 +161,7 @@ fn started_with(
   spawn spawn: Spawn,
   kind kind: Kind,
   viewers viewers: List(Int),
-  armor armor: creature_life.InterruptArmor,
+  armor armor: creature_combat.InterruptArmor,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
   let #(state, taken) =
     started_raw(source:, spawn:, kind:, viewers:, ring: [], armor:)
@@ -176,7 +176,7 @@ fn started_raw(
   kind kind: Kind,
   viewers viewers: List(Int),
   ring ring: List(step.RingMember),
-  armor armor: creature_life.InterruptArmor,
+  armor armor: creature_combat.InterruptArmor,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
   let state =
     creature.new(Settings(
@@ -198,7 +198,7 @@ fn started_raw(
       ),
       spawn: Spawn(
         ..spawn,
-        combat: creature_life.Combat(..spawn.combat, interrupt_armor: armor),
+        combat: creature_combat.Combat(..spawn.combat, interrupt_armor: armor),
       ),
       kind:,
       numbers: spawn_support.numbers,
@@ -358,10 +358,10 @@ fn fights_told_for(
 ) -> List(#(Int, Stay, strike_tell.Fight)) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      creature.Relay(stay:, payload: relay.Fight(told:), ..) ->
+      creature.Relay(stay:, payload: map_message.Fight(told:), ..) ->
         Ok(#(sent.0, stay, told))
-      creature.Relay(payload: relay.Struck(..), ..)
-      | creature.Relay(payload: relay.KillCredit(..), ..)
+      creature.Relay(payload: map_message.Struck(..), ..)
+      | creature.Relay(payload: map_message.KillCredit(..), ..)
       | creature.Snapshot(..)
       | creature.Expired(..)
       | creature.Broadcast(..) -> Error(Nil)
@@ -378,7 +378,7 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
       creature.Broadcast(news: PeerNews(news:, ..), ..) ->
         creature_news_support.name_of(news) <> to
       creature.Relay(
-        payload: relay.Fight(told: Threatened(unit_id:, life:)),
+        payload: map_message.Fight(told: Threatened(unit_id:, life:)),
         ..,
       ) ->
         "Threatened("
@@ -387,16 +387,19 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
         <> int.to_string(life)
         <> ")"
         <> to
-      creature.Relay(payload: relay.Fight(told: Released(unit_id:)), ..) ->
+      creature.Relay(payload: map_message.Fight(told: Released(unit_id:)), ..) ->
         "Released(" <> int.to_string(unit_id) <> ")" <> to
-      creature.Relay(payload: relay.Fight(told: Attacks(..)), ..) ->
+      creature.Relay(payload: map_message.Fight(told: Attacks(..)), ..) ->
         "Attacks" <> to
       creature.Relay(
-        payload: relay.Struck(answered: Answered(outcome: Landed(..), ..)),
+        payload: map_message.Struck(answered: Answered(outcome: Landed(..), ..)),
         ..,
       ) -> "Landed" <> to
       creature.Relay(
-        payload: relay.Struck(answered: Answered(outcome: Refused(why:), ..)),
+        payload: map_message.Struck(answered: Answered(
+          outcome: Refused(why:),
+          ..,
+        )),
         ..,
       ) ->
         case why {
@@ -404,8 +407,9 @@ fn said(taken: ServiceStep(creature.Outgoing)) -> List(String) {
           strike_tell.Returning -> "Refused(Returning)" <> to
           strike_tell.Despawned -> "Refused(Despawned)" <> to
         }
-      creature.Relay(payload: relay.Struck(..), ..) -> "Deflected" <> to
-      creature.Relay(payload: relay.KillCredit(..), ..) -> "KillCredit" <> to
+      creature.Relay(payload: map_message.Struck(..), ..) -> "Deflected" <> to
+      creature.Relay(payload: map_message.KillCredit(..), ..) ->
+        "KillCredit" <> to
       creature.Snapshot(..) -> "Snapshot" <> to
       creature.Expired(..) -> "Expired" <> to
     }
@@ -568,7 +572,7 @@ pub fn a_summoned_creature_aggroes_the_first_player_that_approaches_it_and_strik
       )),
       spawn:,
       viewers: [2],
-      armor: creature_life.NoArmor,
+      armor: creature_combat.NoArmor,
     )
   let #(state, aggro) =
     tell(state:, at_ms: 0, message: approached(number: 2, x: 5.0, seq: 1))
@@ -685,10 +689,10 @@ pub fn a_creature_that_never_fights_struck_by_a_player_starts_no_fight_test() ->
         source: spawn_source.Stored(id: SpawnId(1)),
         spawn: Spawn(
           ..beast,
-          combat: creature_life.Combat(..beast.combat, fights:),
+          combat: creature_combat.Combat(..beast.combat, fights:),
         ),
         viewers: [2],
-        armor: creature_life.NoArmor,
+        armor: creature_combat.NoArmor,
       )
     let #(_, approach) =
       tell(state:, at_ms: 0, message: approached(number: 2, x: 5.0, seq: 1))
@@ -1218,11 +1222,14 @@ fn started_with_ring(
   let spawn = spawn_support.battle_beast(number: 1, x: 0.0)
   started_raw(
     source: spawn_source.Stored(id: SpawnId(1)),
-    spawn: Spawn(..spawn, combat: creature_life.Combat(..spawn.combat, fights:)),
+    spawn: Spawn(
+      ..spawn,
+      combat: creature_combat.Combat(..spawn.combat, fights:),
+    ),
     kind: beast_kind(),
     viewers:,
     ring:,
-    armor: creature_life.NoArmor,
+    armor: creature_combat.NoArmor,
   )
 }
 
@@ -2513,7 +2520,7 @@ fn killing(
 }
 
 /// The Beast started for viewers 2 and 5 with this Interrupt Armor.
-fn armored(armor armor: creature_life.InterruptArmor) -> State {
+fn armored(armor armor: creature_combat.InterruptArmor) -> State {
   beast_with(viewers: [2, 5], armor:)
 }
 
@@ -2534,15 +2541,15 @@ fn landed_in(
   list.flat_map(support.sends(taken), fn(sent) {
     case sent.1 {
       creature.Relay(
-        payload: relay.Struck(answered: Answered(
+        payload: map_message.Struck(answered: Answered(
           outcome: Landed(controls:, ..),
           ..,
         )),
         ..,
       ) -> controls
-      creature.Relay(payload: relay.Struck(..), ..)
-      | creature.Relay(payload: relay.Fight(..), ..)
-      | creature.Relay(payload: relay.KillCredit(..), ..)
+      creature.Relay(payload: map_message.Struck(..), ..)
+      | creature.Relay(payload: map_message.Fight(..), ..)
+      | creature.Relay(payload: map_message.KillCredit(..), ..)
       | creature.Snapshot(..)
       | creature.Expired(..)
       | creature.Broadcast(..) -> []
@@ -2581,7 +2588,7 @@ pub fn a_struck_creature_with_no_armor_holds_the_state_its_viewers_get_the_0x87f
   use <- owned_test.run(5000)
   let #(state, taken) =
     tell(
-      state: armored(armor: creature_life.NoArmor),
+      state: armored(armor: creature_combat.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [
         crowd_control_support.kick_knockdown(instance_id: 28_673),
@@ -2612,7 +2619,7 @@ pub fn the_state_ends_with_a_0x880_at_arrival_plus_delay_plus_duration_and_not_b
   use <- owned_test.run(5000)
   let #(state, taken) =
     tell(
-      state: armored(armor: creature_life.NoArmor),
+      state: armored(armor: creature_combat.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 77, controls: [
         crowd_control_support.kick_knockdown(instance_id: 28_673),
@@ -2640,7 +2647,7 @@ pub fn two_states_of_one_kind_from_one_caster_are_held_separately_and_two_ending
   use <- owned_test.run(5000)
   let #(state, taken) =
     tell(
-      state: armored(armor: creature_life.NoArmor),
+      state: armored(armor: creature_combat.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [
         crowd_control_support.stagger_stun(instance_id: 28_673),
@@ -2667,7 +2674,7 @@ pub fn two_players_states_have_two_0x87f_and_two_0x880_each_with_its_own_instanc
   use <- owned_test.run(5000)
   let #(state, first) =
     tell(
-      state: armored(armor: creature_life.NoArmor),
+      state: armored(armor: creature_combat.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [
         crowd_control_support.stagger_stun(instance_id: 28_673),
@@ -2700,7 +2707,7 @@ pub fn a_creature_that_dies_stunned_sends_no_0x880_and_a_timer_after_death_write
   use <- owned_test.run(5000)
   let #(state, _) =
     tell(
-      state: armored(armor: creature_life.NoArmor),
+      state: armored(armor: creature_combat.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [
         crowd_control_support.stagger_stun(instance_id: 28_673),
@@ -2726,7 +2733,7 @@ pub fn a_strike_that_kills_the_creature_lands_no_state_and_one_on_a_corpse_is_re
   use <- owned_test.run(5000)
   let #(state, killed) =
     tell(
-      state: armored(armor: creature_life.NoArmor),
+      state: armored(armor: creature_combat.NoArmor),
       at_ms: 1000,
       message: killing(number: 2, cast_id: 1, controls: [
         crowd_control_support.stagger_stun(instance_id: 28_673),
@@ -2750,7 +2757,7 @@ pub fn a_viewer_arriving_while_a_state_is_held_is_not_told_it_and_a_new_creature
   use <- owned_test.run(5000)
   let #(state, _) =
     tell(
-      state: armored(armor: creature_life.NoArmor),
+      state: armored(armor: creature_combat.NoArmor),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [
         crowd_control_support.stagger_stun(instance_id: 28_673),
@@ -2852,7 +2859,7 @@ pub fn armor_wears_down_by_the_rows_points_and_the_state_lands_once_it_is_0_test
   use <- owned_test.run(5000)
   let #(state, first) =
     tell(
-      state: armored(armor: creature_life.Armor(points: 2)),
+      state: armored(armor: creature_combat.Armor(points: 2)),
       at_ms: 1000,
       message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
     )
@@ -2895,7 +2902,7 @@ pub fn armor_is_never_destroyed_below_0_test() -> Nil {
   // One strike with two rows of 1 each on armor 1.
   let #(_, taken) =
     tell(
-      state: armored(armor: creature_life.Armor(points: 1)),
+      state: armored(armor: creature_combat.Armor(points: 1)),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [
         crowd_control_support.stagger_stun(instance_id: 28_673),
@@ -2912,15 +2919,15 @@ fn armor_taken(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
   list.flat_map(support.sends(taken), fn(sent) {
     case sent.1 {
       creature.Relay(
-        payload: relay.Struck(answered: Answered(
+        payload: map_message.Struck(answered: Answered(
           outcome: Landed(armor_removed:, ..),
           ..,
         )),
         ..,
       ) -> [armor_removed]
-      creature.Relay(payload: relay.Struck(..), ..)
-      | creature.Relay(payload: relay.Fight(..), ..)
-      | creature.Relay(payload: relay.KillCredit(..), ..)
+      creature.Relay(payload: map_message.Struck(..), ..)
+      | creature.Relay(payload: map_message.Fight(..), ..)
+      | creature.Relay(payload: map_message.KillCredit(..), ..)
       | creature.Snapshot(..)
       | creature.Expired(..)
       | creature.Broadcast(..) -> []
@@ -2940,13 +2947,13 @@ pub fn the_answer_names_the_armor_the_strike_took_never_more_than_it_had_test() 
       )
     armor_taken(taken)
   }
-  assert strike(creature_life.Armor(points: 2)) == [2]
+  assert strike(creature_combat.Armor(points: 2)) == [2]
     as "rows destroying 3 on armor 2: the answer names the 2 it had (the 0x938 shows 0 left)"
-  assert strike(creature_life.Armor(points: 5)) == [3]
+  assert strike(creature_combat.Armor(points: 5)) == [3]
     as "rows destroying 3 on armor 5: the 3 the rows name"
-  assert strike(creature_life.NoArmor) == [0]
+  assert strike(creature_combat.NoArmor) == [0]
     as "a creature with no armor lost none"
-  assert strike(creature_life.InfiniteArmor) == [0]
+  assert strike(creature_combat.InfiniteArmor) == [0]
     as "infinite armor loses none"
 }
 
@@ -2954,7 +2961,7 @@ pub fn infinite_armor_takes_no_state_and_loses_nothing_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, taken) =
     tell(
-      state: armored(armor: creature_life.InfiniteArmor),
+      state: armored(armor: creature_combat.InfiniteArmor),
       at_ms: 1000,
       message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
     )
@@ -2970,7 +2977,7 @@ pub fn armor_refills_at_its_time_and_a_strike_before_it_starts_the_wait_again_te
   use <- owned_test.run(5000)
   let #(state, first) =
     tell(
-      state: armored(armor: creature_life.Armor(points: 2)),
+      state: armored(armor: creature_combat.Armor(points: 2)),
       at_ms: 1000,
       message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
     )
@@ -3000,7 +3007,7 @@ pub fn armor_refills_at_its_time_and_a_strike_before_it_starts_the_wait_again_te
     as "the refilled armor wears down again before a state lands"
   let #(_, full) =
     fire(
-      state: armored(armor: creature_life.Armor(points: 2)),
+      state: armored(armor: creature_combat.Armor(points: 2)),
       at_ms: 1000,
       timer: step.TimerId(2),
     )
@@ -3012,7 +3019,7 @@ pub fn a_creature_killed_with_worn_armor_cancels_its_refill_and_shows_its_full_a
   use <- owned_test.run(5000)
   let #(state, _) =
     tell(
-      state: armored(armor: creature_life.Armor(points: 2)),
+      state: armored(armor: creature_combat.Armor(points: 2)),
       at_ms: 1000,
       message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
     )
@@ -3058,7 +3065,7 @@ pub fn a_creatures_0x262_carries_its_current_armor_above_0_and_none_otherwise_te
       as "the viewer's 0x262"
     unit_fields.stat(tail: unit.tail, stat_id: 21)
   }
-  let worn = armored(armor: creature_life.Armor(points: 3))
+  let worn = armored(armor: creature_combat.Armor(points: 3))
   assert stat_of(worn) == Ok(3)
     as "the create's stat list sets stat 21, which the client reads (opcode.0x938.interrupt_armor)"
   let #(struck, _) =
@@ -3069,8 +3076,8 @@ pub fn a_creatures_0x262_carries_its_current_armor_above_0_and_none_otherwise_te
     )
   assert stat_of(struck) == Ok(2)
     as "a viewer that arrives after a strike is shown the current value"
-  assert stat_of(armored(armor: creature_life.NoArmor)) == Error(Nil)
-    && stat_of(armored(armor: creature_life.InfiniteArmor)) == Error(Nil)
+  assert stat_of(armored(armor: creature_combat.NoArmor)) == Error(Nil)
+    && stat_of(armored(armor: creature_combat.InfiniteArmor)) == Error(Nil)
     as "none for a creature with no armor or infinite armor: the client's maximum is its own"
 }
 
@@ -3081,7 +3088,7 @@ pub fn a_state_landing_at_armor_0_leaves_the_refill_where_it_is_test() -> Nil {
   // lands, and destroys nothing, so it does not move the refill.
   let #(state, _) =
     tell(
-      state: armored(armor: creature_life.Armor(points: 2)),
+      state: armored(armor: creature_combat.Armor(points: 2)),
       at_ms: 0,
       message: stunning(from: 2, cast_id: 1, instance_id: 28_673),
     )
@@ -3118,7 +3125,7 @@ pub fn a_row_that_destroys_no_armor_changes_nothing_on_armor_above_0_test() -> N
     )
   let #(state, taken) =
     tell(
-      state: armored(armor: creature_life.Armor(points: 2)),
+      state: armored(armor: creature_combat.Armor(points: 2)),
       at_ms: 1000,
       message: controlling(number: 2, cast_id: 1, controls: [harmless]),
     )
@@ -3738,7 +3745,7 @@ fn turret(viewers viewers: List(Int)) -> State {
   turret_in(
     kinds: spawn_support.turret_kinds(),
     viewers:,
-    armor: creature_life.NoArmor,
+    armor: creature_combat.NoArmor,
   ).0
 }
 
@@ -3750,7 +3757,7 @@ fn guarded_turret(
   turret_in(
     kinds: spawn_support.guarded_turret_kinds(),
     viewers:,
-    armor: creature_life.NoArmor,
+    armor: creature_combat.NoArmor,
   )
 }
 
@@ -3759,7 +3766,7 @@ fn guarded_turret(
 fn turret_in(
   kinds kinds: Kinds,
   viewers viewers: List(Int),
-  armor armor: creature_life.InterruptArmor,
+  armor armor: creature_combat.InterruptArmor,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
   let spawn =
     spawn_support.sim_turret(number: 1, place: map_spawn_support.at(0.0))
@@ -4404,11 +4411,11 @@ fn answers_of(
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
       creature.Relay(
-        payload: relay.Struck(answered: Answered(outcome:, ..)),
+        payload: map_message.Struck(answered: Answered(outcome:, ..)),
         ..,
       ) -> Ok(outcome)
-      creature.Relay(payload: relay.Fight(..), ..)
-      | creature.Relay(payload: relay.KillCredit(..), ..)
+      creature.Relay(payload: map_message.Fight(..), ..)
+      | creature.Relay(payload: map_message.KillCredit(..), ..)
       | creature.Snapshot(..)
       | creature.Expired(..)
       | creature.Broadcast(..) -> Error(Nil)
@@ -4503,7 +4510,7 @@ pub fn a_turret_stands_holding_its_guard_test() -> Nil {
     turret_in(
       kinds: spawn_support.turret_kinds(),
       viewers: [2],
-      armor: creature_life.NoArmor,
+      armor: creature_combat.NoArmor,
     )
   assert said(bare) == ["0x262 to 2"] as "a turret with no guard is shown none"
 }
@@ -5060,13 +5067,13 @@ fn unmasked_beast() -> State {
     source: spawn_source.Stored(id: SpawnId(1)),
     spawn: Spawn(
       ..spawn,
-      combat: creature_life.Combat(
+      combat: creature_combat.Combat(
         ..spawn.combat,
-        attack: creature_life.Attack(..spawn.combat.attack, caster_cc_mask: 0),
+        attack: creature_combat.Attack(..spawn.combat.attack, caster_cc_mask: 0),
       ),
     ),
     viewers: [2],
-    armor: creature_life.NoArmor,
+    armor: creature_combat.NoArmor,
   )
 }
 
@@ -5290,7 +5297,7 @@ pub fn an_immune_knockback_does_not_throw_test() -> Nil {
       spawn: spawn_support.battle_beast(number: 1, x: 0.0),
       kind: Kind(..beast_kind(), guard: turret.guard),
       viewers: [2],
-      armor: creature_life.NoArmor,
+      armor: creature_combat.NoArmor,
     )
   let #(guarded, _) =
     tell(
@@ -5391,14 +5398,14 @@ fn charger(viewers viewers: List(Int)) -> State {
     spawn: Spawn(
       ..spawn,
       unit_type: creature_unit_type.NonPlayer,
-      combat: creature_life.Combat(
+      combat: creature_combat.Combat(
         ..spawn.combat,
-        attack: creature_life.Attack(..spawn.combat.attack, run_speed: 10.0),
+        attack: creature_combat.Attack(..spawn.combat.attack, run_speed: 10.0),
       ),
     ),
     kind:,
     viewers:,
-    armor: creature_life.NoArmor,
+    armor: creature_combat.NoArmor,
   )
 }
 
@@ -5665,7 +5672,7 @@ fn fern(viewers viewers: List(Int)) -> State {
       world_object_id: 1_238_827,
     ),
     viewers:,
-    armor: creature_life.NoArmor,
+    armor: creature_combat.NoArmor,
   )
 }
 
@@ -5826,7 +5833,7 @@ pub fn the_same_creature_placed_with_no_map_object_chases_test() -> Nil {
         world_object_id: 0,
       ),
       viewers: [2, 5],
-      armor: creature_life.NoArmor,
+      armor: creature_combat.NoArmor,
     )
   let #(_, aggro) =
     tell(state: free, at_ms: 0, message: approached(number: 2, x: 30.0, seq: 1))
@@ -5853,7 +5860,7 @@ pub fn the_same_creature_placed_with_no_map_object_chases_test() -> Nil {
 
 /// A beast that casts the special, at the origin facing -z, for these viewers, `Started` taken.
 fn rootbrute_with(
-  special special: creature_life.Special,
+  special special: creature_combat.Special,
   viewers viewers: List(Int),
 ) -> State {
   let spawn = spawn_support.battle_beast(number: 1, x: 0.0)
@@ -5861,11 +5868,11 @@ fn rootbrute_with(
     source: spawn_source.Stored(id: SpawnId(1)),
     spawn: Spawn(
       ..spawn,
-      combat: creature_life.Combat(..spawn.combat, specials: [special]),
+      combat: creature_combat.Combat(..spawn.combat, specials: [special]),
     ),
     kind: beast_kind(),
     viewers:,
-    armor: creature_life.NoArmor,
+    armor: creature_combat.NoArmor,
   )
 }
 
@@ -6460,9 +6467,9 @@ pub fn a_special_that_adds_the_targets_radius_casts_from_that_much_farther_test(
       let #(adds_target_radius, z, ends_within, reason) = row
       let roar = spawn_support.earthen_roar(hold_ms: 1000)
       let special =
-        creature_life.Special(
+        creature_combat.Special(
           ..roar,
-          attack: creature_life.Attack(
+          attack: creature_combat.Attack(
             ..roar.attack,
             reach: 16.0,
             adds_target_radius:,
@@ -6528,20 +6535,20 @@ pub fn a_state_between_gos_breaks_the_special_and_the_cooldown_stays_spent_test(
 /// Earthen Roar's cast with a cast time of 0 and the first gos of a Multiphase special that
 /// starts at 0 (Savage Shred, Spell4 34252: delays 0, 1, 199, 500): the gos at 0 and 1 ms
 /// strike nobody, the three after strike with the roar's cone.
-fn roar_with_gos_at_0_and_1_ms() -> creature_life.Special {
+fn roar_with_gos_at_0_and_1_ms() -> creature_combat.Special {
   spawn_support.special_with_charged(
     special: spawn_support.earthen_roar(hold_ms: 1000),
     change: fn(cast) {
-      let assert creature_life.Charged(inside:, ..) = cast
+      let assert creature_combat.Charged(inside:, ..) = cast
         as "Earthen Roar is a charge"
       let strike =
-        Some(creature_life.GoStrike(spell4_effects_ids: [131_967], inside:))
-      creature_life.Charged(..cast, cast_ms: 0, gos: [
-        creature_life.Go(at_ms: 0, strike: None),
-        creature_life.Go(at_ms: 1, strike: None),
-        creature_life.Go(at_ms: 200, strike:),
-        creature_life.Go(at_ms: 700, strike:),
-        creature_life.Go(at_ms: 1200, strike:),
+        Some(creature_combat.GoStrike(spell4_effects_ids: [131_967], inside:))
+      creature_combat.Charged(..cast, cast_ms: 0, gos: [
+        creature_combat.Go(at_ms: 0, strike: None),
+        creature_combat.Go(at_ms: 1, strike: None),
+        creature_combat.Go(at_ms: 200, strike:),
+        creature_combat.Go(at_ms: 700, strike:),
+        creature_combat.Go(at_ms: 1200, strike:),
       ])
     },
   )
@@ -6712,10 +6719,10 @@ pub fn the_sim_turrets_charge_has_one_go_that_strikes_test() -> Nil {
   // that strikes, and no hold.
   let spawn =
     spawn_support.sim_turret(number: 1, place: map_spawn_support.at(0.0))
-  let assert creature_life.Charged(cast_ms:, gos:, hold_ms:, inside:, ..) =
+  let assert creature_combat.Charged(cast_ms:, gos:, hold_ms:, inside:, ..) =
     spawn.combat.attack.cast
   assert cast_ms == 8000 && hold_ms == 0 as "the cast time 8000, and no hold"
-  let assert [creature_life.Go(at_ms: 8000, strike: Some(strike))] = gos
+  let assert [creature_combat.Go(at_ms: 8000, strike: Some(strike))] = gos
     as "one go, at 8000 ms, that strikes"
   assert strike.inside == inside && strike.spell4_effects_ids == [224_644]
     as "with the charge's own shapes and its damage row, Spell4Effects 224644 (type 8, every phase)"
@@ -6922,7 +6929,7 @@ fn striking_in_turn(
       creature2_id: 73_464,
     ),
     viewers:,
-    armor: creature_life.NoArmor,
+    armor: creature_combat.NoArmor,
   )
 }
 
@@ -7034,7 +7041,7 @@ pub fn a_special_between_autos_leaves_the_turn_unchanged_test() -> Nil {
       source: spawn_source.Stored(id: SpawnId(1)),
       spawn: Spawn(
         ..beast,
-        combat: creature_life.Combat(..beast.combat, specials: [
+        combat: creature_combat.Combat(..beast.combat, specials: [
           spawn_support.earthen_roar(hold_ms: 1000),
         ]),
       ),
@@ -7043,7 +7050,7 @@ pub fn a_special_between_autos_leaves_the_turn_unchanged_test() -> Nil {
         creature2_id: 73_464,
       ),
       viewers: [2],
-      armor: creature_life.NoArmor,
+      armor: creature_combat.NoArmor,
     )
   let #(state, aggro) = turn_fought(state:)
   let #(state, _, go) = roar_opened(state:, aggro:)
@@ -7531,14 +7538,14 @@ fn guarded_charger(viewers viewers: List(Int)) -> State {
     spawn: Spawn(
       ..spawn,
       unit_type: creature_unit_type.NonPlayer,
-      combat: creature_life.Combat(
+      combat: creature_combat.Combat(
         ..spawn.combat,
-        attack: creature_life.Attack(..spawn.combat.attack, run_speed: 10.0),
+        attack: creature_combat.Attack(..spawn.combat.attack, run_speed: 10.0),
       ),
     ),
     kind:,
     viewers:,
-    armor: creature_life.NoArmor,
+    armor: creature_combat.NoArmor,
   )
 }
 
@@ -8255,7 +8262,7 @@ fn turret_over(tables tables: store.Tables) -> State {
     spawn:,
     kind:,
     viewers: [2, 5],
-    armor: creature_life.NoArmor,
+    armor: creature_combat.NoArmor,
   ).0
 }
 
@@ -8381,7 +8388,7 @@ fn struck_by_the_loaded_special(spell4_id spell4_id: Int) -> List(Int) {
   let assert [special] =
     spawn_support.special_creature(number: 1, creature_id: 73_464, spell4_id:).combat.specials
     as "the Beast's kind lists the one special"
-  let assert creature_life.Charged(gos:, ..) = special.attack.cast
+  let assert creature_combat.Charged(gos:, ..) = special.attack.cast
     as "the spell is a charge"
   let #(state, aggro) =
     tell(
@@ -8402,7 +8409,7 @@ fn struck_by_the_loaded_special(spell4_id spell4_id: Int) -> List(Int) {
 fn through_the_gos(
   state state: State,
   step taken: ServiceStep(creature.Outgoing),
-  gos gos: List(creature_life.Go),
+  gos gos: List(creature_combat.Go),
   passed_ms passed_ms: Int,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
   let assert [go, ..rest] = gos as "the cast has a strike go"
@@ -8433,15 +8440,16 @@ pub fn the_rotated_cone_of_52448_strikes_where_the_client_draws_it_test() -> Nil
 
 /// Earthen Roar with its area row taking one unit in `order`: the cone (5.5 m, 40 degrees) is
 /// the hit shape and the row's range and count cap it.
-fn roar_in_order(order order: area.Order) -> creature_life.Special {
+fn roar_in_order(order order: area.Order) -> creature_combat.Special {
   let roar = spawn_support.earthen_roar(hold_ms: 1000)
-  let assert creature_life.Charged(area: row, ..) as charged = roar.attack.cast
+  let assert creature_combat.Charged(area: row, ..) as charged =
+    roar.attack.cast
     as "Earthen Roar is a charge"
-  creature_life.Special(
+  creature_combat.Special(
     ..roar,
-    attack: creature_life.Attack(
+    attack: creature_combat.Attack(
       ..roar.attack,
-      cast: creature_life.Charged(
+      cast: creature_combat.Charged(
         ..charged,
         area: area.Row(..row, order:, target_count: 1),
       ),
@@ -8509,26 +8517,26 @@ fn target_roar(
   spell4_id spell4_id: Int,
   anchor anchor: area.Anchor,
   placements placements: List(area.Placement),
-) -> creature_life.Special {
+) -> creature_combat.Special {
   let roar = spawn_support.earthen_roar(hold_ms: 1000)
-  let assert creature_life.Charged(gos:, ..) as charged = roar.attack.cast
+  let assert creature_combat.Charged(gos:, ..) as charged = roar.attack.cast
     as "Earthen Roar is a charge"
   let inside = area.InsideShapes(placements:)
-  creature_life.Special(
+  creature_combat.Special(
     ..roar,
-    attack: creature_life.Attack(
+    attack: creature_combat.Attack(
       ..roar.attack,
       spell4_id: Spell4Id(spell4_id),
       reach: 20.0,
-      cast: creature_life.Charged(
+      cast: creature_combat.Charged(
         ..charged,
         anchor:,
         inside:,
         gos: list.map(gos, fn(go) {
-          creature_life.Go(
+          creature_combat.Go(
             ..go,
             strike: option.map(go.strike, fn(strike) {
-              creature_life.GoStrike(..strike, inside:)
+              creature_combat.GoStrike(..strike, inside:)
             }),
           )
         }),
@@ -8545,7 +8553,7 @@ fn target_roar(
 /// of `others` (number, x, z) joins the fight standing there. The cast opens at 1500 ms: the
 /// state, the step of its start and the timer of its first go.
 fn target_cast_opened(
-  special special: creature_life.Special,
+  special special: creature_combat.Special,
   others others: List(#(Int, Float, Float)),
 ) -> #(State, ServiceStep(creature.Outgoing), step.TimerId) {
   let #(state, aggro) =
@@ -8922,7 +8930,7 @@ fn ice_fought(
 }
 
 fn ice_fought_with(
-  special special: creature_life.Special,
+  special special: creature_combat.Special,
   viewers viewers: List(Int),
 ) -> #(State, ServiceStep(creature.Outgoing)) {
   turn_fought(state: rootbrute_with(special:, viewers:))
@@ -9259,16 +9267,16 @@ pub fn the_rounds_of_overlapping_hits_are_written_in_go_order_test() -> Nil {
             spawn_support.special_with_charged(
               spawn_support.ice_breath(hold_ms: 500),
               fn(charged) {
-                let assert creature_life.Charged(
+                let assert creature_combat.Charged(
                   gos: [_, first, second, last],
                   ..,
                 ) = charged
                   as "Ice Breath has four gos"
-                creature_life.Charged(..charged, gos: [
-                  creature_life.Go(at_ms: 2000, strike: None),
-                  creature_life.Go(..first, at_ms: 3000),
-                  creature_life.Go(..second, at_ms: 4000),
-                  creature_life.Go(..last, at_ms: 4500),
+                creature_combat.Charged(..charged, gos: [
+                  creature_combat.Go(at_ms: 2000, strike: None),
+                  creature_combat.Go(..first, at_ms: 3000),
+                  creature_combat.Go(..second, at_ms: 4000),
+                  creature_combat.Go(..last, at_ms: 4500),
                 ])
               },
             )
@@ -9360,9 +9368,9 @@ pub fn a_hit_that_selects_nobody_is_an_empty_entry_and_the_cast_goes_on_test() -
     spawn_support.special_with_charged(
       spawn_support.ice_breath(hold_ms: 500),
       fn(charged) {
-        let assert creature_life.Charged(..) = charged
+        let assert creature_combat.Charged(..) = charged
           as "Ice Breath is a charge"
-        creature_life.Charged(..charged, anchor: area.FollowsTarget)
+        creature_combat.Charged(..charged, anchor: area.FollowsTarget)
       },
     )
   let #(state, aggro) = ice_fought_with(special: on_target, viewers: [2, 5])
@@ -9397,7 +9405,7 @@ pub fn a_hit_that_selects_nobody_is_an_empty_entry_and_the_cast_goes_on_test() -
 /// degree cone (0 to 20 degrees toward -x) and outside the -10 degree cone; player 6 at the
 /// mirror place inside the -10 cone only.
 fn ice_with_players(
-  special special: creature_life.Special,
+  special special: creature_combat.Special,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
   let #(state, aggro) = ice_fought_with(special:, viewers: [2, 5, 6])
   let state = with_player_at(state:, number: 5, x: -1.545, z: -4.755)
@@ -9406,12 +9414,13 @@ fn ice_with_players(
 }
 
 /// The special with the blows and gos named, whatever else Ice Breath holds.
-fn ice_with_gos(gos gos: List(creature_life.Go)) -> creature_life.Special {
+fn ice_with_gos(gos gos: List(creature_combat.Go)) -> creature_combat.Special {
   spawn_support.special_with_charged(
     spawn_support.ice_breath(hold_ms: 500),
     fn(charged) {
-      let assert creature_life.Charged(..) = charged as "Ice Breath is a charge"
-      creature_life.Charged(..charged, gos:)
+      let assert creature_combat.Charged(..) = charged
+        as "Ice Breath is a charge"
+      creature_combat.Charged(..charged, gos:)
     },
   )
 }
@@ -9420,22 +9429,22 @@ pub fn each_hit_strikes_the_fighters_and_the_blows_that_name_its_go_test() -> Ni
   use <- owned_test.run(5000)
   let ice_gos = fn(first, second) {
     ice_with_gos(gos: [
-      creature_life.Go(at_ms: 2600, strike: None),
-      creature_life.Go(
+      creature_combat.Go(at_ms: 2600, strike: None),
+      creature_combat.Go(
         at_ms: 3000,
-        strike: Some(creature_life.GoStrike(
+        strike: Some(creature_combat.GoStrike(
           spell4_effects_ids: [132_757],
           inside: first,
         )),
       ),
-      creature_life.Go(
+      creature_combat.Go(
         at_ms: 3500,
-        strike: Some(creature_life.GoStrike(
+        strike: Some(creature_combat.GoStrike(
           spell4_effects_ids: [132_757],
           inside: second,
         )),
       ),
-      creature_life.Go(at_ms: 3800, strike: None),
+      creature_combat.Go(at_ms: 3800, strike: None),
     ])
   }
   // Row (a): who stands inside each go's own shapes.
@@ -9482,21 +9491,21 @@ pub fn each_hit_strikes_the_fighters_and_the_blows_that_name_its_go_test() -> Ni
     spawn_support.special_with_charged(
       spawn_support.ice_breath(hold_ms: 0),
       fn(charged) {
-        let assert creature_life.Charged(..) = charged
+        let assert creature_combat.Charged(..) = charged
           as "Ice Breath is a charge"
-        creature_life.Charged(..charged, cast_ms: 1800, gos: [
-          creature_life.Go(at_ms: 200, strike: None),
-          creature_life.Go(
+        creature_combat.Charged(..charged, cast_ms: 1800, gos: [
+          creature_combat.Go(at_ms: 200, strike: None),
+          creature_combat.Go(
             at_ms: 1000,
-            strike: Some(creature_life.GoStrike(
+            strike: Some(creature_combat.GoStrike(
               spell4_effects_ids: [107_436],
               inside: spawn_support.ice_breath_cone(turn_degrees: 10.0),
             )),
           ),
-          creature_life.Go(at_ms: 1200, strike: None),
-          creature_life.Go(
+          creature_combat.Go(at_ms: 1200, strike: None),
+          creature_combat.Go(
             at_ms: 1800,
-            strike: Some(creature_life.GoStrike(
+            strike: Some(creature_combat.GoStrike(
               spell4_effects_ids: [107_454],
               inside: spawn_support.ice_breath_cone(turn_degrees: 10.0),
             )),
@@ -9505,9 +9514,9 @@ pub fn each_hit_strikes_the_fighters_and_the_blows_that_name_its_go_test() -> Ni
       },
     )
   let special =
-    creature_life.Special(
+    creature_combat.Special(
       ..two_rows,
-      attack: creature_life.Attack(
+      attack: creature_combat.Attack(
         ..two_rows.attack,
         offence: Offence(
           blows: [blow(107_436), blow(107_454)],
@@ -9792,7 +9801,7 @@ pub fn a_state_between_hits_ends_the_rest_of_the_cast_and_closes_the_open_rounds
 /// The Sim-Turret of migration 0030 (guarded by Spell4 85474, opened by 85472) with its
 /// charge's gos replaced: the state and the step of its `Started`.
 fn guarded_turret_with(
-  gos gos: List(creature_life.Go),
+  gos gos: List(creature_combat.Go),
   viewers viewers: List(Int),
 ) -> #(State, ServiceStep(creature.Outgoing)) {
   let spawn =
@@ -9804,21 +9813,21 @@ fn guarded_turret_with(
     source: spawn_source.Stored(id: SpawnId(1)),
     spawn: Spawn(
       ..spawn,
-      combat: creature_life.Combat(
+      combat: creature_combat.Combat(
         ..spawn.combat,
         attack: spawn_support.attack_with_charged(
           attack: spawn.combat.attack,
           change: fn(charged) {
-            let assert creature_life.Charged(..) = charged
+            let assert creature_combat.Charged(..) = charged
               as "the turret's attack is a charge"
-            creature_life.Charged(..charged, gos:)
+            creature_combat.Charged(..charged, gos:)
           },
         ),
       ),
     ),
     kind:,
     viewers:,
-    armor: creature_life.NoArmor,
+    armor: creature_combat.NoArmor,
   )
 }
 
@@ -9829,17 +9838,17 @@ pub fn a_stun_between_hits_of_a_guarded_creatures_cast_opens_it_once_after_the_c
   // planted. The charge opens at 3,000 ms, so the gos fall at 6,000, 8,000 and 11,000 ms.
   let spawn =
     spawn_support.sim_turret(number: 1, place: map_spawn_support.at(0.0))
-  let assert creature_life.Charged(
-    gos: [creature_life.Go(strike: Some(strike), ..)],
+  let assert creature_combat.Charged(
+    gos: [creature_combat.Go(strike: Some(strike), ..)],
     ..,
   ) = spawn.combat.attack.cast
     as "the turret's charge has one go, which strikes"
   let #(turret, started) =
     guarded_turret_with(
       gos: [
-        creature_life.Go(at_ms: 3000, strike: Some(strike)),
-        creature_life.Go(at_ms: 5000, strike: Some(strike)),
-        creature_life.Go(at_ms: 8000, strike: None),
+        creature_combat.Go(at_ms: 3000, strike: Some(strike)),
+        creature_combat.Go(at_ms: 5000, strike: Some(strike)),
+        creature_combat.Go(at_ms: 8000, strike: None),
       ],
       viewers: [2],
     )
@@ -10362,29 +10371,29 @@ pub fn a_state_that_breaks_no_charge_marks_nothing_test() -> Nil {
     let #(state, aggro) = approached_turret(armor)
     charge_opened(state:, aggro:)
   }
-  let #(striking, _, striking_ends) = charging(creature_life.NoArmor)
+  let #(striking, _, striking_ends) = charging(creature_combat.NoArmor)
   let #(striking, _) =
     fire(state: striking, at_ms: 11_000, timer: striking_ends)
   [
     #(
       "armor above 0 takes the state's point and no state lands",
-      charging(creature_life.Armor(points: 2)).0,
+      charging(creature_combat.Armor(points: 2)).0,
       4000,
     ),
     #(
       "infinite armor: no state lands",
-      charging(creature_life.InfiniteArmor).0,
+      charging(creature_combat.InfiniteArmor).0,
       4000,
     ),
     #(
       "no round open: the first attack tick is still to come",
-      approached_turret(creature_life.NoArmor).0,
+      approached_turret(creature_combat.NoArmor).0,
       1000,
     ),
     #("the round is striking: the last go is out", striking, 11_050),
     #(
       "a resting creature, in no fight",
-      armored_turret(creature_life.NoArmor),
+      armored_turret(creature_combat.NoArmor),
       0,
     ),
   ]
@@ -10450,11 +10459,11 @@ fn break_op_of(numbers: #(Int, Int)) -> BreakOp {
   }
 }
 
-fn armor_of_run(number: Int) -> creature_life.InterruptArmor {
+fn armor_of_run(number: Int) -> creature_combat.InterruptArmor {
   case number % 3 {
-    0 -> creature_life.NoArmor
-    1 -> creature_life.Armor(points: 1)
-    _ -> creature_life.InfiniteArmor
+    0 -> creature_combat.NoArmor
+    1 -> creature_combat.Armor(points: 1)
+    _ -> creature_combat.InfiniteArmor
   }
 }
 
@@ -10477,7 +10486,7 @@ fn broken_casts(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
 /// firing every timer the creature started. `marks_in` counts the marked states of a step,
 /// which the harness check plants.
 fn unpaired_breaks(
-  armor armor: creature_life.InterruptArmor,
+  armor armor: creature_combat.InterruptArmor,
   ops ops: List(BreakOp),
   marks_in marks_in: fn(ServiceStep(creature.Outgoing)) -> Int,
 ) -> List(String) {
@@ -10591,7 +10600,7 @@ pub fn the_harness_names_a_break_whose_state_is_not_marked_test() -> Nil {
   use <- owned_test.run(5000)
   // The planted bug: no step marks anything.
   assert unpaired_breaks(
-      armor: creature_life.NoArmor,
+      armor: creature_combat.NoArmor,
       ops: [Approach(2), FireAll, StunBy(2)],
       marks_in: fn(_) { 0 },
     )

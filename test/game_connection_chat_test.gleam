@@ -13,12 +13,12 @@ import genesis_prime/client_connection.{
   SentByPeer,
 }
 import genesis_prime/connection/frame.{Frame}
-import genesis_prime/game/chat_channel
-import genesis_prime/game/chat_tell
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/limited_action_set
-import genesis_prime/game/unit_news.{CreatureAppeared, PeerNews, Removed}
+import genesis_prime/map/message.{
+  CreatureRefused, Left, NoPlayerHere, NotSummoned, SeenBy, Summoned,
+} as map_message
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_line
 import genesis_prime/message/disconnect_reason.{LostUserServer}
@@ -30,6 +30,11 @@ import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_position_command
 import genesis_prime/message/whisper_failed
 import genesis_prime/server
+import genesis_prime/shared/chat_channel
+import genesis_prime/shared/chat_tell
+import genesis_prime/shared/creature_kind.{Kind}
+import genesis_prime/shared/creature_unit_type.{NonPlayer}
+import genesis_prime/shared/unit_news.{CreatureAppeared, PeerNews, Removed}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionId, type ConnectionStep, type Event,
   ConnectionId, EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning,
@@ -39,13 +44,9 @@ import genesis_prime/step.{
 import genesis_prime/store.{CharacterLoaded, ForSelect, ForWorld, Listed}
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/world_map/creature
-import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map.{
-  CreatureRefused, Left, NoPlayerHere, NotSummoned, SeenBy, Summoned,
-}
+import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn.{
   FailsTheChecks, NoCreatureLevelRow, NoCreatureRow, ServiceLink, WouldNotStart,
 }
@@ -937,7 +938,7 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
   // The same removal from the map's Unseen of the creature, which the creature does not
   // send: written once for a shown creature, and nothing for one the client does not show.
   let unseen =
-    game_connection_support.sent_by_the_map(map.UnitUnseen(
+    game_connection_support.sent_by_the_map(map_message.UnitUnseen(
       unit_id: 40,
       generation: generation.first(),
     ))
@@ -1217,7 +1218,9 @@ pub fn a_refused_creature_answers_one_system_line_naming_the_reason_test() -> Ni
         "not summoned: Creature2 3107 would not start as a spawn: a service link",
       ),
       #(
-        map.CreatureNotStarted(reason: "the creature supervisor is not running"),
+        map_message.CreatureNotStarted(
+          reason: "the creature supervisor is not running",
+        ),
         "not summoned: the creature did not start",
       ),
     ],
@@ -1360,7 +1363,7 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
       map_state,
       support.input(
         OwnEvent(
-          step.Told(message: map.Moved(
+          step.Told(message: map_message.Moved(
             connection: ConnectionId(1),
             place: standing,
             seq: 1,

@@ -2,7 +2,7 @@
 //// static object's: the stats and the property the server sets, by their client
 //// ids, and the record after the type's data (`UnitCreateTail`) with every field
 //// the server leaves at 0 or empty (opcode.0x262.unit_fields).
-//// `genesis_prime/world_map/player_unit` makes its tail with `tail`;
+//// `genesis_prime/shared/player_unit` makes its tail with `tail`;
 //// `genesis_prime/world_map/creature_unit` and
 //// `genesis_prime/world_map/static_object`, whose units stand at a spawn, with
 //// `spawned_tail`; `genesis_prime/world_map/spawn` reads the property id.

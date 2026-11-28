@@ -32,6 +32,7 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings} as connection_state
 import genesis_prime/game/movement
+import genesis_prime/map/message as map_message
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/item_delete
 import genesis_prime/message/item_place.{ItemPlace}
@@ -46,7 +47,6 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/map
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -655,7 +655,7 @@ pub fn leaving_cancels_the_timer_and_saves_no_item_time_test() -> Nil {
     item_expiry_support.answered_at(
       state: left_state,
       taken: left,
-      outcome: step.Answer(FromMap(map.Left)),
+      outcome: step.Answer(FromMap(map_message.Left)),
       after_ms: 13_000,
     )
   assert list.contains(

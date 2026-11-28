@@ -34,7 +34,6 @@ import genesis_prime/game/cast/state.{
   TellHeal, Tick, TickAsked, TickStrike, TickingOn, UnitSide, WindowEnd,
 } as cast_state
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/unit_news
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription,
@@ -52,6 +51,7 @@ import genesis_prime/shared/lasts
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/spell_plan.{type Proxy, type Spell}
 import genesis_prime/shared/ticking
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{type Spell4EffectsId}

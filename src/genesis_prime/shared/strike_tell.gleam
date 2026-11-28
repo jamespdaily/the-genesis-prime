@@ -79,21 +79,21 @@
 ////   creature it puts on a fight finds it, ordered with the moves its connection
 ////   tells (genesis_prime/world_map/creature_fight).
 
-import genesis_prime/game/heal_split
-import genesis_prime/game/proc
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/forced_move
+import genesis_prime/shared/heal_parts
 import genesis_prime/shared/hit.{type Description, type Offence, type Rolls}
 import genesis_prime/shared/prerequisite.{type Prerequisite}
+import genesis_prime/shared/proc_event
 import genesis_prime/step.{type Address, type ConnectionId}
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/option.{type Option}
 
 /// How long a round waits for its answers, in milliseconds. A creature's respawn time
-/// is never below it (genesis_prime/world_map/creature_kind), so a unit does not stand
+/// is never below it (genesis_prime/shared/creature_kind), so a unit does not stand
 /// again while a round it was struck in is open.
 pub const deadline_ms = 1000
 
@@ -292,7 +292,7 @@ pub type PlayerStrike {
 /// each event and fires the Proc rows it holds on that unit; the tell names no sender, as
 /// the other tells between players do not.
 pub type PlayerEvent {
-  PlayerEvent(unit_id: Int, events: List(proc.Event))
+  PlayerEvent(unit_id: Int, events: List(proc_event.Event))
 }
 
 /// One heal row as the healed player applied it: the row, the vital and the split of the
@@ -301,7 +301,7 @@ pub type HealLanded {
   HealLanded(
     effect_id: Spell4EffectsId,
     vital: effect_kind.Vital,
-    split: heal_split.Split,
+    split: heal_parts.Split,
   )
 }
 

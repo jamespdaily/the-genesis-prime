@@ -31,13 +31,11 @@ import game_connection_support as support
 import genesis_prime/client_connection.{
   type Answer, type Request, AskMap, AskStore, FromStore, TellMoved,
 }
-import genesis_prime/game/chat_channel
-import genesis_prime/game/chat_tell
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
+import genesis_prime/map/message as map_message
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, LostUserServer,
@@ -49,6 +47,9 @@ import genesis_prime/message/quest_state.{type QuestState, QuestState}
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
+import genesis_prime/shared/chat_channel
+import genesis_prime/shared/chat_tell
+import genesis_prime/shared/strike_tell
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
   CancelTimer, ConnectionId, OwnEffect, OwnEvent, StoppedWaiting, TimerFired,
@@ -56,9 +57,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/store.{Items, Move, SavePlace}
 import genesis_prime/table/id.{Item2Id}
-import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
-import genesis_prime/world_map/relay
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -735,7 +734,7 @@ pub fn a_go_in_the_same_world_places_the_player_at_once_and_tells_the_map_test()
           True -> [
             #(
               7,
-              relay.TargetMoved(
+              map_message.TargetMoved(
                 place: row.place,
                 seq: 1,
                 hit_radius: place_support.player_hit_radius,
@@ -970,7 +969,7 @@ pub fn a_go_to_another_world_leaves_the_map_then_joins_the_new_one_at_the_place_
       let #(state, joining) = dev_support.left_the_map(state:, leaving:)
       let assert AskMap(
         map: map_id,
-        message: map.Join(place:, stay:, alive:, ..),
+        message: map_message.Join(place:, stay:, alive:, ..),
       ) = support.ask_request(joining)
         as "the answer to the leave is the new world's join"
       assert map_id == MapId(world_id: 870, instance: 0) as row.why
@@ -1094,7 +1093,7 @@ pub fn a_connection_that_ends_while_leaving_or_entering_makes_no_final_save_test
 pub fn what_other_processes_send_while_leaving_or_entering_is_dropped_test() -> Nil {
   use <- owned_test.run(60_000)
   let seen_by =
-    support.sent_by_the_map(map.SeenBy(
+    support.sent_by_the_map(map_message.SeenBy(
       by: ConnectionId(4),
       stay: support.viewer_stay(4),
       unit_id: support.viewer_unit_id(4),

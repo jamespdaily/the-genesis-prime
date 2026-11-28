@@ -7,9 +7,9 @@
 import character_tables
 import departures_support
 import genesis_prime/content/refusal.{type Refusal, RowId}
-import genesis_prime/game/activate.{type Link, ClosedLink, OpenLink}
 import genesis_prime/game/projector.{NotAProjector, NotOffered, Row}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/shared/activate.{type Link, ClosedLink, OpenLink}
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/id.{Creature2Id}
 import gleam/list

@@ -28,6 +28,7 @@
 
 import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/map/message as map_message
 import genesis_prime/step.{
   type ServiceStep, ConnectionId, OwnEvent, ServiceTimerFired, WatchEnded,
 }
@@ -93,7 +94,7 @@ fn a_trap_with_its_captive() -> State {
 
 /// The unit ids and watches of the creatures a step starts, in spawn order.
 fn started_units(
-  taken: ServiceStep(map.Outgoing),
+  taken: ServiceStep(map_message.Outgoing),
 ) -> List(#(step.WatchId, Int)) {
   list.map(spawns.starts(taken), fn(start) { #(start.0, { start.1 }.unit_id) })
 }
@@ -126,7 +127,7 @@ fn started_with_objects(
 
 /// The unit ids of the objects a step shows players (`ObjectsSeen`), in the order
 /// sent.
-fn objects_shown(taken: ServiceStep(map.Outgoing)) -> List(Int) {
+fn objects_shown(taken: ServiceStep(map_message.Outgoing)) -> List(Int) {
   list.flat_map(spawns.player_sends(taken), fn(sent) {
     case sent.1 {
       "Objects seen " <> ids ->
@@ -161,7 +162,7 @@ fn timer_fired(
   state state: State,
   at_ms at_ms: Int,
   spawn spawn: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   spawns.feed(
     state:,
     at_ms:,
@@ -396,7 +397,7 @@ pub fn a_released_creature_that_was_already_dead_ends_at_its_corpse_timer_and_th
 /// What a step that ends a released creature does: what players are sent, the timers it
 /// starts and whether it starts a creature.
 fn frames_at_the_end(
-  taken taken: ServiceStep(map.Outgoing),
+  taken taken: ServiceStep(map_message.Outgoing),
 ) -> #(List(#(Int, String)), List(#(Int, Int)), Bool) {
   #(
     spawns.player_sends(taken),

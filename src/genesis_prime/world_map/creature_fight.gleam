@@ -64,8 +64,8 @@
 //// P wakes in C's ring: LifeChanged(P, True) ─Approached(P, ..)─▶ C Resting: aggro, as a walk-in
 //// ```
 ////
-//// A charge, the attack of a creature whose spell has a cast time (`creature_life.Charged`): the
-//// attack of the kind or one of its specials (`creature_life.Special`), whose gos (`Go`) are the
+//// A charge, the attack of a creature whose spell has a cast time (`creature_combat.Charged`): the
+//// attack of the kind or one of its specials (`creature_combat.Special`), whose gos (`Go`) are the
 //// spell's phases, each with the strike its damage rows name or none:
 ////
 //// ```
@@ -155,7 +155,7 @@
 ////   radius too, as the client ranges a cast on a unit (`0x1403b2240`;
 ////   genesis_prime/world_map/creature_life `Attack`).
 //// - **One round at a time.** The attack interval is never below the strike
-////   deadline (genesis_prime/world_map/creature_kind), so a tick of an attack with no cast
+////   deadline (genesis_prime/shared/creature_kind), so a tick of an attack with no cast
 ////   time never finds a round open. A charge is the open round while a go is still to come
 ////   (`Charging`) and while an entry is open after the last go (`Striking`): it starts no attack
 ////   tick, the close of its round starts the next, and a tick that finds a charge open does
@@ -397,25 +397,26 @@
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/start_place.{type Facing, type Place}
-import genesis_prime/game/strike_tell.{
-  type Answered, type Fight as Told, type Key, Attacks, CreatureStriker,
-  Released, Threatened,
-}
-import genesis_prime/game/unit_news.{type News}
 import genesis_prime/gap
 import genesis_prime/shared/area.{type Inside, type Row}
+import genesis_prime/shared/creature_combat.{
+  type Attack, type Special, Charged, Instant,
+}
 import genesis_prime/shared/creature_path.{
   type Path, Circle, Running, Standing, Timed,
 }
+import genesis_prime/shared/creature_turn.{type Face, Fixed}
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit.{type Offence}
+import genesis_prime/shared/strike_tell.{
+  type Answered, type Fight as Told, type Key, Attacks, CreatureStriker,
+  Released, Threatened,
+}
 import genesis_prime/shared/telegraph_entries
+import genesis_prime/shared/unit_news.{type News}
 import genesis_prime/step.{type Address, type ConnectionId, type RingMember}
 import genesis_prime/table/id.{type Spell4Id}
-import genesis_prime/world_map/creature_life.{
-  type Attack, type Special, Charged, Instant,
-}
-import genesis_prime/world_map/creature_turn.{type Face, Fixed}
+import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/stay.{type Stay}
@@ -445,15 +446,15 @@ import gleam/set.{type Set}
 /// - `can_move`: the creature may move (`creature_unit_type.can_move`); one that may not never
 ///   chases or walks home.
 /// - `alternates`: the auto-attacks it strikes with after `attack` in turn, in the order its kind
-///   lists them (`creature_life.Combat.alternates`); empty for a creature with one auto-attack.
+///   lists them (`creature_combat.Combat.alternates`); empty for a creature with one auto-attack.
 /// - `specials`: the spells it casts besides its auto-attacks, in the order its kind lists them
-///   (`creature_life.Combat.specials`). A creature that holds any state casts none of them
+///   (`creature_combat.Combat.specials`). A creature that holds any state casts none of them
 ///   (`holds_a_state`), which covers every state a special's caster conditions name.
 /// - `turn_held`: it holds a Stun, Knockdown or Knockback, or is opened: it stands facing as
 ///   it did and does not turn to its target until that ends (a server's choice, a guess: the
 ///   client holds no rule for turning under a state; a Root and the other run-stopping states
 ///   leave it turning, since they only stop its run).
-/// - `fights`: the creature takes part in combat (`creature_life.Combat.fights`); one that does
+/// - `fights`: the creature takes part in combat (`creature_combat.Combat.fights`); one that does
 ///   not starts no fight, whoever approaches or strikes it.
 /// An attack that is `Charged` is a charge.
 pub type Fighter {
@@ -608,7 +609,7 @@ pub type Sighting {
 /// and how many auto-attacks it has struck with this fight (`autos_struck`: the next auto-attack
 /// is `attack` and `alternates` at that count's remainder; zero from `start_fight`, so every
 /// fight opens with the lead), `turn`, what its viewers' clients hold its rotation to
-/// (genesis_prime/world_map/creature_turn): the facing of its spawn until the fight turns it,
+/// (genesis_prime/shared/creature_turn): the facing of its spawn until the fight turns it,
 /// and `facing`, the facing its viewers' clients showed it at the end of the last input: the
 /// one it keeps when the unit it faces stands on its own ground point (`facing_of`).
 pub opaque type State {
@@ -725,7 +726,7 @@ pub type Timer {
   /// Every `interval_ms` while Fighting: strike when the target is in reach, else
   /// chase or leash.
   AttackTick(generation: Int)
-  /// The strike round's deadline (genesis_prime/game/strike_tell `deadline_ms`).
+  /// The strike round's deadline (genesis_prime/shared/strike_tell `deadline_ms`).
   StrikeDeadline(generation: Int)
   /// The walk home is run.
   HomeArrival(generation: Int)
@@ -2324,7 +2325,7 @@ fn go_strikes(
   fighter fighter: Fighter,
   round round: Round,
   attack attack: Attack,
-  strike strike: creature_life.GoStrike,
+  strike strike: creature_combat.GoStrike,
   go go: Int,
   viewers viewers: Dict(ConnectionId, Stay),
   now_ms now_ms: Int,
@@ -2372,7 +2373,7 @@ fn strikes_sent(
   fighter fighter: Fighter,
   round round: Round,
   attack attack: Attack,
-  strike strike: creature_life.GoStrike,
+  strike strike: creature_combat.GoStrike,
   go go: Int,
   struck struck: List(#(ConnectionId, Threat, Sighting)),
 ) -> #(State, GoRound, List(Effect)) {

@@ -39,13 +39,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/departures
-import genesis_prime/game/experience.{Credit}
-import genesis_prime/game/heal_split.{Split}
-import genesis_prime/game/held_changes
-import genesis_prime/game/proc
-import genesis_prime/game/strike_tell.{HealsLanded, PlayerAnswered}
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news
+import genesis_prime/map/message.{Join, Left} as map_message
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/currency_changed.{CurrencyChanged}
@@ -66,7 +60,14 @@ import genesis_prime/message/relayed_movement
 import genesis_prime/message/send_chat_line.{SendChatLine}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts.{Split}
+import genesis_prime/shared/kill_credit.{Credit}
+import genesis_prime/shared/player_change
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell.{HealsLanded, PlayerAnswered}
+import genesis_prime/shared/unit_casts
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   type ConnectionEvent, type Event, OwnEffect, OwnEvent, StartTimer, TimerFired,
@@ -77,7 +78,6 @@ import genesis_prime/table/id.{
   Creature2Id, Faction2Id, Item2Id, Spell4BaseId, Spell4EffectsId, Spell4Id,
   UnitProperty2Id,
 }
-import genesis_prime/world_map/map.{Join, Left}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/list
@@ -367,14 +367,14 @@ fn a_change_told(
     sent: client_connection.SentByPlayer(
       tell: client_connection.Change(case ends {
         True ->
-          held_changes.PlayerChangeEnds(from: step.ConnectionId(from), source:)
+          player_change.PlayerChangeEnds(from: step.ConnectionId(from), source:)
         False ->
-          held_changes.PlayerChangeStarts(
+          player_change.PlayerChangeStarts(
             from: step.ConnectionId(from),
             from_stay: connection_support.viewer_stay(from),
             source:,
-            change: held_changes.Applies(
-              held_changes.Property(unit_properties.Change(
+            change: player_change.Applies(
+              player_change.Property(unit_properties.Change(
                 property: UnitProperty2Id(161),
                 mode: 3,
                 multiplier:,
@@ -382,7 +382,7 @@ fn a_change_told(
                 per_level: 0.0,
               )),
             ),
-            sight: held_changes.EndsWhenUnseen,
+            sight: player_change.EndsWhenUnseen,
             spell4_id: Spell4Id(54_806),
             effect: unit_casts.HeldEffect(
               effect_id: source.effect_id,
@@ -433,7 +433,7 @@ pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test()
   let #(state, held_change) =
     list.fold(
       [
-        connection_support.sent_by_the_map(map.SeenBy(
+        connection_support.sent_by_the_map(map_message.SeenBy(
           by: step.ConnectionId(3),
           stay: connection_support.viewer_stay(3),
           unit_id: connection_support.viewer_unit_id(3),
@@ -508,10 +508,10 @@ pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {
       sent: client_connection.SentByPlayer(
         tell: client_connection.Event(
           event: strike_tell.PlayerEvent(unit_id: 9, events: [
-            proc.Event(
+            proc_event.Event(
               trigger: spell_plan.TakesDamage,
               other_unit: Some(31),
-              spell: Some(proc.EventSpell(
+              spell: Some(proc_event.EventSpell(
                 spell4_id: Spell4Id(5649),
                 spell4_base_id: Spell4BaseId(4947),
                 groups: [],

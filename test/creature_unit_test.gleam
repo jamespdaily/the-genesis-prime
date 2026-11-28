@@ -11,10 +11,10 @@ import genesis_prime/message/unit_create_creature.{UnitCreateCreature}
 import genesis_prime/message/unit_create_static
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/creature_unit_type.{NonPlayer, Turret}
 import genesis_prime/shared/unit_fields
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/creature_unit_type.{NonPlayer, Turret}
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/list

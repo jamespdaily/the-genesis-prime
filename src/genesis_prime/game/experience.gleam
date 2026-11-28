@@ -38,10 +38,11 @@
 //// - **Not here:** kill objectives, group sharing and
 ////   tagging, rest experience, and the stats and points a level gives.
 
+import genesis_prime/shared/kill_credit.{type Credit}
 import genesis_prime/shared/level
 import genesis_prime/table/creature2
 import genesis_prime/table/creature2_difficulty
-import genesis_prime/table/id.{type Creature2Id, type Faction2Id, XpPerLevelId}
+import genesis_prime/table/id.{XpPerLevelId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/xp_per_level
 import genesis_prime/world_map/game_number.{type GameNumbers}
@@ -51,18 +52,6 @@ import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/order
 import gleam/result
-
-/// The credit for a kill a creature tells the connection of the player whose blow
-/// killed it: the creature's unit, its Creature2 row, its Faction2 (the one its 0x262
-/// sends) and its level, the level its 0x262 sends as stat 10.
-pub type Credit {
-  Credit(
-    unit_id: Int,
-    creature_id: Creature2Id,
-    faction_id: Faction2Id,
-    level: Int,
-  )
-}
 
 /// A player's experience and the level it makes.
 pub type Progress {

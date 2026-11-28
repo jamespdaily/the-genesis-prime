@@ -21,22 +21,22 @@
 //// cast time and one Proxy.
 
 import cast_support as support
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/heal_split
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
-import genesis_prime/game/strike_tell
+import genesis_prime/shared/activate
 import genesis_prime/shared/class_resource.{Gain}
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts
 import genesis_prime/shared/lasting
 import genesis_prime/shared/lasts
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/ticking
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
@@ -912,7 +912,7 @@ fn ally_answered(effect_ids effect_ids: List(Int)) -> List(cast_state.Struck) {
           strike_tell.HealLanded(
             effect_id: Spell4EffectsId(effect_id),
             vital: effect_kind.Health,
-            split: heal_split.Split(
+            split: heal_parts.Split(
               amount: 121,
               shield: 0,
               health: 100,

@@ -110,7 +110,7 @@ pub type Kind {
   Absorption
   /// An Activate effect (7): the activate spell of a creature the player right-clicked
   /// (`Spell4Effects.effectType.7`). Every row is read, whatever it aims at; the activate
-  /// plan lists it (genesis_prime/game/activate), no go of an ability applies it.
+  /// plan lists it (genesis_prime/shared/activate), no go of an ability applies it.
   Activate
   /// An Immunity effect (79): immune to the effect type `dataBits00` names
   /// (`Spell4Effects.effectType.79`). No rule reads it as an effect, so it is not read

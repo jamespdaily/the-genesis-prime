@@ -25,9 +25,9 @@ import client_tables
 import genesis_prime/game/departures
 import genesis_prime/game/objective as rule
 import genesis_prime/game/objective_kind
-import genesis_prime/game/objective_link
 import genesis_prime/game/objective_units.{Listed}
 import genesis_prime/game/target_group
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{

@@ -1290,7 +1290,7 @@ pub type QuestAdvance {
 /// row's Spell4Effects id, the phases of `phase_flags` it applies in, who it aims at, the
 /// prerequisite as the load parsed it, and the `tag` that chooses it by the points the cast
 /// spent (genesis_prime/shared/spend). The strike tells each unit `aim` names the gate
-/// (genesis_prime/game/strike_tell `Gate`), and a go row with a gate applies on a unit only
+/// (genesis_prime/shared/strike_tell `Gate`), and a go row with a gate applies on a unit only
 /// when that unit's answer lists the row's id as passed (genesis_prime/game/cast `went`).
 pub type StruckGate {
   StruckGate(
@@ -2369,7 +2369,7 @@ pub type RowReading {
   /// A damage row: the area load reads it (genesis_prime/shared/spell_area `damage_row_of`),
   /// and the plan holds it in no list.
   ReadByArea
-  /// An Activate row: the activate plan lists it (genesis_prime/game/activate), and the
+  /// An Activate row: the activate plan lists it (genesis_prime/shared/activate), and the
   /// ability's plan holds it in no list.
   ReadByActivation
 }
@@ -6376,7 +6376,7 @@ fn kind_reading(
 /// the caster alone (`reaches`, `effect_kind.is_row_read`) and has a durationTime: left out
 /// with `DelayOnAnotherUnit` when it is aimed at any other unit and with `DelayHasNoDuration`
 /// when it holds its caster still for nothing. Its prerequisites are not read here; the
-/// creature special load refuses a row behind one (genesis_prime/world_map/creature_attack
+/// creature special load refuses a row behind one (genesis_prime/shared/creature_attack
 /// `special_checked`), and the coverage measure counts the row read.
 fn delay_reading(
   reaches reaches: Bool,

@@ -1,5 +1,5 @@
 //// The creature_kind table as the server reads it at start: one query for every
-//// row, the rows handed to the pure check (genesis_prime/world_map/creature_kind),
+//// row, the rows handed to the pure check (genesis_prime/shared/creature_kind),
 //// and the kinds put into one persistent term under the load's key. It is the
 //// second content table and follows the spawn's pattern (genesis_prime/content).
 ////
@@ -15,10 +15,10 @@
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowId}
 import genesis_prime/content/sql
-import genesis_prime/table/loader/store.{type Key}
-import genesis_prime/world_map/creature_kind.{
+import genesis_prime/shared/creature_kind.{
   type Kinds, type Row, GuardSpells, Row,
 }
+import genesis_prime/table/loader/store.{type Key}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result

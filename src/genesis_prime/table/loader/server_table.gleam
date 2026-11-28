@@ -154,7 +154,7 @@ import genesis_prime/table/xp_per_level
 ///   creature's defence (genesis_prime/world_map/spawn).
 /// - Prerequisite: the gate of a spell's resource gains and Proxies
 ///   (genesis_prime/shared/spell_plan) and the caster prerequisite of a creature attack's
-///   damage effects, which the content load reads (genesis_prime/world_map/creature_attack).
+///   damage effects, which the content load reads (genesis_prime/shared/creature_attack).
 /// - PositionalRequirement: the arc a type 108 prerequisite condition names
 ///   (genesis_prime/shared/prerequisite).
 /// - Quest2 and QuestObjective: the quests a saved quest log may name, each with its

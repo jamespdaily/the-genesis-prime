@@ -43,13 +43,13 @@ import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/shared/class_resource
+import genesis_prime/shared/player_unit
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome,
 }
 import genesis_prime/store.{type ItemsAnswer, ForItems}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/player_unit
 import gleam/bool
 import gleam/list
 import gleam/option.{Some}

@@ -16,12 +16,12 @@
 ////     prerequisite is of a type the server does not evaluate ─▶ Refusal
 ////   a guard without an opening, or an opening without a guard ─▶ Refusal
 ////   a guard or an opening whose effects the creature does not apply
-////     (genesis_prime/world_map/creature_guard_spells `guard_of`)  ─▶ Refusal naming the sentence
+////     (genesis_prime/shared/creature_guard_spells `guard_of`)  ─▶ Refusal naming the sentence
 ////   no row 0                                              ─▶ Refusal
 ////   a creature_special row the client's tables refuse     ─▶ Refusal naming the special's Spell4
-////     (genesis_prime/world_map/creature_special `refusal_of`)
+////     (genesis_prime/shared/creature_special `refusal_of`)
 ////   a creature_auto_attack row the client's tables refuse ─▶ Refusal naming the auto-attack's Spell4
-////     (genesis_prime/world_map/creature_auto_attack `refusal_of`)
+////     (genesis_prime/shared/creature_auto_attack `refusal_of`)
 ////   otherwise ─▶ Kinds ─▶ kind_of(kinds, creature2 id)    a map's and a creature's reading
 //// ```
 ////
@@ -47,17 +47,17 @@
 //// - **The cast prerequisite** (`Spell4.prerequisiteIdCasterCast`) is answered for one
 ////   condition of type 15, `TargetOfLiveCast`, which is the cast the charge itself is; any
 ////   other prerequisite is a state a creature does not have, so a spell holding one is
-////   refused and not cast as if it passed (genesis_prime/world_map/creature_attack).
+////   refused and not cast as if it passed (genesis_prime/shared/creature_attack).
 //// - **The guard and the opening** are a pair of Spell4 ids, both or neither, a server choice: the
 ////   client links the creature to neither (`Spell4.85472.trigger`). The kind holds them read
 ////   (`Kind.guard`), so a creature's start reads no table for them (genesis_prime/world_map/creature_guard).
 //// - **The attack interval** is a server choice, never below the strike deadline,
 ////   so a creature has at most one strike round open (genesis_prime/world_map/creature_fight).
-//// - **The specials** (genesis_prime/world_map/creature_special) are the spells a kind casts
+//// - **The specials** (genesis_prime/shared/creature_special) are the spells a kind casts
 ////   besides its attack, in the order the creature tries them. A creature with specials and no
 ////   row of its own takes the default row's fields and its own specials, so `by_creature`
 ////   holds the creatures of both tables. `taken` keeps the specials the load takes.
-//// - **The auto-attacks** (genesis_prime/world_map/creature_auto_attack) are the spells a creature
+//// - **The auto-attacks** (genesis_prime/shared/creature_auto_attack) are the spells a creature
 ////   strikes with in turn. A creature with some and no row of its own takes the default row's
 ////   fields, its first auto-attack as `attack_spell4_id` and the rest as `alternate_spell4_ids`;
 ////   a creature with none keeps the attack of its row, the default's 5649 unless it names
@@ -66,16 +66,16 @@
 ////   other content tables' are (genesis_prime/content).
 
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowId}
-import genesis_prime/game/strike_tell
+import genesis_prime/shared/creature_attack
+import genesis_prime/shared/creature_auto_attack
+import genesis_prime/shared/creature_guard_spells.{type Guard}
+import genesis_prime/shared/creature_special
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Spell4Id, Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
-import genesis_prime/world_map/creature_attack
-import genesis_prime/world_map/creature_auto_attack
-import genesis_prime/world_map/creature_guard_spells.{type Guard}
-import genesis_prime/world_map/creature_special
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -102,7 +102,7 @@ pub type Row {
 }
 
 /// The two Spell4s a creature kind row names for its guard: the guard spell and the
-/// opening spell that ends it (genesis_prime/world_map/creature_guard_spells).
+/// opening spell that ends it (genesis_prime/shared/creature_guard_spells).
 pub type GuardSpells {
   GuardSpells(guard_spell4_id: Int, opening_spell4_id: Int)
 }
@@ -110,9 +110,9 @@ pub type GuardSpells {
 /// What the server chose for a kind of creature: the guard is none for a creature
 /// that takes damage always; `attack_spell4_id` is the lead attack, the creature's first
 /// auto-attack, and `alternate_spell4_ids` the auto-attacks it strikes with after it in
-/// turn, empty for a creature with one attack (genesis_prime/world_map/creature_auto_attack);
+/// turn, empty for a creature with one attack (genesis_prime/shared/creature_auto_attack);
 /// `specials` are the spells it casts besides its attacks, in the order it tries them
-/// (genesis_prime/world_map/creature_special).
+/// (genesis_prime/shared/creature_special).
 pub type Kind {
   Kind(
     respawn_ms: Int,

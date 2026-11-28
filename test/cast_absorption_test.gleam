@@ -25,13 +25,13 @@ import attacker_support
 import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect} as cast_state
-import genesis_prime/game/held_changes
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/shared/damage.{Formula, Parameter}
 import genesis_prime/shared/lasting.{type LastingRow, LastingRow}
 import genesis_prime/shared/lasts
+import genesis_prime/shared/player_change
 import genesis_prime/shared/spell_plan.{Absorption, AimsAtCaster, Always}
 import genesis_prime/shared/spend
 import genesis_prime/shared/unit_properties.{type Source, Change}
@@ -94,9 +94,9 @@ fn absorb_row(
 fn starts(effects effects: List(Effect)) -> List(#(Source, Int, Int)) {
   list.filter_map(support.caster_change_starts(effects:), fn(start) {
     case start.1 {
-      cast_state.HeldChange(held_changes.Absorb(amount:, mask:)) ->
+      cast_state.HeldChange(player_change.Absorb(amount:, mask:)) ->
         Ok(#(start.0, amount, mask))
-      cast_state.HeldChange(held_changes.Property(..))
+      cast_state.HeldChange(player_change.Property(..))
       | cast_state.Heal(..)
       | cast_state.Look(..) -> Error(Nil)
     }
@@ -385,7 +385,7 @@ pub fn the_absorb_amount_reads_the_caster_before_the_gos_own_effects_test() -> N
   assert list.any(effects, fn(effect) {
     case effect {
       cast_state.CasterChangeStarts(
-        change: cast_state.HeldChange(held_changes.Property(..)),
+        change: cast_state.HeldChange(player_change.Property(..)),
         ..,
       ) -> True
       _ -> False

@@ -6,7 +6,7 @@
 //// - The relation protocol of the map (the doc comment of `genesis_prime/world_map/map`):
 ////   a creature's news, answers, credits and fight tells reach a player only from the map,
 ////   in the order the creature told the map them.
-//// - The strike round (`genesis_prime/game/strike_tell`, `genesis_prime/game/strike`): an
+//// - The strike round (`genesis_prime/shared/strike_tell`, `genesis_prime/game/strike`): an
 ////   answer is waited for 1,000 ms; the caster's round, not the map, decides that a later
 ////   answer is late.
 //// - `creature.struck`'s order: the answer, the kill credit, then the health and the death.
@@ -18,17 +18,16 @@ import genesis_prime/client_connection.{
   type Message, ForStay, SentByKill, SentByPeer, SentByTarget,
 }
 import genesis_prime/game/strike
-import genesis_prime/game/strike_tell.{
-  type Answered, Answered, Key, Landed, Refused,
-}
-import genesis_prime/game/unit_news.{PeerNews}
+import genesis_prime/map/message as map_message
 import genesis_prime/service
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell.{
+  type Answered, Answered, Key, Landed, Refused,
+}
+import genesis_prime/shared/unit_news.{PeerNews}
 import genesis_prime/step.{ConnectionId, Woken}
 import genesis_prime/world_map/creature
-import genesis_prime/world_map/map
 import genesis_prime/world_map/registry
-import genesis_prime/world_map/relay
 import gleam/list
 import gleam/result
 import inbound_support
@@ -124,7 +123,7 @@ pub fn a_viewer_writes_the_creatures_snapshot_and_then_its_news_in_the_order_the
     connection: 2,
     unit_id:,
     life: 2,
-    payload: relay.Strike(
+    payload: map_message.Strike(
       tell: strike_tell.Strike(..tell, from: step.Connection(ConnectionId(2))),
     ),
   )
@@ -229,7 +228,10 @@ pub fn a_dead_creature_that_is_released_still_answers_its_striker_through_the_ma
   // The player's use releases the unit: the spawn is released, and the dead creature is told
   // to end, which it does at its corpse timer.
   let _sent =
-    service.tell_subject(run.subject, map.Released(unit_id: beast.unit_id))
+    service.tell_subject(
+      run.subject,
+      map_message.Released(unit_id: beast.unit_id),
+    )
   driven_time.wait_until_quiet(time)
   // A second strike reaches the dead creature, which refuses it as dead; the map, which holds
   // the spawn as releasing, still delivers the answer.
@@ -262,12 +264,12 @@ pub fn a_dead_creature_that_is_released_still_answers_its_striker_through_the_ma
   let _sent =
     service.tell_subject(
       run.subject,
-      map.Relay(
+      map_message.Relay(
         unit_id: beast.unit_id,
         life: 2,
         to: ConnectionId(1),
         stay: map_support.stay(count: 1),
-        payload: relay.Struck(answered: Answered(
+        payload: map_message.Struck(answered: Answered(
           key: strike_tell.Key(
             cast_id: 3,
             occasion: strike_tell.AtGo(phase: 0),
@@ -320,7 +322,7 @@ pub fn the_map_delivers_a_relay_held_past_the_strike_deadline_unchanged_and_the_
     run:,
     unit_id: beast.unit_id,
     life: 2,
-    payload: relay.Strike(tell:),
+    payload: map_message.Strike(tell:),
   )
   held_at_least(time:, world:, count: 1)
   // The clock passes the deadline of the strike while the answer is held at the gate.
@@ -386,7 +388,7 @@ fn struck_through_the_map(
     connection: from,
     unit_id:,
     life: 2,
-    payload: relay.Strike(tell:),
+    payload: map_message.Strike(tell:),
   )
 }
 

@@ -1,6 +1,7 @@
 //// The relay table rule. Expected value is the rule: `genesis_prime/world_map/relay` is
 //// the one table of what a creature tells a player and a player tells a creature through
-//// the map, so each variant of `Payload` and of `Inbound` has a row in the module's doc
+//// the map (the types are in `genesis_prime/map/message`), so each variant of `Payload`,
+//// `Inbound` and `Landing` has a row in the module's doc
 //// table (its kind, destination check and source check) and one arm of its own in
 //// `kind_of` or `inbound_kind_of`, which gives that kind. A variant with no row or no arm
 //// of its own, a row for no variant, an `Inbound` arm whose `source:` is not a bare
@@ -19,6 +20,9 @@ import unitest
 
 const relay_path = "src/genesis_prime/world_map/relay.gleam"
 
+/// The module that holds the types the relay's table has a row for each variant of.
+const message_path = "src/genesis_prime/map/message.gleam"
+
 /// The types the table has a row for each variant of, with the function that gives each
 /// variant's kind. `Landing` is what a player's connection lands on another through the map.
 const tables = [
@@ -28,8 +32,11 @@ const tables = [
 ]
 
 /// The names of the variants of the table's types.
-fn variants(file file: SourceFile) -> List(String) {
-  syntax.variants_of(file:, type_names: list.map(tables, fn(table) { table.0 }))
+fn variants(types types: SourceFile) -> List(String) {
+  syntax.variants_of(
+    file: types,
+    type_names: list.map(tables, fn(table) { table.0 }),
+  )
 }
 
 /// The names the module's doc table has a row for.
@@ -87,8 +94,11 @@ fn constructor_of(pattern: glance.Pattern) -> Result(String, Nil) {
 
 /// Whether the source-check cell of each `Inbound` row of the doc table says there is
 /// none (it starts "none"), by the variant's name.
-fn tabled_without_sender_check(file file: SourceFile) -> List(#(String, Bool)) {
-  let inbound = syntax.variants_of(file:, type_names: ["Inbound"])
+fn tabled_without_sender_check(
+  file file: SourceFile,
+  types types: SourceFile,
+) -> List(#(String, Bool)) {
+  let inbound = syntax.variants_of(file: types, type_names: ["Inbound"])
   syntax.table_rows(file:)
   |> list.filter(fn(row) { list.contains(inbound, row.0) })
   |> list.map(fn(row) { #(row.0, string.starts_with(row.1, "none")) })
@@ -122,8 +132,8 @@ fn armed_without_sender_check(
 
 /// What the file breaks: a variant with no table row, a row for no variant, and a
 /// variant that has no arm of its own in `kind_of`.
-fn breaches(file file: SourceFile) -> List(String) {
-  let named = variants(file:)
+fn breaches(file file: SourceFile, types types: SourceFile) -> List(String) {
+  let named = variants(types:)
   let rows = tabled(file:)
   let arms = arms(file:)
   list.flatten([
@@ -136,14 +146,16 @@ fn breaches(file file: SourceFile) -> List(String) {
         "no arm of its own in its kind function for " <> name
       }),
     list.filter_map(
-      syntax.variants_of(file:, type_names: ["Inbound"]),
+      syntax.variants_of(file: types, type_names: ["Inbound"]),
       fn(name) {
         case list.key_find(armed_without_sender_check(file:), name) {
           Error(Nil) -> Error(Nil)
           Ok(Error(Nil)) ->
             Ok("the source check of " <> name <> " cannot be read from its arm")
           Ok(Ok(armed)) ->
-            case list.key_find(tabled_without_sender_check(file:), name) {
+            case
+              list.key_find(tabled_without_sender_check(file:, types:), name)
+            {
               Ok(tabled) if tabled != armed ->
                 Ok(
                   "the source check of "
@@ -197,7 +209,7 @@ pub fn the_relay_table_has_one_row_for_each_payload_and_each_row_names_its_desti
       "  }",
       "}",
     ])
-  assert breaches(file: planted_file)
+  assert breaches(file: planted_file, types: planted_file)
     == [
       "no table row for Struck",
       "no table row for Credit",
@@ -213,14 +225,17 @@ pub fn the_relay_table_has_one_row_for_each_payload_and_each_row_names_its_desti
       "the source check of Despawn cannot be read from its arm",
     ]
     as "a variant of either type with no row, a row for no variant, a variant sharing an arm, a row whose source check is not its arm's and an arm whose source check is no bare variant are each found"
-  assert breaches(file: SourceFile(
-      path: relay_path,
-      text: source.read(relay_path),
-    ))
+  assert breaches(
+      file: SourceFile(path: relay_path, text: source.read(relay_path)),
+      types: SourceFile(path: message_path, text: source.read(message_path)),
+    )
     == []
     as "each payload, each inbound tell and each landing of the relay has a row in the table and an arm of its own in its kind function"
   assert list.filter(
-      variants(file: SourceFile(path: relay_path, text: source.read(relay_path))),
+      variants(types: SourceFile(
+        path: message_path,
+        text: source.read(message_path),
+      )),
       fn(name) { name == "Move" || name == "Moving" },
     )
     == []

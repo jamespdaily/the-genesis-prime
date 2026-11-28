@@ -56,10 +56,10 @@
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/state.{type Session} as connection_state
-import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/shared/look
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type ConnectionEffect, type Effect}
 import gleam/option.{None, Some}

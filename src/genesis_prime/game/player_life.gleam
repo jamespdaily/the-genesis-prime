@@ -113,7 +113,7 @@
 ////
 //// - **One owner rolls.** A creature keeps no random state, so the struck player's
 ////   connection draws the strike's rolls from its own seed, and a recording of the
-////   connection replays them (genesis_prime/game/strike_tell).
+////   connection replays them (genesis_prime/shared/strike_tell).
 //// - **A level-1 player's defence** has no deflect, critical deflect or glance: each
 ////   is 0 from UnitProperty2's defaults (`player.level1_defence`); its physical
 ////   mitigation is GameFormula 1234 from its Armor, its gear's unless a modifier
@@ -232,18 +232,19 @@
 import genesis_prime/client_connection
 import genesis_prime/game/heal_split
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell.{type Tell, Answered}
-import genesis_prime/game/unit_news.{type News}
 import genesis_prime/message/choose_resurrection
+import genesis_prime/shared/creature_combat
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts
 import genesis_prime/shared/hit.{type Defence, type Rolls}
 import genesis_prime/shared/item_property
 import genesis_prime/shared/rating.{type Formulas}
+import genesis_prime/shared/strike_tell.{type Tell, Answered}
+import genesis_prime/shared/unit_news.{type News}
 import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/step.{type TimerId, TimerId}
 import genesis_prime/table/id.{type UnitProperty2Id, UnitProperty2Id}
-import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -1358,7 +1359,7 @@ pub fn healed_by(
   amount amount: Int,
   outgoing outgoing: Float,
   properties properties: Properties,
-) -> #(Life, heal_split.Split, List(Effect)) {
+) -> #(Life, heal_parts.Split, List(Effect)) {
   let split =
     heal_split.split(
       vital:,
@@ -1454,9 +1455,9 @@ fn armor_of(life life: Life, properties properties: Properties) -> Int {
       properties:,
       property: unit_properties.interrupt_armor_threshold,
     )
-  case creature_life.interrupt_armor_of(maximum:) {
-    creature_life.NoArmor | creature_life.InfiniteArmor -> 0
-    creature_life.Armor(points:) ->
+  case creature_combat.interrupt_armor_of(maximum:) {
+    creature_combat.NoArmor | creature_combat.InfiniteArmor -> 0
+    creature_combat.Armor(points:) ->
       case life.armor_worn {
         None -> points
         Some(worn) -> int.min(worn, points)

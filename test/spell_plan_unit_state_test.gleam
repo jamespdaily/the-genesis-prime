@@ -17,7 +17,7 @@
 ////   creature's own combat state, which each struck creature checks.
 
 import fixture_tables
-import genesis_prime/game/activate.{Planned}
+import genesis_prime/shared/activate.{Planned}
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/spell_area

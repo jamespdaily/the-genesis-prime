@@ -37,12 +37,13 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/unit_news
+import genesis_prime/map/message as map_message
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed
 import genesis_prime/server
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{
   type ConnectionEvent, type Event, type ServiceEvent, type TimerId, CallerId,
   ConnectionId, OwnEffect, OwnEvent, TimerFired, Told, Woken,
@@ -51,7 +52,6 @@ import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import gleam/dict.{type Dict}
 import gleam/int
 import gleam/list
@@ -80,7 +80,7 @@ pub type Sender {
 
 /// An input of one of the processes.
 pub type Input {
-  ToMap(event: Event(ServiceEvent(map.Message)))
+  ToMap(event: Event(ServiceEvent(map_message.Message)))
   ToConnection(event: Event(ConnectionEvent(Message, Answer)))
   /// The client of a connection in character select picks the character, the store
   /// answers with its rows, and the connection asks the map to take it.
@@ -392,7 +392,7 @@ pub fn tells_the_map_it_moved(
         from: FromConnection(connection),
         input: ToMap(
           OwnEvent(
-            Told(message: map.Moved(
+            Told(message: map_message.Moved(
               connection: ConnectionId(connection),
               place:,
               seq:,
@@ -442,7 +442,7 @@ fn frames_added(
 /// What a map's step sends to the players' connections, in order, as mail of the map's
 /// queues.
 pub fn mail_of_the_map(
-  taken taken: step.ServiceStep(map.Outgoing),
+  taken taken: step.ServiceStep(map_message.Outgoing),
 ) -> List(Mail) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
@@ -474,17 +474,20 @@ pub fn mail_of_the_map(
 /// the loadout the scene's tables give a joined character's class.
 fn answers_of_the_map(
   scene scene: Scene,
-  taken taken: step.ServiceStep(map.Outgoing),
+  taken taken: step.ServiceStep(map_message.Outgoing),
 ) -> List(Mail) {
   list.map(support.replies(taken), fn(reply) {
     let #(CallerId(number), outgoing) = reply
     let assert Ok(ask) = dict.get(scene.asking, number)
       as "a reply of the map names a connection that waits for it"
     let answer = case ask.request, outgoing {
-      client_connection.AskMap(message: map.Join(character:, ..), ..),
-        map.Joined(..)
-      | client_connection.AskMapRun(message: map.Join(character:, ..), ..),
-        map.Joined(..)
+      client_connection.AskMap(message: map_message.Join(character:, ..), ..),
+        map_message.Joined(..)
+      | client_connection.AskMapRun(
+          message: map_message.Join(character:, ..),
+          ..,
+        ),
+        map_message.Joined(..)
       -> {
         let ClassId(class_id) = character.class_id
         connection_support.with_the_tables_loadout(
@@ -510,10 +513,10 @@ fn answers_of_the_map(
 }
 
 /// The name of what a map answers, as the mail's name says it.
-fn answer_name(answer answer: map.Outgoing) -> String {
+fn answer_name(answer answer: map_message.Outgoing) -> String {
   case answer {
-    map.Joined(..) -> "Joined"
-    map.Left -> "Left"
+    map_message.Joined(..) -> "Joined"
+    map_message.Left -> "Left"
     _ -> "another answer"
   }
 }
@@ -549,10 +552,10 @@ pub fn mail_of_the_connection(
 }
 
 /// The name of what a connection asks the map, as the mail's name says it.
-fn ask_name(message message: map.Message) -> String {
+fn ask_name(message message: map_message.Message) -> String {
   case message {
-    map.Join(..) -> "Join"
-    map.Leave(..) -> "Leave"
+    map_message.Join(..) -> "Join"
+    map_message.Leave(..) -> "Leave"
     _ -> "another ask"
   }
 }
@@ -641,16 +644,16 @@ fn unit_news_name(news news: unit_news.News) -> String {
 }
 
 /// The name of what a map sends, as the mail's name says it.
-fn outgoing_name(message message: map.Outgoing) -> String {
+fn outgoing_name(message message: map_message.Outgoing) -> String {
   case message {
-    map.Noticed(notice: map.SeenBy(..), ..) -> "SeenBy"
-    map.Noticed(notice: map.UnseenBy(..), ..) -> "UnseenBy"
-    map.Noticed(notice: map.PlayerUnseen(unit_id:, ..), ..) ->
+    map_message.Noticed(notice: map_message.SeenBy(..), ..) -> "SeenBy"
+    map_message.Noticed(notice: map_message.UnseenBy(..), ..) -> "UnseenBy"
+    map_message.Noticed(notice: map_message.PlayerUnseen(unit_id:, ..), ..) ->
       "PlayerUnseen " <> int_name(unit_id)
-    map.Noticed(notice: map.Gone(..), ..) -> "Gone"
-    map.Noticed(..) -> "a notice"
-    map.Relayed(
-      delivered: relay.News(news: unit_news.PeerNews(unit_id:, news:)),
+    map_message.Noticed(notice: map_message.Gone(..), ..) -> "Gone"
+    map_message.Noticed(..) -> "a notice"
+    map_message.Relayed(
+      delivered: map_message.News(news: unit_news.PeerNews(unit_id:, news:)),
       ..,
     ) ->
       "Relayed "
@@ -662,23 +665,23 @@ fn outgoing_name(message message: map.Outgoing) -> String {
       }
       <> " of "
       <> int.to_string(unit_id)
-    map.Relayed(delivered: relay.Landed(landing:), ..) ->
+    map_message.Relayed(delivered: map_message.Landed(landing:), ..) ->
       "Relayed " <> landing_name(landing:)
-    map.Relayed(delivered: relay.Said(..), ..) -> "Relayed line"
-    map.Relayed(..) -> "Relayed"
+    map_message.Relayed(delivered: map_message.Said(..), ..) -> "Relayed line"
+    map_message.Relayed(..) -> "Relayed"
     _ -> "another send"
   }
 }
 
 /// The name of a landing, as the mail's name says it.
-fn landing_name(landing landing: relay.Landing) -> String {
+fn landing_name(landing landing: map_message.Landing) -> String {
   case landing {
-    relay.HealStrike(..) -> "heal strike"
-    relay.HealAnswer(..) -> "heal answer"
-    relay.ChangeStart(..) -> "change start"
-    relay.ChangeEnd(..) -> "change end"
-    relay.CastWent(..) -> "cast went"
-    relay.AllyEvent(..) -> "ally event"
+    map_message.HealStrike(..) -> "heal strike"
+    map_message.HealAnswer(..) -> "heal answer"
+    map_message.ChangeStart(..) -> "change start"
+    map_message.ChangeEnd(..) -> "change end"
+    map_message.CastWent(..) -> "cast went"
+    map_message.AllyEvent(..) -> "ally event"
   }
 }
 
@@ -1116,7 +1119,7 @@ pub fn cast_frames_of(
 pub fn map_is_told(
   scene scene: Scene,
   from from: Sender,
-  event event: Event(ServiceEvent(map.Message)),
+  event event: Event(ServiceEvent(map_message.Message)),
   name name: String,
 ) -> Scene {
   Scene(

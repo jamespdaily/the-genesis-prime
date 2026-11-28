@@ -9,9 +9,9 @@
 ////                                        └─ to any other: carried out when taken ──────────────────▶ that connection
 //// ```
 
+import genesis_prime/map/message as map_message
 import genesis_prime/service.{type Reach}
 import genesis_prime/step
-import genesis_prime/world_map/map
 import gleam/erlang/process
 import gleam/int
 import gleam/list
@@ -28,9 +28,9 @@ import open_wait
 pub fn delaying(
   owner owner: process.Pid,
   delay_ms delay_ms: Int,
-) -> fn(Reach(map.Outgoing)) -> Reach(map.Outgoing) {
+) -> fn(Reach(map_message.Outgoing)) -> Reach(map_message.Outgoing) {
   let forwarder = start_forwarder(owner:, delay_ms:)
-  fn(reach: Reach(map.Outgoing)) {
+  fn(reach: Reach(map_message.Outgoing)) {
     service.Reach(..reach, send: fn(to, outgoing) {
       process.send(forwarder, Sent(Send(to:, outgoing:, carry_out: reach.send)))
       Ok(Nil)
@@ -42,8 +42,8 @@ pub fn delaying(
 type Send {
   Send(
     to: step.Address,
-    outgoing: map.Outgoing,
-    carry_out: fn(step.Address, map.Outgoing) -> Result(Nil, Nil),
+    outgoing: map_message.Outgoing,
+    carry_out: fn(step.Address, map_message.Outgoing) -> Result(Nil, Nil),
   )
 }
 
@@ -96,7 +96,10 @@ fn forward(
       let viewer = case viewer, to, outgoing {
         None,
           step.Connection(step.ConnectionId(told)),
-          map.Noticed(notice: map.SeenBy(by: step.ConnectionId(by), ..), ..)
+          map_message.Noticed(
+            notice: map_message.SeenBy(by: step.ConnectionId(by), ..),
+            ..,
+          )
         -> Some(int.max(told, by))
         _, _, _ -> viewer
       }

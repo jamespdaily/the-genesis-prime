@@ -23,7 +23,6 @@ import client_tables
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/strike_tell
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
@@ -35,6 +34,7 @@ import genesis_prime/shared/lasts
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/ticking.{type Schedule, Schedule, Ticks}
 import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId}

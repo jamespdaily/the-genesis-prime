@@ -57,9 +57,6 @@ import genesis_prime/game/cast/state.{
 } as cast_state
 import genesis_prime/game/held_changes
 import genesis_prime/game/player_address.{type PlayerAddress}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
 import genesis_prime/shared/crowd_control
@@ -67,9 +64,13 @@ import genesis_prime/shared/damage
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/lasting
 import genesis_prime/shared/lasts
+import genesis_prime/shared/player_change
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/spell_effect
 import genesis_prime/shared/spell_plan.{type Spell}
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_casts
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/table/id.{type Spell4EffectsId}
 import gleam/bool
@@ -153,8 +154,8 @@ pub fn unit_unseen(
     ending: fn(on) {
       case on {
         HeldOnCreature(..) -> True
-        HeldOnPlayer(sight: held_changes.EndsWhenUnseen, ..) -> True
-        HeldOnPlayer(sight: held_changes.KeptWhenUnseen, ..) -> False
+        HeldOnPlayer(sight: player_change.EndsWhenUnseen, ..) -> True
+        HeldOnPlayer(sight: player_change.KeptWhenUnseen, ..) -> False
       }
     },
   )
@@ -678,7 +679,7 @@ fn modifier_armed(
               effect_id: row.effect_id,
               life: row.row,
               address:,
-              change: held_changes.Applies(held_changes.Property(modifier:)),
+              change: player_change.Applies(player_change.Property(modifier:)),
               spell:,
               started_ms:,
               now_ms:,
@@ -690,7 +691,7 @@ fn modifier_armed(
             cast:,
             row:,
             source:,
-            change: HeldChange(held_changes.Property(modifier:)),
+            change: HeldChange(player_change.Property(modifier:)),
           ))
         Error(Nil) ->
           untold(armed: creature_modifier_armed(
@@ -712,7 +713,7 @@ fn modifier_armed(
               effect_id: row.effect_id,
               life: row.row,
               address:,
-              change: held_changes.Applies(held_changes.Property(modifier:)),
+              change: player_change.Applies(player_change.Property(modifier:)),
               spell:,
               started_ms:,
               now_ms:,
@@ -726,7 +727,7 @@ fn modifier_armed(
             cast:,
             row:,
             source:,
-            change: HeldChange(held_changes.Property(modifier:)),
+            change: HeldChange(player_change.Property(modifier:)),
           ))
       }
     spell_plan.LookChange(disguise:) ->
@@ -740,7 +741,7 @@ fn modifier_armed(
       // An absorb's pool is worked out at the go from the caster as it stood before
       // the go's own effects, as a shield heal's amount is (`cast_heal.healed_on`).
       let pool =
-        held_changes.Absorb(
+        player_change.Absorb(
           amount: damage.amount_on_caster(
             formula: absorption.formula,
             caster: cast_heal.on_caster_of(caster:, passed_in:),
@@ -756,7 +757,7 @@ fn modifier_armed(
               effect_id: row.effect_id,
               life: row.row,
               address:,
-              change: held_changes.Applies(pool),
+              change: player_change.Applies(pool),
               spell:,
               started_ms:,
               now_ms:,
@@ -777,7 +778,7 @@ fn modifier_armed(
 
 /// A Proc row a go reached on a unit: the caster's own row is held by the caster itself
 /// (`cast_proc.procs_held`), and a row on another player is told to that player as a change that
-/// applies nothing (`held_changes.Awaits`) with an end of its own, and held by the caster for
+/// applies nothing (`player_change.Awaits`) with an end of its own, and held by the caster for
 /// that player. A later go of the cast keeps the fires of the entry it holds.
 fn proc_armed(
   cast cast: State,
@@ -800,7 +801,7 @@ fn proc_armed(
           effect_id: row.effect_id,
           life: row.row,
           address:,
-          change: held_changes.Awaits(trigger: row.trigger),
+          change: player_change.Awaits(trigger: row.trigger),
           spell:,
           started_ms:,
           now_ms:,
@@ -895,7 +896,7 @@ fn player_change_armed(
   effect_id effect_id: Spell4EffectsId,
   life life: lasting.LastingRow,
   address address: PlayerAddress,
-  change change: held_changes.Told,
+  change change: player_change.Told,
   spell spell: Spell,
   started_ms started_ms: Int,
   now_ms now_ms: Int,

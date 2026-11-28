@@ -107,6 +107,20 @@ pub fn objective_ids(quest quest: Quest2) -> List(Int) {
   |> list.filter(fn(objective) { objective != 0 })
 }
 
+/// The WorldLocation2 ids of the objective's marker: its worldLocationsIdIndicator00
+/// to 03, in column order, an id of 0 naming none and so left out.
+pub fn marker_ids(
+  objective objective: quest_objective.QuestObjective,
+) -> List(Int) {
+  [
+    objective.world_locations_id_indicator00,
+    objective.world_locations_id_indicator01,
+    objective.world_locations_id_indicator02,
+    objective.world_locations_id_indicator03,
+  ]
+  |> list.filter(fn(marker_id) { marker_id != 0 })
+}
+
 /// One QuestObjective row as the client keeps it.
 pub fn objective_of(
   tables tables: table_store.Tables,
@@ -124,21 +138,9 @@ pub fn objective_of(
       kind: objective_kind.of_row(row),
     ),
     time_limit_ms: row.max_time_allowed_ms,
-    marked: list.any(
-      [
-        row.world_locations_id_indicator00,
-        row.world_locations_id_indicator01,
-        row.world_locations_id_indicator02,
-        row.world_locations_id_indicator03,
-      ],
-      fn(marker_id) {
-        marker_id != 0
-        && result.is_ok(world_location2.get(
-          tables:,
-          id: WorldLocation2Id(marker_id),
-        ))
-      },
-    ),
+    marked: list.any(marker_ids(objective: row), fn(marker_id) {
+      result.is_ok(world_location2.get(tables:, id: WorldLocation2Id(marker_id)))
+    }),
   )
 }
 

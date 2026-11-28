@@ -23,13 +23,12 @@ import character_tables
 import client_tables
 import fixture_tables
 import genesis_prime/game/start_place.{Facing}
-import genesis_prime/game/vendor
+import genesis_prime/shared/creature_combat
 import genesis_prime/shared/rating
 import genesis_prime/shared/unit_fields
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_faction
-import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{Summoned}
@@ -37,6 +36,7 @@ import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set
 import map_spawn_support
 import owned_test
 import planted_table.{Float, Integer}
@@ -144,7 +144,7 @@ pub fn a_summon_has_what_a_stored_spawn_of_the_same_creature_and_place_has_test(
       tables: character_tables.content_tables(),
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )
   let assert Ok(world) = dict.get(selection.worlds, 3460)
@@ -294,7 +294,7 @@ pub fn commander_durek_summons_with_the_client_rows_faction_display_and_outfit_t
         tables: client_tables.every_table(),
         formulas: rating.formulas(tables: client_tables.every_table()),
         kinds: spawn_support.kinds(),
-        vendors: vendor.none(),
+        vendor_creatures: set.new(),
         factions: creature_faction.none(),
       ),
       summoned: Summoned(
@@ -325,7 +325,7 @@ fn real_summon_at(
       tables: client_tables.every_table(),
       formulas: rating.formulas(tables: client_tables.every_table()),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     ),
     summoned: Summoned(
@@ -352,7 +352,7 @@ pub fn commander_durek_summoned_at_level_3_has_that_levels_health_and_keeps_his_
     as "the creature's Base Health at level 3, not at its minLevel 50"
   // Property 44: CreatureLevel 3's 1.0 times the archetype's 1.0, Creature2Difficulty
   // 23's 18.0 and the tier's 1.0. Level 50's row has the same 1.0.
-  assert spawn.combat.interrupt_armor == creature_life.Armor(points: 18)
+  assert spawn.combat.interrupt_armor == creature_combat.Armor(points: 18)
     as "the armor is the level's 1.0 times the difficulty's 18.0"
   assert spawn.faction_id == 171 && spawn.display_info_id == 22_825
     as "the rest of the summon is Durek's, as at his own level"
@@ -391,7 +391,7 @@ pub fn a_summon_of_the_battle_beast_at_level_3_has_that_levels_health_and_no_arm
   // 1's 1.0, Creature2Difficulty 1's 0.387 and Creature2Tier 1's 1.0 is 132.387,
   // as the Beast's 52.62 at level 1 is 135.97 times the same.
   assert spawn.health == 132 as "the Beast's Base Health at level 3, not 52"
-  assert spawn.combat.interrupt_armor == creature_life.NoArmor
+  assert spawn.combat.interrupt_armor == creature_combat.NoArmor
     as "Creature2Difficulty 1's property 44 multiplier is 0.0"
   assert spawn.faction_id == 1441 && spawn.display_info_id == 26_565
     as "the rest of the summon is the Beast's, as at level 1"

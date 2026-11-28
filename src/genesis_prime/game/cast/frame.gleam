@@ -15,10 +15,7 @@ import genesis_prime/game/cast/state.{
   NoInteractionWaits, NoItemSpell, NotDecoded, NotSentByClient, Send, StateEnd,
   UnknownAnswer, UnknownCancel, WrongAnswerSpell,
 } as cast_state
-import genesis_prime/game/cast/target_info
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts
 import genesis_prime/message/bit_stream
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log.{CombatLog}
@@ -55,7 +52,10 @@ import genesis_prime/message/unit_cc_state_ended.{UnitCcStateEnded}
 import genesis_prime/message/unit_tether_anchor.{UnitTetherAnchor}
 import genesis_prime/shared/hit
 import genesis_prime/shared/spell_plan.{type Spell}
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/target_info
 import genesis_prime/shared/telegraph_entries.{type Opening}
+import genesis_prime/shared/unit_casts
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/int
 import gleam/list

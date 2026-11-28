@@ -21,6 +21,7 @@
 
 import genesis_prime/gap
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts.{type Split, Split}
 import genesis_prime/shared/unit_properties.{type Properties}
 import gleam/float
 import gleam/int
@@ -63,12 +64,6 @@ pub fn scaling_between(
       property: unit_properties.heal_to_shield_conversion,
     ),
   )
-}
-
-/// A heal worked out: `amount` is what the client is told, `shield` and `health` are what
-/// each vital rises by and `overheal` is the rest.
-pub type Split {
-  Split(amount: Int, shield: Int, health: Int, overheal: Int)
 }
 
 /// A heal of `vital` by the formula's `amount`, for a player whose health has
