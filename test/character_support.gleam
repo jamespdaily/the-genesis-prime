@@ -116,11 +116,7 @@ fn hold_novice_set(
   character_id character_id: Int,
   class_id class_id: Int,
 ) -> Nil {
-  case
-    list.find(novice_tables.sets(), fn(set) {
-      set.class_id == class_id && set.faction_id == 166
-    })
-  {
+  case dominion_set(class_id:) {
     Error(Nil) -> Nil
     Ok(set) ->
       list.each(novice_tables.equipped_of(set:), fn(pair) {
@@ -496,13 +492,16 @@ pub fn unequipped(
 /// The Item2 ids a character of the Dominion class holds at location 0 once `insert` has
 /// stored its Novice set, in bag order; none for a class the client has no Dominion set for.
 pub fn novice_worn(class_id class_id: Int) -> List(Item2Id) {
-  case
-    list.find(novice_tables.sets(), fn(set) {
-      set.class_id == class_id && set.faction_id == 166
-    })
-  {
+  case dominion_set(class_id:) {
     Ok(set) ->
       list.map(novice_tables.equipped_of(set:), fn(pair) { Item2Id(pair.0) })
     Error(Nil) -> []
   }
+}
+
+/// The Novice set of the class for the faction 166 the inserted rows have.
+fn dominion_set(class_id class_id: Int) -> Result(novice_tables.Set, Nil) {
+  list.find(novice_tables.sets(), fn(set) {
+    set.class_id == class_id && set.faction_id == 166
+  })
 }
