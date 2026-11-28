@@ -170,7 +170,7 @@ pub fn visibility_changed(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.VisibilityChanged(
-        unit: map_support.address(number: connection),
+        unit: map_support.unit(state:, connection:),
         hidden:,
       )),
     ),
@@ -189,7 +189,7 @@ pub fn move(
     at_ms:,
     event: OwnEvent(
       Told(message: Moved(
-        unit: map_support.address(number: connection),
+        unit: map_support.unit(state:, connection:),
         place: at(x),
         seq: at_ms,
       )),
@@ -208,7 +208,7 @@ pub fn leave(
     at_ms:,
     event: OwnEvent(Asked(
       CallerId(99),
-      Leave(unit: map_support.address(number: connection)),
+      Leave(unit: map_support.unit(state:, connection:)),
     )),
   )
 }
@@ -260,7 +260,7 @@ pub fn relation_of(
 ) -> Option(map.Relation) {
   case map.spawn_state(state:, spawn: SpawnId(spawn)) {
     Ok(map.Live(relations:, ..)) | Ok(map.Releasing(relations:, ..)) ->
-      dict.get(relations, map_support.address(number: connection))
+      dict.get(relations, map_support.unit(state:, connection:))
       |> option.from_result
     Ok(map.Retiring(..))
     | Ok(map.Respawning(..))
@@ -495,7 +495,7 @@ pub fn move_to(
     at_ms:,
     event: OwnEvent(
       Told(message: Moved(
-        unit: map_support.address(number: connection),
+        unit: map_support.unit(state:, connection:),
         place:,
         seq: at_ms,
       )),
@@ -514,7 +514,7 @@ pub fn ready(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.Ready(
-        unit: map_support.address(number: connection),
+        unit: map_support.unit(state:, connection:),
         seq: 0,
       )),
     ),
@@ -534,7 +534,7 @@ pub fn stealth(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.StealthChanged(
-        unit: map_support.address(number: connection),
+        unit: map_support.unit(state:, connection:),
         stealthed:,
       )),
     ),
@@ -554,7 +554,7 @@ pub fn life(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.LifeChanged(
-        unit: map_support.address(number: connection),
+        unit: map_support.unit(state:, connection:),
         alive:,
       )),
     ),
@@ -595,7 +595,7 @@ pub fn summon_at_level(
     event: OwnEvent(Asked(
       caller: CallerId(caller),
       message: map_message.Summon(
-        unit: map_support.address(number: connection),
+        unit: map_support.unit(state:, connection:),
         creature_id: id.Creature2Id(creature_id),
         level:,
       ),

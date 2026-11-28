@@ -2387,11 +2387,17 @@ pub fn a_caster_that_joins_again_ends_the_sources_of_its_earlier_stay_that_end_w
   assert seen(steps: [unseen]).properties == []
     as "the armor of the spell that keeps its buff is not taken off"
   let new_sight = generation.after(support.viewer_sight(5))
+  let new_address =
+    map_support.address_for(
+      incarnation: support.incarnation,
+      number: 9,
+      rank: 3,
+    )
   let #(state, _) =
     support.feed(
       state:,
       event: support.sent_by_the_map(map_message.SeenBy(
-        by: map_support.address(number: 3),
+        by: new_address,
         unit_id: support.viewer_unit_id(3),
         generation: new_sight,
       )),
@@ -2400,7 +2406,7 @@ pub fn a_caster_that_joins_again_ends_the_sources_of_its_earlier_stay_that_end_w
     support.feed(
       state:,
       event: tell(PlayerChangeStarts(
-        from: map_support.address(number: 3),
+        from: new_address,
         source: pool_source(cast_id: 103),
         change: pool(amount: 300),
         sight: EndsWhenUnseen,

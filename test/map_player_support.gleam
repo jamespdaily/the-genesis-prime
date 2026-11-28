@@ -90,7 +90,7 @@ pub fn sight_of(
   list.find_map(notices_to(taken:, connection: owner), fn(notice) {
     case notice {
       map_message.SeenBy(by:, generation:, ..) ->
-        case unit_address.number(address: by) == viewer {
+        case unit_address.rank(address: by) == viewer {
           True -> Ok(generation)
           False -> Error(Nil)
         }
@@ -176,8 +176,8 @@ pub fn snapshot_as_told(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.PlayerSnapshot(
-        by: map_support.address(number: owner),
-        viewer: map_support.address(number: viewer),
+        by: map_support.unit(state:, connection: owner),
+        viewer: map_support.unit(state:, connection: viewer),
         generation:,
         burst:,
       )),
@@ -197,7 +197,7 @@ pub fn broadcast(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.PlayerBroadcast(
-        from: map_support.address(number: owner),
+        from: map_support.unit(state:, connection: owner),
         news:,
       )),
     ),
@@ -218,8 +218,8 @@ pub fn landing(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.TellLanding(
-        from: map_support.address(number: from),
-        to: map_support.address(number: to),
+        from: map_support.unit(state:, connection: from),
+        to: map_support.unit(state:, connection: to),
         landing:,
       )),
     ),
@@ -260,7 +260,7 @@ pub fn say(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.Say(
-        from: map_support.address(number: speaker),
+        from: map_support.unit(state:, connection: speaker),
         said:,
       )),
     ),
@@ -291,8 +291,8 @@ pub fn relation(
 ) -> Option(map.Relation) {
   map.player_relation(
     state:,
-    owner: map_support.address(number: owner),
-    viewer: map_support.address(number: viewer),
+    owner: map_support.unit(state:, connection: owner),
+    viewer: map_support.unit(state:, connection: viewer),
   )
 }
 

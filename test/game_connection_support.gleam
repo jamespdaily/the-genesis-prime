@@ -764,6 +764,18 @@ pub fn entered_from(
   entered_saved(in_character_select:, character:, saved_health: None)
 }
 
+/// `in_character_select` after a camp, the map that took the player once taking it again:
+/// the address it answers is the next one the real map issues, `own_address_again`.
+pub fn entered_again_from(
+  in_character_select in_character_select: game_connection.State,
+  character character: store.Character,
+) -> #(game_connection.State, ConnectionStep(Request)) {
+  let #(state, taken) =
+    joining_saved(in_character_select:, character:, saved_health: None)
+  let answer_of = mapped(map_state: map_after_a_stay(), taken:).1
+  answer(state:, taken:, outcome: step.Answer(FromMap(answer_of)))
+}
+
 /// `in_character_select` after the store gave `character` with the health its
 /// last save kept and the map took it: the burst is written.
 pub fn entered_saved(

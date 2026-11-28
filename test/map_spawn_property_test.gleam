@@ -257,7 +257,7 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
             ),
             event: OwnEvent(
               step.Told(message: map_message.Moved(
-                unit: map_support.address(number: connection),
+                unit: map_support.unit(state: play.state, connection:),
                 place: map_spawn_support.at(x_of(stop)),
                 seq: stop,
               )),
@@ -274,8 +274,9 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
             play: Play(..play, players: dict.delete(play.players, connection)),
             event: OwnEvent(step.Asked(
               caller: step.CallerId(99),
-              message: map_message.Leave(unit: map_support.address(
-                number: connection,
+              message: map_message.Leave(unit: map_support.unit(
+                state: play.state,
+                connection:,
               )),
             )),
             connection:,
@@ -337,8 +338,8 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
 /// What is wrong with a live spawn's viewers and its idle time, by the players who see it.
 fn live_spawn_problems(
   name name: String,
-  viewers viewers: set.Set(step.ConnectionId),
-  seen seen: set.Set(step.ConnectionId),
+  viewers viewers: set.Set(unit_address.UnitAddress),
+  seen seen: set.Set(unit_address.UnitAddress),
   idle_since_ms idle_since_ms: option.Option(Int),
   now_ms now_ms: Int,
 ) -> List(String) {
@@ -374,7 +375,9 @@ fn broken(play: Play) -> List(String) {
       as "a spawn"
     dict.to_list(play.players)
     |> list.filter(fn(player) { float_abs(player.1 -. spawn_x) <=. 1024.0 })
-    |> list.map(fn(player) { ConnectionId(player.0) })
+    |> list.map(fn(player) {
+      map_support.unit(state: play.state, connection: player.0)
+    })
     |> set.from_list
   }
   let spawn_problems =
@@ -389,11 +392,7 @@ fn broken(play: Play) -> List(String) {
         Ok(Live(relations:, idle_since_ms:, ..)), _ ->
           live_spawn_problems(
             name:,
-            viewers: set.from_list(
-              list.map(dict.keys(relations), fn(address) {
-                step.ConnectionId(unit_address.rank(address:))
-              }),
-            ),
+            viewers: set.from_list(dict.keys(relations)),
             seen:,
             idle_since_ms:,
             now_ms: play.now_ms,

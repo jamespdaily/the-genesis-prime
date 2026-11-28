@@ -245,7 +245,7 @@ pub fn a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test() -> N
     #(
       "a unit of the run whose player does not see the creature",
       map_support.address_for(incarnation: 1, number: 4, rank: 2),
-      4,
+      2,
       True,
     ),
     #(

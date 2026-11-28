@@ -287,7 +287,7 @@ pub fn sends(step: ServiceStep(outgoing)) -> List(#(Int, outgoing)) {
       OwnEffect(Send(to: Connection(ConnectionId(number)), message:)) ->
         Ok(#(number, message))
       OwnEffect(Send(to: Unit(address:), message:)) ->
-        Ok(#(unit_address.number(address:), message))
+        Ok(#(unit_address.rank(address:), message))
       OwnEffect(Send(..))
       | OwnEffect(Register(..))
       | OwnEffect(Unregister(..))

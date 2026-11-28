@@ -223,7 +223,7 @@ pub fn a_line_queued_across_a_same_run_re_entry_is_dropped_by_the_stay_fence_tes
   use <- owned_test.run(10_000)
   let #(camped, _) = game_connection_support.camped_out()
   let #(again, _) =
-    game_connection_support.entered_from(
+    game_connection_support.entered_again_from(
       camped,
       game_connection_support.world_character(),
     )
@@ -1117,9 +1117,11 @@ pub fn a_level_the_map_refused_is_a_system_line_naming_it_and_the_player_goes_on
     )
   let assert client_connection.AskMapRun(map: _, message:, ..) =
     game_connection_support.ask_request(taken)
-  let #(map_state, _) = map_spawn_support.started(at: [])
   let #(map_state, _) =
-    map_spawn_support.join(state: map_state, at_ms: 5100, connection: 1, x: 0.0)
+    game_connection_support.mapped(
+      map_state: game_connection_support.map_with_four_players(),
+      taken: game_connection_support.joining().1,
+    )
   let #(_, refused) =
     map.step(
       map_state,
@@ -1359,7 +1361,7 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
       support.input(
         OwnEvent(
           step.Told(message: map_message.Moved(
-            unit: map_support.address(number: 1),
+            unit: game_connection_support.own_address(),
             place: standing,
             seq: 1,
           )),

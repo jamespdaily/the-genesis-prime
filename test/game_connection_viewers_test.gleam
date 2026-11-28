@@ -458,7 +458,7 @@ pub fn a_player_that_enters_again_shows_no_unit_and_has_none_gone_test() -> Nil 
       outcome: step.Answer(FromStore(ForSelect(Listed([])))),
     )
   let #(again, _) =
-    game_connection_support.entered_from(
+    game_connection_support.entered_again_from(
       state,
       game_connection_support.world_character(),
     )
@@ -834,7 +834,7 @@ pub fn an_accepted_0x637_tells_the_map_the_place_the_movement_keeps_and_nothing_
           game_connection_support.incarnation,
         ),
         request: TellMoved(
-          unit: map_support.address(number: 1),
+          unit: game_connection_support.own_address(),
           place: game_connection_support.standing_at(x: 1.5, y: 2.5, z: 3.5),
           seq: 1,
         ),
@@ -1021,7 +1021,7 @@ pub fn a_viewer_set_is_empty_after_a_camp_and_a_new_join_and_comes_back_only_by_
       outcome: step.Answer(FromStore(ForSelect(Listed([])))),
     )
   let #(again, _) =
-    game_connection_support.entered_from(
+    game_connection_support.entered_again_from(
       state,
       game_connection_support.world_character(),
     )
@@ -1034,7 +1034,7 @@ pub fn a_viewer_set_is_empty_after_a_camp_and_a_new_join_and_comes_back_only_by_
       again,
       game_connection_support.in_second_unit(
         game_connection_support.sent_by_the_map(SeenBy(
-          by: map_support.address(number: 4),
+          by: game_connection_support.viewer_address(4),
           unit_id: game_connection_support.viewer_unit_id(4),
           generation: game_connection_support.viewer_sight(4),
         )),
@@ -1203,10 +1203,8 @@ fn takes_only_its_own_stay(
 
 pub fn a_strike_answer_of_the_stay_before_a_camp_is_dropped_though_the_next_stays_strike_has_its_key_test() -> Nil {
   use <- owned_test.run(10_000)
-  // The cast rule counts its casts from 1 in each stay and the Beast is unit 40 in
-  // both, so the next stay's strike has the key of the earlier one: an answer of
-  // the earlier strike, delayed past the camp and the entry, would close the new
-  // round with what the old strike did.
+  // An answer of the earlier strike, delayed past the camp and the entry, is sent to the
+  // earlier address and would close the new round with what the old strike did.
   let medic =
     Character(..game_connection_support.world_character(), class_id: ClassId(4))
   let #(first, _) =
@@ -1221,7 +1219,7 @@ pub fn a_strike_answer_of_the_stay_before_a_camp_is_dropped_though_the_next_stay
     )
   let assert [#(40, old_key)] = game_connection_support.strikes_told(pressed)
   let #(again, _) =
-    game_connection_support.entered_from(
+    game_connection_support.entered_again_from(
       game_connection_support.camp_from(first),
       medic,
     )
@@ -1238,9 +1236,11 @@ pub fn a_strike_answer_of_the_stay_before_a_camp_is_dropped_though_the_next_stay
       client_cast_id: 1,
     )
   let assert [#(40, key)] = game_connection_support.strikes_told(pressed)
-  assert key == old_key as "the same key in both stays"
   let #(_, late) =
-    game_connection_support.feed(again, game_connection_support.landed(key:))
+    game_connection_support.feed(
+      again,
+      game_connection_support.landed(key: old_key),
+    )
   assert !list.contains(game_connection_support.written_ids(late), 0x07F4)
     as "the earlier stay's answer closes no round of this stay: no go is written"
   let #(_, own) =
@@ -3033,18 +3033,32 @@ pub fn a_players_address_is_found_by_its_unit_id_among_the_connections_that_see_
       assert player_address.in_sight(viewers:, picture:) == expected as why
     },
   )
-  // A viewer's address is the one its latest SeenBy named: the connection that saw the player
-  // as one unit and sees it again as a later one is told at the later address, which is the
-  // address `in_sight` addresses it by.
+  // A connection that saw the player as one unit and sees it again as a later one: the map
+  // sends `UnseenBy` for the old address, then `SeenBy` for the new one, so the player's
+  // moves go to the new address only.
+  let new_address =
+    map_support.address_for(
+      incarnation: game_connection_support.incarnation,
+      number: 9,
+      rank: 3,
+    )
   let state =
     game_connection_support.watched_by(game_connection_support.in_world(), [3])
   let #(state, _) =
     game_connection_support.feed(
       state,
-      game_connection_support.sent_by_the_map(SeenBy(
+      game_connection_support.sent_by_the_map(map_message.UnseenBy(
         by: map_support.address(number: 3),
-        unit_id: game_connection_support.viewer_unit_id(3),
         generation: game_connection_support.viewer_sight(3),
+      )),
+    )
+  let #(state, _) =
+    game_connection_support.feed(
+      state,
+      game_connection_support.sent_by_the_map(SeenBy(
+        by: new_address,
+        unit_id: game_connection_support.viewer_unit_id(3),
+        generation: game_connection_support.viewer_sight(4),
       )),
     )
   let #(_, moved) =
@@ -3057,8 +3071,8 @@ pub fn a_players_address_is_found_by_its_unit_id_among_the_connections_that_see_
   assert list.map(game_connection_support.move_tells(taken: moved), fn(sent) {
       sent.0
     })
-    == [3]
-    as "a player seen again by a connection as a new unit is told its moves at the new address, not the first"
+    == [9]
+    as "a player seen again by a connection as a new unit is told its moves at the new address only, not the first"
 }
 
 // ---- what a press judges of a player in sight ----
@@ -4383,7 +4397,7 @@ pub fn a_viewer_holds_at_most_sixteen_chunks_of_a_unit_drops_the_oldest_with_one
       outcome: step.Answer(FromStore(ForSelect(Listed([])))),
     )
   let #(again, _) =
-    game_connection_support.entered_from(
+    game_connection_support.entered_again_from(
       state,
       game_connection_support.world_character(),
     )

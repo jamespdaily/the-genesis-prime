@@ -1305,6 +1305,17 @@ fn summon_settled(
   )
 }
 
+/// The address of the unit the joiner's connection has in the map now, for a test.
+pub fn address_of_joiner(
+  state state: State,
+  joiner joiner: ConnectionId,
+) -> Result(UnitAddress, Nil) {
+  list.find(unit_address.sorted_entries(state.players), fn(entry) {
+    { entry.1 }.joiner == joiner
+  })
+  |> result.map(fn(entry) { entry.0 })
+}
+
 /// The relation the map holds with the unit `viewer` as a viewer of the unit `owner`, for a
 /// test.
 pub fn player_relation(

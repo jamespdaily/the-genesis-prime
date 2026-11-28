@@ -378,7 +378,7 @@ fn a_camp_tells_the_viewers_removed_and_no_look(world world: World) -> Nil {
     as "the camp's own steps tell the map no LookChanged, whatever it carries; the unit's removal is the map's PlayerUnseen when it takes the leave (opcode.0x355)"
   // The next entry: a fresh Entered from the map's join, whose 0x262 lists the base.
   let #(_, entering) =
-    support.entered_from(
+    support.entered_again_from(
       in_character_select: camped,
       character: Character(..support.world_character(), class_id: ClassId(2)),
     )

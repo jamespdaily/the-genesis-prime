@@ -4,6 +4,7 @@
 import character_support
 import character_tables
 import genesis_prime/shared/creature_kind.{type Kinds, Kind, Kinds}
+import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/map.{type State}
@@ -141,4 +142,15 @@ pub fn address_for(
     number:,
     rank:,
   )
+}
+
+/// The address of the unit the player of connection `connection` has in the map `state` now,
+/// as the map issued it at the join (never built from the number); a connection with no unit
+/// in the map gets an address the map never issued.
+pub fn unit(state state: State, connection connection: Int) -> UnitAddress {
+  case map.address_of_joiner(state:, joiner: ConnectionId(connection)) {
+    Ok(address) -> address
+    Error(Nil) ->
+      address_for(incarnation: 1, number: 1000 + connection, rank: connection)
+  }
 }

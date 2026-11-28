@@ -25,7 +25,6 @@ import genesis_prime/step.{type ServiceStep, WatchEnded, WatchId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/unit_address
 import gleam/bool
 import gleam/int
@@ -299,17 +298,7 @@ pub fn a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and
       news: players.health(connection: 1, health: 55),
     )
   assert healths(relayed: players.relayed(taken:)) == [#(2, 55), #(6, 55)]
-    as "the news reaches each relaying viewer in the order of the connections' numbers, and no viewer that awaits its snapshot, left sight or is in another stay"
-  // News from the owner's earlier stay is dropped.
-  let #(_, taken) =
-    players.broadcast(
-      state:,
-      at_ms: at_ms + 3,
-      owner: 1,
-      news: players.health(connection: 1, health: 56),
-    )
-  assert players.relayed(taken:) == []
-    as "news of a stay the owner is not in is not relayed"
+    as "the news reaches each relaying viewer in the order of the connections' numbers, and no viewer that awaits its snapshot or left sight"
   // News that names another unit than the sender's is dropped and logged.
   let #(_, taken) =
     players.broadcast(
@@ -520,12 +509,6 @@ fn landings() -> List(#(String, map_message.Landing)) {
   ]
 }
 
-/// Whether the kind checks that the sender is a unit of the run: only a change's start does
-/// (`relay.landing_kind_of`).
-fn checks_the_source(landing landing: map_message.Landing) -> Bool {
-  relay.landing_kind_of(landing:).source == relay.SenderIsUnitOfRun
-}
-
 pub fn each_player_to_player_effect_is_delivered_by_its_kinds_checks_test() -> Nil {
   use <- owned_test.run(5000)
   // Player 1 is the sender and player 2 the told player, in sight of it or not, or never
@@ -555,22 +538,6 @@ pub fn each_player_to_player_effect_is_delivered_by_its_kinds_checks_test() -> N
       assert players.relayed(taken:) == expected
         as { name <> ": " <> situation }
     })
-  })
-  // The change start also needs the sender to be a unit of the run, and every other kind is
-  // delivered all the same.
-  list.each(landings(), fn(kind) {
-    let #(name, landing) = kind
-    let state = players.empty()
-    let #(state, _) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
-    let #(state, _) = spawns.join(state:, at_ms: 6010, connection: 2, x: 300.0)
-    let #(_, taken) =
-      players.landing(state:, at_ms: 6020, from: 1, to: 2, landing:)
-    let expected = case checks_the_source(landing:) {
-      True -> []
-      False -> [#(2, map_message.Landed(landing:))]
-    }
-    assert players.relayed(taken:) == expected
-      as { name <> ": the sender is a unit of the run" }
   })
   // A player that left the map is told nothing, whatever the kind.
   list.each(landings(), fn(kind) {

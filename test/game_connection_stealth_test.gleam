@@ -109,7 +109,7 @@ fn stealth_told(
   stealthed stealthed: Bool,
 ) -> step.Effect(step.ConnectionEffect(Request)) {
   support.map_tell(request: client_connection.TellStealthChanged(
-    unit: map_support.address(number: 1),
+    unit: support.own_address(),
     stealthed:,
   ))
 }
@@ -444,7 +444,7 @@ pub fn a_camp_while_stealthed_writes_no_stealth_and_the_next_stay_starts_unsteal
       outcome: step.Answer(FromStore(ForSelect(Listed([])))),
     )
   let #(again, _) =
-    support.entered_from(
+    support.entered_again_from(
       in_character_select: state,
       character: Character(..support.world_character(), class_id: ClassId(4)),
     )
