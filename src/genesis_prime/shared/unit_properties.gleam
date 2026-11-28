@@ -647,6 +647,10 @@ pub fn overlay(
   })
 }
 
+/// The CreatureLevel row that properties 100 and above read, one for every level
+/// (`CreatureLevel.101`).
+pub const high_property_creature_level = 101
+
 /// What a property modifier or conversion does not do that the client's rows ask for.
 pub fn gaps() -> List(gap.Entry) {
   [

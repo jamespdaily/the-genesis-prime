@@ -359,7 +359,7 @@ fn run_waiting(
 /// level-6 Medic character (`session.sh` of the playing-live skill), with the
 /// server taking the client's movement messages and saving the player's place.
 pub const committed_session =
-  "test/wire_recording/2026-11-27-select-gear-session"
+  "test/wire_recording/2026-11-28-select-gear-session"
 
 /// The recording of the connection of the rule `rule` in the committed session,
 /// with its file's name.

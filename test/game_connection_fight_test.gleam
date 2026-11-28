@@ -760,6 +760,19 @@ pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_th
       state,
       game_connection_support.a_beast_strike(5),
     )
+  // The player deflects a blow by chance (BaseAvoidChance 0.05 on this connection's fixed seed),
+  // so the strike must have landed before its health is read: a deflect answers Deflected and
+  // writes no shield or health.
+  let assert [
+    #(
+      7,
+      map_message.StrikeAnswered(answered: strike_tell.Answered(
+        key: answered,
+        outcome: strike_tell.Landed(descriptions: [_], ..),
+      )),
+    ),
+  ] = game_connection_support.told_creatures(struck)
+    as "the strike landed: the seed's deflect roll is 0.05 or more, so the health below is the mitigated blow's"
   let assert [
     Frame(message_id: 0x0938, body: shield),
     Frame(message_id: 0x092F, body: health),
@@ -780,15 +793,6 @@ pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_th
       unit_news.Health(health: 735, dead: False),
     ]
     as "its viewers are sent the shield and the health"
-  let assert [
-    #(
-      7,
-      map_message.StrikeAnswered(answered: strike_tell.Answered(
-        key: answered,
-        outcome: strike_tell.Landed(descriptions: [_], ..),
-      )),
-    ),
-  ] = game_connection_support.told_creatures(struck)
   assert answered == key as "the answer names the creature's strike"
 }
 
@@ -1471,6 +1475,15 @@ pub fn a_beasts_aggro_strike_and_leash_reach_the_medics_client_with_the_worked_v
   let #(beast, ticked) =
     fire_beast(state: beast, at_ms: 2500, timer: tick_of(aggro))
   let #(medic, struck, answers) = medic_takes(medic, to_the_medic(ticked))
+  // The player deflects a blow by chance (BaseAvoidChance 0.05 on the fixed seed): the strike
+  // must have landed before its health is read.
+  let assert [
+    creature.StrikeAnswered(answered: strike_tell.Answered(
+      outcome: strike_tell.Landed(..),
+      ..,
+    )),
+  ] = answers
+    as "the strike landed: the seed's deflect roll is 0.05 or more, so the health below is the mitigated blow's"
   assert game_connection_support.decoded(
       struck,
       0x0938,

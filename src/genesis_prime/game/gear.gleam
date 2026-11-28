@@ -36,7 +36,10 @@
 ////   budget values, so taking an item off returns it to the default. BaseFocusPool (5)
 ////   is one of them, with the class's own base pool added (`bases`), so a healer's
 ////   maximum Focus is that pool plus what its items give.
+//// - **Base combat properties:** the 26 of CreatureLevel row 101 at every level and with any gear
+////   (`player_combat_bases`), the server's guess (`player.base_combat_properties`).
 
+import genesis_prime/gap
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/shared/equip_spell
 import genesis_prime/shared/item_property.{
@@ -50,6 +53,7 @@ import genesis_prime/table/id.{
   type Item2Id, type UnitProperty2Id, CreatureLevelId, UnitProperty2Id,
 }
 import genesis_prime/table/loader/store as table_store
+import genesis_prime/world_map/creature_columns
 import gleam/dict
 import gleam/float
 import gleam/int
@@ -173,14 +177,21 @@ fn keep_one_shield(
 pub type HealthError {
   /// CreatureLevel has no row for the level.
   NoCreatureLevel(level: Int)
+  /// CreatureLevel has no row 101, or one too short, so the player's base combat properties
+  /// (`player_combat_bases`) cannot be read.
+  NoBaseCombatRow
 }
 
 /// The text that tells why, for the log.
 pub fn describe(error error: HealthError) -> String {
-  let NoCreatureLevel(level:) = error
-  "CreatureLevel has no row for level "
-  <> int.to_string(level)
-  <> ", so the player's maximum health is unknown"
+  case error {
+    NoCreatureLevel(level:) ->
+      "CreatureLevel has no row for level "
+      <> int.to_string(level)
+      <> ", so the player's maximum health is unknown"
+    NoBaseCombatRow ->
+      "CreatureLevel has no row 101 with the columns of the player's base combat properties, so the player's base chances are unknown"
+  }
 }
 
 /// A player's maximum health at `level` with this gear: the Base Health of
@@ -203,15 +214,20 @@ pub fn max_health(
 /// then each property an item's budget may give (`item_property.budget_properties`), in
 /// id order, at its default plus what the worn items give; BaseFocusPool (5) also holds
 /// `focus_pool`, the base pool of the player's class in points (0 for a class that holds
-/// no Focus), so taking a worn item off returns it to that base.
-/// `NoCreatureLevel` when the table has no Base Health row for the level.
+/// no Focus), so taking a worn item off returns it to that base, then the 26 base combat
+/// properties (`player_combat_bases`).
+/// `NoCreatureLevel` when the table has no Base Health row for the level, `NoBaseCombatRow` when it has no row 101.
 pub fn bases(
   tables tables: table_store.Tables,
   gear gear: Gear,
   level level: Int,
   focus_pool focus_pool: Float,
 ) -> Result(List(#(UnitProperty2Id, Float)), HealthError) {
-  use health <- result.map(max_health(tables:, gear:, level:))
+  use health <- result.try(max_health(tables:, gear:, level:))
+  use combat <- result.map(
+    player_combat_bases(tables:)
+    |> result.replace_error(NoBaseCombatRow),
+  )
   let defaults = unit_properties.defaults(tables:)
   let properties = gear.properties
   let #(capacity, mitigation, regen, reboot) = case properties.shield {
@@ -252,7 +268,41 @@ pub fn bases(
         },
       )
     })
-  list.append(fixed, budget)
+  list.flatten([fixed, budget, combat])
+}
+
+/// The 26 UnitProperty2 ids of a player's base combat properties: BaseAvoidChance,
+/// BaseCritChance, the mitigation, strikethrough and critical deflect bases (101 to
+/// 105), the mitigation offsets and the other bases of the character sheet's rows and
+/// the damage taken offsets (144 to 158), the glance chance, the crowd control duration
+/// and the PvP offsets (164 to 167), the glance amount and BaseVigor (195, 196). None is
+/// worth anything per point, so none is an item budget property, and the gear sets none
+/// of them (`player.base_combat_properties`).
+const player_combat_ids = [
+  101, 102, 103, 104, 105, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154,
+  155, 156, 157, 158, 164, 165, 166, 167, 195, 196,
+]
+
+/// The base of each of a player's 26 base combat properties: the value of CreatureLevel row
+/// 101 at the column of the id less 100, the row the client reads for properties 100 and above
+/// whatever the level (`0x1404585c0`): 0.05 for BaseAvoidChance (101) and BaseCritChance (102),
+/// 1.0 for CCDurationModifier (165), 0.0 for the other 23, in id order. The server's guess: the
+/// client reads CreatureLevel only for a creature and scales it by the creature's archetype,
+/// difficulty and tier, none of which a player has, so a player takes the row's value alone
+/// (`player.base_combat_properties`). `Error` when the table has no row 101.
+pub fn player_combat_bases(
+  tables tables: table_store.Tables,
+) -> Result(List(#(UnitProperty2Id, Float)), Nil) {
+  use row <- result.try(creature_level.get(
+    tables:,
+    id: CreatureLevelId(unit_properties.high_property_creature_level),
+  ))
+  let columns = creature_columns.level_values(row:)
+  list.try_map(player_combat_ids, fn(property) {
+    list.drop(columns, property - 100)
+    |> list.first
+    |> result.map(fn(base) { #(UnitProperty2Id(property), base) })
+  })
 }
 
 /// The worn shield's capacity, which is stat 20 of the player's unit when it is created:
@@ -306,4 +356,14 @@ fn default_of(
   let assert Ok(default) = list.key_find(defaults, id)
     as "the load checks that UnitProperty2 has the shield properties' rows"
   default
+}
+
+/// What the gear's properties do not do that the client's rows ask for.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Player base combat properties",
+      missing: "a player's 26 base combat properties are CreatureLevel row 101's values with no archetype, difficulty or tier factor, which is the server's guess: the client gives a creature those factors and a player none, and no retail record of a player's base chances was found; ids 100 and above other than the 26 stay at their UnitProperty2 defaults for a player",
+    ),
+  ]
 }

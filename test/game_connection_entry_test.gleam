@@ -303,7 +303,7 @@ pub fn message_0xad_carries_the_saved_world_and_position_and_0_in_its_last_two_f
     as "opcode.0xad: World 3460 and the position of WorldLocation2 row 51596 as 32-bit floats (29.1286, -853.8716 and -560.1880 are 0x41E9075F, 0xC45577C8 and 0xC40C0C08); the fourth and fifth floats are never read, 0.0 (opcode.0xad.last_floats)"
 }
 
-pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body_and_bones_its_class_resource_and_nothing_else_test() -> Nil {
+pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body_and_bones_its_class_resource_and_base_combat_chances_test() -> Nil {
   use <- owned_test.run(10_000)
   assert game_connection_support.player_in(game_connection_support.entered().1)
     == UnitCreatePlayer(
@@ -372,6 +372,10 @@ pub fn message_0x262_carries_the_characters_values_its_health_its_place_its_body
           UnitProperty(property_id: 39, base: 0x3F800000, value: 0x3F800000),
           UnitProperty(property_id: 41, base: 0x43E10000, value: 0x43E10000),
           UnitProperty(property_id: 42, base: 0x437A0000, value: 0x437A0000),
+          // BaseAvoidChance (101) and BaseCritChance (102) at 0.05: CreatureLevel row
+          // 101's values, the server's guess of a player's base (gear.player_combat_bases).
+          UnitProperty(property_id: 101, base: 0x3D4CCCCD, value: 0x3D4CCCCD),
+          UnitProperty(property_id: 102, base: 0x3D4CCCCD, value: 0x3D4CCCCD),
           UnitProperty(property_id: 175, base: 0x3F200000, value: 0x3F200000),
           UnitProperty(property_id: 176, base: 0x3E19999A, value: 0x3E19999A),
           UnitProperty(property_id: 178, base: 0x45A02800, value: 0x45A02800),

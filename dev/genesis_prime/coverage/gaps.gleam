@@ -26,6 +26,7 @@ import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/dash
 import genesis_prime/game/dev_command
 import genesis_prime/game/dropped
+import genesis_prime/game/gear
 import genesis_prime/game/heal_split
 import genesis_prime/game/held_objective
 import genesis_prime/game/hello_reply
@@ -109,6 +110,7 @@ pub fn registry() -> List(Entry) {
     ticking.gaps(),
     forced_move.gaps(),
     unit_properties.gaps(),
+    gear.gaps(),
     creature_control.gaps(),
     creature.gaps(),
     creature_fight.gaps(),

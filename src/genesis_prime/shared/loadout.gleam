@@ -52,6 +52,7 @@ import genesis_prime/shared/item_property.{
   type ItemProperties, type ItemPropertyError,
 }
 import genesis_prime/shared/level
+import genesis_prime/shared/unit_properties
 import genesis_prime/shared/worn_visual.{type WornVisual, type WornVisualError}
 import genesis_prime/table/character_creation.{type CharacterCreation}
 import genesis_prime/table/creature_level
@@ -277,11 +278,23 @@ fn build(
 }
 
 /// Every level a character can have, 1 to the highest level, has a CreatureLevel
-/// row, which `gear.max_health` reads.
+/// row, which `gear.max_health` reads, and so has the row properties 100 and above
+/// read, which gives a player its base combat properties
+/// (`gear.player_combat_bases`).
 fn health_rows(tables tables: table_store.Tables) -> Result(Nil, LoadoutError) {
   use highest <- result.try(
     level.highest_level(tables)
     |> result.replace_error(NoHighestLevel),
+  )
+  use Nil <- result.try(
+    creature_level.get(
+      tables:,
+      id: CreatureLevelId(unit_properties.high_property_creature_level),
+    )
+    |> result.replace(Nil)
+    |> result.replace_error(NoCreatureLevel(
+      level: unit_properties.high_property_creature_level,
+    )),
   )
   int.range(from: 1, to: highest + 1, with: Ok(Nil), run: fn(checked, level) {
     use Nil <- result.try(checked)

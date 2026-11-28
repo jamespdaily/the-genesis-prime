@@ -99,6 +99,7 @@ import genesis_prime/message/spell_damage_description.{
 }
 import genesis_prime/random
 import genesis_prime/shared/damage
+import genesis_prime/shared/rating.{type Formulas}
 import genesis_prime/shared/unit_properties
 import gleam/float
 import gleam/int
@@ -229,6 +230,80 @@ pub type Outcome {
   )
   /// The target deflected the whole strike.
   Deflected
+}
+
+/// A unit's defence from its properties, one rule for a creature and a player: `value` reads
+/// the unit's number for a UnitProperty2 id. A player's ratings (33, 43, 58, 61) are item
+/// properties (flag 4, valuePerPoint 10) its worn items give, so it reads them as a creature
+/// does; the resists (26 to 28) are no item property and stay at their default for it. Each
+/// chance is a rating formula's result from the base and rating at the level (`0x140463340`
+/// deflect, `0x140463ac0` critical deflect, `0x140461a30` glance chance, `0x1404615f0` glance
+/// amount); a mitigation is GameFormula 1234 from Armor plus the resist of its type and the two
+/// offsets (`0x140464240`); the damage taken of a type is its multiplier and offset
+/// (`UnitProperty2.damage_heal_multipliers`). `shield_mitigation_max` (175) is 0 for a creature.
+pub fn defence_of(
+  formulas formulas: Formulas,
+  level level: Int,
+  value value: fn(Int) -> Float,
+  shield_mitigation_max shield_mitigation_max: Float,
+) -> Defence {
+  let mitigation = fn(offset_of_type, resist) {
+    rating.mitigation_fraction(
+      formulas:,
+      level:,
+      // 103 DamageMitigationPctOffset, and the offset of the type (144 to 146).
+      base: value(103) +. value(offset_of_type),
+      // Armor plus the resist of the type (26 to 28).
+      rating: value(unit_properties.armor.value) +. value(resist),
+    )
+  }
+  let taken = fn(type_index) {
+    DamageTaken(
+      multiplier: value(
+        unit_properties.damage_taken_multiplier_physical.value + type_index,
+      ),
+      offset: value(
+        unit_properties.damage_taken_offset_physical.value + type_index,
+      ),
+    )
+  }
+  Defence(
+    // 101 BaseAvoidChance and 33 Rating_AvoidIncrease.
+    deflect_chance: rating.to_fraction(
+      formula: formulas.deflect_chance,
+      level:,
+      base: value(101),
+      rating: value(33),
+    ),
+    // 105 BaseAvoidCritChance and 43 Rating_CritChanceDecrease.
+    crit_deflect_chance: rating.to_fraction(
+      formula: formulas.crit_deflect,
+      level:,
+      base: value(105),
+      rating: value(43),
+    ),
+    // 164 BaseGlanceChance and 58 RatingGlanceChance.
+    glance_chance: rating.to_fraction(
+      formula: formulas.glance_chance,
+      level:,
+      base: value(164),
+      rating: value(58),
+    ),
+    // 195 BaseGlanceAmount and 61 RatingGlanceAmount.
+    glance_amount: rating.to_fraction(
+      formula: formulas.glance_amount,
+      level:,
+      base: value(195),
+      rating: value(61),
+    ),
+    physical_mitigation: mitigation(144, 26),
+    tech_mitigation: mitigation(145, 27),
+    magic_mitigation: mitigation(146, 28),
+    shield_mitigation_max:,
+    physical_taken: taken(0),
+    tech_taken: taken(1),
+    magic_taken: taken(2),
+  )
 }
 
 /// The bytes of the rolls of one strike: 4 for each roll.

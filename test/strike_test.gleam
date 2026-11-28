@@ -22,7 +22,9 @@ import cast_support as support
 import class_resource_support
 import client_tables
 import crowd_control_support
+import fixture_tables
 import genesis_prime/game/cast/state.{type GoAsked, GoAsked} as cast_state
+import genesis_prime/game/gear
 import genesis_prime/game/player_address
 import genesis_prime/game/shown.{ShownPlayer}
 import genesis_prime/game/strike.{
@@ -53,6 +55,7 @@ import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
+import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -2293,6 +2296,22 @@ pub fn a_crit_chance_modifier_on_the_player_changes_the_chance_its_strikes_carry
     )).crit_chance
     == 0.07999999821186066
     as "the base of the hit chance is the property's value, 0.0 + 0.08 while the modifier lasts"
+}
+
+pub fn a_level_6_players_strike_carries_the_five_percent_crit_chance_of_its_entry_properties_test() -> Nil {
+  use <- owned_test.run(5000)
+  let worn = gear.of_items(tables: fixture_tables.shared(), level: 6, items: [])
+  let offence =
+    offence_of_caster_with(properties: properties_support.entered(
+      worn:,
+      level: 6,
+    ))
+  assert float.loosely_equals(
+    offence.crit_chance,
+    with: 0.05,
+    tolerating: 0.0000001,
+  )
+    as "BaseCritChance 102 is CreatureLevel row 101's 0.05 for a player at every level (the server's guess: no archetype, difficulty or tier factor, `0x1404585c0`); the rating is 0, so the chance is the base"
 }
 
 pub fn a_planted_100_percent_crit_modifier_makes_every_blow_crit_test() -> Nil {

@@ -1123,19 +1123,20 @@ pub fn read_after_the_map_and_the_creature_took_it(
   #(list.append(first, second), have)
 }
 
-/// Runs the body on the client's rows with Paralytic Surge's recharge taken
-/// off: the fight presses it four times in a row, and Spell4 42352's spellCoolDown of
-/// 25000 ms would refuse each press after the first unless the clock moved on by
-/// that much between presses, which would move every timer the Beast holds with it.
+/// The edit that takes Paralytic Surge's recharge off: Spell4 42352's spellCoolDown of
+/// 25000 ms would refuse each press after the first unless the clock moved on by that much
+/// between presses, which would move every timer the Beast holds with it. The one place the
+/// row and column are named.
+pub const without_paralytic_surges_recharge = #("Spell4", 42_352, [
+  #("spellCoolDown", planted_table.Integer(0)),
+])
+
+/// Runs the body on the client's rows with Paralytic Surge's recharge taken off
+/// (`without_paralytic_surges_recharge`): the fight presses it four times in a row.
 pub fn on_rows_without_paralytic_surges_recharge(
   body body: fn(table_store.Tables) -> a,
 ) -> a {
-  fixture_tables.changed(
-    table: "Spell4",
-    id: 42_352,
-    with: [#("spellCoolDown", planted_table.Integer(0))],
-    body:,
-  )
+  fixture_tables.changes(edits: [without_paralytic_surges_recharge], body:)
 }
 
 /// A world with one Beast 3 m ahead of the place a new test character stands at.
@@ -1393,17 +1394,12 @@ pub fn on_rows_with_turrets_that_never_deflect(
   body body: fn(table_store.Tables) -> a,
 ) -> a {
   let assert Ok(rows) =
-    fixture_tables.change(
-      rows: fixture_tables.rows(),
-      table: "Spell4",
-      id: 42_352,
-      with: [#("spellCoolDown", planted_table.Integer(0))],
-    )
-    as "Spell4 42352 holds the column spellCoolDown"
-  let assert Ok(rows) =
-    fixture_tables.change(rows:, table: "Creature2Difficulty", id: 1, with: [
-      #("unitPropertyMultiplier101", planted_table.Float(0.0)),
+    fixture_tables.change_all(rows: fixture_tables.rows(), edits: [
+      without_paralytic_surges_recharge,
+      #("Creature2Difficulty", 1, [
+        #("unitPropertyMultiplier101", planted_table.Float(0.0)),
+      ]),
     ])
-    as "Creature2Difficulty 1, the Sim-Turret's difficulty, holds the column unitPropertyMultiplier101"
+    as "Spell4 42352 holds the column spellCoolDown, and Creature2Difficulty 1, the Sim-Turret's difficulty, unitPropertyMultiplier101"
   fixture_tables.on_rows(rows:, reaching: [], body:)
 }

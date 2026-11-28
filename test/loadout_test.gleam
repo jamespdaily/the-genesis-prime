@@ -660,6 +660,15 @@ pub fn a_missing_item_category_item_slot_item_or_spell4_row_fails_the_load_namin
   )
 }
 
+pub fn a_table_set_without_creature_level_row_101_fails_the_load_naming_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  a_load_without_the_row_fails(
+    table: "CreatureLevel",
+    id: 101,
+    building: "Loadouts",
+  )
+}
+
 pub fn a_class_with_no_level_1_spell_row_or_a_createable_class_and_faction_with_no_novice_set_fails_the_load_test() -> Nil {
   use <- owned_test.run(60_000)
   let reason =

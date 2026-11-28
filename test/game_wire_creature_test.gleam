@@ -20,8 +20,8 @@ import game_wire_support.{
   press_until_dead_reading, read_after_the_map_and_the_creature_took_it,
   send_play, start_with_creatures, start_with_world_data,
   static_objects_created_in, the_dagun_and_its_map, walk_to,
-  with_world_data_on_ground, world_on, world_with_a_beast_ahead,
-  world_with_a_dagun_on, world_with_beasts,
+  with_world_data_on_ground, without_paralytic_surges_recharge, world_on,
+  world_with_a_beast_ahead, world_with_a_dagun_on, world_with_beasts,
 }
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
@@ -439,8 +439,8 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
     as "a press with its back to the Beast strikes nobody: the go names no target and no 0x937 follows (the facing is the last kind 14 yaw)"
   // Facing the Beast, it presses until the Beast dies.
   game_client.face(game: first, yaw: toward, clock: 200)
-  let #(first_have, healths) =
-    press_until_dead(
+  let #(first_have, healths, fight) =
+    press_until_dead_reading(
       time:,
       game: first,
       have: first_have,
@@ -450,8 +450,13 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
       beast: beast_unit,
       cast_id: 2,
     )
-  assert healths == [38, 24, 10, 0]
-    as "a Medic of level 1 with the Novice gear (Assault Rating 203.0625, Support Rating 55.6875: Assault Power 50.77, Support Power 13.92): a hit of Paralytic Surge is 0.0935 x 50.77 + 0.0935 x 13.92 = 6.05, rounded to 6, plus 8.14 for the level, 14.14, rounded to 14 (Spell4Effects 96125, 0x140565600); the Beast has 52 health, never deflects and the player has no critical hit rating, so the health is 38, 24, 10 and 0, each 0x937 held until its go"
+  assert healths
+    == healths_after(
+      hits: critical_hits_on(beast_unit, in: fight),
+      normal: 14,
+      critical: 21,
+    )
+    as "a Medic of level 1 with the Novice gear (Assault Rating 203.0625, Support Rating 55.6875: Assault Power 50.77, Support Power 13.92): a hit of Paralytic Surge is 0.0935 x 50.77 + 0.0935 x 13.92 = 6.05, rounded to 6, plus 8.14 for the level, 14.14, rounded to 14 (Spell4Effects 96125, 0x140565600); the Beast has 52 health, never deflects, and each hit is 14, or 21 (14 x 1.5, UnitProperty2 127's default) when its combat result is a critical hit (a player's chance is 0.05, CreatureLevel row 101), so the health is 38, 24, 10 and 0 when none is, each 0x937 held until its go"
   let #(watched, second_have) =
     game_client.read_until(game: second, have: second_have, found: fn(frames) {
       list.any(game_client.deaths_in(frames:), fn(death) {
@@ -502,7 +507,7 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
       as "death.creature_respawn: 0x355, then a 0x262 with the same unit id, to each viewer"
   })
   // The picture of the respawned Beast is alive again: a press strikes it.
-  let #(_, after_respawn) =
+  let #(_, after_respawn, respawn_hit) =
     press_until_a_hit(
       time:,
       game: first,
@@ -512,8 +517,8 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
       beast: beast_unit,
       cast_id: 100,
     )
-  assert after_respawn == 38
-    as "the respawned Beast has its 52 health again and was struck for 14, so the caster's picture holds it alive again: the 0x355 cleared it and the respawn's 0x262 restored it"
+  assert after_respawn == 52 - damage_of_tick(critical: respawn_hit)
+    as "the respawned Beast has its 52 health again and was struck for 14, or 21 when the hit was critical (a player's chance is 0.05, CreatureLevel row 101), so the caster's picture holds it alive again: the 0x355 cleared it and the respawn's 0x262 restored it"
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)
@@ -582,14 +587,23 @@ pub fn three_ticks_reach_the_client_and_health_falls_three_times_test() -> Nil {
       let #(round, have) = game_client.read_until_pong(game:, have:, number:)
       #(list.append(rounds, [round]), have)
     })
-  list.each(rounds, fn(round) {
-    assert game_client.ticks_in(frames: round)
-      == [#(cast_id, 96_125, beast_unit, [14])]
-      as "opcode.0x7f8: one tick each 2000 ms, naming the go's cast, the row 96125 and the Beast, with one damage description; a hit of Paralytic Surge by a Medic of level 1 with the Novice gear is 14 (Spell4Effects 96125, 0x140565600), worked out from the caster at the tick, and the Beast never deflects"
-  })
+  // Each tick's crit roll is from the connection's random seed, so a tick is a
+  // critical hit or not by chance: 14, or 14 x 1.5 = 21 when it is (the player's
+  // severity is UnitProperty2 127's default, 1.5, and its chance 0.05, CreatureLevel
+  // row 101).
+  let tick_damages =
+    list.map(rounds, fn(round) {
+      let assert [critical] = game_client.critical_ticks_in(frames: round)
+        as "one 0x7f8 in each round"
+      assert game_client.ticks_in(frames: round)
+        == [#(cast_id, 96_125, beast_unit, [damage_of_tick(critical:)])]
+        as "opcode.0x7f8: one tick each 2000 ms, naming the go's cast, the row 96125 and the Beast, with one damage description; a hit of Paralytic Surge by a Medic of level 1 with the Novice gear is 14 (Spell4Effects 96125, 0x140565600), or 21 when critical, worked out from the caster at the tick, and the Beast never deflects"
+      damage_of_tick(critical:)
+    })
   assert list.map(rounds, beast_health_in(frames: _, beast: beast_unit))
-    == [[38], [24], [10]]
-    as "opcode.0x937 after each 0x7f8, from the creature itself: the Beast's 52 health falls by its tick's 14, three times"
+    == list.scan(tick_damages, 52, fn(health, damage) { health - damage })
+    |> list.map(fn(health) { [health] })
+    as "opcode.0x937 after each 0x7f8, from the creature itself: the Beast's 52 health falls by its tick's damage, three times"
   let assert [first_round, second_round, last_round] = rounds
   assert !finishes(frames: first_round, cast_id:)
     && !finishes(frames: second_round, cast_id:)
@@ -617,6 +631,12 @@ pub fn three_ticks_reach_the_client_and_health_falls_three_times_test() -> Nil {
     as "the ticks stop with the row's three: no 0x7f8 and no fall of the Beast's health 2000 ms later"
   game_client.close(game:)
   login_support.stop(started)
+}
+
+/// The health a Paralytic Surge tick of the level-1 Medic takes: 14, or 21 when critical.
+fn damage_of_tick(critical critical: Bool) -> Int {
+  use <- bool.guard(critical, 21)
+  14
 }
 
 /// How many times the frames start Telekinetic Strike's Psi Point child, 30900, under
@@ -726,8 +746,8 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
     as "a press with its back to the Beasts strikes nobody: the go names no target, no 0x937 follows and Telekinetic Strike's Proxy 62204, aimed at the area (targetFlags 4), starts no child"
   // Facing the Beast ahead, it presses until that Beast dies.
   game_client.face(game: first, yaw: toward, clock: 200)
-  let #(first_have, healths) =
-    press_until_dead(
+  let #(first_have, healths, fight) =
+    press_until_dead_reading(
       time:,
       game: first,
       have: first_have,
@@ -737,8 +757,15 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
       beast: ahead,
       cast_id: 2,
     )
-  assert healths == [17, 0]
-    as "an Esper of level 1 with the Novice gear (Assault Rating 203.0625, Assault Power 50.77): a hit of Telekinetic Strike is 0.336 x 50.77 = 17.06, rounded to 17, plus 18.0 for the level, 35 (Spell4Effects 62159, 0x140565600); the Beast has 52 health and never deflects, so the health is 17 and then 0"
+  assert healths
+    == healths_after(
+      hits: critical_hits_on(ahead, in: fight),
+      normal: 35,
+      critical: 53,
+    )
+    as "an Esper of level 1 with the Novice gear (Assault Rating 203.0625, Assault Power 50.77): a hit of Telekinetic Strike is 0.336 x 50.77 = 17.06, rounded to 17, plus 18.0 for the level, 35 (Spell4Effects 62159, 0x140565600); the Beast has 52 health and never deflects, so the health is 17 and then 0 when no hit is critical; a critical hit is at least 52 (35 x 1.5 = 52.5; UnitProperty2 127's default 1.5, a player's chance 0.05, CreatureLevel row 101), which kills at once; the rounding of the 52.5 is not settled, so no value is named and the test's 53 only clamps"
+  // Two hits kill it, or one when that hit is critical.
+  let hit_count = list.length(healths)
   let #(watched, second_have) =
     game_client.read_until(game: second, have: second_have, found: fn(frames) {
       list.any(game_client.deaths_in(frames:), fn(death) {
@@ -747,8 +774,8 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
       && list.count(game_client.go_targets_in(frames:), fn(go) {
         go.1 == [ahead]
       })
-      == 2
-      && psi_children(frames:) == 2
+      == hit_count
+      && psi_children(frames:) == hit_count
     })
   // The Beast ahead fights back every 1500 ms with its own attack, Spell4 5649,
   // whose go names the caster; the kill lands 1250 ms after the first hit, before
@@ -793,8 +820,8 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
     })
     == healths
     as "the watcher reads the same 0x937 the caster did, then 0x88c"
-  assert psi_children(frames: watched) == 2
-    as "Proxy 62204 starts the Psi Point child 30900 on each struck unit (Spell4Effects.targetFlags 4): two hits, two children"
+  assert psi_children(frames: watched) == hit_count
+    as "Proxy 62204 starts the Psi Point child 30900 on each struck unit (Spell4Effects.targetFlags 4): one child for each hit"
   // The Beast stands again after its respawn time, 1000 ms from the kill, which the
   // clock moves on by: 0x355, then a full 0x262.
   driven_time.advance(time:, ms: 1000)
@@ -843,7 +870,8 @@ fn last_cast_of(frames: List(Frame)) -> Int {
 }
 
 /// Presses the ability of the bag index until a press hits the Beast (a deflected one
-/// is shown by a 0x7fb and strikes again), and gives the Beast's health after the hit.
+/// is shown by a 0x7fb and strikes again), and gives the Beast's health after the hit
+/// and whether that hit was critical.
 fn press_until_a_hit(
   time time: driven_time.Time,
   game game: game_client.Game,
@@ -852,7 +880,7 @@ fn press_until_a_hit(
   cast_ms cast_ms: Int,
   beast beast: Int,
   cast_id cast_id: Int,
-) -> #(BitArray, Int) {
+) -> #(BitArray, Int, Bool) {
   let #(frames, have) =
     press_and_fire(time:, game:, have:, bag_index:, cast_ms:, cast_id:)
   assert game_client.health_in(frames:) != []
@@ -861,7 +889,11 @@ fn press_until_a_hit(
   case
     list.find(game_client.health_in(frames:), fn(health) { health.0 == beast })
   {
-    Ok(health) -> #(have, health.1)
+    Ok(health) -> {
+      let assert [critical] = critical_hits_on(beast, in: frames)
+        as "one hit on the Beast"
+      #(have, health.1, critical)
+    }
     Error(Nil) ->
       press_until_a_hit(
         time:,
@@ -875,32 +907,36 @@ fn press_until_a_hit(
   }
 }
 
-/// Presses the ability of the bag index, one cast after another, until the 0x88c of
-/// the Beast arrives: each press moves the clock on by the ability's cast time, and a
-/// press that leaves the Beast alive moves it on by `lingers_ms` more, to the end of
-/// the cast. The Beast's health after each hit, in order, and the bytes beyond.
-fn press_until_dead(
-  time time: driven_time.Time,
-  game game: game_client.Game,
-  have have: BitArray,
-  bag_index bag_index: Int,
-  cast_ms cast_ms: Int,
-  lingers_ms lingers_ms: Int,
-  beast beast: Int,
-  cast_id cast_id: Int,
-) -> #(BitArray, List(Int)) {
-  let #(have, healths, _) =
-    press_until_dead_reading(
-      time:,
-      game:,
-      have:,
-      bag_index:,
-      cast_ms:,
-      lingers_ms:,
-      beast:,
-      cast_id:,
+/// Whether each hit of the frames on the unit was a critical hit, in order.
+fn critical_hits_on(unit: Int, in frames: List(Frame)) -> List(Bool) {
+  game_client.fight_in(frames:)
+  |> list.flat_map(fn(event) {
+    case event {
+      game_client.Went(targets:, ..) -> targets
+      _ -> []
+    }
+  })
+  |> list.filter(fn(target) { target.0 == unit })
+  |> list.flat_map(fn(target) { list.map(target.1, fn(blow) { blow.critical }) })
+}
+
+/// The Beast's health after each hit, from its 52, a hit being `normal` or, when
+/// critical, `critical`, and never below 0.
+fn healths_after(
+  hits hits: List(Bool),
+  normal normal: Int,
+  critical critical: Int,
+) -> List(Int) {
+  list.scan(hits, 52, fn(health, is_critical) {
+    int.max(
+      health
+        - case is_critical {
+        True -> critical
+        False -> normal
+      },
+      0,
     )
-  #(have, healths)
+  })
 }
 
 // ------------------------------------------- a creature fights back, on the whole server
@@ -1229,9 +1265,20 @@ pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_lande
     )
   // The Dagun's attack tick, its interval after the aggro: the bot is in its reach
   // by then, and the strike's chain ends in the bot's 0x8f5 of the stealth ending.
-  driven_time.advance(time:, ms: dagun_attack_interval_ms())
-  let #(struck, _) = game_client.read_until_pong(game:, have:, number: 3)
-  let frames = list.flatten([entered, taken, struck])
+  // A blow the bot deflects (0.05, CreatureLevel row 101) ends nothing, so the next
+  // interval's is waited for.
+  let #(struck, have) =
+    blows_until(time:, game:, have:, found: fn(frames) {
+      list.contains(stealth_changes_in(frames:), #(own, 0))
+    })
+  // The bot's 0x8f5 is written by its connection and the Dagun's go comes from the
+  // creature through the map, so the read that found the 0x8f5 may end before the go:
+  // the go is waited for, not assumed in the same read.
+  let #(went, _) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      struck_by(frames: list.append(struck, frames), caster: dagun, target: own)
+    })
+  let frames = list.flatten([entered, taken, struck, went])
   assert stealth_changes_in(frames:) == [#(own, 1), #(own, 0)]
     as "opcode.0x8f5: the press enters stealth, and the Dagun, which keeps fighting the bot it already had on its threat list, strikes it: Spell4Effects.effectType.83 (83834, dataBits02 0) ends the stealth on the damage taken"
   assert struck_by(frames:, caster: dagun, target: own)
@@ -1323,13 +1370,34 @@ fn killed_by_the_dagun(
       dagun:,
       pongs: #(1, 2),
     )
-  driven_time.advance(time:, ms: dagun_attack_interval_ms())
   let #(_, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
+    blows_until(time:, game:, have:, found: fn(frames) {
       list.contains(game_client.deaths_in(frames:), #(own, True))
       && list.any(frames, fn(frame) { frame.message_id == 0x0636 })
     })
   have
+}
+
+/// The clock moves on by one attack interval of the Dagun and the player is read until
+/// `found` holds of the frames read, or a blow was deflected (a 0x7fb: a player deflects
+/// a blow by chance, 0.05, CreatureLevel row 101); a deflected blow is followed by the
+/// next interval's, until `found` holds. The frames of the read that ended it, and the
+/// bytes kept.
+fn blows_until(
+  time time: driven_time.Time,
+  game game: game_client.Game,
+  have have: BitArray,
+  found found: fn(List(Frame)) -> Bool,
+) -> #(List(Frame), BitArray) {
+  driven_time.advance(time:, ms: dagun_attack_interval_ms())
+  let #(frames, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      found(frames) || game_client.missed_in(frames:) != []
+    })
+  case found(frames) {
+    True -> #(frames, have)
+    False -> blows_until(time:, game:, have:, found:)
+  }
 }
 
 /// 0x15a for the unit and the choice, with the value 0, sent inside 0x038C.
@@ -1500,9 +1568,8 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
     )
   // The attack tick strikes and kills, and the clock fires the home timer the leash
   // started at the same instant, each after the barrier of the one before it.
-  driven_time.advance(time:, ms: dagun_attack_interval_ms())
   let #(died, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
+    blows_until(time:, game:, have:, found: fn(frames) {
       list.contains(game_client.deaths_in(frames:), #(own, True))
       && list.any(frames, fn(frame) { frame.message_id == 0x0636 })
       && list.contains(
@@ -1962,7 +2029,14 @@ pub fn an_exile_interrupts_and_destroys_both_sim_turrets_test() -> Nil {
 
 pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
   use <- owned_test.run(120_000)
-  use tables <- on_rows_without_paralytic_surges_recharge()
+  // A player deflects a blow by chance (BaseAvoidChance, CreatureLevel row 101's 0.05 at
+  // unitPropertyValue01), and a deflected charge gives no health to read; the row holds 0 here,
+  // a case no client row holds, so the charge lands on every seed. The creatures' bases read the
+  // same row, so the Sim-Turrets lose their deflect too (0.016).
+  use tables <- fixture_tables.changes(edits: [
+    without_paralytic_surges_recharge,
+    #("CreatureLevel", 101, [#("unitPropertyValue01", planted_table.Float(0.0))]),
+  ])
   let time = driven_time.new()
   let started = world_with_the_turrets(tables:, time:)
   // Enters 14 beyond the first turret, outside its aggro range 10, then walks in to 8

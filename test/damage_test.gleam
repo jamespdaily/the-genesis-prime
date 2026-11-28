@@ -28,8 +28,6 @@
 
 import attacker_support
 import fixture_tables
-import genesis_prime/message/float32
-import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/damage.{
   Attacker, Attributes, Formula, Known, OfTarget, OnCaster, Parameter, Unread,
   Vitals,
@@ -91,14 +89,7 @@ fn client_absorption(id id: Int) -> damage.Formula {
 /// other property at its UnitProperty2 default.
 fn player_listing(listed listed: List(#(Int, Float))) -> damage.Attacker {
   damage.attacker_of(
-    properties: unit_properties.new(
-      defaults: properties_support.defaults(),
-      listed: list.map(listed, fn(pair) {
-        let bits = float32.to_bits(value: pair.1)
-        UnitProperty(property_id: pair.0, base: bits, value: bits)
-      }),
-      level: 1,
-    ),
+    properties: properties_support.listing(level: 1, listed:),
     level: 1,
     passed_in: attacker_support.fresh().passed_in,
   )

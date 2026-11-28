@@ -14,17 +14,12 @@ import game_wire_support.{
   unit_of, walk_to, world_with_a_dagun_on,
 }
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/player_life
 import genesis_prime/message/spell_started
 import genesis_prime/message/terrain_loaded.{TerrainLoaded}
-import genesis_prime/shared/loadout
-import genesis_prime/shared/rating
-import genesis_prime/table/id.{ClassId}
 import gleam/list
 import gleam/option.{Some}
 import login_support
 import owned_test
-import properties_support
 import spell_tables
 import unitest
 
@@ -109,26 +104,18 @@ pub fn a_spellslinger_pressing_healing_salve_has_the_ally_in_range_healed_when_a
   use <- unitest.guard(client_tables.present())
   let time = driven_time.new()
   let tables = client_tables.shared()
-  // The sources of the count of two (Spell4Effects 86457's window and count, the Dagun's
-  // interval, the ally's deflect chance), pinned from the tables before anything runs: blows
-  // one interval apart, the first at one interval, fire at the first and the third and not at
-  // the second or the fourth.
+  // The sources of the fires (Spell4Effects 86457's window and count, the Dagun's interval),
+  // pinned from the tables before anything runs: blows one interval apart, the first at one
+  // interval, fire at the first and the third and not at the second or the fourth when all
+  // four land. A player deflects a blow by chance (BaseAvoidChance 0.05, CreatureLevel row
+  // 101), and a deflected blow raises no TakesDamage, so the test reads which blows landed
+  // and expects a fire at each landed blow with no fire in the window before it.
   let row = spell_tables.effect_row_in(tables:, id: 86_457)
   let interval_ms = dagun_attack_interval_ms()
   assert row.effect_type == 14 && row.data_bits05 == 1
     as "Spell4Effects 86457 is a Proc row that fires once in its window (effectType.14.limits)"
   assert interval_ms < row.data_bits04 && 2 * interval_ms >= row.data_bits04
     as "the Dagun's blows are one interval apart: the second blow is inside the window of the first fire and the third is outside it, so blows 1 and 3 fire and 2 and 4 do not"
-  let assert Ok(medic) =
-    loadout.of(tables:, class_id: ClassId(4), faction_id: 166)
-    as "the tables hold the Medic's Novice set"
-  assert player_life.defence(
-      properties: properties_support.wearing(loadout: medic),
-      level: 10,
-      formulas: rating.formulas(tables:),
-    ).deflect_chance
-    == 0.0
-    as "a rating of 0 gives GameFormula 1235's intercept, 0 (rating.to_fraction): the ally deflects no blow, so every blow raises TakesDamage"
   let started = world_with_a_dagun_on(tables:, blow: Some(100), time:)
   let TwoEntered(
     first: caster,
@@ -211,25 +198,39 @@ pub fn a_spellslinger_pressing_healing_salve_has_the_ally_in_range_healed_when_a
       dagun: dagun.unit_id,
       pongs: #(1, 2),
     )
-  let #(ally_read, second_have, _) =
-    list.fold([1, 2, 3, 4], #(walked, second_have, 0), fn(so_far, blow) {
-      let #(read, second_have, _) = so_far
+  let #(ally_read, second_have, landed) =
+    list.fold([1, 2, 3, 4], #(walked, second_have, []), fn(so_far, _) {
+      let #(read, second_have, landed) = so_far
+      let landed_before = list.length(blows_on(frames: read, unit: ally_unit))
+      let missed_before = list.length(game_client.missed_in(frames: read))
       driven_time.advance(time:, ms: interval_ms)
       let #(more, second_have) =
         game_client.read_until(game: ally, have: second_have, found: fn(frames) {
-          list.length(blows_on(
-            frames: list.append(read, frames),
-            unit: ally_unit,
-          ))
-          >= blow
+          let seen = list.append(read, frames)
+          list.length(blows_on(frames: seen, unit: ally_unit)) > landed_before
+          || list.length(game_client.missed_in(frames: seen)) > missed_before
         })
-      #(list.append(read, more), second_have, blow)
+      let read = list.append(read, more)
+      #(
+        read,
+        second_have,
+        list.append(landed, [
+          list.length(blows_on(frames: read, unit: ally_unit)) > landed_before,
+        ]),
+      )
     })
   let blows = blows_on(frames: ally_read, unit: ally_unit)
-  assert list.length(blows) == 4
-    as "the Dagun strikes the ally at each of its four ticks"
+  let landed_count = list.count(landed, fn(blow_landed) { blow_landed })
+  let fire_count = list.count(fires_at(landed:), fn(fires) { fires })
+  let deflected_count = list.length(game_client.missed_in(frames: ally_read))
+  assert landed_count + deflected_count == 4
+    as "the Dagun strikes the ally at each of its four ticks: a blow is read as a description or as a deflect (0x7fb), and each tick gave one of them"
+  assert list.length(blows) == landed_count
+    as "each landed tick is one description of the attack row on the ally"
+  assert fire_count >= 1
+    as "at least one blow landed, so the proc fired at the first landed blow: a heal missing here is the proc's, not a deflect's (four deflects of 0.05 are 6 in a million)"
   assert list.all(blows, fn(blow) { blow.health_damage > 0 })
-    as "opcode.0x7f4: each blow took health from the ally and none was deflected, so each raised TakesDamage"
+    as "opcode.0x7f4: each blow that landed took health from the ally, so each raised TakesDamage"
   // The caster reads up to the ally's health news of blow 4 falling: the ally's connection
   // sends the news before the event tell of the same blow, so the fall of blow 4 follows the
   // event tell of blow 3 and the caster has by then taken every tell of blows 1 to 3.
@@ -244,14 +245,15 @@ pub fn a_spellslinger_pressing_healing_salve_has_the_ally_in_range_healed_when_a
   }
   let #(caster_read, _) =
     game_client.read_until(game: caster, have: first_have, found: fn(frames) {
-      ally_health_in(frames).0 >= 4
+      ally_health_in(frames).0 >= landed_count
+      && list.length(heal_starts_in(frames:)) >= fire_count
     })
   assert heal_starts_in(frames: caster_read)
-    == [
+    == list.repeat(
       #(ally_unit, salve_child, salve_child, caster_unit),
-      #(ally_unit, salve_child, salve_child, caster_unit),
-    ]
-    as "opcode.0x7ff: the caster reads exactly two child casts of 39127, one at each of blows 1 and 3, each naming the ally as its primary target and 39386 as its root and parent"
+      fire_count,
+    )
+    as "opcode.0x7ff: the caster reads exactly one child cast of 39127 for each fire (the first landed blow and each landed blow two intervals after the last fire), each naming the ally as its primary target and 39386 as its root and parent"
   assert game_client.casts_in(frames: list.append(pressed, caster_read))
     |> list.filter(fn(event) {
       case event {
@@ -270,7 +272,7 @@ pub fn a_spellslinger_pressing_healing_salve_has_the_ally_in_range_healed_when_a
           events: game_client.fight_in(frames: list.append(ally_read, frames)),
           unit: ally_unit,
         )
-      falls_and_rises(start: entry_health, healths:).1 >= 2
+      falls_and_rises(start: entry_health, healths:).1 >= fire_count
     })
   let ally_frames = list.append(ally_read, ally_rest)
   let healths =
@@ -278,18 +280,30 @@ pub fn a_spellslinger_pressing_healing_salve_has_the_ally_in_range_healed_when_a
       events: game_client.fight_in(frames: ally_frames),
       unit: ally_unit,
     )
-  assert falls_and_rises(start: entry_health, healths:) == #(4, 2)
-    as "opcode.0x92f: the ally's health fell at each of the four blows and rose at two heals"
+  assert falls_and_rises(start: entry_health, healths:)
+    == #(landed_count, fire_count)
+    as "opcode.0x92f: the ally's health fell at each blow that landed and rose at each heal"
   assert list.map(heal_starts_in(frames: ally_frames), fn(start) { start.3 })
-    == [caster_unit, caster_unit]
+    == list.repeat(caster_unit, fire_count)
     as "opcode.0x7ff: the ally's client reads each heal as a cast of the Spellslinger"
   let amounts = heal_amounts_on(frames: ally_frames, unit: ally_unit)
-  assert list.length(amounts) == 2
+  assert list.length(amounts) == fire_count
     && list.all(amounts, fn(amount) { amount > 0 })
-    as "opcode.0x7f4: the ally's client reads the two heals' go each listing an amount above 0"
+    as "opcode.0x7f4: the ally's client reads each heal's go listing an amount above 0"
   game_client.close(game: caster)
   game_client.close(game: ally)
   login_support.stop(started)
+}
+
+/// Whether the proc fires at each of the blows one interval apart, `landed` saying which
+/// landed: a landed blow fires when none fired at the blow before it (the window, longer than
+/// one interval and no longer than two, Spell4Effects 86457 `data_bits04`).
+fn fires_at(landed landed: List(Bool)) -> List(Bool) {
+  list.scan(landed, #(False, False), fn(before, blow_landed) {
+    let fires = blow_landed && !before.0
+    #(fires, blow_landed)
+  })
+  |> list.map(fn(entry) { entry.0 })
 }
 
 /// The amount of each description of the heal 39127's go the frames list on `unit`: every

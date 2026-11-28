@@ -1,4 +1,4 @@
-//// The committed session (`test/wire_recording/2026-11-27-select-gear-session`)
+//// The committed session (`test/wire_recording/2026-11-28-select-gear-session`)
 //// replayed through the real server tree on a database of its own, with the
 //// recorded seed, times and fixture, and compared byte for byte. Expected
 //// values come from these places.
