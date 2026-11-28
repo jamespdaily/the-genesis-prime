@@ -1,143 +1,43 @@
 //// The rule of one game connection: the client's connection to the game
 //// server, from the hello through character select to the player in the
 //// world. It decides everything; its connection shell carries it out
-//// (genesis_prime/connection/shell). The client reaches it with the session
-//// key the auth server's hand-off gave it (genesis_prime/login/auth_connection).
-//// This module takes each input and gives it to the flow that holds it, one
+//// (genesis_prime/connection/shell). The auth server's hand-off gives the
+//// session key (genesis_prime/login/auth_connection). Its flows sit one
 //// module each under genesis_prime/game/connection/: login, select, world,
-//// movement, chat, casting, life, interaction and viewers, over the effects, frames and
-//// state they share.
+//// movement, chat, casting, life, interaction and viewers.
 ////
 //// ```
-//// client                          rule                              asks
-//// connects                     ◀─ 0x3DC{0x0003 hello, realm id}, base key
-//// 0x244{0x058F} (base key)     ─▶ session key from the 16 bytes
-////                                 and the base key; the connection is
-////                                 re-keyed: every frame after this one,
-////                                 each way, is under the session key
-////                                                                ─▶ hand-off: Take(SessionKey)
-//// 0x244{0x07E0}                   waits in the bytes read until the
-////   (same read, session key)      hand-off, then Sessions, answer
-////   Taken(holder)                 watches Sessions                ─▶ sessions: Claim(account, connection)
-////   Claimed                       the bytes are taken again       ─▶ store: ListCharacters(account)
-////     Characters(rows)         ◀─ 0x3DC{0x0036 level}, 0x3DC{0x0117 character_list}, session key
-//// 0x244{0x025C{0x025B}}        ─▶ checked                         ─▶ store: CreateCharacter(..)
-////     CharacterCreated(id)     ◀─ 0x3DC{0x00DC create result}, session key
-//// 0x244{0x07DD}                ─▶ world entry                     ─▶ store: LoadCharacter(account, id, now)
-////     CharacterLoaded(row, epoch, health, items, unset, quests, currencies, action_sets) ─▶ map MapId(world, 0): Join(connection, row, place)
-////       with unset items                                          ─▶ first store: FillCharges(..)
-////       ChargesFilled(ItemsSaved)                                 ─▶ then the map's Join
-////       Joined(unit record)    ◀─ 0xAD, 0x262, 0x19B, 0x25E, 0x6BC, 0x636, 0xF1, 0x61; watches the map (watch 2)
-////     NotTheAccounts, or no place ◀─ 0x3DC{0x0162 refused}       ─▶ store: ListCharacters(account)
-////       Characters(rows)       ◀─ 0x0036, 0x0117, as above
-//// in the world, inside 0x038C: 0x637, 0x63A, 0xD5, 0x63B, 0xF2, 0xFB, 0xFC
-////                              ─▶ the movement keeps the place or refuses a command
-////                                 (genesis_prime/game/movement); 0x635 lifts the fence of a move
-////                                 (genesis_prime/game/in_world_move)
-//// 0x244{0x038C{0xBF 1}}        ─▶ in the world, the camp runs  ◀─ 0x3DC{0x0092 countdown, cancel 0, bonuses 0}
-//// 0x244{0x038C{0xBF 0}}        ─▶ the camp is cleared; nothing is written
-//// 0x244{0x038C{0xC0}}          ─▶ camp finished; the save timer is cancelled  ─▶ store: SavePlace(account, character, epoch, sequence, place, health, experience, level, quests, action_sets)
-////     answered, whatever it is   ─▶ map run (map, incarnation): Leave(connection)
-////       Left, NotRunning or EndedBeforeAnswer ◀─ 0x3DC{0x0594 bit 1, reason 0}; the map watch is dropped;
-////                                the connection is in character select again
-//// 0x244{0x07E0}                ─▶ the list, as at login: 0x0036, 0x0117 (no new claim)
-//// every 60 s (save timer)      ─▶ store: SavePlace(account, character, epoch, sequence, place, health, experience, level, quests, action_sets)
-//// the map ends (watch 2)       ─▶ store: SavePlace   ◀─ 0x3DC{0x036A reason 8}; the connection ends
-//// 0x244{0x038C{kind, inner}}  ─▶ the inner message logged as unhandled under its own id,
-////                                 but the messages the routing table takes in the world
-//// 0x244{0x0241}                ─▶ taken and dropped (genesis_prime/game/dropped): nothing logged, nothing sent
-//// 0x244{0x038C{0x023C and the other reports and requests}} ─▶ taken and dropped, the same way
-//// ping 0x0, bare               ◀─ pong 0x1, bare
-//// Sessions: TakenOver          ─▶ in the world, store: SavePlace  ◀─ 0x3DC{0x036A reason 19}, session key; the connection ends
+//// client                    rule                            asks
+//// connects                ◀─ 0x3DC{0x0003 hello, realm id}, base key
+//// 0x244{0x058F}           ─▶ re-keyed under the session key  ─▶ hand-off: Take(SessionKey)
+//// 0x244{0x07E0}           ─▶ claim                           ─▶ sessions: Claim(..)
+////                        ◀─ 0x3DC{0x0036}, 0x3DC{0x0117 character list}, session key
+//// 0x244{0x025C{0x025B}}   ─▶ create                          ─▶ store: CreateCharacter(..)
+//// 0x244{0x07DD}           ─▶ world entry              ─▶ store: LoadCharacter(..), map: Join(..)
+//// 0x244{0x038C{kind, inner}} ─▶ in the world, the feature the routing row names
+//// 0x244{0x0241}           ─▶ taken and dropped (genesis_prime/game/dropped)
+//// 0x244{0x038C{0xC0}}     ─▶ camp done             ─▶ store: SavePlace(..), map: Leave(..)
+//// every 60 s (save timer) ─▶ store: SavePlace(..)
+//// the map ends; Sessions: TakenOver ◀─ 0x3DC{0x036A reason}; the connection ends
+//// ping 0x0, bare          ◀─ pong 0x1, bare
 //// ```
 ////
-//// - **The hello** is the first thing written: any game server message before
-////   it ends the client's login with 0x801B2 (0x1400370d0). It is the
-////   connection's first input, `OwnEvent(Accepted)`, that writes it, in the game
-////   wrapper under the base key, with the realm's id from the settings
-////   (genesis_prime/connection/hello, opcode.0x3).
-//// - **The re-key.** The client re-keys at once on sending 0x058F, so the
-////   rule does too, before it asks; bytes that arrive after it in the same
-////   read are read under the session key
-////   (vector.0x14003827c.session_fold). The first client message must be
-////   0x058F, and only one is taken: another first message, or a second 0x058F,
-////   is logged as an error and ends the connection. Its 64-bit value and last
-////   value are checked before the ask, and its account id against the holder
-////   when the hand-off answers (genesis_prime/game/hello_reply).
-//// - **Reads during an ask.** Frames after the one that asked stay in the
-////   bytes read and are taken once the answer comes, so 0x07E0 is taken after
-////   the hand-off's and Sessions' answers, and 0x038C and 0x0241 after the
-////   store's.
-//// - **The server never ends a connection after the hello without telling
-////   the client**, which waits for the list with no timeout and would stay on
-////   its prompt otherwise (lua.Character.OnCharacterList): 0x036A in the game
-////   wrapper under the cipher the connection holds at that moment, then the
-////   close. Every reason drops the client to its error screen and only picks
-////   the text (0x1400168a0):
-////   - reason 19, "This account has been disconnected", when the hand-off
-////     does not hold the session key (never put, taken, or expired), with a
-////     warning naming the peer;
-////   - reason 19 again, with an info line, for a connection taken over by a
-////     newer login of its account;
-////   - reason 8, "Lost connection with user server.", for the server's own
-////     failure, with a warning: the hand-off, Sessions or the store is not
-////     running, ended before it answered, gave no answer by the settings' ask
-////     deadline, or the store answers `Unavailable`; and with no log for the
-////     server stopping, whether it is waiting on an ask (`StoppedWaiting`) or
-////     not (`Stopping`).
-////   A client that breaks the protocol, closes, or whose socket fails is not
-////   told: the rule logs the break and ends the connection.
-//// - **A process dying or a deadline passing.** The rule holds no process:
-////   a restart of the hand-off, Sessions or the store is seen only as an ask's
-////   outcome (`NotRunning`, `EndedBeforeAnswer`), or, for Sessions, as the end
-////   of its watch; a late answer gives the rule no input, a late `Claimed` too,
-////   which leaves the slot claimed by a connection that has ended and is freed
-////   by Sessions' watch on it. A crash of the connection's own process
-////   drops the client, which connects again from the login.
-//// - **Which feature takes a message** is the routing table's row
-////   (genesis_prime/game/routing): the id, how it arrives, the stage it is taken
-////   in and the feature's own kind of message. The connection keeps the shared
-////   part (the hello, the re-key, the claim, the asks, the saves and every
-////   ending); each feature decodes its messages and returns its decisions as
-////   effects the connection carries out: a write, a warning, an ask of the
-////   store or the map, the watch on the map, the save timer, and the leave of
-////   the world (`Decided`), or the refusal that ends the connection; an accepted
-////   0x0637 also tells the map that the player moved (`Tell`, which the shell
-////   sends with no answer). The player
-////   camps (genesis_prime/game/camp), moves (genesis_prime/game/movement), picks
-////   a character (genesis_prime/game/character_select) and plays one
-////   (genesis_prime/game/world_entry) by those rows.
-//// - **0x038C** carries a 5-bit kind in its first byte, then exactly one whole
-////   frame (0x14007e180, opcode.0x38c): every message the client sends in the
-////   world is inside one (0x1403f4900 nests 0x637 in it). The inner message is
-////   routed by the table, and logged as unhandled under its own id when it has
-////   no row at the stage. A kind other than 3, 11 and 19
-////   (`opcode.0x38c.send_kind`), a body that holds no whole frame, or
-////   bytes after it, is one the client never writes, and ends the connection.
-//// - **Network messages** are answered before any wrapper is read: a ping 0
-////   gets a pong 1 (opcode.0x0), a pong or close notice nothing
-////   (genesis_prime/client_connection, genesis_prime/connection/network_message).
-//// - **Unhandled messages** are logged as a warning the first time an id comes
-////   on the connection, and at debug for each repeat of it, since the client
-////   sends some of them again and again. A message with no row at the stage is
-////   unhandled: the movement and camp messages are taken only with the player in
-////   the world, and in any other state they are.
-//// - **Log lines** carry the connection, the peer and the account once the
-////   hand-off has named it, and in the world the map and the character.
-//// - **Limits.** Each ends the connection with nothing written, since a
-////   client past one is no client: a frame longer than 131,070 bytes
-////   (MessageSizeLimit 0x140335ec0), refused at its length field; more than
-////   `client_connection.held_limit` bytes not yet taken, which an ask or the
-////   claim's wait lets pile up, with an error log; and more frames than the
-////   rate allows (`Settings.rate`, a bucket counted in whole frames when they
-////   are taken), with a warning.
-//// - **Out of order.** A frame the client's reader would refuse ends the
-////   connection, as does a 0x025C that holds no 0x025B or a 0x025B or 0x07DD
-////   whose body is cut; a whole frame of a message the rule does not take,
-////   0x038C with 0x082D inside it and any other with no row, is logged as
-////   unhandled and the connection goes on; 0x0241 and the reports and requests
-////   of genesis_prime/game/dropped have rows, and are taken with nothing logged
-////   (opcode.0x241).
+//// - A message before the hello ends the client's login with 0x801B2 (0x1400370d0, opcode.0x3).
+//// - The client re-keys at once on 0x058F; the rule does too (vector.0x14003827c.session_fold).
+//// - 0x058F's value, last value and account id are checked (genesis_prime/game/hello_reply).
+//// - Frames that arrive during an ask wait in the bytes read and are taken when the answer comes.
+//// - An end after the hello writes 0x036A first (lua.Character.OnCharacterList).
+//// - Any 0x036A reason drops the client to its error screen, picking only its text (0x1400168a0).
+//// - Which feature takes a message is the routing table's row (genesis_prime/game/routing).
+//// - 0x038C carries a 5-bit kind, then exactly one whole frame (0x14007e180, opcode.0x38c).
+//// - A kind other than 3, 11 or 19 ends the connection (opcode.0x38c.send_kind).
+//// - A ping 0 gets a pong 1 (opcode.0x0, genesis_prime/connection/network_message).
+//// - An id with no row at the stage is logged unhandled: a warning first, debug on repeats.
+//// - A frame over 131,070 bytes is refused at its length field (MessageSizeLimit 0x140335ec0).
+//// - More than `client_connection.held_limit` bytes held untaken ends the connection.
+//// - More frames than `Settings.rate` allows ends the connection.
+//// - A frame the client's reader would refuse ends the connection.
+//// - 0x0241 and the dropped rows are taken with nothing sent or logged (opcode.0x241).
 
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, Broken, Bytes, Connect,

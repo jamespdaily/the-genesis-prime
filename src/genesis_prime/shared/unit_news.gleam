@@ -46,7 +46,7 @@ pub type News {
   /// (genesis_prime/world_map/creature), which owns the unit, with what the viewer's
   /// strikes and requests need of it: its life, which its address needs, the hit
   /// radius of its display, whom it may be attacked by, which player factions it
-  /// is Hostile to and whether it takes part in combat (`creature_combat.Combat.fights`),
+  /// is Hostile to and whether an area may pick it (`creature_combat.Combat.area_pickable`),
   /// which an area's candidates read, and the id of its spawn, which a quest objective
   /// remembers a use of it by (`quest_log.used`).
   CreatureAppeared(
@@ -58,7 +58,7 @@ pub type News {
     hit_radius: Float,
     attackable: Attackable,
     hostile_to: Hostile,
-    fights: Bool,
+    area_pickable: Bool,
   )
   /// A creature's unit is gone from the viewer's sight: 0x355 (opcode.0x355). A
   /// player's unit never leaves by it: a player's removal is the map's `PlayerUnseen`,

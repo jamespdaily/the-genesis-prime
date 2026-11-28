@@ -1034,7 +1034,7 @@ fn foe_at(z z: Float) -> shown.Shown {
     unit_states: [],
     face: option.None,
     faced_yaw: option.None,
-    fights: True,
+    area_pickable: True,
   )
 }
 

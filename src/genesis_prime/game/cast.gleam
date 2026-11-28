@@ -3,89 +3,41 @@
 //// ability on the action bar, the answers the client expects, the cast bar and
 //// cooldowns it keeps, the cast's go and finish, the child casts a Proxy effect
 //// starts, the thresholds of a RapidTap or ChargeRelease ability, and the cast's
-//// end when the client cancels it. The caster's connection owns its casts and
-//// sends every message about them; it tells the connections that see its player
-//// the same news, which they write for a cast they know.
+//// end when the client cancels it. The caster's connection owns its casts, sends
+//// every message about them; viewers' connections write the same news for a cast they know.
 ////
 //// ```
-//// client                    connection (this rule)                         viewers' connections
-//// 0x9a press ──────────────▶ decode; bag index ─▶ the ability's tree (genesis_prime/shared/spell_plan)
-////                            an open threshold of the ability ─▶ the stage its index names
-////                            a refusal of the client's own checks ──▶ 0x7fc {client id, Spell4 id, result}
-////                            the spell's cast conditions last (CasterCast 151, TargetCast 281)
-////                            accepted: id k = mint(unit, n); the gcd starts
+//// client         connection (this rule)                         viewers' connections
+//// 0x9a press ──▶ decode; bag index ─▶ the ability's tree (genesis_prime/shared/spell_plan)
+////                an open threshold of the ability ─▶ the stage its index names
+////                a refusal of the client's own checks ──▶ 0x7fc {client id, Spell4 id, result}
+////                the spell's cast conditions last (CasterCast 151, TargetCast 281)
+////                accepted: id k = mint(unit, n); the gcd starts
 //// ◀── 0x7fd {client id, k, caster}                  (the caster's cast starts in its client)
-////                            Broadcast(CastStarted)  ─▶ the map ─▶ 0x7ff, when its client shows the caster
-//// ◀── 0x816 {ability, ability, 0, k}   a RapidTap or ChargeRelease ability's first press opens its threshold
+////                Broadcast(CastStarted) ─▶ the map ─▶ 0x7ff, when its client shows the caster
+//// ◀── 0x816 {ability, ability, 0, k}   a RapidTap or ChargeRelease press opens its threshold
 //// ◀── 0x817 {ability, index}           the next tap's stage, or the next charge level (a timer)
-////                            cast time 0: the go at once; else StartTimer(go)
-//// ◀── 0x7f4 {k, phase 0, no target, no effect}  ◀── Broadcast(CastWent) ─▶ 0x7f4, for a cast it wrote
-////                            the spell's own cooldown and its groups start at the go its method names
-////                            each Proxy of the phase: StartTimer(delay), or at once for delay 0
-////                            a child: id k2 = mint, root = the pressed spell, parent = the proxying spell
+////                cast time 0: the go at once; else StartTimer(go)
+//// ◀── 0x7f4 {k, phase 0, no target}  ◀── Broadcast(CastWent) ─▶ 0x7f4, for a cast it wrote
+////                the spell's own cooldown and its groups start at the go its method names
+////                each Proxy of the phase: StartTimer(delay), or at once for delay 0
+////                a child: id k2 = mint, root = the pressed spell, parent = the proxying spell
 //// ◀── 0x7ff {k2, ..}        Broadcast(CastStarted) ───▶ 0x7ff
 //// ◀── 0x7f4, 0x7fe          its go and finish, as the pressed cast's
 //// ◀── 0x7fe {k}             Broadcast(CastFinished) ──────▶ 0x7fe, for a cast it wrote
 //// ◀── 0x814 {ability, bit}  the last tap or the release closes the threshold
 //// 0x801 {k, 6, 1} ─────────▶ the cast ends: its timers cancelled, 0x7fe to all
-////
 //// each input in the world ─▶ `persisted`: a lasting cast whose persistence stopped holding
-////                            ends ──▶ 0x7f9 {k, 282 or 283, caster, 0}, then 0x7fe {k}; Broadcast(CastFinished)
-////
-//// each input ─────────────▶ `settled`: the stealth change ──▶ StealthChanged (0x8f5), then the procs held for the
-////                            input's events (its own: Died, LeftCombat or a hit's; then EnteredStealth or LeftStealth) cast
-////                            their spells ──▶ 0x7ff {k, root and parent the holder's spell}, no 0x7fd
-////
-//// 0x4db held 1 ────────────▶ the ability is held: the same press, with the id k minted and no 0x7fd
-////                            its cast over and its cooldowns run ─▶ the same press again (StartTimer(repeat))
-//// 0x4db held 0 ────────────▶ the ability is not held: the repeat timer cancelled; a charge fires its stage
+////                ends ─▶ 0x7f9 {k, 282 or 283}, then 0x7fe {k}; Broadcast(CastFinished)
+//// each input ─▶ `settled`: the stealth change (0x8f5), then held procs cast ─▶ 0x7ff, no 0x7fd
+//// 0x4db held 1 ─▶ the same press again while held (StartTimer(repeat))
+//// 0x4db held 0 ─▶ the repeat ends; a charge fires its stage
 //// ```
 ////
-//// - **The go** is 0x7f4 with the cast id, the ignore-cooldown bit 0, the caster's
-////   place as the destination, no target, no position and no missile, and the
-////   phase (`opcode.0x7f4`): a go that names no target carries no damage, which
-////   the next step adds. A Multiphase spell's phase is the phase's index and a
-////   channel's the pulse's (`opcode.0x7f4.phase`). Each go is followed by the
-////   spell's Proxies of that phase, and the finish, 0x7fe, comes after the last go,
-////   at once for a spell that is not Multiphase. A channel ends at the later of its
-////   finish timer and the close of its last go's strike round, so the client has
-////   all of its gos before the 0x7fe (`cast.channel_sequence`).
-//// - **A child cast** is the Proxy's spell cast as its own, from the caster, with
-////   root the pressed spell and parent the spell whose Proxy fired
-////   (`opcode.0x7ff.root_parent`), after the Proxy's delay from the parent's go;
-////   its 0x7ff goes to the caster too. Its go and finish follow as a pressed
-////   cast's, and it starts no global cooldown (kind 3). A Proxy behind a caster
-////   apply prerequisite or one its dataBits06 names starts only when each passes
-////   against the caster at the go (`cast_gate.proxy_gates`); a periodic Proxy is armed
-////   at the go whatever its gates say and reads them at each tick. One behind a target
-////   apply prerequisite as well starts a child on a unit only when that prerequisite passes
-////   too, for each unit separately (`children`, `cast_tick.target_gate`): the target first and
-////   the caster second (`Spell4Effects.prerequisiteIdTargetApply`), the struck unit as
-////   the caster's picture shows it when the round closes (`went`'s `poses`; a unit it no
-////   longer shows decides nothing and leaves a debug line), or the caster on its own
-////   point for a Proxy aimed at it. The target gate takes no roll. A Proxy aimed at the
-////   primary target (`spell_plan.OnPrimaryTarget`) starts its child on the player a bag
-////   press named (`Live.named_player`) and on the caster for any other cast (a press at
-////   oneself or at a creature, a quest button, an activation, a proc's spell); the child
-////   carries that player, so its rows aimed at the primary target land on the player
-////   (Phantasmal Armor's Interrupt Armor, Spell4Effects 199192), and a player the caster no
-////   longer sees when the child starts gets none and a debug line, and so does the tick of
-////   a periodic one, which ticks on that player (`cast_tick.proxies_ticking`). A child's timer is
-////   its own: the parent's finish
-////   leaves the pending children, which start 100 ms after it (Crush), and only
-////   the player leaving the world cancels them.
-//// - **The cancel** is 0x801: the server's cast id, a reason and a bit, which the
-////   client sends as (6 or 11, 1) when the player's cast ends in its client, and
-////   (0, 0) with the 0x816 value for an open ChargeRelease threshold
-////   (`opcode.0x801`). It clears the caster's current cast, whatever cast that is,
-////   and the cast ends with its go timers cancelled and 0x7fe to the caster and the
-////   map, no strike; the base cast of a charge ends its threshold too, with
-////   0x814 before its 0x7fe. A cast that is not live is a debug line. Any other
-////   reason or bit is one the client never sends, and ends the connection.
-//// - **A cast's news** goes to the map once, as `Broadcast`, which relays it to each player
-////   whose relation with the caster relays; the cast rule keeps no list of viewers. A viewer
-////   writes a 0x7ff only when its client shows the caster, and a go, or a finish, only for a
-////   cast it wrote (genesis_prime/game/connection). The threshold messages go to the caster only.
+//// - The go is 0x7f4, no target; the phase its index or the pulse's (`opcode.0x7f4.phase`).
+//// - A child's root is the pressed spell, its parent the Proxy's (`opcode.0x7ff.root_parent`).
+//// - The cancel is 0x801: the cast ends, its timers cancelled, 0x7fe to all (`opcode.0x801`).
+//// - A cast's news goes to the map once as `Broadcast`; a viewer writes a cast it knows.
 
 import genesis_prime/client_connection
 import genesis_prime/game/cast/control as cast_control

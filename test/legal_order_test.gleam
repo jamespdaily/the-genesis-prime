@@ -277,7 +277,7 @@ pub fn legal_order_support_catches_a_frame_written_for_a_unit_after_its_removal_
             hit_radius: beast().combat.hit_radius,
             attackable: beast().combat.attackable,
             hostile_to: beast().combat.hostile_to,
-            fights: beast().combat.fights,
+            area_pickable: beast().combat.area_pickable,
           ),
         ),
       ),

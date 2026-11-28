@@ -1429,7 +1429,7 @@ pub fn a_creature_and_an_object_shown_carry_their_spawn_id_to_the_picture_test()
           hit_radius: beast.combat.hit_radius,
           attackable: beast.combat.attackable,
           hostile_to: beast.combat.hostile_to,
-          fights: beast.combat.fights,
+          area_pickable: beast.combat.area_pickable,
         ),
       ),
     )

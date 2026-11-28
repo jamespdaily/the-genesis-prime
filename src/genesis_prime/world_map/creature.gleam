@@ -2245,7 +2245,7 @@ fn appeared(state state: State, now_ms now_ms: Int) -> PeerNews {
       hit_radius: state.body.combat.hit_radius,
       attackable: state.body.combat.attackable,
       hostile_to: state.body.combat.hostile_to,
-      fights: state.body.combat.fights,
+      area_pickable: state.body.combat.area_pickable,
     ),
   )
 }

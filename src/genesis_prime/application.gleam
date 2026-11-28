@@ -1,23 +1,8 @@
 //// The server as an OTP application (`application_start_module` in
 //// gleam.toml), so the host's SIGTERM stops it through OTP, in order. The
-//// application owns one process, a root supervisor with no child. `main`, which
-//// runs after the application has started and alone holds the settings (the
-//// loaded tables, the sitting's recorders, the environment), starts the
+//// application owns one process, a root supervisor with no child; `main`,
+//// which runs once it has started and alone holds the settings, starts the
 //// server's tree (genesis_prime/server) under the root.
-////
-//// ```
-//// application genesis_prime (started by `gleam run`, `gleam run -m` and the
-////   shipment's `genesis_prime@@main:run`, before any `main`)
-////  └─ root: factory supervisor, one child kind        start/2
-////       └─ server tree (genesis_prime/server)         temporary, started by main
-//// ```
-////
-//// The root is a factory supervisor because its one child starts later, from
-//// an argument: `supervisor:start_child` on it runs the tree's start with the
-//// settings. The server tree is `temporary`: the root never restarts it. A tree
-//// that gave up (a child failed three times in ten seconds) ends, `main` sees
-//// it end and ends the node with status 1, and the host starts it again;
-//// restarting the tree from the root would hide that.
 ////
 //// From SIGTERM to exit:
 ////
@@ -29,10 +14,7 @@
 ////                         exit `shutdown` ───▶ root
 ////                                              exit `shutdown` ─▶ tree
 ////                                                      stops its children in the reverse of
-////                                                      the order they started, one at a time:
-////                                                      closer (every listener stops accepting),
-////                                                      game, login, world, Sessions, hand-off,
-////                                                      store, pool
+////                                                      the order they started, one at a time
 ////                                              ◀─ tree ended ─────┘  ─▶ main's monitor
 ////                                                                       fires `shutdown`
 ////                         stop/1 logs the stop, then                    main returns
@@ -40,57 +22,14 @@
 ////                         halts with status 0
 //// ```
 ////
-//// **Why stop/1 waits for `main`.** After the applications stop, `init` closes
-//// the kernel's processes, `user` among them, and kills every process left. A
-//// `main` killed then reaches `genesis_prime@@main:run` as a non-normal exit,
-//// and `run` prints it to a standard error that is already closed, so the node
-//// prints "Failed to eval" and a `badarg`. A `main` that has ended normally
-//// reaches `run` as nothing. `register_program` names `main`'s process, and
-//// stop/1 returns only once it has ended, so `init` cannot go on before then.
-//// `main` asks nothing of the application master meanwhile: the master has
-//// handed its own stop to the process that runs stop/1, so a call to the
-//// master (`application:get_supervisor`) would wait on a process that waits on
-//// `main`. The root is registered under a name of its own (`register_root`),
-//// and `start_server` finds it with `whereis`.
-////
-//// **How `main` tells an orderly end from a fatal one.** A tree that exceeds
-//// its restart intensity also ends with `shutdown`, so the reason says nothing.
-//// The node's own state does: `init:stop` sets the status to `stopping` before
-//// it stops any application, so a tree that ends while the node is stopping
-//// ended in order, and a tree that ends while it is not, whatever the reason,
-//// is fatal (`ending`).
-////
-//// What a deadline or a death does, in that order:
-//// - **The tree's children** each have their own shutdown time, and one that
-////   passes is killed: a connection that has not ended in `connection_shutdown_ms`,
-////   a service in its `shutdown_ms`, the closer in its own. A killed process
-////   leaves no closing line in its recording. The subtrees and the root wait without a
-////   limit, the children's limits being what bounds them. No timer of the VM's
-////   ends the stop: the kernel's `shutdown_timeout`, which no file here sets,
-////   is infinity.
-//// - **The pool dying during the stop.** The pool is the tree's first child, so it
-////   stops last. A pool that dies earlier is not restarted, since the tree is
-////   stopping; a draining connection's ask meanwhile answers `Unavailable`.
-//// - **SIGTERM before `main` has started the tree.** `stop/1` waits for `main`,
-////   which is loading the tables and the content, so the wait lasts as long
-////   as the load. The root has stopped and its name is gone, so `start_server`
-////   fails with `NodeStopping`; `main` logs it and returns
-////   (`start_server_unless_stopping`), and the node halts with status 0, with
-////   no error printed.
-//// - **SIGTERM while the tree starts.** The root handles the stop after its
-////   start call returns, then stops the tree it started, in order.
-//// - **SIGTERM before the ready line.** The tree stops as above, the readiness
-////   ask sees its end, no ready line is printed, the status is 0, and every
-////   recording a connection had open ends with its closing line.
-//// - **The tree failing to start** (a port taken, a table missing) returns
-////   `TreeNotStarted`; `main` crashes with it and the status is 1.
-//// - **The tree ending while the node runs** crashes `main` (`end_of`): the node
-////   stops, in order, from the application's stop, with status 1.
-////
-//// The monitor on the tree is made as `start_server` returns it, and the same
-//// monitor goes to the readiness ask and to the final wait, so the tree's exit
-//// reason reaches whichever sees the end first, and a monitor made after the
-//// tree had ended would give `noproc` instead.
+//// - The root is a factory supervisor: the tree starts later (`supervisor:start_child/2`).
+//// - The tree is `temporary`: the root never restarts it; a fatal end crashes `main` (`end_of`).
+//// - stop/1 returns only once `main` has ended (`register_program`), so `init` cannot kill it.
+//// - `main` calls nothing on the application master while it stops: the master waits on stop/1.
+//// - Orderly or fatal is the node's state, not the reason: `init:stop` sets `stopping` first.
+//// - The stop's only deadlines are the children's own: `shutdown_timeout` stays unset (infinity).
+//// - `start_server` finds the root by name (`register_root`) and makes the tree's only monitor.
+//// - One monitor, made at start, serves the readiness ask and the final wait.
 
 import genesis_prime/server
 import genesis_prime/step

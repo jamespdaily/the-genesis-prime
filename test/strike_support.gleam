@@ -152,7 +152,7 @@ pub fn creature_facing(
     unit_states: [],
     face: option.None,
     faced_yaw:,
-    fights: True,
+    area_pickable: True,
   )
 }
 

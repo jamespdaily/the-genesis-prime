@@ -362,20 +362,60 @@ pub fn failure_breaches(
 
 /// The point and the what-happens cell of each row of each failure table of the file.
 fn failure_rows(file file: SourceFile) -> List(#(String, String)) {
-  let #(rows, _) =
-    list.fold(string.split(file.text, "\n"), #([], False), fn(state, line) {
-      let #(rows, inside) = state
+  failure_cells(file:)
+  |> list.filter_map(fn(entry) {
+    case entry.1 {
+      ["Point", "What happens"] -> Error(Nil)
+      [point, what] -> Ok(#(point, what))
+      _ -> Error(Nil)
+    }
+  })
+}
+
+/// The lines (from 1) of the file that its failure tables are read from: each header
+/// and each rule line (`|---|---|`) and row of exactly two cells at column 0 under one. The comment-size rule
+/// leaves these lines out, so it exempts only what this rule reads.
+pub fn failure_table_lines(file file: SourceFile) -> List(Int) {
+  list.map(failure_cells(file:), fn(entry) { entry.0 })
+}
+
+/// The line number and cells of each header and each two-cell row of the failure
+/// tables of the file, in order.
+fn failure_cells(file file: SourceFile) -> List(#(Int, List(String))) {
+  let #(rows, _, _) =
+    list.fold(string.split(file.text, "\n"), #([], False, 1), fn(state, line) {
+      let #(rows, inside, number) = state
+      let next = number + 1
       case string.starts_with(line, "//// |") {
-        False -> #(rows, False)
+        False -> #(rows, False, next)
         True ->
           case row_cells(line) {
-            ["Point", "What happens"] -> #(rows, True)
-            [point, what] if inside -> #([#(point, what), ..rows], True)
-            _ -> #(rows, inside)
+            ["Point", "What happens"] as cells -> #(
+              [#(number, cells), ..rows],
+              True,
+              next,
+            )
+            [_, _] as cells if inside -> #(
+              [#(number, cells), ..rows],
+              True,
+              next,
+            )
+            cells if inside ->
+              case list.all(cells, is_rule) {
+                True -> #([#(number, cells), ..rows], True, next)
+                False -> #(rows, True, next)
+              }
+            _ -> #(rows, inside, next)
           }
       }
     })
   list.reverse(rows)
+}
+
+/// Whether a cell is the dashes of a table's rule line, as `|---|---|`.
+fn is_rule(cell: String) -> Bool {
+  string.to_graphemes(cell)
+  |> list.all(fn(grapheme) { list.contains(["-", "|", ":", " "], grapheme) })
 }
 
 /// The cells of a `//// | a | b |` doc table line.

@@ -35,7 +35,7 @@ import genesis_prime/game/start_place
 import genesis_prime/game/vendor
 import genesis_prime/shared/area
 import genesis_prime/shared/creature_combat.{Attackable, Charged, Hostile}
-import genesis_prime/shared/creature_kind.{Kinds}
+import genesis_prime/shared/creature_kind.{type Kinds, Kinds}
 import genesis_prime/shared/creature_unit_type.{Turret}
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/hit.{Blow, Worked}
@@ -48,8 +48,8 @@ import genesis_prime/table/id.{
   Creature2Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import genesis_prime/table/loader/store
+import genesis_prime/world_map/combatant
 import genesis_prime/world_map/creature_faction.{type Factions}
-import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth,
 }
@@ -2573,30 +2573,41 @@ pub fn the_eldan_security_construct_loads_laser_bolt_with_its_circle_on_the_targ
   })
 }
 
+/// Whether Creature2 `creature_id`, started over these client rows and these kinds, takes part
+/// in combat.
+fn fights_over(
+  tables tables: store.Tables,
+  creature_id creature_id: Int,
+  kinds kinds: Kinds,
+) -> Bool {
+  let tables = character_tables.content_over(tables:)
+  let assert [started] =
+    spawn_support.started_over_kinds(
+      tables:,
+      rows: [spawn_support.creature_row_of(tables:, number: 1, creature_id:)],
+      kinds:,
+    )
+    as "the creature starts"
+  started.combat.fights
+}
+
 /// Whether the creature of Creature2 `creature_id`, standing as a started spawn over the client's
-/// committed rows with these cells of its row changed, takes part in combat.
+/// committed rows with these cells of its row changed and no row of its own in the kinds, takes
+/// part in combat.
 fn fights_with(
   creature_id creature_id: Int,
   changes changes: List(#(String, planted_table.Cell)),
 ) -> Bool {
-  let fights_over = fn(tables) {
-    let tables = character_tables.content_over(tables:)
-    let assert [started] =
-      spawn_support.started_over(tables:, rows: [
-        spawn_support.creature_row_of(tables:, number: 1, creature_id:),
-      ])
-      as "the creature starts"
-    started.combat.fights
-  }
+  let kinds = spawn_support.kinds()
   case changes {
-    [] -> fights_over(character_tables.shared())
+    [] -> fights_over(tables: character_tables.shared(), creature_id:, kinds:)
     _ -> {
       use tables <- fixture_tables.changed(
         table: "Creature2",
         id: creature_id,
         with: changes,
       )
-      fights_over(tables)
+      fights_over(tables:, creature_id:, kinds:)
     }
   }
 }
@@ -2616,8 +2627,8 @@ pub fn a_creature_the_client_draws_dead_never_fights_unless_a_kill_objective_nam
     #(
       13_277,
       [#("uiFlags", Integer(0xAF))],
-      True,
-      "bit 8 cleared with flags bit 0 kept: bit 0 alone keeps a creature in its fights",
+      False,
+      "bit 8 cleared with flags bit 0 and no attack row of its own: the creature never fights, a server choice",
     ),
     #(
       40_115,
@@ -2628,8 +2639,14 @@ pub fn a_creature_the_client_draws_dead_never_fights_unless_a_kill_objective_nam
     #(
       8047,
       [],
-      True,
-      "Vault Data Crystal: flags bit 0 and uiFlags 47 without bit 8 fights as it did",
+      False,
+      "Vault Data Crystal: flags bit 0 and uiFlags 47 without bit 8, and no attack row of its own: it never fights, a server choice",
+    ),
+    #(
+      25_777,
+      [],
+      False,
+      "the flavor spotlight: flags bit 0 (0x1403b44b0: a player cannot target it), faction 218 Hostile, no attack row: it never fights, a server choice",
     ),
     #(73_464, [], True, "the Virtual Battle Beast, an ordinary enemy"),
     #(73_465, [], True, "the Virtual Defense Dagun, an ordinary enemy"),
@@ -2637,7 +2654,7 @@ pub fn a_creature_the_client_draws_dead_never_fights_unless_a_kill_objective_nam
       37_723,
       [],
       True,
-      "a kill target (QuestObjective 13958, type 2) with uiFlags 0",
+      "a kill target (QuestObjective 13958, type 2) with flags bit 0 (1073758225) and no attack row of its own: the kill objective keeps it fighting",
     ),
     #(
       37_723,
@@ -2652,9 +2669,150 @@ pub fn a_creature_the_client_draws_dead_never_fights_unless_a_kill_objective_nam
   })
 }
 
+pub fn a_flavor_spotlight_with_flags_bit_0_and_no_recorded_strike_never_fights_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Creature2 25777: flags 16385 (bit 0, `0x1403b44b0`: a player cannot target it), faction
+  // 218 (Hostile to both player factions), and no attack row of its own.
+  assert !fights_over(
+    tables: character_tables.shared(),
+    creature_id: 25_777,
+    kinds: spawn_support.kinds(),
+  )
+    as "bit 0 and no attack row of its own: no ring aggro, no approach, no strike"
+}
+
+pub fn a_creature_with_flags_bit_0_and_a_recorded_auto_attack_special_or_kind_row_still_fights_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Creature2 8047 has flags bit 0; each kinds value holds a row of its own for it, as the
+  // retail record does (`creature_kind` `by_creature`). A kind row of its own is the
+  // default's fields under its id.
+  let cases = [
+    #(
+      spawn_support.kinds_with_autos(creature_id: 8047, spell4_ids: [5649]),
+      "an auto-attack row",
+    ),
+    #(
+      spawn_support.kinds_with_specials(creature_id: 8047, spell4_ids: [55_317]),
+      "a special row",
+    ),
+    #(
+      spawn_support.kinds_with_specials(creature_id: 8047, spell4_ids: []),
+      "a kind row of its own",
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(kinds, reason) = row
+    assert fights_over(
+      tables: character_tables.shared(),
+      creature_id: 8047,
+      kinds:,
+    )
+      as reason
+  })
+}
+
+pub fn every_creature2_row_with_flags_bit_0_and_no_kind_row_or_kill_objective_stays_out_of_fights_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let rows = creature2.all(tables)
+  let kill_named = combatant.kill_named(tables)
+  // Creature2 8047 is given a row of its own, so it is the one bit 0 creature with a row.
+  let kinds =
+    spawn_support.kinds_with_autos(creature_id: 8047, spell4_ids: [5649])
+  let drawn_dead = fn(row: creature2.Creature2) {
+    int.bitwise_and(row.ui_flags, 0x100) != 0
+  }
+  let fights = fn(row: creature2.Creature2) {
+    combatant.fights(
+      kill_named:,
+      has_attack_row: creature_kind.has_row(kinds:, creature2_id: row.id),
+      creature: row,
+    )
+  }
+  let with_bit_0 =
+    list.filter(rows, fn(row) {
+      int.bitwise_and(row.flags, 0x1) != 0 && !drawn_dead(row)
+    })
+  assert list.length(with_bit_0) == 30_954
+    as "Creature2.tbl: 30,954 rows have flags bit 0 and not uiFlags bit 8"
+  let stopped =
+    list.filter(with_bit_0, fn(row) {
+      !set.contains(kill_named, row.id) && row.id != 8047
+    })
+  let stopped_count = list.length(stopped)
+  assert stopped_count == 30_894
+    as "30,954 less the 59 a kill objective names and Creature2 8047, which has a row of its own"
+  assert list.all(stopped, fn(row) { !fights(row) }) as "each stops fighting"
+  let stopped_ids = set.from_list(list.map(stopped, fn(row) { row.id }))
+  let others = list.filter(rows, fn(row) { !set.contains(stopped_ids, row.id) })
+  assert list.all(others, fn(row) {
+    fights(row) == { !drawn_dead(row) || set.contains(kill_named, row.id) }
+  })
+    as "every other row fights as the lying-body rule alone decides"
+  assert list.all(rows, fn(row) {
+    combatant.area_pickable(kill_named:, creature: row)
+    == { !drawn_dead(row) || set.contains(kill_named, row.id) }
+  })
+    as "no row's area pick follows its flags bit 0 or its attack row: only the lying-body rule decides it"
+}
+
+pub fn a_bit_0_creature_the_retail_record_gives_a_row_fights_with_it_and_without_it_only_if_a_kill_objective_names_it_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("real_tables")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let kill_named = combatant.kill_named(tables)
+  // The creatures of Creature2 flags bit 0 and no uiFlags bit 8 that the retail record gives a
+  // row (genesis_929r: `creature_kind` above row 0, `creature_auto_attack` or
+  // `creature_special`, rows not retired) and that the world database (genesis_play `spawn`)
+  // spawns as a NonPlayer of a faction Hostile to a player (`faction_level.hostile` over the
+  // client's Faction2 rows): 64 creatures, 170 spawns.
+  let retail_strikers = [
+    13_501, 17_685, 17_690, 19_995, 19_996, 19_998, 19_999, 20_001, 20_002,
+    20_003, 20_004, 20_005, 20_895, 21_676, 22_076, 22_387, 22_690, 23_587,
+    23_679, 25_279, 26_446, 27_548, 30_238, 30_281, 30_902, 31_299, 36_030,
+    37_723, 38_871, 39_135, 39_859, 40_386, 40_532, 40_566, 40_611, 40_637,
+    40_677, 40_714, 41_226, 41_253, 41_254, 41_256, 41_274, 41_301, 45_495,
+    45_556, 45_581, 45_709, 45_710, 45_711, 45_712, 47_085, 47_946, 48_893,
+    51_819, 52_047, 52_071, 56_341, 57_141, 59_214, 63_302, 63_304, 75_201,
+    75_203,
+  ]
+  assert list.length(retail_strikers) == 64
+    as "the retail record's strikers among the creatures a player cannot target"
+  let fights = fn(creature_id, kinds) {
+    let assert Ok(row) = creature2.get(tables, Creature2Id(creature_id))
+      as "the creature has a Creature2 row"
+    assert int.bitwise_and(row.flags, 0x1) != 0
+      && int.bitwise_and(row.ui_flags, 0x100) == 0
+      as "the creature has flags bit 0 and not uiFlags bit 8"
+    combatant.fights(
+      kill_named:,
+      has_attack_row: creature_kind.has_row(kinds:, creature2_id: creature_id),
+      creature: row,
+    )
+  }
+  list.each(retail_strikers, fn(creature_id) {
+    assert fights(
+      creature_id,
+      spawn_support.kinds_with_autos(creature_id:, spell4_ids: [5649]),
+    )
+      as "with its retail row it fights"
+    assert fights(creature_id, spawn_support.kinds())
+      == set.contains(kill_named, creature_id)
+      as "without it, only a kill objective keeps it fighting"
+  })
+  assert list.filter(retail_strikers, fn(creature_id) {
+      set.contains(kill_named, creature_id)
+    })
+    == [37_723, 38_871, 40_386, 51_819]
+    as "four of the 64 are named by a kill objective of the client's tables, so the other 60 strike no one in a database without the retail rows"
+}
+
 pub fn only_a_creature_the_client_draws_dead_and_no_kill_objective_names_stays_out_of_fights_test() -> Nil {
   use <- owned_test.run(120_000)
-  use <- unitest.tag("registry")
+  use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let tables = client_tables.shared()
   let rows = creature2.all(tables)
@@ -2662,9 +2820,9 @@ pub fn only_a_creature_the_client_draws_dead_and_no_kill_objective_names_stays_o
     list.partition(rows, fn(row) { int.bitwise_and(row.ui_flags, 0x100) != 0 })
   assert list.length(bodies) == 969
     as "Creature2.tbl: 969 of its 56,369 rows have uiFlags bit 8 (the bit the client draws a lying body by)"
-  let kill_named = lying_body.kill_named(tables)
+  let kill_named = combatant.kill_named(tables)
   let fights = fn(row: creature2.Creature2) {
-    lying_body.fights(kill_named:, creature: row)
+    combatant.fights(kill_named:, has_attack_row: True, creature: row)
   }
   assert list.map(list.filter(bodies, fights), fn(row) { row.id })
     == [37_640, 37_641, 37_642]

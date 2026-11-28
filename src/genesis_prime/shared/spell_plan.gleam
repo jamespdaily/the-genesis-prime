@@ -1,371 +1,43 @@
-//// What the client's tables say a pressed ability does: for each ability a class
-//// holds, and each class's innate active and passive spell, the tree of
-//// casts it starts, built once when the tables load. The cast rule (genesis_prime/game/cast) reads the tree and decides
-//// nothing from the tables itself.
+//// What the client's tables say a pressed ability does: for each class's level-1 abilities
+//// and innate spells, the tree of casts each starts, built once when the tables load. The
+//// cast rule (genesis_prime/game/cast) reads the plans and decides nothing from the tables.
 ////
 //// ```
-//// SpellLevel (class, no prerequisite) ─▶ Spell4 (the ability) ─▶ Spell4Base
-//// Class (the first innate slot, genesis_prime/shared/innate) ─▶ Spell4 (the innate's active and passive) ─▶ Spell4Base
-//// Item2 (takes a slot) ─▶ ItemSpecial.spell4IdOnEquip ─▶ Spell4 (the equip spell, genesis_prime/shared/equip_spell)
-////      Spell4Effects (spellId = the Spell4 id), each effect of type Proxy (26) ─▶ the Spell4 it names, as a child
-////      Spell4Thresholds (parent = the Spell4 id), by order index ─▶ the Spell4 each tap or charge level casts, as a stage
-////      SpellPhase (owner = a Multiphase Spell4) ─▶ the phase delays and flags, in row order
-////      SpellCoolDown (the global row) ─▶ the global cooldown's time
-////      Class (vitalEnumResource0..) ─▶ the result a short vital gives
-//// all of them, once, when the tables load ─▶ Plans ─▶ in_plans(base)
+//// SpellLevel (class, no prerequisite) ─▶ Spell4 ─▶ Spell4Base ─▶ the ability's tree
+//// Class (innate slot) ─▶ Spell4; Item2 ─▶ its equip Spell4; AMP ─▶ its Spell4
+////      Spell4Effects of type Proxy (26) ─▶ the Spell4 it names, a child of its spell
+////      Spell4Thresholds ─▶ the stage spells; SpellPhase ─▶ the phase delays
+//// all of them, once when the tables load ─▶ Plans ─▶ in_plans(base)
 //// ```
 ////
-//// - **Which abilities.** A level-1 ability and an innate must plan or the load fails. An
-////   ability a class gains above level 1 with no prerequisite
-////   (`SpellLevel.spell4Id.no_prerequisite`) is planned too, and one whose error
-////   `refusal_of` says leaves out is left out and listed by `unplanned`; any other error fails the
-////   load. A press of a base with no plan is refused unknown (`cast_press.ability_at`).
-//// - **The tiers.** Every tier 2 to 9 row of every ability the plans hold, an alternate's tiers
-////   inside its ability's, is planned as a later ability is, by the Spell4 id of the tier row
-////   (`tier_plans`, `tier_derivation`): the Spell4 row that is a tier is the client's
-////   `GetSpellIdForTier` (genesis_prime/shared/spell_tier). A tier whose error `refusal_of` says leaves out is left
-////   out and listed by `unplanned_tiers`, and a player who holds it casts the best lower tier
-////   (genesis_prime/game/held_tier); any other error fails the load.
-//// - **The equip spells.** The equip spell of each Item2 row that takes a slot
-////   (genesis_prime/shared/equip_spell `roots`) is planned as a spell no ability holds, by Spell4
-////   id (`standing_plans`): the spells a worn item puts on its wearer. The same fold plans it or
-////   leaves it out as it does a later ability (`planned_or_left_out`): one whose error
-////   `refusal_of` says leaves out is listed by `standing_unplanned`, which is not `unplanned`, so the ability
-////   book and the later abilities' coverage line never name it; any other error fails the load,
-////   and so does a worn item whose Item2Type, ItemCategory, ItemFamily or ItemSpecial row the
-////   tables lack (`EquipItemNotRead`), since which spell it puts on its wearer is then unknown.
-//// - **The AMP spells.** The spell of each AMP of a playable class is planned the same way under
-////   a key of its own (`amp_plans`, `amp_derivation`), apart from the equip spells: no worn item
-////   holds it and it stands while the AMP is picked. An AMP that a type 227 Prerequisite
-////   condition names unlocks a class ability and its spell is that ability's: it is left out
-////   with `AmpUnlocksClassAbility`, as "unlocks a class ability, not built"
-////   (genesis_prime/shared/amp_spec `roots`; the unlock itself is not built). Another one whose
-////   error `refusal_of` says leaves out is listed by `unplanned_amps`; any other error fails
-////   the load, and so does an AMP naming a Spell4 the table lacks (`AmpSpellNotRead`).
-//// - **One decision for each effect row.** `read_row` says what the plan makes of a
-////   Spell4Effects row in the place its spell is planned (`RowPlace`): in the effects of its
-////   spell and applied by a go (`Applied`), in the effects and applied by none (`Held`: a
-////   periodic gain, a property change or disguise with no life, an ItemVisualSwap row
-////   with a delayTime, a row whose phaseFlags is 0), in none (`LeftOut`), a damage row the area
-////   load reads (`ReadByArea`), or an error that fails the load. The effects of a spell are
-////   made from these readings into one list ranked by kind (`Spell.effects`, each a
-////   `PlannedEffect(Kind)`), which `in_phase` reads one kind at a time, and
-////   the coverage measure counts a row read exactly when it
-////   is `Applied` (genesis_prime/coverage/effect_row), so the two cannot disagree. A spell
-////   a Proxy starts on each struck creature refuses a heal, an Interrupt Armor row and an
-////   absorb aimed at its primary target, as one a Proxy starts on each ally does not (an ally
-////   is a player, whose connection takes each row), and a spell that spends every point held
-////   refuses an effect with a tag the rule does not read.
-//// - **The tree.** A Proxy effect (`Spell4Effects.effectType.26`, dataBits00 the
-////   Spell4 id, or dataBits01 when dataBits00 is 0 and dataBits01 is a Spell4 row,
-////   `proxy_named`; with a tickTime it casts the spell every tickTime, on the caster or, aimed
-////   at the area, on the foes inside the area (`ProxyTarget`), for
-////   its durationTime or, with flags bit 2, until the node of its cast ends, `Proxy.period`:
-////   `Spell4Effects.effectType.26.periodic`, and its row's
-////   prerequisiteIdCasterPersistence is read as the end of the whole cast
-////   (`proxy_persistences`, `cast_persist`); one aimed at the area whose named spell is
-////   beneficial (`Spell4TargetMechanics.flags` bit 0) casts on allies the server does not
-////   find, so it is refused by name (`PeriodicProxyAtAlliesNotRead`); a Proxy with no tickTime
-////   aimed at the area (flags 4 to 7) in a spell whose area finds the caster's allies starts
-////   its child on each ally the area selects, and, with the caster's bit (5 or 7), on the caster
-////   too (`OnEachAlly`): the tooltips say "yourself and N allies", texts
-////   245408, 360845, 315699, 287485 and 389501, and `Spell4Effects.targetFlags` gives the area
-////   those units, and one whose phaseFlags name more than one go of its spell is refused
-////   (`ProxyOnEachAllyAtSeveralGos`: the texts say the child acts once, Projected Spirit's
-////   Proxy 77150, texts 292646 and 488045); in a spell that hits no foes whose area finds no
-////   allies it starts its child on the caster alone; a Proxy with no tickTime whose spell holds two or more
-////   such Proxies naming different tiers of one Spell4Base with every compared field
-////   alike is left out, `ProxyStartsTiersNoChoice`, since no row picks a tier: Flash,
-////   Proxy 180600 to Spell4 70756, whose text 389501 promises its own heal only) starts
-////   that spell as a cast of its own, so a `Spell` holds its `Proxy` children, each with the delay
-////   the effect gives after its
-////   parent's go (`delayTime`) and the phases it fires in (`phaseFlags`: bit n is
-////   phase n, every bit for -1, the reading `Spell4.38791` gives). A Proxy with a
-////   target apply prerequisite is kept as `GatedOnCasterAndTarget`, with its caster
-////   gates and the target gate decoded: the cast rule starts its child on a struck unit
-////   when the caster gates pass against the caster and the target gate passes against
-////   that unit (`Spell4Effects.prerequisiteIdTargetApply`: the struck unit first, the
-////   caster second; Impale's four Proxies, 83818, 83819, 85673 and 85682, pick 39426 or
-////   39427 by 38585 or 38587 and 5734 or 5735). A Proxy with a caster apply
-////   prerequisite, or with a prerequisite in its dataBits06, is kept as
-////   `GatedOnCaster` and started at its phase's go when each passes against the
-////   caster (`Spell4.38791`: 79220 and 79229 apply only behind prerequisite 37037;
-////   `Spell4Effects.effectType.26.dataBits06`, a reading of the rows that no client
-////   code confirms, since the client applies no Proxy itself; the units of a check
-////   are `Spell4Effects.prerequisiteIdTargetApply`). Five level-1 Proxies are gated
-////   by their dataBits06 so: 177873 (53865 to 60947, 24582), 135961 (Mind Burst
-////   32809 to 57030, 23344), 200542 (30900 to 41869, 35913), 212835 (80382 to
-////   42569, 33154) and 212838 (80382 to 80383, 32921).
-//// - **The gains.** A VitalModifier (`Spell4Effects.effectType.1`) of a tree gives
-////   the caster a `Gift` by its vital, behind its caster apply prerequisite, which the
-////   cast rule checks (genesis_prime/shared/prerequisite): dataBits02 points of the resource
-////   slot of vital 6 (slot 1) or 8 (slot 3); of Focus (vital 15) dataBits02 points, or,
-////   when it is 0, the share of the maximum Focus in dataBits05, a float from above 0 to
-////   1.0 (`Spell4Effects.dataBits05`); dataBits02 points of the class slot that names the
-////   vital for 4, 12, 13, 14, 18 and 19 (`Class.vitalEnumResource00` to `07`). Any other
-////   vital, a larger share and a share of a class vital fail the load or leave a later
-////   ability out. A child started at each struck unit gives
-////   its first phase's gains once per go of its parent, not once per unit (client texts
-////   240824 and 314851; retail records: the Tenton Hammer Esper guide and the WildStar
-////   fandom Esper Assault list), so the plan moves them onto the `Proxy`. A gain with a
-////   tickTime is a `TickingGain`, which the cast rule does not apply. The effect's
-////   delayTime is not waited for (the server's choice: 10 ms in each kit row, under
-////   a client frame).
-//// - **The lasting effects.** A Fluff effect (`Spell4Effects.effectType.17`), a Scale
-////   effect (18), an ItemVisualSwap effect (76), a RavelSignal effect (81) and a FullScreenEffect
-////   effect (95, `Spell4Effects.effectType.95`) of a tree are each a `Lasting` row: the unit
-////   its targetFlags aim at, its delay, durationTime and flags bit 2, which give its spell a life there (genesis_prime/shared/lasting). A
-////   SpellForceRemove effect (`Spell4Effects.effectType.80`) is a `ForceRemove` row:
-////   dataBits00 picks a spell group (1), a Spell4 (2) or a Spell4Base (3) by
-////   dataBits01, which must name a row, and the count of stacks is read only where
-////   dataBits03 and dataBits04 agree. Each is applied when its caster apply
-////   prerequisite passes against the caster, and one behind a target apply
-////   prerequisite is applied only to the units that pass it (`GatedOnTarget`). Unlike
-////   a Proxy's, their dataBits06 is no prerequisite. A `Spell` also holds its spell groups (`Spell4.spell4GroupListId`)
-////   and its stack group with the group's cap (`Spell4.spell4StackGroupId`,
-////   `Spell4StackGroup.stackCap`), and whether its lifetimes take the larger of delay
-////   and duration (`Spell4.propertyFlags` 0x2000).
-//// - **The crowd-control effects.** A CCStateSet effect (`Spell4Effects.effectType.4`)
-////   of a tree is a `CrowdControl` row: the unit its targetFlags aim at (the primary
-////   target, the area or both: a state on a caster is a player's, which no creature
-////   casts; a row aimed at the caster holds Ability Restriction (27) on it, which
-////   `restrictions_in_phase` lists apart from the strike's), and its Stun (0),
-////   Knockdown (8) or Ability Restriction state, delay, durationTime and the
-////   Interrupt Armor it removes (genesis_prime/shared/crowd_control). The strike
-////   tells the units it selects the row's state, even when its phase has no damage
-////   (genesis_prime/shared/spell_area `phase`); the cast rule lists the states that
-////   landed in the go and keeps a node for their life (genesis_prime/game/cast).
-////   Each state's `Spell4Effects.emmComparison` tag chooses it by the points spent,
-////   as a gain's does.
-//// - **The property modifiers.** A UnitPropertyModifier effect
-////   (`Spell4Effects.effectType.11`) whose targetFlags include the caster is a
-////   `PropertyModifier` row: the property, mode, multiplier, flat amount and amount for
-////   each level (genesis_prime/shared/unit_properties), and its delay, durationTime and
-////   flags bit 2, which start and end the change and give the caster's node of the cast
-////   its life. A row aimed only at other units (targetFlags 2, 4 or 6) is a `StruckChange`
-////   that changes the creatures a strike hits, and a row that names the caster and others
-////   (3, 5 or 7) changes the caster in a `PropertyModifier` row and the others in a
-////   `StruckChange` row; in a spell whose area finds the caster's allies the area's bit is kept
-////   (`ally_area_aim`), so the row changes each ally the area selects (Barrier's row 92788, text
-////   640545 "yourself and N allies in the targeted area"), and such a row behind a target apply
-////   prerequisite is refused (`AlliesModifierGateNotRead`). Its caster apply
-////   prerequisite, phases and spend tag are a Fluff effect's. A UnitPropertyConversion
-////   effect (`Spell4Effects.effectType.145`) whose targetFlags include the caster is a
-////   `PropertyModifier` row too, whose change is a `Conversion` of property dataBits00
-////   into dataBits01 at the 32-bit float dataBits02; both properties must have a
-////   UnitProperty2 row. A DisguiseOutfit effect (`Spell4Effects.effectType.112`) whose
-////   targetFlags include the caster is a `PropertyModifier` row too, whose change is a
-////   `LookChange`: the displays it shows (genesis_prime/shared/look), each in the slot of
-////   its item type, from dataBits02 or dataBits01. It starts, ends and gives the node its
-////   life as a property change does. A row with an outfit (dataBits00 or dataBits08), no
-////   display, or a display whose item type has no slot fails the load
-////   (`DisguiseNotRead`); dataBits03 is read as nothing, since no client code reads a
-////   type 112 row.
-//// - **The Interrupt Armor rows.** A ModifyInterruptArmor effect
-////   (`Spell4Effects.effectType.52`) whose targetFlags include the caster (bit 1), or are
-////   the primary target alone (2) in a spell cast on the caster, is a `PropertyModifier`
-////   row whose `armor` is set: a change of UnitProperty2 44, the maximum, of x * 1.0 +
-////   dataBits00, which the player's armor follows (genesis_prime/game/player_life
-////   `armor_followed`); dataBits01 1 takes the points back at the end and 0 keeps them,
-////   which matters only once armor is worn, and nothing wears a player's armor down.
-////   Its delay, durationTime, flags bit 2, caster apply prerequisite, phases and spend
-////   tag are a type 11 row's. A dataBits01 other than 0 and 1 fails the load. A row aimed
-////   only at other units is not read. A child a Proxy starts on each struck unit that
-////   holds a row whose aim names its primary target (flags 2, 3 or 7) fails the load:
-////   Interrupt Armor on a struck unit is not built. 36 of the 38 type 52 rows are read.
-//// - **The absorbs.** An Absorption effect (`Spell4Effects.effectType.29`) whose targetFlags
-////   include the caster (bit 1), or are the primary target alone (2) in a spell cast on the
-////   caster, is a `PropertyModifier` row whose change is an `AbsorbChange`: the formula of
-////   the pool's amount (dataBits00 and dataBits01 as floats and the four parameters, whose
-////   kinds must be those the caster's value reads, genesis_prime/shared/damage
-////   `absorption_formula_of`), the damage types it takes (dataBits04 as a mask) and its
-////   aim. It starts, ends and gives the node its life as a type 11 row does. A row with a
-////   tickTime, with neither a durationTime nor flags bit 2, with a non-finite number or a
-////   parameter kind not read fails the load, as does one whose aim names the primary target in
-////   a child a Proxy starts on each struck unit (`AbsorptionPeriodic`,
-////   `AbsorptionHasNoLifetime`, `AbsorptionNumberNotFinite`, `ParameterNotRead`,
-////   `AbsorptionOnStruckUnit`); a row aimed only at other units is not read.
-//// - **The heals.** A Heal effect (`Spell4Effects.effectType.10`) or a HealShields effect
-////   (`.118`) whose targetFlags include the caster (bit 1), or are the primary target
-////   alone (2) in a spell cast on the caster, is a `Heal` row carrying the vital it
-////   restores (health or shield): its formula (dataBits00 as a float,
-////   dataBits01 and the four parameters, which must be kinds the caster's value reads,
-////   genesis_prime/shared/damage `unread`), its delay, aim and caster apply
-////   prerequisite, which the cast rule checks, and target apply prerequisite, which it
-////   checks for the unit the row heals; a row with a tickTime is a `TickingHeal`, with the schedule of
-////   its ticks (genesis_prime/shared/ticking), each tick its own 0x7f8. A periodic row that
-////   lasts until removed (flags bit 2) is left out (`HealUntilRemoved`). A row
-////   aimed only at other units (4 and 6) is not read. A child a Proxy starts on each struck unit that holds a heal whose
-////   aim names its primary target (flags 2, 3 or 7) fails the load: a heal on a struck unit is not built.
-//// - **The shield overloads.** A ShieldOverload effect (`Spell4Effects.effectType.64`)
-////   aimed at the area (targetFlags 4) is a `Lasting` row, listed on each struck unit for
-////   its durationTime as a Fluff effect is: the client marks the unit overloaded and
-////   clears the mark itself. A row aimed at the caster or the primary target is not read:
-////   the server's hold of a player's shield at 0 is not built.
-//// - **The procs.** A Proc effect (`Spell4Effects.effectType.14`) whose targetFlags are the
-////   caster's and whose trigger kind (dataBits00) is one of the holder's own events is a
-////   `ProcRow`: 217 entering stealth, 218 leaving it, 44 leaving combat and 0 dying
-////   (`Spell4Effects.effectType.14.dataBits00.217_218`, `.0_44`), and the strikes and heals
-////   it lands, 12 a hit, 13 a melee hit, 145 a critical, 1 a kill, 20 a heal and 147 a
-////   critical heal (`Spell4Effects.effectType.14.dataBits00`, `.13_school`), and nine kinds
-////   read by the texts the client holds (`.fairly_sure`): 10 using an ability, 103 spending
-////   the class resource, 21 receiving a heal, 52 a foe's deflect, 49 a critical by a finisher
-////   or a builder, 11 starting to move, 87 the class resource changing (the holder's gate
-////   says to what), 105 the Stalker's suit power dropping and 182 landing a taunt, and the
-////   blows a creature lands on the holder: 16 taking damage, 146 a critical, 51 a deflect
-////   and 115 a depleted shield, and four kinds read from rows and texts (`.229_230_231`, `.27`): 229,
-////   230 and 231 the holder landing Physical, Tech or Magic damage, and 27 the holder's spell
-////   landing; kinds 69 (a cast ending) and 76 (a spell landing on the holder) are left out naming
-////   their event (`Trigger`, a guess: the client never reads a Proc row). It holds the
-////   spell it casts (dataBits01), planned as a Proxy's child is and on the same chain, so a
-////   proc that leads back to a spell on the way fails as a cycle, its chance (dataBits02,
-////   a float32: above 0 and at most 1.0), its limit, dataBits05 fires in dataBits04 ms or
-////   for the proc's life when that is -1 (`.limits`), its filter on the event's spell
-////   (dataBits07 and dataBits08), its holder and event gates (dataBits09 and dataBits06,
-////   `.prerequisites`), its aim (dataBits03 bit 4 is the event's other unit) and its delay.
-////   The delay, durationTime and flags bit 2 give the holder's node its life
-////   (`.lifetime`), and its caster apply prerequisite is a Fluff effect's. A Proc row of
-////   another kind is in no list and the load goes on (`proc_read`, `ProcKindNotRead`), as
-////   does a row of a kind the texts name whose event the server does not raise (`ProcKindWaits`,
-////   which names the event), and a row held by another unit, behind a persistence or target apply prerequisite,
-////   with an aim of 32 or above, or with no life
-////   (`ProcIsLeftOut`), a row whose spell the Spell4 table has no row for, which the
-////   client's table keeps because the client never reads a Proc row (`ProcCastsNoSpell`),
-////   and a row whose filter names a Spell4, Spell4Base or spell group the tables lack
-////   (`ProcFilterNamesNoSpell4`, `ProcFilterNamesNoSpell4Base`, `ProcFilterNamesNoGroup`);
-////   a Proc the caster holds in a spell that also holds a SummonPet effect (type 98) is no
-////   left-out row but a refusal of its ability, since the summoned unit it belongs to is not
-////   built (`SummonedProcNotRead`, `proc_beside_a_summon`);
-////   a row of these kinds with a chance outside 0 to 1.0, a window or
-////   count at or below 0 (a window of -1 excepted), a filter kind other than 0, 1 and 2 or a
-////   negative delay fails the load naming the column (`ProcNotRead`). The spells the procs
-////   cast are in the tree (`tree`).
-//// - **The forced moves.** A ForcedMove effect (`Spell4Effects.effectType.3`) whose
-////   targetFlags include the caster is a `ForcedMove` row: its delay. The go lists it
-////   on the caster and the caster's client moves itself and reports the move
-////   (`Spell4Effects.effectType.3.player`); the server works out no destination. A row aimed only at other units is not read. Its caster apply
-////   prerequisite, phases and spend tag are a Fluff effect's.
-//// - **The cooldown effects.** A ModifySpellCooldown effect
-////   (`Spell4Effects.effectType.73`) whose targetFlags include the caster is a
-////   `CooldownModifier` row: the selector (dataBits00 and the id of dataBits01, kept as
-////   given and looked up in no table) and the operation with its 32-bit float
-////   (genesis_prime/shared/cooldown), and its delay, durationTime and flags bit 2, which
-////   time the change and give the caster's node of the cast its life. A row aimed only
-////   at other units is not read. A spell also holds its cooldown groups, the non-zero
-////   spellCoolDownId00 to 02, each of which must be a SpellCoolDown row. Its caster
-////   apply prerequisite, phases and spend tag are a Fluff effect's.
-//// - **The quest advances.** A QuestAdvanceObjective effect (`Spell4Effects.effectType.42`) whose
-////   targetFlags include the caster, or name the primary target alone, is a `QuestAdvance` row: the
-////   Quest2 id (dataBits00), the objective's index (dataBits01) and the amount (dataBits02), and its
-////   delay. The client has no effect for the type, so the go lists none; the cast hands the
-////   connection the advance (genesis_prime/game/quest_advance). A row with a column the client does
-////   not read that is not 0, or an amount below 1, is left out by name. Its caster apply
-////   prerequisite, phases and spend tag are a Fluff effect's.
-//// - **The phases** of a Multiphase spell (`Spell.CodeEnumCastMethod` 8) are the
-////   SpellPhase rows of its owner kept by the client's rule (`0x14055e180`: order
-////   index below 32, and index 0 or a non-zero delay), each delay the time after
-////   the phase before: the client sums the delays into the cast's duration when
-////   its castTime is 0 (`0x14053d1f0`), which that reading fits, and schedules no
-////   phase itself, so the go times are the server's choice
-////   (`SpellPhase.phaseDelay`). A phase with the flag 0x200 moves the spell's
-////   cooldown to its last phase (`0x14053e5a0`). Any other spell has one go, at
-////   the end of its cast time, and a ChargeRelease ability that has stages has
-////   none (below).
-//// - **A channel** (`Spell.CodeEnumCastMethod` 1) gets (channelMaxTime -
-////   channelInitialDelay + channelPulseTime) / channelPulseTime gos, in whole
-////   numbers (`0x14053d1f0`); the pulses fall at the initial delay plus each pulse
-////   time and the finish timer is set at channelMaxTime, which are the server's
-////   choice (`Spell4.channelPulseTime`); the cast ends at the later of that timer
-////   and the close of the last go's strike round (`cast.channel_sequence`).
-//// - **The stages** of a RapidTap or ChargeRelease ability are the Spell4Thresholds
-////   rows whose parent it is, by order index, each a full tree with its
-////   thresholdDuration (`Spell4Thresholds.spell4IdToCast`). A press resolves to the
-////   row at the open threshold's index, the ability's own spell at -1, and is
-////   refused past the last row (`0x1403bfd60`). The threshold lasts the ability's
-////   thresholdTime (`opcode.0x816`).
-//// - **The cast bar** is decided by the cast method, as the client does
-////   (`cast.current_cast`): a spell that shows one is the caster's current cast from
-////   its start.
-//// - **The cooldowns.** The spell's own is `Spell4.spellCoolDown` in
-////   milliseconds, started where the method says (`CooldownStart`,
-////   `0x14053e5a0`). The global one is the row `spellCoolDownIdGlobal` names, in
-////   effect only for kinds 0 and 1 and a non-zero row (`0x14046afc0`); kinds 0
-////   and 2 are refused while it runs (`0x1403b14c0`).
-//// - **The costs.** A spell's two innate costs, and a stage's row's two more, each
-////   read once into a `Cost` the cast rule checks against the caster's resources
-////   (`0x1403b3320`, `0x1405e7980`, `Spell4CastResult.vital_cost`): types 5 to 11
-////   are resource slots 0 to 6 (result 50 + the slot; Mind Burst, type 6, is 51);
-////   types 4, 12, 13, 14, 18 and 19 go to the class's slots that hold that vital, the
-////   last one's result given when none passes (Gamma Rays is 55); on a threshold
-////   row's cost the same types go to the first such slot that holds a point
-////   (`RowClassCost`). Focus (15) on a Spell4 row is a `FocusCost` of its amount, which
-////   the caster's own Focus meets or is refused 167 (`CheckInnateCost` 0x1403b3320 case
-////   0xe, genesis_prime/shared/class_resource); Health (1), shield (3), Focus on a threshold
-////   row and 16 (slot 7) give their own results (44, 176, 167, 177) and are held by no
-////   rule of the server; any other type, the client's slots 8 to 10 (types 27 to 29)
-////   among them, is an `UnreadCost`.
-//// - **The spend.** A cost's Spell4 EMM id (`Spell4.innateCostEMMId0`, genesis_prime/shared/spend)
-////   of 4 or 7 on a slot cost makes it a `SpendAllCost`, which takes every point the
-////   slot holds; any other id, one on a slot or unheld cost and one on no cost are an
-////   `UnreadSpendCost`; a class cost keeps its check whatever its id. Each gain, Proxy
-////   and (in genesis_prime/shared/spell_area) damage effect keeps its row's tag (`Spell4Effects.emmComparison`), and the cast
-////   rule chooses by it with the points spent.
-//// - **The caster requirements.** A spell's two caster vital requirements
-////   (`0x1403b1780`): types 5 to 11 read the same slots with the same results,
-////   compared with the value by the eval code (`0x1407a1750`: 0 to 4
-////   on the amount, 5 to 9 the same on the percentage of the slot's maximum, any
-////   other never passes); type 15 reads the caster's Focus and fails with 167
-////   (`Spell4.casterInnateRequirement.15`); type 0 is none; any other type, the
-////   Fusion Probe's 18 among them, is an `UnreadRequirement`. A failed requirement is waived when the spell's
-////   `RequirementWaiver` passes (below).
-//// - **No target.** None of the 18 level-1 abilities nor the six innate actives needs a
-////   target the client picks (`Spell4TargetMechanics.targetType`), so the plan holds
-////   no range and no target rule.
-//// - **A spell's own cast conditions** are its four Prerequisite columns, each loaded with
-////   the rows it nests (genesis_prime/shared/prerequisite `load`), and kept on every spell
-////   of a tree, the stages and children too. The press checks the pressed or staged
-////   spell's CasterCast (`CastGate`, failure 151) then its TargetCast (281), after every
-////   other check (`0x1403ace00`); a spell whose propertyFlags has bit 2 and whose
-////   casterInnateRequirement0, casterInnateRequirement1 or targetBeginInnateRequirement
-////   is not 0 holds its CasterCast as a `RequirementWaiver`, which only waives a failed
-////   requirement (`0x1403b1780`; Rampage 58524's 19750). The cast rule checks the other
-////   two columns, CasterPersistence (282) and TargetPersistence (283), at the end of each
-////   input while the cast lasts (genesis_prime/game/cast `persisted`), since the client
-////   never evaluates them (`Spell4.prerequisiteIdCasterPersistence`). Four innate actives
-////   hold a gate (Warrior 46867, Esper 58586, Stalker 46073, Spellslinger 47273) and
-////   Spell Surge's buff 47439 a persistence.
-//// - **The innates.** A slot-0 innate's active spell is held as an ability in the
-////   bag at the index after the level-1 abilities (genesis_prime/shared/loadout), so its
-////   plan is the ability's. Its passive is never pressed: the server starts it itself
-////   (genesis_prime/game/cast `standing_changed`).
-//// - **The caster's death.** Bit 0 of the spell's caster condition row says
-////   whether its caster must be alive, must be dead or may be either
-////   (`Spell4.spell4ConditionsIdCaster`, `CasterDeath`); the row's other
-////   conditions are not read. The target row's bit 0 is read the same way
-////   (`Spell4.spell4ConditionsIdTarget`, `Spell.target_death`), for the activate cast and a
-////   press at another player.
-//// - **The target aim.** A press at another player also reads the range limits, the combat
-////   test (bit 1 of the target condition row), the cast group and the pet bits of the target
-////   rows, and names what it does not read (`target_aim_of`, `Spell.target_aim`).
-//// - **What fails the load:** a Spell4, Spell4Base, Spell4Conditions, SpellCoolDown,
-////   Class or Prerequisite row the tree names that the tables lack (a Prerequisite
-////   column of a Spell4 row included), a Prerequisite row that nests itself through the
-////   rows it nests, a cost of a type
-////   not read, a cycle of Proxy effects, a channel with no pulse time, a gain
-////   aimed other than at the caster, of a vital other than 6 or 8, or behind a
-////   target apply prerequisite, an effect behind a target apply prerequisite with a
-////   condition of a type not read or, past the caster, of a type that reads
-////   what the casts held on a struck creature hold or, on a row that does not
-////   reach struck units alone or that the strike does not carry to the creature, the
-////   creature's own state, and an effect of a spell that spends
-////   every point held with an emmComparison other than 0 or 1; a Fluff or SpellForceRemove effect
-////   aimed other than at the caster, the primary target or the area; a type 80
-////   effect with a dataBits00 other than 1 to 3, naming no group, Spell4 or
-////   Spell4Base, or whose dataBits03 and dataBits04 differ; a Spell4GroupList or
-////   Spell4StackGroup row a spell names that the tables lack; and a CCStateSet effect
-////   of a state other than Stun, Knockdown and Ability Restriction, of Stun or Knockdown
-////   aimed at the caster or by other flags, of Ability Restriction aimed anywhere but at
-////   the caster, or behind an apply prerequisite.
+//// - **Which abilities.** A level-1 ability and an innate must plan or the load fails; a later
+////   ability with no prerequisite (`SpellLevel.spell4Id.no_prerequisite`) and each tier 2 to 9
+////   row of a planned ability (`tier_plans`, genesis_prime/shared/spell_tier) are planned too.
+//// - **Left out or failed.** `refusal_of` says which error leaves a spell out, listed by
+////   `unplanned`, `unplanned_tiers` or `unplanned_amps`, and which error fails the load.
+//// - **Equip spells and AMPs** are planned as spells no ability holds: `standing_plans` and
+////   `amp_plans` (genesis_prime/shared/equip_spell `roots`, genesis_prime/shared/amp_spec
+////   `roots`); `standing_unplanned` and `unplanned_amps` list the left-out ones.
+//// - **One decision per effect row** by `read_row` (`RowPlace`), ranked into `Spell.effects`;
+////   the coverage measure counts a row read as `Applied` (genesis_prime/coverage/effect_row).
+//// - **The tree.** A `Spell` holds its Proxy children (`Spell4Effects.effectType.26`), its
+////   stages and phases; `tree` walks the spell with its stages, Proxies and procs.
+//// - **The stages** of a RapidTap or ChargeRelease ability are its Spell4Thresholds rows by
+////   order index; a press resolves to the one at the open threshold's index (`0x1403bfd60`).
+//// - **Go times.** A channel's pulses (`0x14053d1f0`), the phase delays the client keeps
+////   (`0x14055e180`), or one go at the cast time; pulse and phase times are the server's
+////   choice. The cast method decides the cast bar (`cast.current_cast`).
+//// - **The cooldowns.** The spell's own `Spell4.spellCoolDown` started where the method says
+////   (`0x14053e5a0`), and the global row's (`0x14046afc0`, refusal `0x1403b14c0`).
+//// - **The costs and requirements.** Each is read as the client checks it (`0x1403b3320`,
+////   `0x1405e7980`, `0x1403b1780`, `0x1407a1750`); the spend: genesis_prime/shared/spend.
+//// - **A spell's conditions.** The press checks CasterCast then TargetCast (`0x1403ace00`); the
+////   persistences while the cast lasts (`Spell4.prerequisiteIdCasterPersistence`); bit 0 of
+////   each condition row says which life its unit must have (`Spell4.spell4ConditionsIdCaster`).
+//// - **No target rule.** No level-1 ability or innate needs a target the client picks
+////   (`Spell4TargetMechanics.targetType`); a press at another player reads `target_aim_of`.
+//// - **What fails the load.** A table row the tree names that the tables lack, a Prerequisite
+////   that nests itself, a cycle of Proxy effects, an effect row whose reading is an error.
 
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state

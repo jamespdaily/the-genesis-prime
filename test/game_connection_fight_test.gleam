@@ -461,10 +461,10 @@ pub fn the_clients_picture_of_a_creature_follows_its_news_and_only_a_creature_it
     as "a 0x88c marks the creature dead in the picture: a dead creature is never selected (Spell4ValidTargets.targetBitmask)"
 }
 
-pub fn an_area_press_strikes_a_shown_creature_that_fights_and_passes_over_one_that_never_fights_test() -> Nil {
+pub fn an_area_press_strikes_a_shown_creature_and_passes_over_one_drawn_lying_dead_test() -> Nil {
   use <- owned_test.run(10_000)
-  // The same Beast 3 m ahead, shown as unit 40 that fights and unit 41 that does not
-  // (`creature_life.Combat.fights`, False for a creature drawn lying dead): Paralytic Surge's
+  // The same Beast 3 m ahead, shown as unit 40 that an area may pick and unit 41 that it may not
+  // (`creature_combat.Combat.area_pickable`, False for a creature drawn lying dead): Paralytic Surge's
   // area holds both, and only the first is struck, damaged, killed and credited.
   let #(state, _) =
     game_connection_support.feed(
@@ -474,11 +474,11 @@ pub fn an_area_press_strikes_a_shown_creature_that_fights_and_passes_over_one_th
   let #(state, _) =
     game_connection_support.feed(
       state,
-      game_connection_support.beast_appears_not_fighting(unit_id: 41),
+      game_connection_support.beast_appears_lying_dead(unit_id: 41),
     )
   let #(_, struck) = press_and_close(state:, client_cast_id: 1)
   assert struck == [40]
-    as "the creature that never fights is no candidate of the area"
+    as "the creature drawn lying dead is no candidate of the area"
 }
 
 pub fn a_creatures_health_or_death_is_not_written_for_a_unit_the_client_does_not_show_test() -> Nil {

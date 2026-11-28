@@ -57,7 +57,7 @@ pub fn walker(
         unit_states: [],
         face: option.None,
         faced_yaw: option.None,
-        fights: True,
+        area_pickable: True,
       ),
     ),
   ])
@@ -156,7 +156,7 @@ pub fn creature_appears(
       hit_radius: 1.1,
       attackable: spawned.combat.attackable,
       hostile_to: spawned.combat.hostile_to,
-      fights: spawned.combat.fights,
+      area_pickable: spawned.combat.area_pickable,
     ),
   ))
 }

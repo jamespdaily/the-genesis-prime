@@ -2410,15 +2410,15 @@ fn creature_of_beast_appears_listing(
   })
 }
 
-/// The news `beast_appears` gives, of a Beast that takes no part in combat
-/// (`creature_combat.Combat.fights`), as the process of a creature drawn lying dead sends it.
-pub fn beast_appears_not_fighting(
+/// The news `beast_appears` gives, of a Beast no area may pick
+/// (`creature_combat.Combat.area_pickable`), as the process of a creature drawn lying dead sends it.
+pub fn beast_appears_lying_dead(
   unit_id unit_id: Int,
 ) -> Event(ConnectionEvent(Message, Answer)) {
   beast_appearing(unit_id:, yaw: 0.0, casts: [], as_spawn: fn(beast) {
     spawn.Spawn(
       ..beast,
-      combat: creature_combat.Combat(..beast.combat, fights: False),
+      combat: creature_combat.Combat(..beast.combat, area_pickable: False),
     )
   })
 }
@@ -2463,7 +2463,7 @@ pub fn beast_news(
       hit_radius: beast.combat.hit_radius,
       attackable: beast.combat.attackable,
       hostile_to: beast.combat.hostile_to,
-      fights: beast.combat.fights,
+      area_pickable: beast.combat.area_pickable,
     ),
   )
 }
@@ -2522,7 +2522,7 @@ pub fn creature_appears(
       hit_radius:,
       attackable: target.combat.attackable,
       hostile_to: target.combat.hostile_to,
-      fights: target.combat.fights,
+      area_pickable: target.combat.area_pickable,
     ),
   ))
 }

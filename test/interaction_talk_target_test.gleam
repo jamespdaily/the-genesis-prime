@@ -110,7 +110,7 @@ fn picture_with(creature_id creature_id: Int, gap gap: Float) -> shown.Picture {
         unit_states: [],
         face: option.None,
         faced_yaw: option.None,
-        fights: True,
+        area_pickable: True,
       ),
     ),
   ])

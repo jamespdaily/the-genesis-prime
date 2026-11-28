@@ -58,9 +58,11 @@
 ////   the row's own (`opcode.0x262.creature`): the client's weighted display pick
 ////   runs only for the spawns it makes itself (`0x1404846c0`).
 //// - **A level outside its row's range** is kept and listed in an info line.
-//// - **Who takes part in combat** (`Combat.fights`): a creature the client draws as a lying
-////   body, and that no kill objective counts, does not (genesis_prime/world_map/lying_body,
-////   `Creature2.uiFlags.bit8`); its faction's `hostile_to` and `attackable` are kept.
+//// - **Who takes part in combat** (`Combat.fights`, `Combat.area_pickable`): a creature the
+////   client draws as a lying body (`Creature2.uiFlags.bit8`), or one a player cannot target
+////   (`Creature2.flags.bit0`) with no attack row of its own, and that no kill objective
+////   counts, does not fight; only the lying body is out of a player's area
+////   (genesis_prime/world_map/combatant). Its faction's `hostile_to` and `attackable` are kept.
 //// - **What a creature brings to a fight** (`Combat`) is worked out here with the rest of
 ////   its values: the hit radius of its display (Creature2DisplayInfo.hitRadius), whom it
 ////   may be attacked by (a faction level toward each player faction of 7 or less,
@@ -135,10 +137,10 @@ import genesis_prime/table/spell4_effects
 import genesis_prime/table/unit_property2
 import genesis_prime/table/world
 import genesis_prime/world_map/checklist_index
+import genesis_prime/world_map/combatant
 import genesis_prime/world_map/creation_type
 import genesis_prime/world_map/creature_columns
 import genesis_prime/world_map/creature_faction.{type Factions}
-import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/spawn_cell.{type Cells}
 import genesis_prime/world_map/spawn_id.{
   type LoadedSpawns, type SpawnId, LoadedSpawns, SpawnId,
@@ -1116,7 +1118,7 @@ fn catalog(tables tables: table_store.Tables, kinds kinds: Kinds) -> Catalog {
     ),
     run_stopped_by: crowd_control.stopping_mask(tables:),
     special_plans: special_plans(tables:, kinds:),
-    kill_named: lying_body.kill_named(tables:),
+    kill_named: combatant.kill_named(tables:),
   )
 }
 
@@ -1193,6 +1195,7 @@ fn combat_of(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
   kind kind: Kind,
+  has_attack_row has_attack_row: Bool,
   creature creature: Creature2,
   level level: Int,
   bases bases: Bases,
@@ -1283,7 +1286,15 @@ fn combat_of(
         ),
       ),
       hostile_to: hostile_to_players(levels: catalog.factions, faction_id:),
-      fights: lying_body.fights(kill_named: catalog.kill_named, creature:),
+      fights: combatant.fights(
+        kill_named: catalog.kill_named,
+        has_attack_row:,
+        creature:,
+      ),
+      area_pickable: combatant.area_pickable(
+        kill_named: catalog.kill_named,
+        creature:,
+      ),
       defence: defence_of(formulas:, level:, value:),
       attack:,
       alternates: list.map(alternates, fn(alternate) { alternate.0 }),
@@ -2297,6 +2308,10 @@ fn load_checks(
           catalog:,
           formulas:,
           kind: creature_kind.kind_of(kinds:, creature2_id: row.creature_id),
+          has_attack_row: creature_kind.has_row(
+            kinds:,
+            creature2_id: row.creature_id,
+          ),
           creature:,
           level:,
           bases:,
