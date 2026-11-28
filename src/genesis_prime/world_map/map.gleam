@@ -719,6 +719,7 @@
 //// | the map has given every unit id | a join, a spawn's first creature or object, a summoned spawn and a crash replacement (after the kind's respawn time) each take one id, so a busy map can use all 2^20 of them; the map crashes, which ends its run and its players' connections, and the next run starts from 1 (`a_map_that_has_given_every_unit_id_crashes_naming_the_limit_test`) |
 //// | the map run ends | each creature's watch on the run ends and it stops; the players' connections end with the run (`a_creature_stops_when_its_run_ends_and_when_the_server_stops_test`, `a_map_run_that_ends_ends_its_creatures_test`, `the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_and_ends_the_connection_test`) |
 //// | the creature supervisor or the creature registry restarts | every creature and every map ends (genesis_prime/server) (`the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_two_subtrees_and_the_closer_last_in_that_order_each_with_its_settings_stated_test`, `a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_test`); the first shows the tree's shape and the second kills Maps: no test kills the creature supervisor or the registry |
+//// | the connections' registry (a `pg` scope) ends or stalls while the map registers or unregisters a unit | `Register` and `Unregister` are synchronous calls of the map's effect loop to the scope, with no timeout: a scope that ends between the map's read of its members and the call makes the map exit, which ends its run as "the map run ends", and a slow scope holds the map's step, as it holds every connection's zone-channel join; no test kills or slows the scope, and the gate's load runs (`load_moves`, `load_fight`) make no join or leave under load (`the_tree_starts_the_pool_the_store_the_hand_off_sessions_the_world_the_two_subtrees_and_the_closer_last_in_that_order_each_with_its_settings_stated_test` shows the game subtree that holds the scope) |
 //// | the sweep timer fires after a restart of the map | cannot happen: the timer lives in the process, and a restarted map starts its own |
 //// | a `Moved` comes before the player's `Ready` | sight is decided; no ring is, and no creature is told (`no_approached_before_ready_and_at_ready_one_for_each_ring_the_player_stands_in_test`) |
 //// | a `Ready` comes twice in one stay | the second changes nothing (the connection sends one a stay) (`a_second_ready_in_one_stay_changes_nothing_test`) |
@@ -1478,12 +1479,12 @@ fn landing_told(
   to to: UnitAddress,
   landing landing: Landing,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let relay.LandingKind(destination: relay.TellsUnitOfRun, source:) =
+  let relay.Kind(destination: relay.UnitOfRun, source:) =
     relay.landing_kind_of(landing:)
   let destination_admits = in_run(state:, address: to)
   let source_admits = case source {
-    relay.NoLandingSourceCheck -> True
-    relay.SenderIsUnitOfRun -> in_run(state:, address: from)
+    relay.NoSourceCheck -> True
+    relay.SenderUnitOfRun -> in_run(state:, address: from)
   }
   case destination_admits && source_admits {
     True -> #(
@@ -1674,7 +1675,8 @@ pub fn admitted(
     running(state:, unit_id:, life:),
     CreatureEnded,
   ))
-  let relay.Kind(destination: relay.UnitOfRun, source: relay.NoSourceCheck) =
+  // A creature's payload has no sender to check: its source is read by no arm.
+  let relay.Kind(destination: relay.UnitOfRun, source: _) =
     relay.kind_of(payload:)
   case in_run(state:, address: to) {
     True -> Ok(payload)
@@ -1779,7 +1781,7 @@ pub fn admitted_inbound(
   let relay.InboundKind(destination: relay.RunningCreature, source:) =
     relay.inbound_kind_of(inbound: payload)
   use _ <- result.try(case source {
-    relay.NoSenderCheck -> Ok(Nil)
+    relay.NoSourceCheck -> Ok(Nil)
     relay.SenderUnitOfRun ->
       case in_run(state:, address: from) {
         True -> Ok(Nil)
@@ -3520,7 +3522,7 @@ fn joined(
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   let #(state, removal) = case
-    list.find(unit_address.sorted_entries(state.players), fn(entry) {
+    list.find(dict.to_list(state.players), fn(entry) {
       { entry.1 }.joiner == joiner
     })
   {

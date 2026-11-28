@@ -1107,7 +1107,7 @@ fn modifier_started(
   let #(properties, changed) =
     unit_properties.apply(properties: state.properties, source:, modifier:)
   let #(held, _) =
-    held_changes.started_by_connection(held: state.held, by:, source:)
+    held_changes.started_by_caster(held: state.held, by:, source:)
   let state = State(..state, held:)
   let news = changed_news(state:, changed:)
   let #(state, revalued) = revalued(state:, properties:, now_ms:)

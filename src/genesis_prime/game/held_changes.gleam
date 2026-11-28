@@ -140,7 +140,7 @@ pub fn started(
 /// The source `source` held for the caster `by`, whose unit is not known and whose
 /// change ends with it: as `started`. A source held this way (a creature's)
 /// has no sight rule and lists nothing, and is taken only by `released_by` and `released`.
-pub fn started_by_connection(
+pub fn started_by_caster(
   held held: Held,
   by by: UnitAddress,
   source source: Source,

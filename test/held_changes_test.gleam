@@ -672,7 +672,7 @@ pub fn the_casts_a_player_holds_are_listed_for_a_create_from_its_ledger_test() -
   })
   // A source with no caster unit (a creature's) is held but listed to nobody.
   let #(held, _) =
-    held_changes.started_by_connection(
+    held_changes.started_by_caster(
       held: held_changes.new(),
       by: caster_address(3),
       source: source(cast_id: 7),

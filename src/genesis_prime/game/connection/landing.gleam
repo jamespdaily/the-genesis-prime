@@ -15,7 +15,7 @@
 ////
 //// - A heal's answer goes before T's own news, as a creature's does (genesis_prime/game/strike).
 //// - A heal reads the healer's outgoing multiplier from the tell (genesis_prime/game/heal_split).
-//// - A start needs its caster among T's viewers with the tell's stay, T alive; an end its holder.
+//// - A start needs its caster among T's viewers with the tell's address, T alive; an end its holder.
 //// - A spell with propertyFlags 0x100 survives UnseenBy (fact `cast.target_node_end`).
 //// - With the caster's unit gone, T writes the cast's 0x7fe once its last source ends.
 //// - A cast's went starts it for the viewers from the ledger (`held_changes.cast_views`).
@@ -409,7 +409,7 @@ pub fn gaps() -> List(gap.Entry) {
     ),
     gap.Entry(
       area: "Casting",
-      missing: "A kept change (a spell with propertyFlags 0x100) that a caster put on a player stays on the player after the caster joins again under a new stay, as after the caster left sight: only the caster's end tell or the removal of its unit takes it off (`held_changes.released_unseen`); the change's other sources end with the caster's earlier sight.",
+      missing: "A kept change (a spell with propertyFlags 0x100) that a caster put on a player stays on the player after the caster joins again under a new address, as after the caster left sight: only the caster's end tell or the removal of its unit takes it off (`held_changes.released_unseen`); the change's other sources end with the caster's earlier sight.",
     ),
     gap.Entry(
       area: "Casting",

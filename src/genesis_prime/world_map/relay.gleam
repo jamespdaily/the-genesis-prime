@@ -64,14 +64,17 @@ import genesis_prime/map/message.{
 
 /// The check on where a relayed payload goes.
 pub type Destination {
-  /// The unit the relay names is a unit of this run: one that left or ended is not.
+  /// The unit the relay or landing names is a unit of this run, whether or not it sees the
+  /// sender: one that left or ended is not.
   UnitOfRun
 }
 
-/// The check on where a relayed payload comes from.
+/// The check on where a relayed payload, an inbound payload or a landing comes from.
 pub type Source {
   /// No check: the payload's own rules decide.
   NoSourceCheck
+  /// The sender is a unit of this run.
+  SenderUnitOfRun
 }
 
 /// The destination and source checks of a payload's kind.
@@ -95,80 +98,47 @@ pub type InboundDestination {
   RunningCreature
 }
 
-/// The check on where an inbound payload comes from.
-pub type InboundSource {
-  /// No check: the payload's own rules decide.
-  NoSenderCheck
-  /// The sender is a unit of this run.
-  SenderUnitOfRun
-}
-
 /// The destination and source checks of an inbound payload's kind.
 pub type InboundKind {
-  InboundKind(destination: InboundDestination, source: InboundSource)
+  InboundKind(destination: InboundDestination, source: Source)
 }
 
 /// The kind of an inbound payload, from the table above.
 pub fn inbound_kind_of(inbound inbound: Inbound) -> InboundKind {
   case inbound {
     Strike(..) ->
-      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+      InboundKind(destination: RunningCreature, source: NoSourceCheck)
     TargetMoved(..) ->
       InboundKind(destination: RunningCreature, source: SenderUnitOfRun)
     StrikeAnswered(..) ->
-      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+      InboundKind(destination: RunningCreature, source: NoSourceCheck)
     ModifierStarts(..) ->
       InboundKind(destination: RunningCreature, source: SenderUnitOfRun)
     ModifierEnds(..) ->
-      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+      InboundKind(destination: RunningCreature, source: NoSourceCheck)
     Thrown(..) ->
-      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+      InboundKind(destination: RunningCreature, source: NoSourceCheck)
     Despawn(..) ->
-      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+      InboundKind(destination: RunningCreature, source: NoSourceCheck)
     UnitStates(..) ->
-      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+      InboundKind(destination: RunningCreature, source: NoSourceCheck)
     CastViewSet(..) ->
       InboundKind(destination: RunningCreature, source: SenderUnitOfRun)
     CastViewEnds(..) ->
-      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+      InboundKind(destination: RunningCreature, source: NoSourceCheck)
     ControlsEnd(..) ->
-      InboundKind(destination: RunningCreature, source: NoSenderCheck)
+      InboundKind(destination: RunningCreature, source: NoSourceCheck)
   }
 }
 
-/// The check on where a landing goes.
-pub type LandingDestination {
-  /// The told unit is a unit of this run, whether or not it sees the sender.
-  TellsUnitOfRun
-}
-
-/// The check on where a landing comes from.
-pub type LandingSource {
-  /// No check: the landing's own rules decide.
-  NoLandingSourceCheck
-  /// The sender is a unit of this run.
-  SenderIsUnitOfRun
-}
-
-/// The destination and source checks of a landing's kind.
-pub type LandingKind {
-  LandingKind(destination: LandingDestination, source: LandingSource)
-}
-
 /// The kind of a landing, from the table above.
-pub fn landing_kind_of(landing landing: Landing) -> LandingKind {
+pub fn landing_kind_of(landing landing: Landing) -> Kind {
   case landing {
-    HealStrike(..) ->
-      LandingKind(destination: TellsUnitOfRun, source: NoLandingSourceCheck)
-    HealAnswer(..) ->
-      LandingKind(destination: TellsUnitOfRun, source: NoLandingSourceCheck)
-    ChangeStart(..) ->
-      LandingKind(destination: TellsUnitOfRun, source: SenderIsUnitOfRun)
-    ChangeEnd(..) ->
-      LandingKind(destination: TellsUnitOfRun, source: NoLandingSourceCheck)
-    CastWent(..) ->
-      LandingKind(destination: TellsUnitOfRun, source: NoLandingSourceCheck)
-    AllyEvent(..) ->
-      LandingKind(destination: TellsUnitOfRun, source: NoLandingSourceCheck)
+    HealStrike(..) -> Kind(destination: UnitOfRun, source: NoSourceCheck)
+    HealAnswer(..) -> Kind(destination: UnitOfRun, source: NoSourceCheck)
+    ChangeStart(..) -> Kind(destination: UnitOfRun, source: SenderUnitOfRun)
+    ChangeEnd(..) -> Kind(destination: UnitOfRun, source: NoSourceCheck)
+    CastWent(..) -> Kind(destination: UnitOfRun, source: NoSourceCheck)
+    AllyEvent(..) -> Kind(destination: UnitOfRun, source: NoSourceCheck)
   }
 }

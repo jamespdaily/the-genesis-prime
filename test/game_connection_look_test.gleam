@@ -329,7 +329,7 @@ pub fn a_look_news_of_an_earlier_stay_is_dropped_test() -> Nil {
       )),
     )
   assert support.heard(taken, support.keyed()) == []
-    as "the news is for the player's second stay and the connection is in its first (ForUnit)"
+    as "the news is for the player's second address and the connection holds its first (ForUnit)"
 }
 
 // ---- the end of the player's stay ----

@@ -233,7 +233,7 @@ fn medic_after_a_camp() -> #(
 }
 
 pub fn a_message_for_an_earlier_address_reaches_no_unit_for_each_kind_test() -> Nil {
-  use <- owned_test.run(20_000)
+  use <- owned_test.run(10_000)
   let #(camped, again, key) = medic_after_a_camp()
   let kinds = sent_of_each_kind(key:)
   // In the world after `Joined`: each kind sent to the earlier address leaves the
