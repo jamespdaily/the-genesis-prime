@@ -46,7 +46,7 @@ jobs:
           fi
 
   # The tests of the tools that gate a merge (the check script, the setup check,
-  # the table extractor). None needs the client, the database or the patched OTP, so
+  # the table extractor). None needs the client, the database or an OTP, so
   # this job runs beside the part jobs instead of after them.
   tools:
     name: tools
@@ -58,9 +58,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
+      # A pull request's checkout is the merge commit of the head into the base, so its first
+      # parent is the base: a migration the base has is never modified, deleted or renamed.
+      - name: No migration of the base is changed
+        if: ${{ github.event_name == 'pull_request' }}
+        run: python3.13 -I dev/migration_base.py HEAD^1
       - name: Record the tree tested
         run: echo "::notice title=tested tree::tested tree $(git rev-parse 'HEAD^{tree}')"
       - run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
@@ -105,8 +111,7 @@ jobs:
     needs: [tested, scope]
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
-    # A cold run builds the patched OTP in 146 seconds on the runner and the whole cold
-    # setup takes 3 minutes 11 seconds (run 40316762854); a part that keeps using CPU is
+    # A part that keeps using CPU is
     # stopped and named by the check at its wall cap of 1500 s (GENESIS_CHECK_WALL_CAP_SECONDS
     # below), so 30 minutes covers the cold setup, that cap and the steps after it.
     timeout-minutes: 30
@@ -131,9 +136,7 @@ jobs:
     env:
       # The client's data is in the private repository dev/client_data.sh publishes to,
       # read with the secret CLIENT_DATA_KEY. A run without the secret (a fork's pull
-      # request) has no client, and its check skips the client's parts. The patched OTP is
-      # required either way, from GENESIS_OTP_DIR (set by the toolchain action), and first
-      # on PATH for ./check.
+      # request) has no client, and its check skips the client's parts.
       GENESIS_NO_CLIENT: ${{ secrets.CLIENT_DATA_KEY == '' && '1' || '' }}
       # The wall time a part warns over, and a third of the time after which a part that
       # has used no CPU for the idle window is hung.
@@ -328,7 +331,7 @@ jobs:
         uses: ./.github/actions/toolchain
       - name: Build the Gleam build
         if: steps.files.outputs.any == 'true'
-        run: PATH="$GENESIS_OTP_DIR/bin:$PATH" gleam build
+        run: gleam build
       - name: Repeat the added or changed test files
         if: steps.files.outputs.any == 'true'
         env:
@@ -354,7 +357,7 @@ jobs:
           gleam-lookup-only: "true"
       - name: Build the Gleam build
         if: steps.toolchain.outputs.gleam-cache-hit != 'true'
-        run: PATH="$GENESIS_OTP_DIR/bin:$PATH" gleam build
+        run: gleam build
       - name: Save the Gleam build
         if: steps.toolchain.outputs.gleam-cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

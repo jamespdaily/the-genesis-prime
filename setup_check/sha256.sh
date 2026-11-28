@@ -1,7 +1,7 @@
-# Sourced by dev/apply_migrations.sh and setup_check/build_patched_otp.sh
+# Sourced by dev/apply_migrations.sh, dev/client_data.sh and release/fetch_release.sh
 # (bash or POSIX sh): defines sha256, and nothing else. It is a file of its own
 # because setup_check/environment.sh, the other file both scripts could source,
-# also reads the machine's env.sh and changes PATH, which neither script wants.
+# also reads the machine's env.sh and sets variables, which no script that sources this wants.
 
 # sha256 FILE: the file's SHA-256 as lower-case hex, from whichever tool this
 # machine has: sha256sum (Linux) or shasum (macOS).
