@@ -1,106 +1,42 @@
 //// Character select, the first thing a game connection does once its session
 //// key is taken: the account's character list the client shows, and creating
-//// a character from it. It has its own state and effects, which the game
-//// connection's rule (genesis_prime/game/connection) holds one field of and
-//// turns into its own effects.
+//// a character from it. Its own state and effects sit in one field of the game
+//// connection's rule (genesis_prime/game/connection), which turns them into its own.
 ////
 //// ```
-//// game rule                              character select             effects
-//// the client's 0x07E0, account known ─▶ started(account_id)
-////                                                                   ─▶ Ask(ListCharacters(account))
-//// the client's 0x025B, decoded       ─▶ create_requested(..)
-////                                                                   ─▶ Ask(CreateCharacter(..))
-////                                                                      or Send(0x00DC), refused
-//// the client's 0x0352, decoded       ─▶ delete_requested(..)
-////                                                                   ─▶ Ask(DeleteCharacter(..))
-//// the client's 0x0786, decoded       ─▶ rename_requested(..)
-////                                                                   ─▶ Ask(RenameCharacter(..))
-////                                                                      or Send(0x014B), refused
-//// world entry refuses a play        ─▶ play_refused(..)
-////                                                                   ─▶ Send(0x0162), Ask(ListCharacters(account))
-//// the store's answer                  ─▶ listed(..), created(..), deleted(..) or renamed(..)
-////                                                                   ─▶ Send(0x097F), Send(0x0968), Send(0x0036), Send(0x0117)
-////                                                                      or Send(0x00DC), Send(0x00E6) or Send(0x014B)
+//// client                rule                    effects
+//// 0x07E0             ─▶ started(account_id)  ─▶ Ask(ListCharacters(account))
+//// 0x025B             ─▶ create_requested(..) ─▶ Ask(CreateCharacter(..))
+////                                               or Send(0x00DC), refused
+//// 0x0352             ─▶ delete_requested(..) ─▶ Ask(DeleteCharacter(..))
+//// 0x0786             ─▶ rename_requested(..) ─▶ Ask(RenameCharacter(..))
+////                                               or Send(0x014B), refused
+//// play refused       ─▶ play_refused(..)     ─▶ Send(0x0162), Ask(ListCharacters(account))
+//// the store's answer ─▶ listed(..), created(..), deleted(..) or renamed(..)
+////                                            ─▶ Send 0x097F, 0x0968, 0x0036, 0x0117
+////                                               or Send 0x00DC, 0x00E6 or 0x014B
 //// ```
 ////
-//// - **The list.** 0x0036 carries the highest level among the account's
-////   characters, 0 with none, and 0x0117 follows: the server's time, one entry
-////   per character in creation order, the realm's id and `max_characters` from
-////   the settings, and 0 in every field the client never reads or that no
-////   feature gives yet (opcode.0x36, opcode.0x117, 0x14002167a,
-////   opcode.0x117.character_unread). The creation id arrays are empty: the
-////   client then offers the CharacterCreation rows its own `enabled` column
-////   sets (0x140021bb0). An entry holds each field of the character's row,
-////   its body visuals from its look (genesis_prime/shared/appearance) and its
-////   bone values as sent.
-//// - **The worn gear.** The entry's worn visuals are those of the items the
-////   character holds at location 0 (genesis_prime/shared/worn_visual), which
-////   the 0x0262 of world entry draws too, and its slot mask, item ids and dyes
-////   give each drawn armour and weapon slot its bit, because the select screen
-////   draws those slots from the mask and takes the display from the worn
-////   visual (opcode.0x117.costume_slots, 0x140027380). An item the tables
-////   cannot dress is warned about and the entry is still sent. The dye is 0 as in the 0x0262; the costumes and
-////   colour sets left out are listed in `gaps`.
-//// - **The slots.** The client counts its own slots: 2 from its reward
-////   property, plus the count of the account's BaseCharacterSlots
-////   entitlement (12) when it holds one
-////   (lua.CharacterSelection.OnLoadFromCharacter). So the list is preceded by
-////   0x097F with the premium tier 1 and 0x0968 with the one entry
-////   (12, `character_slots` - 2), a count of 0 at 2 slots. The tier goes first:
-////   0x0968 makes the client refresh its tier, which drops from 255 to 0
-////   (Basic) unless 0x097F set it, and tier 1 keeps the Signature the client
-////   shows today (opcode.0x968, opcode.0x97f,
-////   lua.AccountItemLib.GetPremiumTier.users). The server never reads the
-////   gmode the client sends in 0x0592, so it sends the same to a client of the
-////   VIP system, whose base is 3: that client offers one slot more than the
-////   refusal of a create allows.
-//// - **What the client does with it.** It shows each character's name, level,
-////   the Dominion frame for faction 166 and the Exile frame for any other, the
-////   class icon for class 1 to 20 and the path icon for path 0 to 3, and
-////   builds the model from race, gender and class; with no characters it shows
-////   "no characters found" (lua.CharacterSelection.OnLoadFromCharacter.list).
-//// - **Create.** A request is checked (genesis_prime/game/character_creation)
-////   and then the store makes the character; 0x00DC answers with the result:
-////   CreateOk with the id, name length for a name the table's rule 0 refuses,
-////   name unavailable, account full, or the result a refusal maps to, with 0
-////   for the character and for the field the client never reads (opcode.0xdc,
-////   opcode.0xdc.field_2). A request that fails the checks is refused at once
-////   and the store is not asked.
-//// - **Delete.** The store deletes the character only when the account has
-////   it; 0x00E6 answers with result 0 and a value of 0, which the client reads
-////   only for a guild leader's count, or with result 1 and a warning for a
-////   character the account does not have. The client removes the character
-////   from its own list and rebuilds it, so no 0x0117 follows
-////   (opcode.0xe6, opcode.0xe6.value, lua.CharacterSelection.OnCharacterDeleteResult).
-//// - **Rename.** The store renames the character when the account has it and it
-////   is marked, and clears the mark. 0x014B answers 18 with the id and the stored
-////   name, 15 for a name that fails rule 0, which the table refuses, 16 for a name
-////   another character has in any case, and 13 with a
-////   warning for a character that is not the account's or not marked
-////   (opcode.0x14b, lua.CharacterSelection.OnCharacterRenameResult). A
-////   character's entry carries the rename bit the client offers a rename by
-////   (lua.CharacterSelection.OnSelectCharacter).
-//// - **A play world entry refuses.** The client plays a character with 0x07DD
-////   and waits for 0xAD or 0x162 with no timeout (genesis_prime/game/world_entry).
-////   For a character the account does not have, or one with no saved place,
-////   world entry hands back here: the server sends 0x0162 with Failed and the
-////   list again, which closes the create screen and the refusal box together
-////   (opcode.0x162.after_create). The list selects its character by the
-////   client's own rule: the pending in-world character, else among the
-////   characters with a last logout the one with the largest, else the first.
-////   The character the request named is sent with a last logout of a moment
-////   ago, and every other with 0, which is none, so it is the one selected
-////   (lua.CharacterSelection.OnLoadFromCharacter.preselect, 0x1401e83a0).
-//// - **Its asks and their answers are its own.** It asks the store itself and
-////   takes each request's answer in the function of that request (`listed`,
-////   `created`, `deleted`, `renamed`), which refuses an answer while no such ask is out. The game connection's rule holds the client's frames
-////   while an ask is out (`waiting`), so a second request is taken only after
-////   the answer to the first.
-//// - **No answer.** The client waits for 0x0117 and for 0x00DC with no
-////   timeout (lua.Character.OnCharacterList, opcode.0xdc), so the game
-////   connection ends the connection, after telling the client, when an ask
-////   every store ask shares fails (the store unavailable, not running, ended
-////   or silent); this module is given only the answers its asks get.
+//// - 0x0036 carries the highest level among the account's characters, 0 with none (opcode.0x36).
+//// - 0x0117 follows: server time, entries in creation order, unread fields 0 (opcode.0x117).
+//// - Unread fields are 0 (0x14002167a, opcode.0x117.character_unread).
+//// - Creation id arrays stay empty; CharacterCreation's `enabled` rows decide (0x140021bb0).
+//// - An entry: row fields, the look's body visuals (genesis_prime/shared/appearance), bone values.
+//// - Worn visuals and slot mask: the items at location 0 (genesis_prime/shared/worn_visual).
+//// - An item the tables cannot dress is warned about; the entry is still sent.
+//// - The client counts its slots as 2 plus the BaseCharacterSlots entitlement
+////   (lua.CharacterSelection.OnLoadFromCharacter), so the list sends 0x097F (tier 1)
+////   before 0x0968's entry (12, `character_slots` - 2) (opcode.0x97f, opcode.0x968).
+//// - A create is checked against the client's tables (genesis_prime/game/character_creation):
+////   a failure refuses at once; else the store is asked (opcode.0xdc).
+//// - A delete asks the store, which deletes only a character of the account (opcode.0xe6).
+//// - A rename asks the store for a marked character of the account (opcode.0x14b).
+//// - World entry (genesis_prime/game/world_entry) refuses a play: 0x0162 with Failed and
+////   the list again with that character selected (opcode.0x162.after_create).
+//// - The store's answer goes to its ask's function (`listed`, `created`, `deleted`, `renamed`);
+////   an answer while no such ask is out is refused.
+//// - The game connection holds the client's frames while an ask is out (`waiting`).
+//// - Costumes and item colour sets stay unsent in the list; `gaps` lists them.
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, type FrameError, Frame}

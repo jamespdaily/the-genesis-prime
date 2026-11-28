@@ -1,83 +1,39 @@
-//// A creature's guard: the feature of the creature's rule (genesis_prime/world_map/creature)
-//// that makes a creature take no damage until a crowd-control state breaks its charge, and
-//// opens it to damage for a while after. The Sim-Turrets of the tutorial have it: Spell4 85474
+//// A creature's guard: the creature takes no damage until a crowd-control state breaks its
+//// charge, then opens to damage for a while. The tutorial's Sim-Turrets have it: Spell4 85474
 //// "Turret Immune" guards, Spell4 85472 "Moment of Opportunity" opens. It runs in the creature's
-//// process, so every 0x7ff, 0x7f4, 0x811, 0x87f, 0x880 and 0x7fe of the guard's casts comes from
-//// the unit's one owner. The charge's break is the fight's (genesis_prime/world_map/creature_fight);
-//// the states are creature_control's; this feature holds only what the guard and the opening are.
+//// process (genesis_prime/world_map/creature); the charge's break is the fight's
+//// (genesis_prime/world_map/creature_fight) and the states are creature_control's.
 ////
 //// ```
-//// P's connection            creature C: fight            creature C: guard             C's viewers
-//// the creature starts (the map starts each life):
-////                                                        `new` ─▶ Guarded(cast id)
-////                                                        ─0x7ff(85474) 0x7f4(target C, effect 224666,
-////                                                           lifetime 0)────────────────────────────▶
-//// a viewer arrives:                                      `shown`: the same 0x7ff and 0x7f4 for that
-////                                                           viewer alone; Opened: the opening's too
-//// the fight's charge is Charging, a state of creature_control lands (`Controlled`):
-//// ◀── answer(Landed) ◀── 0x87f(state) from creature_control
-////                          the charge breaks: CancelTimer(CastEnds), ─0x7f9(cast, 11) 0x7fe─────▶
-////                          ChargeInterrupted(charge's cast id) ─▶ Interrupted(charge_cast) ─▶ Opened(generation):
-////                                                        ─0x7ff(85472, a new id) 0x7f4(C: 224705, 224715,
-////                                                           225189) 0x811(85474's cast, C) 0x87f(C, 9)
-////                                                           0x87f(C, 12)─▶ StartTimer(OpeningEnds, ends_after_ms)
-//// damage while Opened:                                   the strike lands as on any creature
-//// OpeningEnds of the opening's generation:
-////                                                        ─0x880(C, 9) 0x880(C, 12) 0x7fe(85472's cast)─▶
-////                                                        Guarded(a new cast): ─0x7ff(85474) 0x7f4─────▶
-//// C is killed (Guarded or Opened):                       Guarded: no frame; Dormant, which shows nothing and
-////                                                           holds no cast. Opened: CancelTimer(OpeningEnds),
-////                                                           ─0x7fe(85472's cast)─▶ Dormant (the death clears
-////                                                           the states, not the cast); the creature ends
-////                                                           at its corpse timer, and its next life is a new
-////                                                           guard with a new `Guarded` cast
+//// start:     `new` ─▶ Guarded(cast): ─0x7ff(85474) 0x7f4(224666, lifetime 0)─▶ viewers
+//// viewer:    `shown`: the guard's or the opening's cast, for that viewer alone
+//// interrupt: the fight's `Interrupted(charge_cast)` ─▶ Opened(generation):
+////            ─0x7ff(85472) 0x7f4(224705, 224715, 225189) 0x811(guard's cast) 0x87f(states)─▶
+////            StartTimer(OpeningEnds)
+//// timer end: ─0x880(states) 0x7fe(opening's cast)─▶ viewers; Guarded(a new cast)
+//// killed:    Guarded: no frame ─▶ Dormant; Opened: CancelTimer, ─0x7fe─▶ Dormant
 //// ```
 ////
-//// - **The guard takes no damage.** The client reads no immunity: nothing reads Spell4Effects type
-////   79, so the guard is the server's alone (`Spell4Effects.effectType.79`). A strike whose
-////   offence is damage answers `Immune` (genesis_prime/shared/strike_tell), and the striker's
-////   connection writes the 0x247 of type 18, the one immunity the client shows
-////   (`opcode.0x247.immunity`); a strike with no damage answers `Landed` with none. A state a strike carries still lands (creature_control).
-//// - **The guard is shown by its cast.** The 85474 cast, 0x7ff and a 0x7f4 holding a target info
-////   for the creature with effect 224666, a non-zero instance id and lifetime 0, never ends on the
-////   client, and its 0x7fe is held back (a 0x7fe destroys the node and the buff: `cast.target_node_end`).
-////   Taking the guard off is 0x811 of its cast, putting it back a new cast
-////   (`Spell4.85472.viewer`).
-//// - **The opening is shown by its cast, then its states.** 0x87f alone does not show the target
-////   frame's sprite: that needs the CCStateSet effect on the unit (`TargetFrame.lua
-////   UpdateInterruptArmor`). So the 85472 cast goes to every viewer, 0x7ff and a 0x7f4 whose
-////   target info for the creature holds effect infos 224705 (state 9), 225189 (state 12) and 224715
-////   (Fluff, 15 s), each with its own non-zero instance id, then a 0x87f for each state with its
-////   effect's instance id. The 0x87f carries no duration: the effect's lifetime in the go does.
-////   A state never ends by time on the client, so the end is 0x880 for each, then the cast's 0x7fe.
-//// - **An opening cannot be opened again** while it lasts: no charge starts under it (the fight's
-////   `controlled` is true while `opened`: Spell4 85469 prerequisiteIdCasterCast 41722), so no second
-////   interrupt reaches `Interrupted`; one that does (two inputs in one step) opens nothing more.
-//// - **Casts take ids with the fight's.** The guard's casts are ids of the unit's id space
-////   (`cast_state.cast_id`) taken with `cast_state.mint`, given the fight's live casts, and the fight's take
-////   the guard's (`live_casts`), so neither holds an id the other still has. The interrupted
-////   charge's id still counts as live when the opening takes its own, so the opening's id differs
-////   from the id of the 0x7f9 that was just sent.
-//// - **Which creature.** A kind with a guard and an opening (genesis_prime/shared/creature_kind)
-////   gives its creature one; the load refuses a spell whose effects are not the ones the creature
-////   applies (`creature_guard_spells.guard_of`). A creature with none has no guard: `Bare`, takes damage, opens nothing.
-//// - **A dead creature has no guard up.** `Dormant` is a creature with a guard that is dead: nothing
-////   shown, no live cast, no damage immunity, no opening. The creature ends at its corpse timer, and
-////   its next life is a new guard: a creature killed while open comes back guarded.
-//// - **Instance ids** of the opening's effects are the creature's own counter, from 1, and are never
-////   used twice in its life.
-////
-//// What happens at each failure point of the guard:
-////
-//// | Step | Creature killed there | Twice at once | Late |
-//// |---|---|---|---|
-//// | The creature starts guarded | n/a | n/a | n/a |
-//// | A viewer arrives | n/a | the viewer is told the guard (or the opening) by `shown`, as the 0x262 | its 0x262 comes before the casts; a 0x87f for a unit the client does not have yet is skipped (`opcode.0x87f`) |
-//// | A state lands outside a charge | nothing opens (`a_state_on_a_guarded_turret_outside_a_charge_lands_and_opens_nothing_test`) | creature_control's own rules | n/a |
-//// | A state lands during the charge (`Interrupted`) | the charge's cast is finished by the fight's death branch, and the guard is `Dormant` | two states for one charge: the first breaks the round, the second finds none and opens nothing (`a_second_state_in_the_same_round_opens_nothing_more_test`) | a state after the go: the round is `Striking`, so no interrupt (`an_interrupt_after_the_go_opens_nothing_test`) |
-//// | The opening is open, its timer armed | no 0x880, the death clears the states (`SetUnitDead`); the opening's cast is finished, which the death leaves standing; the timer is cancelled; `Dormant` (`a_turret_killed_while_opened_gives_its_kill_credit_test`) | n/a | n/a |
-//// | The opening's timer fires | its generation is gone: nothing (`an_opening_end_after_death_does_nothing_test`) | n/a | the guard returns (`the_opening_ends_after_15_seconds_and_the_guard_returns_test`) |
-//// | The corpse timer ends the creature | n/a | n/a | its next life starts guarded with a first cast, no opening (`a_respawned_turret_stands_guarded_test`) |
+//// - **The guard takes no damage:** the client reads no immunity
+////   (`Spell4Effects.effectType.79`); a strike whose offence is damage answers `Immune`
+////   (genesis_prime/shared/strike_tell), shown by 0x247 type 18 (`opcode.0x247.immunity`).
+//// - **The guard is shown by its cast:** the 85474 cast, 0x7ff and a 0x7f4 of effect 224666 with
+////   lifetime 0, never ends; its 0x7fe is held back (`cast.target_node_end`). Taking it off is a
+////   0x811 of its cast, putting it back a new cast (`Spell4.85472.viewer`).
+//// - **The opening is shown by its cast, then its states:** 0x87f alone shows no target-frame
+////   sprite (`TargetFrame.lua UpdateInterruptArmor`); each state's 0x87f goes with its effect's
+////   instance id, and each state ends by a 0x880, then the cast's 0x7fe.
+//// - **An opening cannot open again while it lasts:** no charge starts under it (Spell4 85469
+////   prerequisiteIdCasterCast 41722), so no second interrupt reaches `Interrupted`.
+//// - **Casts take ids with the fight's:** `cast_state.mint` mints each against the fight's live
+////   casts, and the fight's casts mint against the guard's (`live_casts`).
+//// - **Which creature:** a kind with a guard and an opening
+////   (genesis_prime/shared/creature_kind) gives one; the load refuses a spell with other effects
+////   (`creature_guard_spells.guard_of`); a creature with none is `Bare`.
+//// - **A dead creature has no guard up:** `Dormant` shows nothing, holds no cast; the next life
+////   starts guarded.
+//// - **Instance ids** of the opening's effects are the creature's own counter, from 1, never used
+////   twice in its life.
 
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state

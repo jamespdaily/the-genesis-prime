@@ -2,81 +2,32 @@
 //// the player: the rule behind "Bon Voyage" (Quest2 10528, Exile; 10530, Dominion).
 ////
 //// ```
-//// 0x97 ─▶ the terminal's prerequisite (`objective_link.of`) ─ closed ─▶ 0x7fc, no 0x7fd
-////                                                           └ open ───▶ 0x7fd ─▶ yes ─▶ the cast's Activated(unit, creature)
+//// 0x97 ─▶ the terminal's prerequisite (`objective_link.of`)
+////   ├ closed ─▶ 0x7fc, no 0x7fd
+////   └ open ─▶ 0x7fd ─▶ yes ─▶ the cast's Activated(unit, creature)
 //// Activated ─▶ landing ─ Ok(place) ─▶ objective.Used counts what is open
 ////                                      ─▶ Entered.departing = Some(place), 0 ms `timer`
 //// timer ─▶ connection/departures.due ─▶ leave the tutorial map, join the landing's
 //// world entry ─▶ recovered ─▶ a login between the count and the move enters at the landing
 //// ```
 ////
-//// - **The terminals** (`terminals`): each terminal's Creature2, the faction's quest and
-////   travel objective, its own choice objective and its landing's WorldLocation2 row.
-////   Each Exile choice objective's `worldLocationsIdIndicator00` names a WorldLocation2
-////   row in world 3460 (21328 names 51696, 21329 names 51695), and the world data's
-////   spawns of the Exile terminals stand within 0.6 of those rows (73606 of 51696, 73605
-////   of 51695, source: the world database). The Dominion pair's indicators (21349 names
-////   52748, 21350 names 52747) have no spawn to compare, so their match to Levian Bay and
-////   Crimson Isle rests on the objectives' texts ("fairly sure"). No client column ties a
-////   terminal to its landing: that match is the texts too.
-////
-////   | Terminal | Spell4 | Choice objective | Landing | World / zone |
-////   |---|---|---|---|---|
-////   | 73606 Northern Wilds | 34680 | 21328 | 42074 | 426 / 648 |
-////   | 73605 Everstar Grove | 34681 | 21329 | 41641 | 990 / 1417 |
-////   | 74773 Levian Bay | 50279 | 21349 | 42148 | 1387 / 1411 |
-////   | 74772 Crimson Isle | 37270 | 21350 | 8223 | 870 / 1236 |
-////
-////   The travel objective is 21327 (Exile, quest 10528, after the talk 21326) or 21348
-////   (Dominion, quest 10530, after the talk 21347); either terminal of the faction counts
-////   it. Crimson Isle lands at 8223, as `start_place` does.
-//// - **The client's gate** (`Creature2.prerequisiteIdAnimState`): each Exile terminal has
-////   the prerequisite 41793 and each Dominion terminal 42982, flags 1 (any of): the faction's
-////   quest has its objective 1 open, or is in state 2 or 3
-////   (`departures.no_client_gate`). The server offers the terminal exactly when the
-////   client does (`objective_link.of`), so a player without the quest or with the talk not
-////   done is refused with 0x7fc before 0x7fd, and a press with the travel done and the quest
-////   achieved or completed is offered. `landing` gives the landing in those same cases, so
-////   that yes moves the player again, and counts only what is still open.
+//// - **The terminals** (`terminals`): each terminal's Creature2, quest, travel and choice
+////   objectives and landing WorldLocation2 row. No client column ties a terminal to its
+////   landing; the match rests on the choice objectives' `worldLocationsIdIndicator00`
+////   rows, the world data's spawns (the world database) and the objectives' texts.
+//// - **The client's gate** (`Creature2.prerequisiteIdAnimState`, `departures.no_client_gate`):
+////   the server offers a terminal exactly when the client does (`objective_link.of`), and
+////   `landing` answers a yes in the same cases.
 //// - **The count** (`QuestObjective.type.23`): the client counts a use of any unit in the
-////   objective's TargetGroup with no mask, and the three objectives of a faction share one
-////   group, so `choice_terminal` ties each choice objective to its terminal for
-////   `objective.counts`.
+////   objective's TargetGroup with no mask, and a faction's objectives share one group, so
+////   `choice_terminal` ties each choice objective to its terminal for `objective.counts`.
 //// - **The move** is an in-world 0xad and the usual burst (`0x1403b6de0.resets`) with the
-////   quest log kept (`quest_log.process_wide`), which the Holocrypt's leave and join do
+////   quest log kept (`quest_log.process_wide`), by the Holocrypt's leave and join
 ////   (`connection/departures`).
 //// - **The recovery** (`recovered`): a save between the count and the move holds the
 ////   counted choice and a place in the tutorial, and the next login enters at the
-////   choice's landing, so no failure between them strands the player at a terminal whose
-////   travel is done.
-////
-//// Failure table:
-////
-//// | What goes wrong | What happens | Where |
-//// |---|---|---|
-//// | A press without the quest, or with the talk not done | 0x7fc TargetIsNotUseable before 0x7fd; no window, nothing counted, no move | `objective_link.of`, `cast.activation_pressed` |
-//// | A press on a terminal of the other faction | Closed link, as above | `objective_link.of` |
-//// | A press, or a second yes, with the travel done (quest state 2 or 3) | Offered, as the client offers it; the yes moves the player to the landing and counts nothing | `landing` |
-//// | No, or the timeout | 0x7f9 146 and 0x7fe; nothing counted, no move | `cast.answered` |
-//// | A yes for a cast that is not live | Debug log; nothing counted, no move | `cast.answered` |
-//// | The quest is abandoned while the window is open, then yes | The cast goes and finishes; nothing counted, no move | `landing` refuses at `Activated` |
-//// | The terminal has left the player's picture by the go | Nothing counted, no move; the player may press again | `connection/casting.cast_effects` `Activated` branch |
-//// | The timer fires once the player is no longer in the world (camp, end) or is dead | Nothing | `connection/departures.due` |
-//// | The timer fires while the connection holds the player but is not in the world (an ask is out, the claim of the account waits) | The timer is started again, and the leave begins once the player is in the world | `connection/departures.due` |
-//// | The player logs out between the count and the timer | The camp's save holds the counted choice and the tutorial place; the next login enters at the landing | `recovered`, `world_entry.loaded` |
-//// | The client disconnects between the count and the timer | The disconnect's save holds the same; the next login enters at the landing | `recovered`, `world_entry.loaded` |
-//// | The player dies between the count and the timer | The death's save holds the same; the next login enters at the landing | `recovered`, `world_entry.loaded` |
-//// | The server stops gracefully between the count and the timer | Each connection's final save holds the same; the next login enters at the landing | `recovered`, `world_entry.loaded` |
-//// | The server stops between the count and the next save | The save before the count holds the log without it: the player logs in in the tutorial with the travel open and presses again | the save timer |
-//// | A saved log with a choice counted, saved in the tutorial after a failed move | The login enters at the landing | `recovered` |
-//// | A saved log with a choice counted, saved outside the tutorial | The login enters at the saved place | `recovered` |
-//// | The old map gives no answer to the leave | The connection ends (LostUserServer) | `connection/world.leave_answered` |
-//// | The landing map refuses the join | 0x594, then character select, and a warning is logged; nothing is saved, so the next login enters the tutorial with the travel open, or at the landing after a save of the counted choice, and is refused the same way | `connection/world.entry_answered` with `FromInWorld`, `world_entry.joined` |
-//// | The landing map gives no answer to the join | The connection ends (LostUserServer) | `connection/world.entry_answered` |
-//// | Client frames during the leave and the join | They wait, as for the Holocrypt | `connection/world` |
-//// | The old stay's news after the leave | Dropped by the stay check | `genesis_prime/world_map/stay` |
-//// | A 0x637 the client sent before the 0xad reached it | Dropped until the first 0xf2; the map is told nothing | `connection/movement`, `InWorldLoading` |
-//// | The client lacks a terminal's Creature2, QuestObjective, Quest2 or WorldLocation2 row | The table load fails at start | `requirements` |
+////   choice's landing, so no failure between them strands the player at a terminal
+////   whose travel is done.
 
 import genesis_prime/game/objective_kind
 import genesis_prime/game/start_place.{type Place}
