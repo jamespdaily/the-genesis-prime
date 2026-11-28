@@ -14,10 +14,19 @@
 #   main's commit new, its check run passed, and no image  builds genesis-play:<commit> from a
 #     of it yet                                              clean `git archive` of it, and refuses
 #                                                            an image that holds a file of the client's
-#   main's commit new and its check run passed             applies the new migrations to the play
-#                                                            database, then replaces the server container
-#                                                            at once, players connected or not, and waits
-#                                                            for its ready line
+#   main's commit new, its check run passed, and its image   records it as deployed ($state/recorded) and
+#     inputs (what release/Containerfile copies, and           logs one line; no build, no migration, no
+#     priv/migrations, compared by git blob hashes) those      restart, so a merge of tools, tests or
+#     of the commit the server runs                            guidance never touches the running server
+#   main's commit new and its check run passed, a game       waits (one log line): no migration, no restart,
+#     connection open (the newest sitting folder of the        asked again at the next run; the wait is
+#     running commit holds a game connection recording         at most 3 hours from the first run that saw
+#     whose last line is not a closed line)                    the commit
+#   main's commit new and its check run passed, no game      applies the new migrations to the play
+#     connection open, or the 3 hours passed                   database, then replaces the server container
+#                                                            and waits for its ready line; after 3 hours
+#                                                            with a connection open it logs one line and
+#                                                            posts one alert line (alert in lib.sh)
 #   the new container does not come up                     logs its state and exit code, puts back the
 #                                                            last revision that came up, and does not try
 #                                                            the failed commit again
@@ -38,7 +47,10 @@
 # most 5 times by itself. The address is GENESIS_PLAY_ADDRESS of
 # ~/.genesis-prime/env.sh, worked out at each run, and the server container is
 # labelled with the commit and the address it was given, which is how the next
-# run knows what is deployed; $state/good names the last commit that came up and
+# run knows what is deployed (a running container's labels cannot change, so a commit
+# recorded without a restart is a line "COMMIT DEPLOYED" in $state/recorded, valid while the
+# container still runs DEPLOYED; $state/waiting_since holds the newest commit a deploy waits for
+# and the epoch second of the first run that waited, kept while newer commits arrive); $state/good names the last commit that came up and
 # $state/skipped the commits not to try again. Before a deploy the installed copies
 # of these scripts (in $state/bin) are replaced with the new commit's and read again, so
 # the new commit's launcher starts the new container.
@@ -61,7 +73,8 @@
 # stale_hold_alerted, removed when the lock or hold is gone.
 #
 # GENESIS_PLAY_UP_ATTEMPTS (default 300) and GENESIS_PLAY_POLL_SECONDS (default 1)
-# set how long a new container has to say its ready line.
+# set how long a new container has to say its ready line; GENESIS_PLAY_WAIT_SECONDS
+# (default 10800) sets how long a deploy waits for game connections to close.
 #
 # Usage: update.sh
 set -euo pipefail
@@ -279,6 +292,10 @@ fi
 if [ -n "$main_commit" ] && is_skipped "$main_commit"; then
   main_commit=
 fi
+{ read -r recorded_commit recorded_over <"$state/recorded"; } 2>/dev/null || true
+if [ -n "$main_commit" ] && [ "${recorded_commit:-}" = "$main_commit" ] && [ "${recorded_over:-}" = "$deployed_commit" ]; then
+  main_commit=
+fi
 
 if [ -n "$main_commit" ] && [ "$main_commit" != "$deployed_commit" ]; then
   status=0
@@ -292,6 +309,15 @@ if [ -n "$main_commit" ] && [ "$main_commit" != "$deployed_commit" ]; then
   fi
   case $status in
     0)
+      fetch_repository || { log "could not fetch $branch to compare $main_commit with $deployed_commit; nothing done for it"; exit 1; }
+      if [ -n "$deployed_commit" ] &&
+        wanted=$(image_inputs "$main_commit") && held=$(image_inputs "$deployed_commit") &&
+        [ "$wanted" = "$held" ]; then
+        echo "$main_commit $deployed_commit" >"$state/recorded"
+        rm -f "$state/waiting_since"
+        log "$main_commit has the image inputs of $deployed_commit; recorded as deployed, no rebuild and no restart"
+        exit 0
+      fi
       if ! podman image exists "genesis-play:$main_commit"; then
         built=0
         build_image "$main_commit" || built=$?
@@ -303,6 +329,9 @@ if [ -n "$main_commit" ] && [ "$main_commit" != "$deployed_commit" ]; then
       fi
       if live_lock_held; then
         log_once "a live session took the lock during the build; $main_commit is not migrated or deployed"
+        exit 0
+      fi
+      if deploy_waits "$main_commit"; then
         exit 0
       fi
       log "applying the migrations of $main_commit to $play_database"

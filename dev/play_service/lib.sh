@@ -35,6 +35,14 @@
 #   remote_head                    prints the commit the remote's branch is at; fails when it
 #                                  cannot be read
 #   live_lock_held                 whether a live session holds ~/.genesis-prime/live.lock
+#   image_inputs COMMIT            prints one hash of what the commit's release/Containerfile copies
+#                                  into the image (its COPY sources, and priv/migrations), made
+#                                  from the commit's git blobs in $state/repository.git; fails when
+#                                  the commit or its Containerfile is not there
+#   game_connection_open COMMIT    whether the newest sitting folder of that commit's server holds
+#                                  a game connection recording whose last line is not a closed line
+#   deploy_waits COMMIT            whether a deploy of COMMIT waits for a game connection to close;
+#                                  see update.sh for the limit, the log lines and the alert
 #   alert_stale_stands             posts one alert line, once per lock or hold, when the live lock
 #                                  or the hold has stood over an hour while the remote's branch is
 #                                  at a commit the server container does not run; never takes the
@@ -169,6 +177,74 @@ remote_head() {
 }
 
 live_lock_held() { [ -d "$home/live.lock" ]; }
+
+image_inputs() {
+  local commit=$1 sources inputs
+  sources=$(git -C "$state/repository.git" show "$commit:release/Containerfile" 2>/dev/null |
+    awk '$1 == "COPY" && $2 !~ /^--from/ { for (i = 2; i < NF; i++) if ($i !~ /^--/) print $i }') || return 1
+  [ -n "$sources" ] || return 1
+  sources=$(printf '%s\npriv/migrations\n' "$sources")
+  inputs=$(git -C "$state/repository.git" ls-tree -r "$commit" 2>/dev/null |
+    sources="$sources" awk '
+      BEGIN {
+        count = split(ENVIRON["sources"], list, "\n")
+        for (i = 1; i <= count; i++) {
+          pattern = list[i]
+          sub("/$", "", pattern)
+          gsub("[.]", "\\.", pattern)
+          gsub("[*]", "[^/]*", pattern)
+          expression[i] = "^" pattern "(/|$)"
+        }
+      }
+      {
+        path = substr($0, index($0, "\t") + 1)
+        for (i = 1; i <= count; i++) if (path ~ expression[i]) { print; matched = 1; break }
+      }
+      END { exit matched ? 0 : 1 }') || return 1
+  printf '%s\n' "$inputs" | git hash-object --stdin
+}
+
+# A server's recordings are the folders $home/sittings/<date>-play-<commit>; each game
+# connection of it is a genesis_prime.game.connection-*.jsonl whose last line says closed
+# once the connection ended. The newest folder of the commit is the running server's: an
+# older one of the same commit belongs to a container that crashed or was replaced, and
+# its open recordings stay open for good.
+game_connection_open() {
+  local folder recording
+  folder=$(find "$home/sittings" -maxdepth 1 -type d -name "*-play-$1" 2>/dev/null | sort | tail -n 1)
+  [ -n "$folder" ] || return 1
+  for recording in "$folder"/genesis_prime.game.connection-*.jsonl; do
+    [ -e "$recording" ] || continue
+    tail -n 1 "$recording" | grep -q '"closed"' || return 0
+  done
+  return 1
+}
+
+deploy_wait_seconds=${GENESIS_PLAY_WAIT_SECONDS:-10800}
+
+deploy_waits() {
+  local commit=$1 since_commit since_time now waited
+  { read -r since_commit since_time <"$state/waiting_since"; } 2>/dev/null || true
+  now=$(date +%s)
+  [ -n "${since_time:-}" ] || since_time=$now
+  echo "$commit $since_time" >"$state/waiting_since"
+  waited=$((now - since_time))
+  if ! game_connection_open "${deployed_commit:-}"; then
+    if [ "$waited" -gt 0 ]; then
+      log "no game connection is open now; deploying ${commit:0:8} after waiting ${waited} s"
+    fi
+    rm -f "$state/waiting_since"
+    return 1
+  fi
+  if [ "$waited" -ge "$deploy_wait_seconds" ]; then
+    log "a game connection is still open after ${waited} s; deploying ${commit:0:8} anyway"
+    alert "genesis play: ${commit:0:8} is deployed with a game connection open, after waiting ${waited} s" || true
+    rm -f "$state/waiting_since"
+    return 1
+  fi
+  log_once "a game connection is open; ${commit:0:8} is not deployed until it closes (up to ${deploy_wait_seconds} s from the first run that saw it)"
+  return 0
+}
 
 # The time a live lock or a hold may stand, with the remote's branch ahead of the server,
 # before alert_stale_stands posts it.
