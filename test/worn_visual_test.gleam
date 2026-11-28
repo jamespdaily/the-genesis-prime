@@ -16,6 +16,7 @@ import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
+import gleam/result
 import novice_tables
 import owned_test
 import planted_table.{Integer}
@@ -40,7 +41,7 @@ const feet = 81_345
 const hands = 81_380
 
 /// The slot and display of each drawn visual.
-fn slots_and_displays(worn worn: Worn) -> List(#(Int, Int)) {
+fn slots_and_displays(worn: Worn) -> List(#(Int, Int)) {
   list.map(worn.drawn, fn(drawn) {
     #(drawn.visual.slot.value, drawn.visual.display.value)
   })
@@ -51,7 +52,7 @@ fn worn_of(tables tables: table_store.Tables, items items: List(Int)) -> Worn {
 }
 
 pub fn the_slots_of_worn_items_are_drawn_in_slot_order_and_an_undrawn_item_is_left_out_with_its_reason_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
   let whole_set = [weapon, shield, hands, chest, feet, legs, shoulder]
   assert slots_and_displays(worn_of(tables:, items: whole_set))
@@ -104,7 +105,7 @@ pub fn the_slots_of_worn_items_are_drawn_in_slot_order_and_an_undrawn_item_is_le
 }
 
 pub fn the_select_screens_slot_mask_has_a_bit_for_each_worn_armour_and_weapon_slot_and_the_item_in_its_place_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
   let none = SlotMask(mask: 0, item2_ids: [], dyes: [])
   let seven_dyes = [0, 0, 0, 0, 0, 0, 0]
@@ -179,7 +180,7 @@ fn bit_of(bag_index bag_index: Int) -> Result(Int, Nil) {
 }
 
 pub fn a_slot_mask_bit_is_set_only_for_a_slot_with_a_drawn_visual_and_names_the_item_that_gave_it_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let tables = fixture_tables.shared()
   let sets = novice_tables.sets()
   qcheck.given(
@@ -209,25 +210,28 @@ pub fn a_slot_mask_bit_is_set_only_for_a_slot_with_a_drawn_visual_and_names_the_
             Error(Nil) -> Error(Nil)
           }
         })
-      assert mask.mask
-        == list.fold(expected, 0, fn(sum, pair) {
+      let expected_mask =
+        list.fold(expected, 0, fn(sum, pair) {
           int.bitwise_or(sum, int.bitwise_shift_left(1, pair.0))
         })
-      case expected {
-        [] -> {
-          assert mask.item2_ids == [] && mask.dyes == []
+      let in_place =
+        list.map([0, 1, 2, 3, 4, 5, 6], fn(bit) {
+          Item2Id(result.unwrap(list.key_find(expected, bit), 0))
+        })
+      assert mask
+        == case expected {
+          [] -> SlotMask(mask: 0, item2_ids: [], dyes: [])
+          _ ->
+            SlotMask(mask: expected_mask, item2_ids: in_place, dyes: [
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+            ])
         }
-        _ -> {
-          assert mask.item2_ids
-            == list.map([0, 1, 2, 3, 4, 5, 6], fn(bit) {
-              case list.key_find(expected, bit) {
-                Ok(item) -> Item2Id(item)
-                Error(Nil) -> Item2Id(0)
-              }
-            })
-          assert mask.dyes == [0, 0, 0, 0, 0, 0, 0]
-        }
-      }
     },
   )
 }

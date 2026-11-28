@@ -454,7 +454,7 @@ pub fn a_created_warriors_entry_gives_the_bot_its_novice_weapon_three_abilities_
 }
 
 pub fn a_created_warriors_next_list_entry_draws_its_set_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let time = driven_time.new()
   let #(started, port, account) = start(time:)
   let game = in_select(started:, port:, account:)

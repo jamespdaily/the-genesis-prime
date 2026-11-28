@@ -116,27 +116,13 @@ pub fn of_items(
   let assert Ok(properties) = item_property.sum(items: given)
     as "at most one shield is kept, so the items sum"
   let seen =
-    list.map(worn, fn(item) {
-      #(item, worn_visual.of_item(tables:, item2_id: item.item2_id.value))
-    })
+    worn_visual.of_items(
+      tables:,
+      item2_ids: list.map(worn, fn(item) { item.item2_id }),
+    )
   let visuals =
-    list.filter_map(seen, fn(pair) {
-      case pair.1 {
-        Ok(Some(visual)) -> Ok(visual)
-        Ok(None) | Error(_) -> Error(Nil)
-      }
-    })
-    |> list.sort(fn(first, second) {
-      int.compare(first.slot.value, second.slot.value)
-    })
-    |> list.map(worn_visual.item_visual)
-  let undrawn =
-    list.filter_map(seen, fn(pair) {
-      case pair.1 {
-        Error(error) -> Ok(#({ pair.0 }.item2_id, error))
-        Ok(_) -> Error(Nil)
-      }
-    })
+    list.map(seen.drawn, fn(drawn) { worn_visual.item_visual(drawn.visual) })
+  let undrawn = seen.undrawn
   let weapon =
     list.find(worn, fn(item) { item.bag_index == weapon_bag_index })
     |> result.map(fn(item) { item.item2_id })
@@ -297,11 +283,7 @@ pub fn warnings(gear gear: Gear, known known: Option(Gear)) -> List(String) {
   let undrawn =
     new_items(items: gear.undrawn, known: known_undrawn)
     |> list.map(fn(undrawn) {
-      let #(item2_id, error) = undrawn
-      "the worn item "
-      <> int.to_string(item2_id.value)
-      <> " is not drawn: "
-      <> worn_visual.describe(error:)
+      worn_visual.describe_undrawn(item2_id: undrawn.0, error: undrawn.1)
     })
   list.append(unread, undrawn)
 }

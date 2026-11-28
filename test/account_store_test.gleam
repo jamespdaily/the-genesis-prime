@@ -409,7 +409,7 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
 }
 
 pub fn the_character_list_answers_each_characters_items_worn_at_location_0_in_bag_order_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let store = account_store_support.start_store(pool_size: 2)
   let account =
     account_store_support.insert_account(store:, login_name: "login-1")

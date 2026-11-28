@@ -1257,7 +1257,12 @@ fn list_characters(
   let AccountId(account_id) = account_id
   query(fn() { sql.list_characters(pool, account_id) })
   |> result.map(
-    list.map(_, fn(row) { ListedCharacter(character: character(row), worn: []) }),
+    list.map(_, fn(row) {
+      ListedCharacter(
+        character: character(row),
+        worn: list.map(row.worn_item2_ids, Item2Id),
+      )
+    }),
   )
 }
 

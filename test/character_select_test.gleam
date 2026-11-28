@@ -268,7 +268,7 @@ pub fn an_entry_carries_the_body_visuals_of_its_look_and_its_bones_test() -> Nil
   )
     as "CharacterCustomization row 10 (race 1, sex 0, slot 25, labels 21 = 2 and 2 = 1, display 137): a Dominion human male with that look has display 137 on BodyFace"
   assert entry.worn_visuals == []
-    as "opcode.0x117.worn_visuals: a character that holds nothing at location 0 is drawn with none"
+    as "opcode.0x117.costume_slots: a character that holds nothing at location 0 is drawn with none"
   assert entry.bone_values == [0x3F800000, 0x40000000]
     as "opcode.0x25b: the bone values the client sent come back as they were"
   assert entry.costume_slot_mask == 0
@@ -283,15 +283,12 @@ const novice_chest = 81_359
 
 const novice_weapon = 81_346
 
-fn worn_by(
-  character character: Character,
-  items items: List(Int),
-) -> store.ListedCharacter {
+fn worn_by(character: Character, items: List(Int)) -> store.ListedCharacter {
   store.ListedCharacter(character:, worn: list.map(items, Item2Id))
 }
 
 fn listed_worn(
-  characters characters: List(store.ListedCharacter),
+  characters: List(store.ListedCharacter),
   tables tables: table_store.Tables,
 ) -> List(character_select.Effect) {
   let #(asking, _) = character_select.started(AccountId(7))
@@ -309,7 +306,7 @@ fn listed_worn(
 }
 
 pub fn an_entry_carries_the_worn_visuals_and_slot_mask_of_a_chest_piece_and_a_weapon_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let effects =
     listed_worn(
       [
@@ -336,7 +333,7 @@ pub fn an_entry_carries_the_worn_visuals_and_slot_mask_of_a_chest_piece_and_a_we
 }
 
 pub fn each_entry_carries_the_worn_items_of_its_own_character_in_the_lists_order_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   let effects =
     listed_worn(
       [
@@ -362,7 +359,7 @@ pub fn each_entry_carries_the_worn_items_of_its_own_character_in_the_lists_order
 }
 
 pub fn a_worn_item_the_tables_cannot_dress_is_warned_about_and_the_entry_is_still_sent_test() -> Nil {
-  use <- owned_test.run(60_000)
+  use <- owned_test.run(10_000)
   // A copy of the weapon at a power level no ItemDisplaySourceEntry of its source holds.
   use tables <- fixture_tables.added(
     table: "Item2",
