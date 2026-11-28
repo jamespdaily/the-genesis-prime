@@ -14,7 +14,6 @@ import client_tables
 import fixture_tables
 import game_client
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/press as cast_press
@@ -25,8 +24,6 @@ import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
 import genesis_prime/game/quest_advance
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{type News}
 import genesis_prime/message/cancel_cast.{CancelCast}
 import genesis_prime/message/cast_result.{type CastResult}
 import genesis_prime/message/client_side_interaction_result.{
@@ -55,6 +52,7 @@ import genesis_prime/message/spell_target_info.{
   type SpellTargetInfo, SpellTargetInfo,
 }
 import genesis_prime/message/spell_targets_removed
+import genesis_prime/shared/activate
 import genesis_prime/shared/area.{type Pose}
 import genesis_prime/shared/class_resource
 import genesis_prime/shared/damage
@@ -71,8 +69,10 @@ import genesis_prime/shared/spell_plan.{
   NoWeaponNeeded, Normal, Spell, StealthRow,
 }
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/target_mechanic
 import genesis_prime/shared/ticking
+import genesis_prime/shared/unit_news.{type News}
 import genesis_prime/shared/unit_properties
 import genesis_prime/shared/worn_visual.{WornVisual}
 import genesis_prime/step.{type LogLevel, type Now, type TimerId, Now, TimerId}

@@ -379,7 +379,7 @@
 //// A viewer's connection writes only what its client can take, from the units it has shown and
 //// the ones the map reported `Gone`.
 ////
-//// - **The unit** is a game-level value (genesis_prime/world_map/player_unit)
+//// - **The unit** is a game-level value (genesis_prime/shared/player_unit)
 ////   the map keeps for as long as the player is in it, standing where the
 ////   player's last `Moved` put it; the answer's 0x262 record is built from it
 ////   with the map's realm, and the answer carries the unit's typed loadout and
@@ -745,16 +745,18 @@
 //// | a released object has a creature or a static object at its x and z | the creature takes 856's path (`Retire`, `Gone`, a restart after the wait); the static object is released with it, on its own timer (`a_released_creature_takes_the_creature_at_its_x_and_z_with_it_test`, `a_creature_keyed_release_also_unsees_a_static_captive_at_its_x_and_z_test`) |
 //// | a creature captive of a released object is not live at the release (dormant, waiting for a restart or failed) | it is not held out: a captive that is waiting or dormant may start during the release time, a failed one stays failed; the player who used the object stands in sight of it, so its captive is normally live (`a_captive_creature_that_is_waiting_failed_or_dormant_when_its_object_is_released_is_left_as_it_is_test`, `a_creature_captive_of_a_released_static_object_is_released_with_it_test`) |
 
-import genesis_prime/game/chat_tell.{type Said as ChatSaid}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{type PeerNews, Appeared, PeerNews}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/shared/appearance
+import genesis_prime/shared/chat_tell.{type Said as ChatSaid}
+import genesis_prime/shared/creature_kind.{type Kinds}
 import genesis_prime/shared/hit_radius
 import genesis_prime/shared/loadout.{type Loadout}
+import genesis_prime/shared/player_unit.{type PlayerUnit}
 import genesis_prime/shared/sight
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news.{type PeerNews, Appeared, PeerNews}
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type Effect, type RingMember,
   type ServiceEffect, type ServiceInput, type ServiceRule, type ServiceStep,
@@ -767,12 +769,10 @@ import genesis_prime/step.{
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/id.{type Creature2Id, type PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_kind.{type Kinds}
 import genesis_prime/world_map/creature_life.{type Hostile}
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map_id.{type MapId}
-import genesis_prime/world_map/player_unit.{type PlayerUnit}
 import genesis_prime/world_map/relay.{
   type Delivered, type Inbound, type Landing, type Payload,
 }
@@ -2437,7 +2437,7 @@ fn creature_ended(
 }
 
 /// How long a spawn whose creature crashed waits before a creature starts there
-/// again: the respawn time of its creature's kind (genesis_prime/world_map/creature_kind).
+/// again: the respawn time of its creature's kind (genesis_prime/shared/creature_kind).
 fn restart_ms(state state: State, spawn spawn: SpawnId) -> Int {
   case dict.get(state.settings.spawns.by_id, spawn) {
     Ok(found) ->

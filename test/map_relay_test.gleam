@@ -13,10 +13,10 @@
 
 import connection_rule_support as support
 import genesis_prime/game/experience.{Credit}
-import genesis_prime/game/strike_tell.{
+import genesis_prime/shared/strike_tell.{
   Answered, Attacks, Key, Refused, Released, Threatened,
 }
-import genesis_prime/game/unit_news.{Health, PeerNews}
+import genesis_prime/shared/unit_news.{Health, PeerNews}
 import genesis_prime/step.{
   type ServiceStep, Connection, ConnectionId, Creature, LogError, OwnEvent,
   ServiceTimerFired, TimerId, Told, WatchId,

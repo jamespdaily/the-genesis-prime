@@ -12,8 +12,8 @@ import coverage_support
 import genesis_prime/coverage/engine
 import genesis_prime/coverage/gaps
 import genesis_prime/coverage/measurement.{HandledWithGap}
-import genesis_prime/game/activate
 import genesis_prime/game/effect_row_read
+import genesis_prime/shared/activate
 import genesis_prime/shared/spell_plan
 import genesis_prime/table/id
 import genesis_prime/table/loader/store

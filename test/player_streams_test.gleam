@@ -17,12 +17,12 @@ import genesis_prime/client_connection
 import genesis_prime/game/held_changes
 import genesis_prime/game/move_stamp
 import genesis_prime/game/strike
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts.{EndsAt, HeldEffect}
 import genesis_prime/message/movement_mode
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_create_player
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_casts.{EndsAt, HeldEffect}
 import genesis_prime/shared/unit_properties.{Source}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}

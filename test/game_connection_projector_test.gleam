@@ -28,7 +28,6 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/float32
@@ -39,6 +38,7 @@ import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
+import genesis_prime/shared/strike_tell
 import genesis_prime/step.{
   type ConnectionStep, type TimerId, ConnectionId, OwnEvent, TimerFired,
 }

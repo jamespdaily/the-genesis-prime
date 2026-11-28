@@ -81,12 +81,12 @@ import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/proc
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/shared/hit
 import genesis_prime/shared/rating
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type TimerId, LogWarning,
 }

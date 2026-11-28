@@ -5,6 +5,7 @@
 
 import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/shared/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId,
   CancelServiceTimer, Connection, ConnectionId, Creature, OwnEffect, OwnEvent,
@@ -12,7 +13,6 @@ import genesis_prime/step.{
   Told,
 }
 import genesis_prime/table/id.{type PrerequisiteId, Spell4Id}
-import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State, Join, Leave, Moved}
 import genesis_prime/world_map/map_id.{MapId}

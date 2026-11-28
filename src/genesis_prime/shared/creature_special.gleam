@@ -1,6 +1,6 @@
 //// The spells a kind of creature casts besides its attack, as the content load reads
 //// them (the creature_special table, genesis_prime/content/creature_special) and
-//// checks, and what the kind holds of them (genesis_prime/world_map/creature_kind
+//// checks, and what the kind holds of them (genesis_prime/shared/creature_kind
 //// `Kind.specials`). The client lists no spell for a creature and no cadence
 //// (`creature.ai_data`), so each row is a server choice from a retail record, and its
 //// cooldown a guess.
@@ -48,14 +48,14 @@
 //// - **`order_index` is not null and unique for a creature**: it orders the list `chosen`
 ////   walks (genesis_prime/world_map/creature_fight).
 
-import genesis_prime/game/strike_tell
 import genesis_prime/gap
+import genesis_prime/shared/creature_attack
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
-import genesis_prime/world_map/creature_attack
 import gleam/int
 import gleam/list
 

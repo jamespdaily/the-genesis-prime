@@ -16,12 +16,12 @@
 import genesis_prime/game/held_changes.{
   type Held, type Sight, EndsWhenUnseen, KeptWhenUnseen,
 }
-import genesis_prime/game/unit_casts.{
-  type HeldEffect, CastView, EndsAt, HeldEffect, ViewTarget,
-}
 import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_target_info
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_casts.{
+  type HeldEffect, CastView, EndsAt, HeldEffect, ViewTarget,
+}
 import genesis_prime/shared/unit_properties.{type Source, Source}
 import genesis_prime/step.{type ConnectionId, ConnectionId}
 import genesis_prime/table/id.{type Spell4Id, Spell4EffectsId, Spell4Id}

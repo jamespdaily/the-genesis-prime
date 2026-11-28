@@ -58,6 +58,7 @@ import genesis_prime/shared/area.{
   type Candidate, type Point, type Pose, Candidate,
 }
 import genesis_prime/shared/creature_path.{type Path}
+import genesis_prime/shared/creature_turn.{type Face}
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/prerequisite.{
   type FirstUnit, NonPlayer, OtherPlayer, TheChecker,
@@ -66,7 +67,6 @@ import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Creature2Id, Faction2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
-import genesis_prime/world_map/creature_turn.{type Face}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/dict.{type Dict}

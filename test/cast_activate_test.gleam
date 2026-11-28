@@ -22,19 +22,19 @@
 
 import cast_support as support
 import fixture_tables
-import genesis_prime/game/activate.{
-  type Target, Activations, Body, CannotBePlanned, Column, Creature,
-  HostileToPlayer, InCombat, NoSpell4Row, Planned, Usable,
-}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
-import genesis_prime/game/objective_link
-import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
+import genesis_prime/shared/activate.{
+  type Target, Activations, Body, CannotBePlanned, Column, Creature,
+  HostileToPlayer, InCombat, NoSpell4Row, Planned, Usable,
+}
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_news.{CastStarted}
 
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/interaction_result.{type InteractionResult}
@@ -1181,7 +1181,7 @@ const the_collectible = 12_919
 const a_chef_with_both_links = 53_445
 
 /// The right-click of the collectible by a caster with this quest log, its link read by
-/// the rule that reads it (genesis_prime/game/objective_link `of`).
+/// the rule that reads it (genesis_prime/shared/objective_link `of`).
 fn collectible_clicked(quests quests: QuestView) -> List(Effect) {
   clicked(creature_id: the_collectible, quests:)
 }

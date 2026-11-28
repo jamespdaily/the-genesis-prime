@@ -88,7 +88,6 @@
 ////   cast it wrote (genesis_prime/game/connection). The threshold messages go to the caster only.
 
 import genesis_prime/client_connection
-import genesis_prime/game/activate
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/frame as cast_frame
@@ -131,7 +130,6 @@ import genesis_prime/game/item_use
 import genesis_prime/game/proc
 import genesis_prime/game/quest_advance
 import genesis_prime/game/shortcut_spell
-import genesis_prime/game/unit_news
 import genesis_prime/gap
 import genesis_prime/message/ability_hold
 import genesis_prime/message/cancel_cast.{type CancelCast, CancelCast}
@@ -145,6 +143,7 @@ import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/interaction_result
 import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/item_use as item_use_message
+import genesis_prime/shared/activate
 import genesis_prime/shared/area
 import genesis_prime/shared/class_resource.{type Payment}
 import genesis_prime/shared/cooldown
@@ -153,6 +152,7 @@ import genesis_prime/shared/lasts
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/spell_effect
 import genesis_prime/shared/spell_plan.{type Plans, type Proxy, type Spell}
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type Now, type TimerId, LogDebug, LogInfo, LogWarning}
 import genesis_prime/table/id.{type Item2Id, type Spell4Id, Spell4EffectsId}
@@ -201,7 +201,7 @@ pub fn take(
 /// of the unit's activate spell (`opcode.0x97`). `target_of` says what the unit the
 /// message names is to the caster's connection (its picture), and `caster_radius` is the
 /// hit radius of the caster's own body, which the range check takes beside the target's.
-/// The spell is the creature's pick (genesis_prime/game/activate `pick`); a cast that
+/// The spell is the creature's pick (genesis_prime/shared/activate `pick`); a cast that
 /// cannot start is refused with the result the client names, and one that can runs as any
 /// cast does, for the activate cast time (`cast_press.activation_spell`), and its last go raises `Activated`.
 pub fn activate(

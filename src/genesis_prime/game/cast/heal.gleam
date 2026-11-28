@@ -41,7 +41,6 @@ import genesis_prime/game/cast/state.{
   HitOtherPlayer, HitPlayer, Immune, Log, ModifierStart, Plain, TickingOn,
 } as cast_state
 import genesis_prime/game/heal_split
-import genesis_prime/game/strike_tell
 import genesis_prime/gap
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
@@ -52,6 +51,7 @@ import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/spell_area
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4EffectsId}

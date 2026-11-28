@@ -22,7 +22,7 @@ import gleam/string
 
 const connection = "genesis_prime/client_connection"
 
-const news = "genesis_prime/game/unit_news"
+const news = "genesis_prime/shared/unit_news"
 
 const map = "genesis_prime/world_map/map"
 

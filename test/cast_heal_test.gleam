@@ -28,7 +28,6 @@ import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state.{type Caster, type Effect} as cast_state
 import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
-import genesis_prime/game/unit_news.{CastWent}
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_effect_info.{
   type SpellEffectInfo, SpellEffectInfo,
@@ -42,6 +41,7 @@ import genesis_prime/shared/spell_plan.{
   type Spell, AimsAtCaster, AimsAtPrimaryTarget, Always, GatedOnCaster,
 }
 import genesis_prime/shared/spend
+import genesis_prime/shared/unit_news.{CastWent}
 import genesis_prime/shared/unit_properties.{type Source, Change}
 import genesis_prime/step.{type TimerId, LogDebug}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}

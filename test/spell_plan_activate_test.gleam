@@ -1,4 +1,4 @@
-//// The plans of the activate spells (genesis_prime/game/activate) from the client's own
+//// The plans of the activate spells (genesis_prime/shared/activate) from the client's own
 //// tables: every spell a Creature2 row names in an activate column, and the default spell,
 //// is planned or has one named reason. Expected values come from the client's Spell4 and
 //// Creature2 tables.
@@ -7,7 +7,6 @@ import cast_support
 import client_tables
 import fixture_tables
 import genesis_prime/coverage/effect_row
-import genesis_prime/game/activate.{CannotBePlanned, NoSpell4Row, Planned}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/message/cast_activate.{CastActivate}
@@ -16,6 +15,7 @@ import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
+import genesis_prime/shared/activate.{CannotBePlanned, NoSpell4Row, Planned}
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/lasts

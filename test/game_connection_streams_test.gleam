@@ -15,11 +15,11 @@ import fixture_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/heal_split.{Split}
-import genesis_prime/game/strike_tell.{
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/strike_tell.{
   HealLanded, HealsLanded, Key, PlayerAnswered,
 }
-import genesis_prime/game/unit_news.{type PeerNews, Appeared, PeerNews}
-import genesis_prime/shared/effect_kind
+import genesis_prime/shared/unit_news.{type PeerNews, Appeared, PeerNews}
 import genesis_prime/step.{type ConnectionId, type ConnectionStep, ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/world_map/generation.{type Generation}

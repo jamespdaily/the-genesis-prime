@@ -6,7 +6,7 @@
 //// - The relation protocol of the map (the doc comment of `genesis_prime/world_map/map`):
 ////   a creature's news, answers, credits and fight tells reach a player only from the map,
 ////   in the order the creature told the map them.
-//// - The strike round (`genesis_prime/game/strike_tell`, `genesis_prime/game/strike`): an
+//// - The strike round (`genesis_prime/shared/strike_tell`, `genesis_prime/game/strike`): an
 ////   answer is waited for 1,000 ms; the caster's round, not the map, decides that a later
 ////   answer is late.
 //// - `creature.struck`'s order: the answer, the kill credit, then the health and the death.
@@ -18,12 +18,12 @@ import genesis_prime/client_connection.{
   type Message, ForStay, SentByKill, SentByPeer, SentByTarget,
 }
 import genesis_prime/game/strike
-import genesis_prime/game/strike_tell.{
-  type Answered, Answered, Key, Landed, Refused,
-}
-import genesis_prime/game/unit_news.{PeerNews}
 import genesis_prime/service
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell.{
+  type Answered, Answered, Key, Landed, Refused,
+}
+import genesis_prime/shared/unit_news.{PeerNews}
 import genesis_prime/step.{ConnectionId, Woken}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/map

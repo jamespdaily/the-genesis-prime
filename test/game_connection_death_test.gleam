@@ -16,8 +16,6 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{type News, Appeared, PeerNews}
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/combat_log.{CombatLog}
@@ -40,7 +38,9 @@ import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{type News, Appeared, PeerNews}
 import genesis_prime/step.{
   type ConnectionStep, ConnectionId, LogError, LogWarning, Map, NoAnswerInTime,
   OwnEffect, Unwatch, Watch, WatchEnded, WatchId,

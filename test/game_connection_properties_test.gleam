@@ -28,13 +28,13 @@ import game_connection_support as support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/unit_news.{
-  type News, Appeared, PeerNews, PropertiesChanged,
-}
 import genesis_prime/message/float32
 import genesis_prime/message/player_health
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/shared/unit_news.{
+  type News, Appeared, PeerNews, PropertiesChanged,
+}
 import genesis_prime/step.{
   type ConnectionStep, ConnectionId, OwnEvent, TimerFired, TimerId,
 }

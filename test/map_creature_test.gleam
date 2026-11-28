@@ -21,13 +21,13 @@
 ////   input's, so no test waits.
 
 import connection_rule_support as support
+import genesis_prime/shared/creature_kind.{Kind, Kinds}
 import genesis_prime/step.{
   type ServiceStep, CancelServiceTimer, ConnectionId, CreatureNotStarted,
   LogError, OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired, StartCreature,
   StartServiceTimer, WatchEnded, WatchId,
 }
 import genesis_prime/table/id.{Spell4Id}
-import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}

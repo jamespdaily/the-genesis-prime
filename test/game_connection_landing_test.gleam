@@ -18,15 +18,15 @@ import connection_rule_support as rule_support
 import game_connection_support as support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/heal_split.{Split}
-import genesis_prime/game/strike_tell.{
-  HealLanded, HealsLanded, Key, PlayerAnswered,
-}
-import genesis_prime/game/unit_news
 import genesis_prime/message/player_health.{type PlayerHealth, PlayerHealth}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{type UnitStatChanged}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/strike_tell.{
+  HealLanded, HealsLanded, Key, PlayerAnswered,
+}
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{type ConnectionStep, ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/world_map/relay

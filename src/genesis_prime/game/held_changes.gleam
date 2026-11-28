@@ -33,8 +33,8 @@
 ////   when the last source of one has ended, which is when the client is written its end.
 ////
 
-import genesis_prime/game/unit_casts
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_properties.{type Source}
 import genesis_prime/step.{type ConnectionId}
 import genesis_prime/table/id.{type Spell4Id}

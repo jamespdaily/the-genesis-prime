@@ -21,8 +21,8 @@
 ////   instead of its kind's respawn time when a player's use released its creature.
 
 import connection_rule_support as support
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{ConnectionId, LogError, WatchId}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State}

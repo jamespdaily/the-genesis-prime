@@ -31,8 +31,6 @@ import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
 import genesis_prime/game/start_place
 import genesis_prime/game/strike
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news
 import genesis_prime/message/cast_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
@@ -50,6 +48,8 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{
   type ConnectionStep, ConnectionId, OwnEvent, TimerFired,
 }

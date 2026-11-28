@@ -10,10 +10,6 @@ import game_connection_support
 import genesis_prime/client_connection
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{
-  Appeared, CastFinished, CastStarted, CastWent, Removed,
-}
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
@@ -23,6 +19,10 @@ import genesis_prime/message/spell_position.{SpellPosition}
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
+import genesis_prime/shared/unit_casts
+import genesis_prime/shared/unit_news.{
+  Appeared, CastFinished, CastStarted, CastWent, Removed,
+}
 import genesis_prime/step.{ConnectionId, OwnEvent}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature

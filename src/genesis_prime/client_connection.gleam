@@ -24,21 +24,21 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{type Wrapper, ClientWrapper}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
-import genesis_prime/game/chat_tell.{
-  type Said as ChatSaid, type Tell as ChatTell,
-}
 import genesis_prime/game/experience.{type Credit}
 import genesis_prime/game/held_changes.{type PlayerChange}
 import genesis_prime/game/move_stamp
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell.{
-  type Answered, type Fight, type PlayerAnswered, type PlayerEvent,
-  type PlayerStrike,
-}
-import genesis_prime/game/unit_news.{type PeerNews}
 import genesis_prime/hand_off
 import genesis_prime/message/bit_stream
 import genesis_prime/random.{type Random}
+import genesis_prime/shared/chat_tell.{
+  type Said as ChatSaid, type Tell as ChatTell,
+}
+import genesis_prime/shared/strike_tell.{
+  type Answered, type Fight, type PlayerAnswered, type PlayerEvent,
+  type PlayerStrike,
+}
+import genesis_prime/shared/unit_news.{type PeerNews}
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionEvent, type ConnectionId,
   type ConnectionStep, type Effect, type Event, type Now, type Outcome,
@@ -150,7 +150,7 @@ pub type Request {
   /// What a `Tell` effect sends the connection of another player, or every
   /// connection of a zone channel, or the connection that holds a character's
   /// name (genesis_prime/step `Connection`, `ZoneChannel`, `CharacterNamed`): a
-  /// zone line or a whisper's reply (genesis_prime/game/chat_tell). Never asked,
+  /// zone line or a whisper's reply (genesis_prime/shared/chat_tell). Never asked,
   /// and never told to a map.
   TellChat(tell: ChatTell)
   /// What a `Tell` effect sends the run of a map (genesis_prime/step `Map`): the player

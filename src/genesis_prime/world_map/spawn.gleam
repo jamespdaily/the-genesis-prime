@@ -72,24 +72,29 @@
 ////   faction level of 0 to 2 toward each player faction), its own attack, from its
 ////   kind's spell, the alternates it strikes with after it in turn, from the kind's other
 ////   auto-attacks, and its specials, each a spell of its kind's list with its gos and hold
-////   from the plan (genesis_prime/world_map/creature_kind,
+////   from the plan (genesis_prime/shared/creature_kind,
 ////   genesis_prime/world_map/creature_life `Attack`, `Special`). Each spell is checked for the
 ////   creature's difficulty by the one rule the kind load takes too
-////   (genesis_prime/world_map/creature_attack `formulas`).
+////   (genesis_prime/shared/creature_attack `formulas`).
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/objective_kind
-import genesis_prime/game/objective_link
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_attack
+import genesis_prime/shared/creature_kind.{type Kind, type Kinds}
+import genesis_prime/shared/creature_unit_type.{
+  type CreatureUnitType, NonPlayer, Turret,
+}
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/damage
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/hit
 import genesis_prime/shared/hit_radius
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/prerequisite.{type Prerequisite}
 import genesis_prime/shared/rating.{type Formulas}
 import genesis_prime/shared/spell_area
@@ -128,15 +133,10 @@ import genesis_prime/table/unit_property2
 import genesis_prime/table/world
 import genesis_prime/world_map/checklist_index
 import genesis_prime/world_map/creation_type
-import genesis_prime/world_map/creature_attack
 import genesis_prime/world_map/creature_columns
 import genesis_prime/world_map/creature_faction.{type Factions}
-import genesis_prime/world_map/creature_kind.{type Kind, type Kinds}
 import genesis_prime/world_map/creature_life.{
   type Attack, type Combat, Attackable, Combat, Hostile,
-}
-import genesis_prime/world_map/creature_unit_type.{
-  type CreatureUnitType, NonPlayer, Turret,
 }
 import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/spawn_cell.{type Cells}
@@ -534,7 +534,7 @@ pub type SpawnError {
     reason: prerequisite.LoadError,
   )
   /// A damage effect of the creature's attack spell has a caster prerequisite the
-  /// server does not evaluate (genesis_prime/world_map/creature_attack).
+  /// server does not evaluate (genesis_prime/shared/creature_attack).
   AttackNotEvaluated(
     creature_id: Creature2Id,
     unevaluated: creature_attack.Unevaluated,

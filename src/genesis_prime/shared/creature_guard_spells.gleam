@@ -1,5 +1,5 @@
 //// The two Spell4s of a creature's guard as the creature applies them, read from the client's
-//// tables once for a kind (genesis_prime/world_map/creature_kind): the guard that makes it take no
+//// tables once for a kind (genesis_prime/shared/creature_kind): the guard that makes it take no
 //// damage, and the opening that lifts it for a while. What the creature does with them is
 //// genesis_prime/world_map/creature_guard's; this module holds only what the spells are, apart
 //// from the casts, so the kind can hold them (the casts import the kind).
@@ -61,7 +61,7 @@ pub type Unapplied {
 }
 
 /// The guard of the two spells, or why the creature cannot apply them. The content load refuses
-/// a kind with it and a spawn starts its creature with the guard (genesis_prime/world_map/creature_kind,
+/// a kind with it and a spawn starts its creature with the guard (genesis_prime/shared/creature_kind,
 /// genesis_prime/world_map/spawn).
 pub fn guard_of(
   guard_spell4_id guard_spell4_id: Int,

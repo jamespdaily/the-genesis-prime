@@ -3,10 +3,10 @@
 //// test that reads each kind as the creature's message use the same ones.
 
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell.{
+import genesis_prime/shared/strike_tell.{
   type Answered, type Tell as StrikeTell, Answered, Key,
 }
-import genesis_prime/game/unit_casts.{type CastView, CastView}
+import genesis_prime/shared/unit_casts.{type CastView, CastView}
 import genesis_prime/shared/unit_properties.{type Modifier, type Source}
 import genesis_prime/shared/unit_state
 import genesis_prime/step.{Connection, ConnectionId}

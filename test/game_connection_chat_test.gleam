@@ -13,12 +13,9 @@ import genesis_prime/client_connection.{
   SentByPeer,
 }
 import genesis_prime/connection/frame.{Frame}
-import genesis_prime/game/chat_channel
-import genesis_prime/game/chat_tell
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/limited_action_set
-import genesis_prime/game/unit_news.{CreatureAppeared, PeerNews, Removed}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_line
 import genesis_prime/message/disconnect_reason.{LostUserServer}
@@ -30,6 +27,11 @@ import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_position_command
 import genesis_prime/message/whisper_failed
 import genesis_prime/server
+import genesis_prime/shared/chat_channel
+import genesis_prime/shared/chat_tell
+import genesis_prime/shared/creature_kind.{Kind}
+import genesis_prime/shared/creature_unit_type.{NonPlayer}
+import genesis_prime/shared/unit_news.{CreatureAppeared, PeerNews, Removed}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionId, type ConnectionStep, type Event,
   ConnectionId, EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning,
@@ -39,9 +41,7 @@ import genesis_prime/step.{
 import genesis_prime/store.{CharacterLoaded, ForSelect, ForWorld, Listed}
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
 import genesis_prime/world_map/creature
-import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{
   CreatureRefused, Left, NoPlayerHere, NotSummoned, SeenBy, Summoned,

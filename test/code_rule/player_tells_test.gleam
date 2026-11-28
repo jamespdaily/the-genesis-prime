@@ -3,7 +3,7 @@
 //// `PlayerSnapshot`, `TellLanding` and `Say`), so a viewer has one sender for what concerns
 //// another player: the map. The types hold most of it: the request has no variant for news,
 //// a landing or a local line to a connection, and a `TellChat` cannot carry a `Said` line
-//// (genesis_prime/game/chat_tell). What the types cannot hold is the address: a `Tell` effect
+//// (genesis_prime/shared/chat_tell). What the types cannot hold is the address: a `Tell` effect
 //// in `src/genesis_prime/game` whose `to:` is a `step.Connection(...)` address is a breach,
 //// reported at its line, unless it tells `TellMove`, a mover's chunk of its own move to a
 //// viewer in its own copy, which only `sends_the_move_to_the_viewers` of the mover

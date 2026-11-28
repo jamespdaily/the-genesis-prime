@@ -27,14 +27,14 @@ import game_connection_support
 import genesis_prime/client_connection.{type Answer, type Message, type Request}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news
 import genesis_prime/message/float32
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, CancelTimer, OwnEffect,
   OwnEvent, TimerFired, TimerId, Unwatch, Watch,

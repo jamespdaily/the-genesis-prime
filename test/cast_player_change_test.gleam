@@ -24,7 +24,6 @@
 import attacker_support
 import cast_support as support
 import client_tables
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate
 import genesis_prime/game/cast/proc as cast_proc
@@ -35,10 +34,9 @@ import genesis_prime/game/held_changes
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/player_state.{PlayerState}
 import genesis_prime/game/proc as event_proc
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_started
+import genesis_prime/shared/activate
 import genesis_prime/shared/area
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
@@ -47,6 +45,8 @@ import genesis_prime/shared/lasts
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/spell_plan.{type Plans, type Spell, Always, Spell}
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_properties.{type Source}
 import genesis_prime/step.{type TimerId, ConnectionId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}

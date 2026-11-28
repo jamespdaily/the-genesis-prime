@@ -27,6 +27,7 @@ import character_tables
 import connection_rule_support as support
 import exception
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
+import genesis_prime/shared/player_unit
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId, Connection,
   ConnectionId, Effects, LogError, OwnEffect, OwnEvent, Reply, StartServiceTimer,
@@ -37,7 +38,6 @@ import genesis_prime/table/id.{ClassId, RaceId}
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{type State, Join, Joined, Leave, Left}
 import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/player_unit
 import gleam/dynamic/decode
 import gleam/erlang/atom
 import gleam/int

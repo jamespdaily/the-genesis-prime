@@ -12,13 +12,13 @@
 
 import crowd_control_support
 import fixture_tables
-import genesis_prime/game/strike_tell.{type ControlTell, Key, Strike}
-import genesis_prime/game/unit_news
 import genesis_prime/message/crowd_control_state.{
   type CrowdControlState, Fear, Polymorph, Root, Snare, Stun, Tether,
 }
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/hit.{Offence}
+import genesis_prime/shared/strike_tell.{type ControlTell, Key, Strike}
+import genesis_prime/shared/unit_news
 import genesis_prime/step
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_life

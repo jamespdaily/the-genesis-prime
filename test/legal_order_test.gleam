@@ -15,11 +15,11 @@
 import exception
 import game_connection_support
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{CreatureAppeared, Removed}
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news.{CreatureAppeared, Removed}
 import genesis_prime/step.{
   Asked, CallerId, Connection, ConnectionId, OwnEvent, ServiceTimerFired,
   TimerId, Told,

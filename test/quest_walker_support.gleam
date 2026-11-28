@@ -7,15 +7,15 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
-import genesis_prime/game/unit_news.{CreatureAppeared}
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/creature_unit_type.{NonPlayer}
+import genesis_prime/shared/unit_news.{CreatureAppeared}
 import genesis_prime/step.{type ConnectionEvent, type Event}
 import genesis_prime/store
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict

@@ -23,7 +23,7 @@ import genesis_prime/client_connection.{
   type StaySent, SentByFoe, SentByKill, SentByLine, SentByMap, SentByMove,
   SentByPeer, SentByPlayer, SentByTarget,
 }
-import genesis_prime/game/unit_news.{type News, PeerNews}
+import genesis_prime/shared/unit_news.{type News, PeerNews}
 import genesis_prime/world_map/map.{type Notice}
 import genesis_prime/world_map/static_object
 import gleam/dict.{type Dict}

@@ -131,7 +131,7 @@
 ////   instead), and the answer's `Landed` names the ones that did; while the creature holds one it does not act
 ////   (genesis_prime/world_map/creature_control).
 //// - **A strike's gates** are the target apply prerequisites of its rows that read this
-////   creature's own state (genesis_prime/game/strike_tell `Gate`). They are checked when the
+////   creature's own state (genesis_prime/shared/strike_tell `Gate`). They are checked when the
 ////   strike arrives, before the hit rule, against the creature's level, factions, combat state,
 ////   vitals, difficulty and Creature2 row and the caster as the second unit
 ////   (genesis_prime/shared/prerequisite `of_creature`). A corpse reads none: it answers
@@ -146,7 +146,7 @@
 ////   (genesis_prime/game/strike).
 //// - **The corpse timer** is the creature's own, whatever its viewers: it starts at the
 ////   kill for the kind's respawn time and fires with no viewer too
-////   (genesis_prime/world_map/creature_kind). The creature then removes its unit, tells its
+////   (genesis_prime/shared/creature_kind). The creature then removes its unit, tells its
 ////   map it expired and stops: the map numbers the next life and starts it, so a life never
 ////   outlives its address (genesis_prime/world_map/creature_registry).
 //// - **The fight** is creature_fight's, whose module holds its sequence from aggro
@@ -262,20 +262,22 @@
 import genesis_prime/game/experience.{Credit}
 import genesis_prime/game/held_changes
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell.{
-  type Answered, type Tell as StrikeTell, Answered, CreatureStriker,
-  PlayerStriker, Refused,
-}
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{
-  type PeerNews, CreatureAppeared, PeerNews, Removed,
-}
 import genesis_prime/gap
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_kind.{type Kind}
+import genesis_prime/shared/creature_unit_type
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit
 import genesis_prime/shared/prerequisite
+import genesis_prime/shared/strike_tell.{
+  type Answered, type Tell as StrikeTell, Answered, CreatureStriker,
+  PlayerStriker, Refused,
+}
+import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{
+  type PeerNews, CreatureAppeared, PeerNews, Removed,
+}
 import genesis_prime/shared/unit_properties.{
   type Modifier, type Properties, type Source,
 }
@@ -294,14 +296,12 @@ import genesis_prime/world_map/creature_fight.{
   HomeArrival, StrikeDeadline,
 }
 import genesis_prime/world_map/creature_guard
-import genesis_prime/world_map/creature_kind.{type Kind}
 import genesis_prime/world_map/creature_life.{
   type Body, type Life, Body, Died, Ends, Expires, Health, StopAtRespawn,
   StopNow,
 }
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/creature_unit_state
-import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
@@ -381,7 +381,7 @@ pub type Message {
   Unseen(by: ConnectionId, generation: Generation)
   /// No player has seen the creature for the idle stop: end.
   Retire
-  /// A caster's connection strikes the creature (genesis_prime/game/strike_tell).
+  /// A caster's connection strikes the creature (genesis_prime/shared/strike_tell).
   Strike(tell: StrikeTell)
   /// The map: the ready player `member` entered the creature's ring.
   Approached(member: RingMember)

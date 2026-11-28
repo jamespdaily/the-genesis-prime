@@ -15,12 +15,12 @@
 import crowd_control_support
 import driven_time
 import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{
+import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_casts
+import genesis_prime/shared/unit_news.{
   CrowdControlEnded, PeerNews, PropertiesChanged,
 }
-import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/world_map/relay
 import gleam/dict
 import gleam/dynamic/decode

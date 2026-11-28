@@ -37,12 +37,12 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/unit_news
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed
 import genesis_prime/server
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{
   type ConnectionEvent, type Event, type ServiceEvent, type TimerId, CallerId,
   ConnectionId, OwnEffect, OwnEvent, TimerFired, Told, Woken,

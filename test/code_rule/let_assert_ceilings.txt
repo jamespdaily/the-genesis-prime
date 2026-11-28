@@ -107,10 +107,10 @@ genesis_prime/shared/unit_properties 5
 genesis_prime/store/worker 7
 genesis_prime/terrain 2
 genesis_prime/wire_recording/fixture 3
-genesis_prime/world_map/creature_auto_attack 1
+genesis_prime/shared/creature_auto_attack 1
 genesis_prime/world_map/creature_fight 22
-genesis_prime/world_map/creature_kind 1
-genesis_prime/world_map/creature_special 1
+genesis_prime/shared/creature_kind 1
+genesis_prime/shared/creature_special 1
 genesis_prime/world_map/map 8
 genesis_prime/world_map/objective_spawn 3
 genesis_prime/world_map/spawn 3

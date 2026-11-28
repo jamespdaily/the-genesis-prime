@@ -32,7 +32,6 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/routing
-import genesis_prime/game/unit_news
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_side_interaction_result.{
@@ -42,6 +41,7 @@ import genesis_prime/message/interaction_result
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_go
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/id.{Creature2Id}

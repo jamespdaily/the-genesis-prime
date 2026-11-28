@@ -82,7 +82,6 @@ import genesis_prime
 import genesis_prime/content
 import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/spawn as content_spawn
-import genesis_prime/game/activate
 import genesis_prime/game/click_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/place_objective
@@ -91,6 +90,8 @@ import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
 import genesis_prime/import_world_data
 import genesis_prime/readiness
+import genesis_prime/shared/activate
+import genesis_prime/shared/creature_unit_type
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/rating
@@ -101,7 +102,6 @@ import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world
 import genesis_prime/world_map/creature_faction
-import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/objective_spawn
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/static_object.{type StaticObject}

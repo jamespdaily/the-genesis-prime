@@ -20,8 +20,8 @@ import database_support
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/dev_database
 import genesis_prime/import_retail_record/sql
+import genesis_prime/shared/creature_kind
 import genesis_prime/table/id.{Spell4Id}
-import genesis_prime/world_map/creature_kind
 import gleam/dynamic/decode
 import gleam/int
 import gleam/list

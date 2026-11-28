@@ -27,10 +27,6 @@ import genesis_prime/game/limited_action_set
 import genesis_prime/game/move_stamp
 import genesis_prime/game/objective
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{
-  type News, type PeerNews, Appeared, CreatureAppeared, PeerNews,
-}
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, NoHolder, Taken}
@@ -85,10 +81,16 @@ import genesis_prime/message/vendor_buyback.{VendorBuyback}
 import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/vendor_sale.{VendorSale}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
+import genesis_prime/shared/creature_kind.{Kind, Kinds}
+import genesis_prime/shared/creature_unit_type.{NonPlayer}
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/hit.{type Offence, Blow, Offence, Worked}
 import genesis_prime/shared/loadout
 import genesis_prime/shared/server_proxy
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news.{
+  type News, type PeerNews, Appeared, CreatureAppeared, PeerNews,
+}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionId, type ConnectionStep, type Event,
   type Outcome, type TimerId, CallerId, CancelTimer, ConnectionId,
@@ -104,10 +106,8 @@ import genesis_prime/table/id.{
   ClassId, Creature2Id, RaceId, Spell4BaseId, Spell4Id,
 }
 import genesis_prime/table/loader/store as store_tables
-import genesis_prime/world_map/creature_kind.{Kind, Kinds}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy, Summon}
 import genesis_prime/world_map/map_id.{type MapId, MapId}

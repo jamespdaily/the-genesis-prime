@@ -1,4 +1,4 @@
-//// The casts a unit create lists (`genesis_prime/game/unit_casts`). Expected
+//// The casts a unit create lists (`genesis_prime/shared/unit_casts`). Expected
 //// values come from `opcode.0x262.casts` (the entry's fields and the 9-bit
 //// count), `cast.state` (the entry's bit is state 2 for 1 and state 3 for 0),
 //// `CreateCast 0x140561780` (a cast id 0 is a pending cast, which makes
@@ -13,9 +13,6 @@ import cast_support as support
 import fixture_tables
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/start_place
-import genesis_prime/game/unit_casts.{
-  type CastView, type HeldEffect, CastView, HeldEffect, UntilRemoved, ViewTarget,
-}
 import genesis_prime/message/spell_position
 import genesis_prime/message/spell_started.{SpellStarted}
 import genesis_prime/message/spell_target_info.{type SpellTargetInfo}
@@ -25,6 +22,9 @@ import genesis_prime/message/unit_create_cast.{
 import genesis_prime/shared/lasting.{LastingRow, LifeOnly, Listed, Node}
 import genesis_prime/shared/lasts
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_casts.{
+  type CastView, type HeldEffect, CastView, HeldEffect, UntilRemoved, ViewTarget,
+}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4_effects
 import gleam/int

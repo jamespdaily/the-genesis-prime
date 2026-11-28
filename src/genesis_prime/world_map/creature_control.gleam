@@ -39,14 +39,14 @@
 //// - **Each landed state is its own control**, with its own timer and its own 0x880, its
 ////   number from the creature's rule (`control_timer`), never used twice in a creature's life.
 
-import genesis_prime/game/strike_tell.{
-  type ControlLanded, type Tell, ControlLanded,
-}
-import genesis_prime/game/unit_news.{type News}
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/lasts
+import genesis_prime/shared/strike_tell.{
+  type ControlLanded, type Tell, ControlLanded,
+}
+import genesis_prime/shared/unit_news.{type News}
 import genesis_prime/step.{type Address}
 import genesis_prime/world_map/creature_life.{type InterruptArmor}
 import gleam/int

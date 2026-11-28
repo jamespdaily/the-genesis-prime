@@ -12,7 +12,6 @@
 
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
-import genesis_prime/game/activate
 import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
 import genesis_prime/game/player_address.{type PlayerAddress}
@@ -21,9 +20,6 @@ import genesis_prime/game/proc
 import genesis_prime/game/quest_advance
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{type News}
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
@@ -31,6 +27,7 @@ import genesis_prime/message/item_place.{type ItemPlace}
 import genesis_prime/message/spell_damage_description.{
   type SpellDamageDescription,
 }
+import genesis_prime/shared/activate
 import genesis_prime/shared/area
 import genesis_prime/shared/class_resource.{type Payment, type Resources}
 import genesis_prime/shared/cooldown
@@ -46,7 +43,10 @@ import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/shared/spell_area
 import genesis_prime/shared/spell_effect
 import genesis_prime/shared/spell_plan.{type Proxy, type Spell}
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/ticking
+import genesis_prime/shared/unit_casts
+import genesis_prime/shared/unit_news.{type News}
 import genesis_prime/shared/unit_properties
 import genesis_prime/shared/unit_state
 import genesis_prime/step.{type LogLevel, type TimerId, TimerId}
@@ -430,14 +430,14 @@ pub type Struck {
   /// The unit is named in the 0x7f4 with the damage that landed on it, which is
   /// none for a spell that only selects it (Crush's first spell), and the
   /// crowd-control states it took, each listed as an effect of the go with the
-  /// instance id its tell gave (genesis_prime/game/strike_tell `Landed`).
+  /// instance id its tell gave (genesis_prime/shared/strike_tell `Landed`).
   Hit(
     unit_id: Int,
     unit: HitUnit,
     descriptions: List(hit.Description),
     controls: List(strike_tell.ControlLanded),
     /// The interrupt armor the strike took off the unit, which the go's combat log
-    /// shows (genesis_prime/game/strike_tell `Landed`).
+    /// shows (genesis_prime/shared/strike_tell `Landed`).
     armor_removed: Int,
     /// The periodic damage rows of the go whose aim reaches the unit: the go lists each
     /// with a bit result, and each ticks on the unit (`cast.ticked`).

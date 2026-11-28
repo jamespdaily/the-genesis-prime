@@ -31,6 +31,8 @@
 ////   a special's cooldown a fixed 10,000 ms.
 
 import genesis_prime/jabbithole_page.{type Ability, type Page}
+import genesis_prime/shared/creature_auto_attack
+import genesis_prime/shared/creature_special
 import genesis_prime/shared/spell_plan
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
@@ -39,8 +41,6 @@ import genesis_prime/table/map_zone
 import genesis_prime/table/map_zone_world_join
 import genesis_prime/table/spell4
 import genesis_prime/table/world_zone
-import genesis_prime/world_map/creature_auto_attack
-import genesis_prime/world_map/creature_special
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int

@@ -125,6 +125,7 @@ import genesis_prime/service.{
   type Call, type Locate, type Reach, type Sent, TellCall,
 }
 import genesis_prime/service/shell as service_shell
+import genesis_prime/shared/creature_kind
 import genesis_prime/step.{type ConnectionRule, LogError}
 import genesis_prime/step/runtime
 import genesis_prime/step/watch
@@ -132,7 +133,6 @@ import genesis_prime/store/worker.{type Job}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/creature
-import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/creature_registry.{type CreatureRegistry}
 import genesis_prime/world_map/creature_supervisor
 import genesis_prime/world_map/map

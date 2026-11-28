@@ -16,10 +16,10 @@
 import cast_support as support
 import client_tables
 import fixture_tables
-import genesis_prime/game/activate
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/held_changes
 import genesis_prime/game/shortcut_spell.{Aimed, CannotBePlanned, Planned}
+import genesis_prime/shared/activate
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/item_property
 import genesis_prime/shared/spell_plan

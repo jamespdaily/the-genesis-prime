@@ -30,9 +30,9 @@ import genesis_prime/game/heal_split.{Split}
 import genesis_prime/game/player_life.{
   type Effect, type Life, OwnHealth, OwnShield, ToClient, ToViewers,
 }
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}

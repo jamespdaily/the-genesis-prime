@@ -21,14 +21,13 @@
 //// cast time and one Proxy.
 
 import cast_support as support
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/heal_split
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
-import genesis_prime/game/strike_tell
+import genesis_prime/shared/activate
 import genesis_prime/shared/class_resource.{Gain}
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
@@ -37,6 +36,7 @@ import genesis_prime/shared/lasts
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/ticking
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}

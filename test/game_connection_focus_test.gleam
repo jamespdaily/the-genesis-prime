@@ -19,8 +19,6 @@ import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news
 import genesis_prime/message/float32
 import genesis_prime/message/item_place
 import genesis_prime/message/unit_float_stat_changed.{
@@ -32,6 +30,8 @@ import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/message/unit_stat_float.{UnitStatFloat}
 import genesis_prime/message/unit_stat_value
 import genesis_prime/shared/class_resource
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store.{type HeldItem, Character, HeldItem}
 import genesis_prime/table/id.{ClassId, Item2Id}

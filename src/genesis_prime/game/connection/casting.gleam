@@ -80,7 +80,6 @@
 import genesis_prime/client_connection.{type Request, Continue}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/ability_book
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/creature_view
 import genesis_prime/game/cast/frame as cast_frame
@@ -106,6 +105,7 @@ import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_use
 import genesis_prime/game/limited_action_set
+import genesis_prime/shared/activate
 import genesis_prime/shared/area
 import genesis_prime/shared/damage
 import genesis_prime/shared/forced_move
@@ -116,18 +116,13 @@ import genesis_prime/shared/item_property
 import genesis_prime/game/held_changes
 import genesis_prime/game/movement
 import genesis_prime/game/objective
-import genesis_prime/game/objective_link
 import genesis_prime/game/passed_in_value
 import genesis_prime/game/player_address
 import genesis_prime/game/player_life
 import genesis_prime/game/shown
 import genesis_prime/game/spell_surge
 import genesis_prime/game/strike
-import genesis_prime/game/strike_tell.{
-  type Answered, type PlayerAnswered, type PlayerEvent,
-}
 import genesis_prime/game/target_group
-import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/bit_stream
@@ -135,10 +130,15 @@ import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/random
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/rating
 import genesis_prime/shared/spell_area
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell.{
+  type Answered, type PlayerAnswered, type PlayerEvent,
+}
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_state
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionId, type Effect, type Now, type TimerId,
@@ -555,7 +555,7 @@ fn creature_and_link(
 
 /// Whether the caster's quest log opens a creature's link to an objective, for the unit
 /// `unit_id` that stands as the second unit of the creature's prerequisite
-/// (genesis_prime/game/objective_link `of`).
+/// (genesis_prime/shared/objective_link `of`).
 fn link_of(
   tables tables: table_store.Tables,
   activations activations: activate.Activations,

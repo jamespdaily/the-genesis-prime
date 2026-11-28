@@ -19,7 +19,7 @@
 ////   objectives' spells, and an item's use plays it only when every row of its tree is
 ////   played (`effect_row_read.first_unplayed`) and its plan holds; else the use is refused,
 ////   with the reason in `item_refusals`. An item's spell of any other kind stays with the
-////   creature's activate cast (genesis_prime/game/activate).
+////   creature's activate cast (genesis_prime/shared/activate).
 
 import genesis_prime/game/effect_row_read
 import genesis_prime/game/objective_kind

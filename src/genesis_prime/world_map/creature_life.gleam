@@ -30,13 +30,13 @@
 ////   retiring until the creature ends, so no viewer is sent a corpse the spawn's next
 ////   creature does not know.
 
-import genesis_prime/game/strike_tell.{
-  type Answered, type Tell, Answered, CreatureStriker, Landed, PlayerStriker,
-  Refused,
-}
 import genesis_prime/shared/area.{type Anchor, type Inside, type Row}
 import genesis_prime/shared/damage
 import genesis_prime/shared/hit.{type Defence, type Offence}
+import genesis_prime/shared/strike_tell.{
+  type Answered, type Tell, Answered, CreatureStriker, Landed, PlayerStriker,
+  Refused,
+}
 import genesis_prime/shared/telegraph_entries.{type Draw}
 import genesis_prime/table/id.{type Spell4Id}
 import gleam/float
@@ -62,7 +62,7 @@ pub type Hostile {
 
 /// A creature's own attack, worked out when the content loads
 /// (genesis_prime/world_map/spawn) from its kind's spell
-/// (genesis_prime/world_map/creature_kind): the Spell4 it casts; the offence each
+/// (genesis_prime/shared/creature_kind): the Spell4 it casts; the offence each
 /// cast strikes with, whose blow is the damage effect its difficulty chooses by the
 /// effect's caster prerequisite (`0x14049eeb0`: 184741 for difficulty 6 or less,
 /// 184777 for 7 or more), valued by the creature formula (`0x140565600`, GameFormula
@@ -164,7 +164,7 @@ pub fn offence_of_go(
 }
 
 /// A spell a creature casts besides its attack, chosen by its kind's list
-/// (genesis_prime/world_map/creature_kind `specials`): the spell as an `Attack` (always
+/// (genesis_prime/shared/creature_kind `specials`): the spell as an `Attack` (always
 /// `Charged`), and the time from the cast's start until it may be cast again, a server
 /// choice.
 pub type Special {
@@ -219,7 +219,7 @@ pub type Combat {
 }
 
 /// A creature's fixed values for a fight: its health, what it brings and its kind's
-/// respawn time (genesis_prime/world_map/creature_kind).
+/// respawn time (genesis_prime/shared/creature_kind).
 pub type Body {
   Body(max_health: Int, combat: Combat, respawn_ms: Int)
 }

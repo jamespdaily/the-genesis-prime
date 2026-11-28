@@ -16,9 +16,9 @@
 
 import connection_rule_support as support
 import genesis_prime/game/held_changes
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts.{EndsAt, HeldEffect}
-import genesis_prime/game/unit_news.{Health, PeerNews}
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_casts.{EndsAt, HeldEffect}
+import genesis_prime/shared/unit_news.{Health, PeerNews}
 import genesis_prime/shared/unit_properties.{Source}
 import genesis_prime/step.{type ServiceStep, ConnectionId, WatchEnded, WatchId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}

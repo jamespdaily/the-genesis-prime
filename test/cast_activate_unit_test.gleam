@@ -17,12 +17,12 @@
 
 import cast_support as support
 import fixture_tables
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/state.{type Effect} as cast_state
-import genesis_prime/game/objective_link
 import genesis_prime/message/client_activate_unit.{ClientActivateUnit}
+import genesis_prime/shared/activate
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{LogWarning}
 import genesis_prime/table/creature2
@@ -316,7 +316,7 @@ pub fn a_client_activate_unit_picks_with_the_checklist_bit_of_the_unit_test() ->
 /// What the 0xb3 for Creature2 10036, which has no activate spell and a questAnim link to
 /// quest 3244's objective 0, gives a caster whose quest log is this one, when the server
 /// offers the unit by another objective's count: the link is read by the rule that reads
-/// it (genesis_prime/game/objective_link `of`).
+/// it (genesis_prime/shared/objective_link `of`).
 fn linked_creature_used(quests quests: QuestView) -> List(Effect) {
   let tables = fixture_tables.shared()
   let caster = cast_state.Caster(..standing(), quests:)

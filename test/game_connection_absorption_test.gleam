@@ -24,12 +24,12 @@
 import game_connection_support as support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{Absorption}
 import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{Absorption}
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/world_map/relay
 import gleam/list

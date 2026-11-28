@@ -24,7 +24,6 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/start_place.{Facing}
-import genesis_prime/game/unit_news
 import genesis_prime/hand_off.{Kept}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/disconnect_reason.{
@@ -46,6 +45,7 @@ import genesis_prime/message/unit_stat.{UnitStat}
 import genesis_prime/message/unit_stat_float.{UnitStatFloat}
 import genesis_prime/message/unit_stat_value
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{
   CancelTimer, ConnectionId, EndedBeforeAnswer, LogError, LogInfo, LogWarning,
   Map, NoAnswerInTime, NotRunning, OwnEffect, OwnEvent, Sessions, StartTimer,

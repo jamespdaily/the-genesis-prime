@@ -200,8 +200,6 @@ import genesis_prime/game/player_state.{type PlayerState, PlayerState}
 import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
 import genesis_prime/message/bit_stream
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
@@ -227,7 +225,9 @@ import genesis_prime/shared/class_resource
 import genesis_prime/shared/creature_path
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/hit_radius
+import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionId, type Effect, type Now,

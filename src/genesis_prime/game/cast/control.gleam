@@ -57,9 +57,6 @@ import genesis_prime/game/cast/state.{
 } as cast_state
 import genesis_prime/game/held_changes
 import genesis_prime/game/player_address.{type PlayerAddress}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state
 import genesis_prime/shared/crowd_control
@@ -70,6 +67,9 @@ import genesis_prime/shared/lasts
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/spell_effect
 import genesis_prime/shared/spell_plan.{type Spell}
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_casts
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/table/id.{type Spell4EffectsId}
 import gleam/bool

@@ -7,16 +7,16 @@
 
 import character_support
 import connection_rule_support as support
-import genesis_prime/game/chat_channel
-import genesis_prime/game/chat_tell.{type Said as ChatSaid}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{type PeerNews, Appeared, Health, PeerNews}
 import genesis_prime/message/bit_stream
+import genesis_prime/shared/chat_channel
+import genesis_prime/shared/chat_tell.{type Said as ChatSaid}
+import genesis_prime/shared/player_unit
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news.{type PeerNews, Appeared, Health, PeerNews}
 import genesis_prime/step.{type ServiceStep, ConnectionId, OwnEvent, Told}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/map_id
-import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/relay
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int

@@ -90,7 +90,7 @@
 ////   the weapon the client hides the bar and refuses the abilities that need
 ////   one (`lua.ActionBarFrame.InitializeBars`, `0x1403afb10`). Holding an item
 ////   draws nothing: the worn set is drawn by the item visuals the map's unit
-////   carries in its 0x262 (genesis_prime/world_map/player_unit,
+////   carries in its 0x262 (genesis_prime/shared/player_unit,
 ////   `opcode.0x262.worn_visuals`). The unit's 0x262 also carries the gear's
 ////   health, shield and properties (`player_unit.create`), and the player's own
 ////   carries its class resource's slot at its start and the slot's maximum
@@ -148,7 +148,6 @@ import genesis_prime/game/camp
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_state
 import genesis_prime/game/chat
-import genesis_prime/game/chat_tell
 import genesis_prime/game/client_casts
 import genesis_prime/game/currency.{type Currencies}
 import genesis_prime/game/departures
@@ -185,10 +184,12 @@ import genesis_prime/message/reward_properties
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_is_player.{UnitIsPlayer}
 import genesis_prime/shared/amp_spec
+import genesis_prime/shared/chat_tell
 import genesis_prime/shared/class_resource
 import genesis_prime/shared/item_property
 import genesis_prime/shared/loadout.{type Loadout}
 import genesis_prime/shared/look
+import genesis_prime/shared/player_unit
 import genesis_prime/shared/prerequisite.{type Prerequisite}
 import genesis_prime/shared/spell_tier
 import genesis_prime/shared/unit_fields
@@ -204,7 +205,6 @@ import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
-import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn_id.{type LoadedSpawns, SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/bool

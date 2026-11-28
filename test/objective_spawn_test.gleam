@@ -44,12 +44,13 @@ import database_support
 import envoy
 import fixture_tables
 import genesis_prime/content/refusal
-import genesis_prime/game/activate
 import genesis_prime/game/click_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/place_objective
 import genesis_prime/game/target_group
 import genesis_prime/import_world_data
+import genesis_prime/shared/activate
+import genesis_prime/shared/creature_unit_type
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
 import genesis_prime/table/loader/server_table
@@ -59,7 +60,6 @@ import genesis_prime/table/world_location2
 import genesis_prime/terrain.{type Ground}
 import genesis_prime/world_map/checklist_index.{Candidate}
 import genesis_prime/world_map/creature_faction
-import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/objective_spawn.{type Placed}
 import genesis_prime/world_map/spawn.{type Row}
 import genesis_prime/world_map/spawn_id.{SpawnId}

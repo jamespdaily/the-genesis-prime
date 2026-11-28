@@ -30,23 +30,24 @@ import crowd_control_support
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/experience.{Credit}
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell.{Answered, Key, Landed, Refused, Strike}
-import genesis_prime/game/unit_casts.{
-  type CastView, CastView, EndsAt, HeldEffect, ViewTarget,
-}
-import genesis_prime/game/unit_news.{
-  type PeerNews, CreatureAppeared, CreatureMoved, PeerNews, PropertiesChanged,
-  Removed,
-}
 import genesis_prime/message/float32
 import genesis_prime/message/unit_create_cast.{
   type UnitCreateCast, UnitCreateCast,
 }
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/shared/creature_kind.{Kind}
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit.{Blow, Offence, Rolls, Worked}
+import genesis_prime/shared/strike_tell.{Answered, Key, Landed, Refused, Strike}
+import genesis_prime/shared/unit_casts.{
+  type CastView, CastView, EndsAt, HeldEffect, ViewTarget,
+}
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{
+  type PeerNews, CreatureAppeared, CreatureMoved, PeerNews, PropertiesChanged,
+  Removed,
+}
 import genesis_prime/shared/unit_properties.{type Modifier, type Source, Change}
 import genesis_prime/shared/unit_state
 import genesis_prime/step.{
@@ -58,7 +59,6 @@ import genesis_prime/table/id.{
   Creature2Id, Faction2Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import genesis_prime/world_map/creature.{type State, Retire, Settings}
-import genesis_prime/world_map/creature_kind.{Kind}
 import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation.{type Generation}

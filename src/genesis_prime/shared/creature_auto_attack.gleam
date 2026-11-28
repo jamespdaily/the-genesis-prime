@@ -1,6 +1,6 @@
 //// The auto-attacks a kind of creature strikes with in turn, as the content load reads
 //// them (the creature_auto_attack table, genesis_prime/content/creature_auto_attack) and
-//// checks, and what the kind holds of them (genesis_prime/world_map/creature_kind
+//// checks, and what the kind holds of them (genesis_prime/shared/creature_kind
 //// `Kind.attack_spell4_id`, the first, and `Kind.alternate_spell4_ids`, the rest). The
 //// client's Spell4 descriptions mark a creature's auto-attacks (`[AUTO-ATTACK]`,
 //// "Auto-Attack #1", "#2") but no client table links a creature to a spell
@@ -21,7 +21,7 @@
 ////   `RowId` holds one integer, so the sentence carries the Spell4.
 //// - **The load refuses** a Spell4 the client lacks; a spell with a cast time, since an
 ////   auto-attack strikes at once (a spell with a cast bar is a special,
-////   genesis_prime/world_map/creature_special); a spell `creature_attack.evaluated` refuses
+////   genesis_prime/shared/creature_special); a spell `creature_attack.evaluated` refuses
 ////   (an innate cost, a periodic damage row, a prerequisite of a type the attack rule does
 ////   not read); and a spell whose damage formula the creature rule does not read for the
 ////   creature's difficulty (`creature_attack.loadable`), which the spawn load would refuse
@@ -30,11 +30,11 @@
 ////   first listed auto-attack first, then each next, then the first again
 ////   (genesis_prime/world_map/creature_fight `chosen`).
 
+import genesis_prime/shared/creature_attack
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Spell4Id, Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/spell4
-import genesis_prime/world_map/creature_attack
 import gleam/int
 import gleam/list
 import gleam/set.{type Set}

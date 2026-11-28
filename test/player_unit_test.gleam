@@ -1,4 +1,4 @@
-//// A player's unit as message 0x262 creates it (`genesis_prime/world_map/player_unit`).
+//// A player's unit as message 0x262 creates it (`genesis_prime/shared/player_unit`).
 //// Expected values come from these places.
 //// - The client's own bytes for a live character: `vector.opcode.0x262.roxo_alive`
 ////   (the fact file), message 0x262's body for Roxo Stompstone (unit id 1,
@@ -30,10 +30,10 @@ import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_property.{UnitProperty}
+import genesis_prime/shared/player_unit
 import genesis_prime/shared/unit_fields
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, RaceId, UnitProperty2Id}
-import genesis_prime/world_map/player_unit
 import gleam/list
 import gleam/option.{None, Some}
 import message_support

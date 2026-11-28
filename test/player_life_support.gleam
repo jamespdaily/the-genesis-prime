@@ -8,10 +8,10 @@ import genesis_prime/game/player_life.{
   StartTimer, ToClient, ToViewers,
 }
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
 import genesis_prime/shared/hit.{type Defence, type Offence, Rolls, Worked}
 import genesis_prime/shared/loadout
 import genesis_prime/shared/rating
+import genesis_prime/shared/strike_tell
 import genesis_prime/step.{TimerId}
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/map_id.{MapId}

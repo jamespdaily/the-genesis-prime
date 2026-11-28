@@ -16,12 +16,12 @@
 //// Rules over the client's tables and the units the player is shown; the tests are
 //// `objective_place_test` and `place_objective_test`.
 
-import genesis_prime/game/activate
 import genesis_prime/game/objective_kind
-import genesis_prime/game/objective_link
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
+import genesis_prime/shared/activate
+import genesis_prime/shared/objective_link
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{
   Faction2Id, QuestDirectionEntryId, QuestDirectionId, QuestObjectiveId,

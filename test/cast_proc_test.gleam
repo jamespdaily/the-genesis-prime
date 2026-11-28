@@ -40,8 +40,6 @@ import genesis_prime/game/held_tier
 import genesis_prime/game/movement
 import genesis_prime/game/player_address
 import genesis_prime/game/proc as event_proc
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
@@ -64,7 +62,9 @@ import genesis_prime/shared/spell_plan.{
 }
 import genesis_prime/shared/spell_tier
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/ticking
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type Now, type TimerId, ConnectionId, LogDebug}
 import genesis_prime/table/id.{

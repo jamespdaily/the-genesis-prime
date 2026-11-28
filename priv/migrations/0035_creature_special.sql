@@ -11,7 +11,7 @@
 -- The client names no spell for a creature and no cadence, so each row is a retail record
 -- of the creature's abilities, and its cooldown a server choice marked as a guess in
 -- `reason`. The load checks each row against the client's tables
--- (genesis_prime/world_map/creature_special).
+-- (genesis_prime/shared/creature_special).
 
 create table creature_special (
   creature_id integer not null,

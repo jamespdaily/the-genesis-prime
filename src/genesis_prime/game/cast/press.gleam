@@ -77,7 +77,6 @@
 ////   thresholdTime and sends nothing, so the server holds the charge until a
 ////   release or a cancel.
 
-import genesis_prime/game/activate
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/gate as cast_gate
@@ -103,6 +102,7 @@ import genesis_prime/game/player_state.{type PlayerState}
 import genesis_prime/gap
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/shared/activate
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/spell_effect
 import genesis_prime/shared/spell_plan.{type Plans, type Spell}

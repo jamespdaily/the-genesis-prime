@@ -55,17 +55,17 @@
 //// | `CastWent` | the caster's go has told the told player each of its changes | the told player's current stay | none |
 //// | `AllyEvent` | the events of a blow on the told player that the caster's Proc rows on it wait for | the told player's current stay | none |
 
-import genesis_prime/game/chat_tell.{type Said as ChatSaid}
 import genesis_prime/game/experience.{type Credit}
 import genesis_prime/game/held_changes.{type PlayerChange}
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell.{
+import genesis_prime/shared/chat_tell.{type Said as ChatSaid}
+import genesis_prime/shared/forced_move
+import genesis_prime/shared/strike_tell.{
   type Answered, type Fight, type PlayerAnswered, type PlayerEvent,
   type PlayerStrike, type Tell as StrikeTell,
 }
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{type PeerNews}
-import genesis_prime/shared/forced_move
+import genesis_prime/shared/unit_casts
+import genesis_prime/shared/unit_news.{type PeerNews}
 import genesis_prime/shared/unit_properties
 import genesis_prime/shared/unit_state
 
@@ -127,7 +127,7 @@ pub fn kind_of(payload payload: Payload) -> Kind {
 /// the relay's: the map names the sender and the stay to the creature (`ToldCreature`).
 pub type Inbound {
   /// The strike of a cast's go, which the creature's owner process decides
-  /// (genesis_prime/game/strike_tell).
+  /// (genesis_prime/shared/strike_tell).
   Strike(tell: StrikeTell)
   /// The player stands at `place`, its move `seq`, with its race's hit radius, for a
   /// creature that holds it on its threat list.

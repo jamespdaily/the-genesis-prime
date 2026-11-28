@@ -28,14 +28,6 @@ import creature_news_support
 import crowd_control_support
 import fixture_tables
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell.{
-  type Key, Answered, Attacks, CreatureStriker, Immune, Key, Landed,
-  PlayerStriker, Refused, Released, Strike, Threatened,
-}
-import genesis_prime/game/unit_news.{
-  type News, CastFinished, CastStarted, CastWent, CreatureAppeared,
-  CreatureFaces, CreatureMoved, CreaturePlaced, PeerNews,
-}
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/damage_type
@@ -48,13 +40,24 @@ import genesis_prime/message/spell_target_info.{SpellTargetInfo}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
 import genesis_prime/message/spell_telegraph_position.{SpellTelegraphPosition}
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_kind.{type Kind, type Kinds, Kind}
 import genesis_prime/shared/creature_path.{Running, Timed}
+import genesis_prime/shared/creature_turn
+import genesis_prime/shared/creature_unit_type
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/shared/lasts
+import genesis_prime/shared/strike_tell.{
+  type Key, Answered, Attacks, CreatureStriker, Immune, Key, Landed,
+  PlayerStriker, Refused, Released, Strike, Threatened,
+}
 import genesis_prime/shared/telegraph_entries
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{
+  type News, CastFinished, CastStarted, CastWent, CreatureAppeared,
+  CreatureFaces, CreatureMoved, CreaturePlaced, PeerNews,
+}
 import genesis_prime/shared/unit_properties.{type Modifier, Change}
 import genesis_prime/step.{
   type ConnectionId, type ServiceStep, Connection, ConnectionId, CreatureStart,
@@ -64,10 +67,7 @@ import genesis_prime/table/id.{Creature2Id, Spell4Id, UnitProperty2Id}
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature.{type State, Settings}
 import genesis_prime/world_map/creature_fight
-import genesis_prime/world_map/creature_kind.{type Kind, type Kinds, Kind}
 import genesis_prime/world_map/creature_life
-import genesis_prime/world_map/creature_turn
-import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/relay

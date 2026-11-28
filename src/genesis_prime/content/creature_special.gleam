@@ -1,6 +1,6 @@
 //// The creature_special table as the server reads it at start: one query for every row no import has retired,
 //// the rows handed to the pure check beside the creature_kind rows
-//// (genesis_prime/world_map/creature_kind `select`), which puts each creature's specials
+//// (genesis_prime/shared/creature_kind `select`), which puts each creature's specials
 //// into its kind.
 ////
 //// ```
@@ -13,7 +13,7 @@
 ////   (genesis_prime/content/creature_kind `put`).
 
 import genesis_prime/content/sql
-import genesis_prime/world_map/creature_special.{type Row, Row}
+import genesis_prime/shared/creature_special.{type Row, Row}
 import gleam/list
 import gleam/result
 import pog

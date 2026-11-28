@@ -6,7 +6,6 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/player_address
 import genesis_prime/game/shown.{Exile, ShownCreature}
 import genesis_prime/game/strike.{type Attacker, Attacker}
-import genesis_prime/game/strike_tell
 import genesis_prime/shared/area.{type Pose, Point, Pose}
 import genesis_prime/shared/creature_path
 import genesis_prime/shared/damage
@@ -14,6 +13,7 @@ import genesis_prime/shared/effect_kind
 import genesis_prime/shared/spell_area.{DamageEffect}
 import genesis_prime/shared/spell_plan.{AimsAtArea}
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell
 import genesis_prime/step.{type LogLevel, type TimerId, ConnectionId}
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId}
 import genesis_prime/world_map/creature_life.{type Attackable, Hostile}

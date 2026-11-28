@@ -37,8 +37,6 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/frames
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell.{Answered, Key, Landed}
-import genesis_prime/game/unit_news.{PeerNews}
 import genesis_prime/game/vendor
 import genesis_prime/game/world_entry
 import genesis_prime/message/buyback_list.{BuybackList}
@@ -63,13 +61,16 @@ import genesis_prime/message/vendor_items
 import genesis_prime/service
 import genesis_prime/service/shell
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/creature_turn
 import genesis_prime/shared/damage
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit
 import genesis_prime/shared/hit_radius
 import genesis_prime/shared/spell_plan
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell.{Answered, Key, Landed}
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{PeerNews}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{
@@ -79,7 +80,6 @@ import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_registry
-import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/map
 import genesis_prime/world_map/registry.{type MapProcess}
 import genesis_prime/world_map/relay

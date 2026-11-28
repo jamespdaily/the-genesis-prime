@@ -40,11 +40,11 @@
 //// | A character of neither faction | Crash | `landing` |
 
 import genesis_prime/content/refusal
-import genesis_prime/game/activate.{type Link, OpenLink}
 import genesis_prime/game/objective_kind
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/tutorial
+import genesis_prime/shared/activate.{type Link, OpenLink}
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/top_zone
 import genesis_prime/table/creature2

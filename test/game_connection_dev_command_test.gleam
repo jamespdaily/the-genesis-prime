@@ -31,13 +31,10 @@ import game_connection_support as support
 import genesis_prime/client_connection.{
   type Answer, type Request, AskMap, AskStore, FromStore, TellMoved,
 }
-import genesis_prime/game/chat_channel
-import genesis_prime/game/chat_tell
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/dev_command as connection_dev_command
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, AccountDisconnected, LostUserServer,
@@ -49,6 +46,9 @@ import genesis_prime/message/quest_state.{type QuestState, QuestState}
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
+import genesis_prime/shared/chat_channel
+import genesis_prime/shared/chat_tell
+import genesis_prime/shared/strike_tell
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, type Outcome,
   CancelTimer, ConnectionId, OwnEffect, OwnEvent, StoppedWaiting, TimerFired,

@@ -23,8 +23,6 @@ import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
 import genesis_prime/game/heal_split
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{type News, CastFinished, CastTargetsRemoved}
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{AbilityRestriction}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
@@ -48,6 +46,10 @@ import genesis_prime/shared/spell_plan.{
 }
 import genesis_prime/shared/spend
 import genesis_prime/shared/ticking
+import genesis_prime/shared/unit_casts
+import genesis_prime/shared/unit_news.{
+  type News, CastFinished, CastTargetsRemoved,
+}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict
 import gleam/int

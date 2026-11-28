@@ -4,7 +4,7 @@
 //// no move. A reference to `TellMove` in a file of `src` or `dev` other than the mover's
 //// (`genesis_prime/game/connection/movement`), an import of `move_stamp` or
 //// `relayed_movement` in a file of the world map, and an import of either, or a field of a move's type, in the news
-//// type (`genesis_prime/game/unit_news`) are breaches. The rule is shown on planted
+//// type (`genesis_prime/shared/unit_news`) are breaches. The rule is shown on planted
 //// files, then read over the real ones.
 
 import code_rule/planted
@@ -22,7 +22,7 @@ const request_module = "genesis_prime/client_connection"
 
 const mover = "src/genesis_prime/game/connection/movement.gleam"
 
-const unit_news = "src/genesis_prime/game/unit_news.gleam"
+const unit_news = "src/genesis_prime/shared/unit_news.gleam"
 
 const world_map_directory = "src/genesis_prime/world_map"
 

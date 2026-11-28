@@ -14,7 +14,6 @@
 ////   again from that go.
 
 import cast_support as support
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect} as cast_state
@@ -23,6 +22,7 @@ import genesis_prime/game/held_changes
 import genesis_prime/game/player_address
 import genesis_prime/message/float32
 import genesis_prime/message/spell_go
+import genesis_prime/shared/activate
 import genesis_prime/shared/lasting.{LastingRow}
 import genesis_prime/shared/lasts
 import genesis_prime/shared/spell_plan.{type Plans, Always}

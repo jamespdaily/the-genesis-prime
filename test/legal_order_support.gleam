@@ -27,7 +27,6 @@ import game_connection_support
 import genesis_prime/client_connection.{type Answer, type Message}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/strike_tell
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_death_state
@@ -35,6 +34,7 @@ import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_health
 import genesis_prime/message/unit_movement
 import genesis_prime/server
+import genesis_prime/shared/strike_tell
 import genesis_prime/step.{
   type ConnectionEvent, type Event, type ServiceEvent, Connection, ConnectionId,
   Creature, OwnEffect, OwnEvent, Send, Told, Woken,

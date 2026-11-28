@@ -31,8 +31,6 @@ import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell.{Landed}
-import genesis_prime/game/unit_news.{type PeerNews, PeerNews}
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
@@ -42,6 +40,8 @@ import genesis_prime/message/spell_effect_info
 import genesis_prime/message/spell_effect_result
 import genesis_prime/message/spell_go
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell.{Landed}
+import genesis_prime/shared/unit_news.{type PeerNews, PeerNews}
 import genesis_prime/shared/unit_state
 import genesis_prime/step.{OwnEvent}
 import genesis_prime/store.{Character}

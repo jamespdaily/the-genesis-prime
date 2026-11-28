@@ -11,11 +11,11 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_use.{ItemUse}
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/unit_news
 import genesis_prime/step
 import genesis_prime/store.{
   type HeldItem, type UnsetItem, type WorldRequest, HeldItem, UnsetItem,

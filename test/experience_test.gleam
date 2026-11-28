@@ -21,11 +21,11 @@
 
 import experience_support as experience
 import game_connection_support as support
-import genesis_prime/game/unit_news
 import genesis_prime/message/experience_gained.{ExperienceGained}
 import genesis_prime/message/float32
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}

@@ -46,16 +46,16 @@ import genesis_prime/game/experience.{
 }
 import genesis_prime/game/gear
 import genesis_prime/game/limited_action_set
-import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
 import genesis_prime/shared/class_resource
+import genesis_prime/shared/player_unit
 import genesis_prime/shared/spell_plan
 import genesis_prime/shared/spell_tier
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/store
-import genesis_prime/world_map/player_unit
 import gleam/list
 
 /// A creature's credit for the kill of the player's blow: the experience rule takes it, and

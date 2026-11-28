@@ -31,8 +31,6 @@ import genesis_prime/game/held_changes
 import genesis_prime/game/player_address.{PlayerAddress}
 import genesis_prime/game/proc
 import genesis_prime/game/shown
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/game/world_entry
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
@@ -44,6 +42,8 @@ import genesis_prime/shared/hit
 import genesis_prime/shared/lasting
 import genesis_prime/shared/lasts
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news.{CastStarted}
 import genesis_prime/shared/unit_properties.{Source}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId,

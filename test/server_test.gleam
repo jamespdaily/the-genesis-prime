@@ -21,9 +21,9 @@
 import ask_support
 import driven_time
 import genesis_prime/client_connection.{AskMap, TellChat, TellMoved}
-import genesis_prime/game/chat_tell
 import genesis_prime/server
 import genesis_prime/service
+import genesis_prime/shared/chat_tell
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}

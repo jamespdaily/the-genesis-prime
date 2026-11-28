@@ -42,12 +42,12 @@ import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
 import genesis_prime/connection/registry
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/start_place
-import genesis_prime/game/unit_news.{CreatureAppeared, PeerNews}
 import genesis_prime/load_moves
 import genesis_prime/load_queue
 import genesis_prime/load_run
 import genesis_prime/server
 import genesis_prime/service
+import genesis_prime/shared/unit_news.{CreatureAppeared, PeerNews}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/step/runtime
 import genesis_prime/store.{Character, CharacterId, NameStands}

@@ -1,11 +1,11 @@
-//// The activate cast's pick of a spell (genesis_prime/game/activate): which of a creature's
+//// The activate cast's pick of a spell (genesis_prime/shared/activate): which of a creature's
 //// four activate columns the client casts when the player right-clicks it. Expected values
 //// come from the client's pick, `0x14046c580` (fact `opcode.0x97.pick`), and the rows of the
 //// Seaspine Mollusk, Creature2 26462, in the client's tables.
 
 import client_tables
 import fixture_tables
-import genesis_prime/game/activate.{
+import genesis_prime/shared/activate.{
   ActivateEffect, CannotBePlanned, Column, Creature, NoActivateSpell, Picked,
   Planned, Unread,
 }

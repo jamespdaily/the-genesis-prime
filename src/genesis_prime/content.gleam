@@ -148,6 +148,7 @@ import genesis_prime/game/zone_welcome
 import genesis_prime/migration.{type Migration}
 import genesis_prime/readiness
 import genesis_prime/shared/class_resource
+import genesis_prime/shared/creature_kind
 import genesis_prime/shared/rating
 import genesis_prime/shared/server_proxy
 import genesis_prime/shared/sight
@@ -158,7 +159,6 @@ import genesis_prime/store/worker
 import genesis_prime/table/loader/store.{type Key}
 import genesis_prime/table/quest_objective.{type QuestObjective}
 import genesis_prime/world_map/creature_faction
-import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/game_number
 import genesis_prime/world_map/objective_spawn
 import genesis_prime/world_map/spawn

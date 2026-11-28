@@ -34,6 +34,8 @@ import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_kind.{Kinds}
+import genesis_prime/shared/creature_unit_type.{Turret}
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/hit.{Blow, Worked}
 import genesis_prime/shared/prerequisite
@@ -46,9 +48,7 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_faction.{type Factions}
-import genesis_prime/world_map/creature_kind.{Kinds}
 import genesis_prime/world_map/creature_life.{Attackable, Charged, Hostile}
-import genesis_prime/world_map/creature_unit_type.{Turret}
 import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth,
@@ -1221,7 +1221,7 @@ pub fn a_soldier_mission_an_instance_portal_and_an_outfit_group_with_rows_are_lo
 // ------------------------------------------- a creature's own attack
 //
 // A creature's own attack as the content load works it out
-// (`genesis_prime/world_map/creature_attack`, `genesis_prime/world_map/spawn`
+// (`genesis_prime/shared/creature_attack`, `genesis_prime/world_map/spawn`
 // `Attack`), on the client's committed rows of the Virtual Battle Beast and of Spell4
 // 5649. Expected values come from these places.
 // - `Spell4Effects.184741`: spell 5649's two Physical damage effects, 184741

@@ -1,5 +1,5 @@
 //// The creature_special table's rows and their checks
-//// (`genesis_prime/world_map/creature_special`, `creature_kind` `select` and `taken`), on the
+//// (`genesis_prime/shared/creature_special`, `creature_kind` `select` and `taken`), on the
 //// client's committed rows. Expected values come from these places.
 //// - The retail record: the Jabbithole pages of the creatures, Abilities tab, list Earthen
 ////   Roar at tier 1 (Spell4 55317) and tier 2 (55318, which the server leaves out by its own
@@ -25,14 +25,14 @@ import database_support
 import fixture_tables
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
-import genesis_prime/game/strike_tell
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_kind
+import genesis_prime/shared/creature_special.{type Row, Ref, Row}
 import genesis_prime/shared/spell_area
+import genesis_prime/shared/strike_tell
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/creature_life
-import genesis_prime/world_map/creature_special.{type Row, Ref, Row}
 import gleam/int
 import gleam/list
 import gleam/option.{Some}

@@ -1,4 +1,4 @@
-//// The creature_kind table's checks (`genesis_prime/world_map/creature_kind`), on
+//// The creature_kind table's checks (`genesis_prime/shared/creature_kind`), on
 //// the client's committed rows. Expected values come from these places.
 //// - Migration 0009 and the shared pattern of the content tables
 ////   (`genesis_prime/content`): row 0 is the default every creature without a row
@@ -7,7 +7,7 @@
 ////   is collected and named by its table, its id and its rule.
 //// - A respawn time below the strike deadline (1000 ms) is refused: a creature that
 ////   stood again before the round it was struck in closed could take that round's
-////   held news (`genesis_prime/game/strike_tell.deadline_ms`).
+////   held news (`genesis_prime/shared/strike_tell.deadline_ms`).
 //// - The default is 60 000 ms, a server choice: the client holds no respawn time
 ////   (`death.creature_respawn`).
 //// - The Virtual Battle Beast is Creature2 73464 (`Creature2.73464`).
@@ -23,12 +23,12 @@ import fixture_tables
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
 import genesis_prime/content/sql
-import genesis_prime/game/strike_tell
 import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/creature_guard_spells as guard_spells
+import genesis_prime/shared/creature_kind.{Kind, Kinds, Row}
+import genesis_prime/shared/strike_tell
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/spell4
-import genesis_prime/world_map/creature_guard_spells as guard_spells
-import genesis_prime/world_map/creature_kind.{Kind, Kinds, Row}
 import gleam/dict
 import gleam/list
 import gleam/option

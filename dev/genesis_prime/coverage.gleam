@@ -83,6 +83,7 @@ import genesis_prime/coverage/starting_ability
 import genesis_prime/dev_database
 import genesis_prime/dev_exit
 import genesis_prime/game/held_tier
+import genesis_prime/shared/creature_kind
 import genesis_prime/shared/rating
 import genesis_prime/shared/server_proxy
 import genesis_prime/shared/spell_area
@@ -97,7 +98,6 @@ import genesis_prime/table/spell_level
 import genesis_prime/table_folder
 import genesis_prime/tooltip_token
 import genesis_prime/world_map/creature_faction
-import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/spawn
 import gleam/dict
 import gleam/int

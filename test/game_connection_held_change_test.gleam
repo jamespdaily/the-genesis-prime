@@ -39,12 +39,6 @@ import genesis_prime/game/held_changes.{
   PlayerCastWent, PlayerChangeEnds, PlayerChangeStarts,
 }
 import genesis_prime/game/proc
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
-import genesis_prime/game/unit_news.{
-  type News, Absorption, Appeared, CastFinished, CastStarted, HeldCastEnded,
-  HeldCastStarted, InterruptArmor, PropertiesChanged, Removed,
-}
 import genesis_prime/game/world_entry
 import genesis_prime/message/float32
 import genesis_prime/message/spell_finished
@@ -64,6 +58,12 @@ import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/shared/hit
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
+import genesis_prime/shared/unit_news.{
+  type News, Absorption, Appeared, CastFinished, CastStarted, HeldCastEnded,
+  HeldCastStarted, InterruptArmor, PropertiesChanged, Removed,
+}
 import genesis_prime/shared/unit_properties.{type Source, Change, Source}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId, OwnEffect,

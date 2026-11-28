@@ -34,8 +34,6 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/chat
-import genesis_prime/game/chat_channel
-import genesis_prime/game/chat_tell
 import genesis_prime/game/connection/state.{
   type Session, AwaitingHelloReply, Buying, ClaimingSession, EnteringWorld,
   Granting, InCharacterSelect, InWorld, LeavingMap, MovingItem, SavingPlace,
@@ -46,6 +44,8 @@ import genesis_prime/game/dev_command
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/message/disconnect_reason.{LostUserServer}
+import genesis_prime/shared/chat_channel
+import genesis_prime/shared/chat_tell
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, type Outcome, LogWarning,
   OwnEffect, Unwatch, Watch,
@@ -247,7 +247,7 @@ pub fn said_sent(
 }
 
 /// What another player's connection told this one about chat
-/// (genesis_prime/game/chat_tell): taken with the player in the world, and by
+/// (genesis_prime/shared/chat_tell): taken with the player in the world, and by
 /// `chat.told`. A whisper that finds no player in the world is answered
 /// `NotHeard`; any other tell is dropped.
 pub fn chat_sent(

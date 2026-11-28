@@ -22,7 +22,6 @@
 import cast_support as support
 import client_tables
 import fixture_tables
-import genesis_prime/game/activate.{type Target, Body, Usable}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/held_state
@@ -30,12 +29,13 @@ import genesis_prime/game/objective_kind
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
-import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
+import genesis_prime/shared/activate.{type Target, Body, Usable}
 import genesis_prime/shared/item_property
 import genesis_prime/shared/spell_plan
 import genesis_prime/shared/target_mechanic
+import genesis_prime/shared/unit_news.{CastStarted}
 
 import genesis_prime/message/crowd_control_state.{type CrowdControlState, Stun}
 import genesis_prime/message/interaction_result

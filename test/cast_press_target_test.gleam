@@ -23,7 +23,6 @@
 
 import cast_support as support
 import class_resource_support
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/proc as cast_proc
@@ -31,8 +30,6 @@ import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as c
 import genesis_prime/game/heal_split
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/player_state.{type PlayerState, PlayerState}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{CastTicked}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
@@ -44,12 +41,15 @@ import genesis_prime/message/spell_effect_tick.{
   type SpellEffectTick, SpellEffectTick,
 }
 import genesis_prime/message/spell_finished
+import genesis_prime/shared/activate
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/spell_plan.{type Plans, type Spell, Spell}
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/target_mechanic.{Targeted, Targeting}
 import genesis_prime/shared/ticking.{Schedule, Ticks}
+import genesis_prime/shared/unit_news.{CastTicked}
 import genesis_prime/step.{ConnectionId, LogWarning}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict.{type Dict}

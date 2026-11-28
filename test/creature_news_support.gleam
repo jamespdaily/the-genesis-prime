@@ -3,10 +3,11 @@
 
 import connection_rule_support as support
 import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
-import genesis_prime/game/strike_tell.{
+import genesis_prime/shared/creature_turn
+import genesis_prime/shared/strike_tell.{
   Answered, Attacks, Landed, Refused, Released, Threatened,
 }
-import genesis_prime/game/unit_news.{
+import genesis_prime/shared/unit_news.{
   type News, CastFinished, CastStarted, CastWent, CombatState, CreatureAppeared,
   CreatureMoved, CreaturePlaced, Health, PeerNews, Targeting, Threat,
 }
@@ -15,7 +16,6 @@ import genesis_prime/step.{
   OwnEffect, Send, Stop,
 }
 import genesis_prime/world_map/creature
-import genesis_prime/world_map/creature_turn
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
 import genesis_prime/world_map/relay

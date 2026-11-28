@@ -93,7 +93,7 @@ import genesis_prime/world_map/stay.{type Stay}
 import gleam/option.{type Option}
 
 /// How long a round waits for its answers, in milliseconds. A creature's respawn time
-/// is never below it (genesis_prime/world_map/creature_kind), so a unit does not stand
+/// is never below it (genesis_prime/shared/creature_kind), so a unit does not stand
 /// again while a round it was struck in is open.
 pub const deadline_ms = 1000
 

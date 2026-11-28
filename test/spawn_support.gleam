@@ -20,10 +20,14 @@ import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
 import genesis_prime/game/vendor
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_guard_spells
+import genesis_prime/shared/creature_kind.{type Kinds, Kind, Kinds}
+import genesis_prime/shared/creature_special
+import genesis_prime/shared/creature_unit_type.{NonPlayer}
 import genesis_prime/shared/hit.{Blow, Defence, Offence, Worked}
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/telegraph_entries
 import genesis_prime/shared/unit_fields
 import genesis_prime/table/creature2
@@ -31,13 +35,9 @@ import genesis_prime/table/id.{type UnitProperty2Id, Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/terrain
 import genesis_prime/world_map/creature_faction
-import genesis_prime/world_map/creature_guard_spells
-import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/creature_life.{
   type Attack, Attack, Attackable, Combat, Hostile, Instant,
 }
-import genesis_prime/world_map/creature_special
-import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
 import genesis_prime/world_map/spawn_id.{type SpawnId, LoadedSpawns, SpawnId}

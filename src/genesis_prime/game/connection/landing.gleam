@@ -1,5 +1,5 @@
 //// What another player's cast lands on this connection's player: the heal rows a
-//// caster's connection told it (genesis_prime/game/strike_tell `PlayerStrike`), applied
+//// caster's connection told it (genesis_prime/shared/strike_tell `PlayerStrike`), applied
 //// to its life and answered, and the changes a caster's cast holds on it
 //// (genesis_prime/game/held_changes), applied as its own cast's change of that kind and
 //// held per caster until one of the ends below.
@@ -39,10 +39,10 @@ import genesis_prime/game/held_changes
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/proc
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
 import genesis_prime/gap
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/world_map/relay

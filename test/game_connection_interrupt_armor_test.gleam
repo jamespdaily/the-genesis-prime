@@ -20,17 +20,17 @@ import game_connection_support as support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{
-  type News, InterruptArmor, PropertiesChanged,
-}
 import genesis_prime/message/float32
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{
+  type News, InterruptArmor, PropertiesChanged,
+}
 import genesis_prime/step.{type ConnectionStep}
 import gleam/list
 import gleam/option.{None}
