@@ -856,16 +856,18 @@ pub fn threshold_row_class_costs_read_as_row_class_costs_test() -> Nil {
   assert last_stage_costs(cost: #(5, 3))
     == [spell_plan.SlotCost(slot: 0, amount: 3, result: 50)]
     as "types 5 to 11 on a row stay the slot costs of 0x1403b3320"
-  assert list.map([1, 3, 15, 16], fn(cost_type) {
+  assert list.map([1, 3, 15], fn(cost_type) {
       last_stage_costs(cost: #(cost_type, 3))
     })
     == [
       [spell_plan.UnheldCost(result: 44)],
       [spell_plan.UnheldCost(result: 176)],
       [spell_plan.UnheldCost(result: 167)],
-      [spell_plan.UnheldCost(result: 177)],
     ]
-    as "1, 3, 15 and 16 stay the vitals no rule of the server holds"
+    as "1, 3 and 15 stay the vitals no rule of the server holds"
+  assert last_stage_costs(cost: #(16, 3))
+    == [spell_plan.SlotCost(slot: 7, amount: 3, result: 177)]
+    as "0x140466520 case 0x10: a row's type 16 reads slot 7, the dash energy, and 0x1403d3650 refuses with 177"
 }
 
 pub fn a_stage_checks_its_row_cost_before_the_spells_innate_costs_test() -> Nil {

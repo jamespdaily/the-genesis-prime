@@ -8,7 +8,7 @@
 //// the cast rule's Gain (a go's gains)              ─▶ class_resource.gain
 //// a timer class_resource.owns                     ─▶ class_resource.timer_fired
 //// the player's properties changed (0x93a)          ─▶ class_resource.properties_followed (Focus's pool,
-////                                                    shares and cost modifier)
+////                                                    shares and cost modifier, the dash energy's maximum and factor)
 //// player_life's effects: 0x88c dead                ─▶ class_resource.died
 ////                        0x88c alive               ─▶ class_resource.came_back
 ////                        0x89a, the combat flag    ─▶ class_resource.combat_changed

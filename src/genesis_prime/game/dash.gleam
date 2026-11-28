@@ -240,5 +240,9 @@ pub fn gaps() -> List(gap.Entry) {
       area: "Dash",
       missing: "a dash out of a knockdown (the dash spells' effect is of a type the client has no reader for) and the passive abilities that trigger on a dash are not handled: the server has no knockdown of a player and no event of the cast rule fires a dash's procs",
     ),
+    gap.Entry(
+      area: "Dash",
+      missing: "the 500 ms window after a dash in which the client allows no second dash, and the global cooldown a dash press starts, are not kept: the server takes a paid dash at any time and starts no cooldown (GameFormula 482 and 483, SpellCoolDown 114)",
+    ),
   ]
 }

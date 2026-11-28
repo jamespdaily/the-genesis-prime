@@ -35,6 +35,7 @@ import genesis_prime/message/unit_stat.{type UnitStat, UnitStat}
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_float.{UnitStatFloat}
 import genesis_prime/message/unit_stat_value
+import genesis_prime/shared/class_resource
 import genesis_prime/shared/unit_fields
 import genesis_prime/store
 import genesis_prime/table/id.{ClassId}
@@ -296,7 +297,7 @@ pub fn resource_max_property_answers_5_for_slot_minus_1_and_a_healers_0x262_reso
 
 pub fn a_new_players_0x262_carries_stat_9_as_a_float_at_the_dash_maximum_and_property_38_at_it_for_every_class_test() -> Nil {
   use <- owned_test.run(10_000)
-  [1, 2, 3, 4, 5, 7]
+  class_resource.playable_class_ids()
   |> list.each(fn(class_id) {
     let player = entered_player_of(class_id)
     let assert [stat] =

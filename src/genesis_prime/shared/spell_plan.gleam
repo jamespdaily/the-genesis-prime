@@ -8686,15 +8686,11 @@ fn cost_of(
       )
     16, _ ->
       Ok(
-        Some(case on_row {
-          True -> UnheldCost(result: dash_refusal)
-          False ->
-            SlotCost(
-              slot: class_resource.dash_slot,
-              amount:,
-              result: dash_refusal,
-            )
-        }),
+        Some(SlotCost(
+          slot: class_resource.dash_slot,
+          amount:,
+          result: dash_refusal,
+        )),
       )
     _, Ok(#(slot, result)) -> Ok(Some(SlotCost(slot:, amount:, result:)))
     _, Error(Nil) if class_vital ->
@@ -8718,14 +8714,15 @@ fn is_class_vital(vital vital: Int) -> Bool {
   }
 }
 
-/// The result of a refused type 16 cost, the dash energy's (`0x1403b3320`, 0xb1).
+/// The result of a refused type 16 cost, the dash energy's (`0x1403b3320` case 0xf and
+/// `VitalCostResult` `0x1403d3650` case 0x10, 0xb1).
 const dash_refusal = 177
 
 /// The resource slot a cost or requirement type reads and the result its failure
 /// gives: 5 to 11 are slots 0 to 6 (50 to 56) (`0x1403b3320`, `0x1403b1780`). The
-/// client's types 16 and 27 to 29 read slots 7 to 10; an innate cost of type 16 is the dash
-/// energy's (`cost_of`), a threshold row's is held by no rule, and the others are no class
-/// resource of the server.
+/// client's types 16 and 27 to 29 read slots 7 to 10; a cost of type 16, on a spell or on a
+/// threshold row, is the dash energy's, slot 7 (`cost_of`, `UnitVitalValue` `0x140466520`
+/// case 0x10), and the others are no class resource of the server.
 fn slot_of(vital_type vital_type: Int) -> Result(#(Int, Int), Nil) {
   case vital_type {
     _ if vital_type >= 5 && vital_type <= 11 ->
