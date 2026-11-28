@@ -20,8 +20,8 @@ import game_wire_support.{
   press_until_dead_reading, read_after_the_map_and_the_creature_took_it,
   send_play, start_with_creatures, start_with_world_data,
   static_objects_created_in, the_dagun_and_its_map, walk_to,
-  with_world_data_on_ground, world_on, world_with_a_beast_ahead,
-  world_with_a_dagun_on, world_with_beasts,
+  with_world_data_on_ground, without_paralytic_surges_recharge, world_on,
+  world_with_a_beast_ahead, world_with_a_dagun_on, world_with_beasts,
 }
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/connection/registry
@@ -763,7 +763,7 @@ pub fn an_espers_telekinetic_strike_hits_only_the_beast_inside_its_never_drawn_t
       normal: 35,
       critical: 53,
     )
-    as "an Esper of level 1 with the Novice gear (Assault Rating 203.0625, Assault Power 50.77): a hit of Telekinetic Strike is 0.336 x 50.77 = 17.06, rounded to 17, plus 18.0 for the level, 35 (Spell4Effects 62159, 0x140565600); the Beast has 52 health and never deflects, so the health is 17 and then 0 when no hit is critical; a critical hit is 1.5 times that, 52 or 53, so 53 is used: 52 or more (UnitProperty2 127's default 1.5, a player's chance 0.05, CreatureLevel row 101), which kills at once"
+    as "an Esper of level 1 with the Novice gear (Assault Rating 203.0625, Assault Power 50.77): a hit of Telekinetic Strike is 0.336 x 50.77 = 17.06, rounded to 17, plus 18.0 for the level, 35 (Spell4Effects 62159, 0x140565600); the Beast has 52 health and never deflects, so the health is 17 and then 0 when no hit is critical; a critical hit is at least 52 (35 x 1.5 = 52.5; UnitProperty2 127's default 1.5, a player's chance 0.05, CreatureLevel row 101), which kills at once; the rounding of the 52.5 is not settled, so no value is named and the test's 53 only clamps"
   // Two hits kill it, or one when that hit is critical.
   let hit_count = list.length(healths)
   let #(watched, second_have) =
@@ -2031,9 +2031,10 @@ pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
   use <- owned_test.run(120_000)
   // A player deflects a blow by chance (BaseAvoidChance, CreatureLevel row 101's 0.05 at
   // unitPropertyValue01), and a deflected charge gives no health to read; the row holds 0 here,
-  // a case no client row holds, so the charge lands on every seed.
+  // a case no client row holds, so the charge lands on every seed. The creatures' bases read the
+  // same row, so the Sim-Turrets lose their deflect too (0.016).
   use tables <- fixture_tables.changes(edits: [
-    #("Spell4", 42_352, [#("spellCoolDown", planted_table.Integer(0))]),
+    without_paralytic_surges_recharge,
     #("CreatureLevel", 101, [#("unitPropertyValue01", planted_table.Float(0.0))]),
   ])
   let time = driven_time.new()

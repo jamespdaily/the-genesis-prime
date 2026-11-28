@@ -452,6 +452,13 @@ pub fn max_health_at_a_level_uses_that_levels_creature_level_row_test() -> Nil {
     as "no row, no bases"
 }
 
+pub fn a_missing_row_101_is_logged_as_the_base_combat_row_and_not_as_a_level_test() -> Nil {
+  use <- owned_test.run(10_000)
+  assert gear.describe(gear.NoBaseCombatRow)
+    == "CreatureLevel has no row 101 with the columns of the player's base combat properties, so the player's base chances are unknown"
+    as "row 101 is not a level, and the maximum health is not what failed"
+}
+
 pub fn an_item_whose_display_row_is_missing_is_not_drawn_and_gives_one_warning_test() -> Nil {
   use <- owned_test.run(60_000)
   // A copy of the Warrior's chest naming a display no ItemDisplay row holds. The

@@ -324,7 +324,12 @@ pub fn values_of(
   CreatureValues(
     combat: Combat(
       ..combat,
-      defence: defence_of(formulas:, level: spawn.level, value:),
+      defence: hit.defence_of(
+        formulas:,
+        level: spawn.level,
+        value:,
+        shield_mitigation_max: 0.0,
+      ),
       attack: worked(combat.attack, effects),
       alternates: list.map2(combat.alternates, alternate_effects, worked),
       specials: list.map2(
@@ -1291,7 +1296,12 @@ fn combat_of(
         kill_named: catalog.kill_named,
         creature:,
       ),
-      defence: defence_of(formulas:, level:, value:),
+      defence: hit.defence_of(
+        formulas:,
+        level:,
+        value:,
+        shield_mitigation_max: 0.0,
+      ),
       attack:,
       alternates: list.map(alternates, fn(alternate) { alternate.0 }),
       specials: list.map(specials, fn(special) { special.0 }),
@@ -1322,77 +1332,6 @@ fn interrupt_armor_in(value value: Value) -> creature_combat.InterruptArmor {
   creature_combat.interrupt_armor_of(maximum: value(
     unit_properties.interrupt_armor_threshold.value,
   ))
-}
-
-/// The creature's defence from its properties. Each chance is a rating formula's
-/// result from the creature's base and rating properties at its level (`0x140463340`
-/// deflect, `0x140463ac0` critical deflect, `0x140461a30` glance chance, `0x1404615f0`
-/// glance amount); a mitigation is the formula of GameFormula 1234 from Armor plus the
-/// resist of its damage type and the two offsets (`0x140464240`). The damage taken of
-/// each type is its multiplier and offset properties
-/// (`UnitProperty2.damage_heal_multipliers`).
-fn defence_of(
-  formulas formulas: Formulas,
-  level level: Int,
-  value value: Value,
-) -> hit.Defence {
-  let mitigation = fn(offset_of_type, resist) {
-    rating.mitigation_fraction(
-      formulas:,
-      level:,
-      // 103 DamageMitigationPctOffset, and the offset of the type (144 to 146).
-      base: value(103) +. value(offset_of_type),
-      // Armor plus the resist of the type (26 to 28).
-      rating: value(unit_properties.armor.value) +. value(resist),
-    )
-  }
-  let taken = fn(type_index) {
-    hit.DamageTaken(
-      multiplier: value(
-        unit_properties.damage_taken_multiplier_physical.value + type_index,
-      ),
-      offset: value(
-        unit_properties.damage_taken_offset_physical.value + type_index,
-      ),
-    )
-  }
-  hit.Defence(
-    // 101 BaseAvoidChance and 33 Rating_AvoidIncrease.
-    deflect_chance: rating.to_fraction(
-      formula: formulas.deflect_chance,
-      level:,
-      base: value(101),
-      rating: value(33),
-    ),
-    // 105 BaseAvoidCritChance and 43 Rating_CritChanceDecrease.
-    crit_deflect_chance: rating.to_fraction(
-      formula: formulas.crit_deflect,
-      level:,
-      base: value(105),
-      rating: value(43),
-    ),
-    // 164 BaseGlanceChance and 58 RatingGlanceChance.
-    glance_chance: rating.to_fraction(
-      formula: formulas.glance_chance,
-      level:,
-      base: value(164),
-      rating: value(58),
-    ),
-    // 195 BaseGlanceAmount and 61 RatingGlanceAmount.
-    glance_amount: rating.to_fraction(
-      formula: formulas.glance_amount,
-      level:,
-      base: value(195),
-      rating: value(61),
-    ),
-    physical_mitigation: mitigation(144, 26),
-    tech_mitigation: mitigation(145, 27),
-    magic_mitigation: mitigation(146, 28),
-    shield_mitigation_max: 0.0,
-    physical_taken: taken(0),
-    tech_taken: taken(1),
-    magic_taken: taken(2),
-  )
 }
 
 /// What a kind lists a spell as: its auto-attack (the attack and its alternates) or one of its

@@ -222,8 +222,13 @@ pub fn a_spellslinger_pressing_healing_salve_has_the_ally_in_range_healed_when_a
   let blows = blows_on(frames: ally_read, unit: ally_unit)
   let landed_count = list.count(landed, fn(blow_landed) { blow_landed })
   let fire_count = list.count(fires_at(landed:), fn(fires) { fires })
+  let deflected_count = list.length(game_client.missed_in(frames: ally_read))
+  assert landed_count + deflected_count == 4
+    as "the Dagun strikes the ally at each of its four ticks: a blow is read as a description or as a deflect (0x7fb), and each tick gave one of them"
   assert list.length(blows) == landed_count
-    as "the Dagun strikes the ally at each of its four ticks: a blow is read as a description or as a deflect (0x7fb)"
+    as "each landed tick is one description of the attack row on the ally"
+  assert fire_count >= 1
+    as "at least one blow landed, so the proc fired at the first landed blow: a heal missing here is the proc's, not a deflect's (four deflects of 0.05 are 6 in a million)"
   assert list.all(blows, fn(blow) { blow.health_damage > 0 })
     as "opcode.0x7f4: each blow that landed took health from the ally, so each raised TakesDamage"
   // The caster reads up to the ally's health news of blow 4 falling: the ally's connection

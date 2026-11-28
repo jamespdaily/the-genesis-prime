@@ -167,6 +167,51 @@ pub fn a_players_defence_reads_its_base_deflect_critical_deflect_glance_and_glan
   })
 }
 
+/// Each row lists one rating a worn item may give at 1000 (an item stat: flag 4, valuePerPoint
+/// 10): Rating_AvoidIncrease 33, Rating_CritChanceDecrease 43, RatingGlanceChance 58 and
+/// RatingGlanceAmount 61. The chance of the formula that reads it rises above 0 (the base is
+/// 0 here), and no other chance moves, as for a creature (`0x140463340`, `0x140463ac0`,
+/// `0x140461a30`, `0x1404615f0`).
+pub fn a_players_defence_reads_the_ratings_its_items_give_test() -> Nil {
+  use <- owned_test.run(10_000)
+  [
+    #(33, 0, "Rating_AvoidIncrease raises the deflect chance"),
+    #(43, 1, "Rating_CritChanceDecrease raises the critical deflect"),
+    #(58, 2, "RatingGlanceChance raises the glance chance"),
+    #(61, 3, "RatingGlanceAmount raises the glance amount"),
+  ]
+  |> list.each(fn(row) {
+    let #(property, index, reason) = row
+    let found =
+      chances_of(defence: defence_listing(listed: [#(property, 1000.0)]))
+    list.index_map(found, fn(chance, at) {
+      assert { chance >. 0.0 } == { at == index } as reason
+    })
+  })
+}
+
+/// Each row lists a resist: ResistPhysical 26, ResistTech 27 and ResistMagic 28 add to the
+/// Armor as the rating of their type's mitigation, as for a creature (`0x140464240`).
+pub fn a_players_mitigation_reads_the_resist_of_its_type_test() -> Nil {
+  use <- owned_test.run(10_000)
+  [
+    #(26, [True, False, False], "26 is Physical's alone"),
+    #(27, [False, True, False], "27 is Tech's alone"),
+    #(28, [False, False, True], "28 is Magic's alone"),
+  ]
+  |> list.each(fn(row) {
+    let #(property, expected, reason) = row
+    let defence = defence_listing(listed: [#(property, 1000.0)])
+    assert [
+        defence.physical_mitigation >. 0.0,
+        defence.tech_mitigation >. 0.0,
+        defence.magic_mitigation >. 0.0,
+      ]
+      == expected
+      as reason
+  })
+}
+
 /// Each row lists the mitigation offsets: DamageMitigationPctOffset 103 adds to all three
 /// types and 144, 145 and 146 each to its own (Physical, Tech, Magic), added to the
 /// formula's base before the Armor's rating, which is 0 here (`0x140464240`).

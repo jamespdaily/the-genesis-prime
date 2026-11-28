@@ -43,8 +43,10 @@ pub fn with_modifier(
   unit_properties.apply(properties:, source:, modifier:).0
 }
 
-/// A level-1 player wearing the loadout, as its entry makes it: the gear's properties
-/// as `wearing` lists them and the 26 base combat properties (`base_combat_rows`).
+/// A level-1 player wearing the loadout, as its 0x262 lists it: the gear's properties as
+/// `wearing` lists them and the literal 26 rows of `base_combat_rows`, which include the 24
+/// the entry leaves out for equalling their default (`entered` makes the unit as the entry
+/// does, from `gear.bases`).
 pub fn wearing_with_base_combat(loadout loadout: Loadout) -> Properties {
   listing(
     level: 1,

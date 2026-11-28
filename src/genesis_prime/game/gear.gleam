@@ -177,14 +177,22 @@ fn keep_one_shield(
 pub type HealthError {
   /// CreatureLevel has no row for the level.
   NoCreatureLevel(level: Int)
+  /// CreatureLevel has no row 101, or one too short, so the player's base combat properties
+  /// (`player_combat_bases`) cannot be read.
+  NoBaseCombatRow
 }
 
 /// The text that tells why, for the log.
 pub fn describe(error error: HealthError) -> String {
-  let NoCreatureLevel(level:) = error
-  "CreatureLevel has no row for level "
-  <> int.to_string(level)
-  <> ", so the player's maximum health is unknown"
+  case error {
+    NoCreatureLevel(level:) ->
+      "CreatureLevel has no row for level "
+      <> int.to_string(level)
+      <> ", so the player's maximum health is unknown"
+    NoBaseCombatRow ->
+      "CreatureLevel has no row 101 with the columns of the player's base combat properties"
+      <> ", so the player's base chances are unknown"
+  }
 }
 
 /// A player's maximum health at `level` with this gear: the Base Health of
@@ -209,7 +217,7 @@ pub fn max_health(
 /// `focus_pool`, the base pool of the player's class in points (0 for a class that holds
 /// no Focus), so taking a worn item off returns it to that base, then the 26 base combat
 /// properties (`player_combat_bases`).
-/// `NoCreatureLevel` when the table has no Base Health row for the level, or no row 101.
+/// `NoCreatureLevel` when the table has no Base Health row for the level, `NoBaseCombatRow` when it has no row 101.
 pub fn bases(
   tables tables: table_store.Tables,
   gear gear: Gear,
@@ -219,9 +227,7 @@ pub fn bases(
   use health <- result.try(max_health(tables:, gear:, level:))
   use combat <- result.map(
     player_combat_bases(tables:)
-    |> result.replace_error(NoCreatureLevel(
-      level: unit_properties.high_property_creature_level,
-    )),
+    |> result.replace_error(NoBaseCombatRow),
   )
   let defaults = unit_properties.defaults(tables:)
   let properties = gear.properties

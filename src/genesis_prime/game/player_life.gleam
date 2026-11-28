@@ -244,7 +244,7 @@ import genesis_prime/shared/strike_tell.{type Tell, Answered}
 import genesis_prime/shared/unit_news.{type News}
 import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/step.{type TimerId, TimerId}
-import genesis_prime/table/id.{type UnitProperty2Id, UnitProperty2Id}
+import genesis_prime/table/id.{UnitProperty2Id}
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -696,72 +696,26 @@ pub fn saved_health(life life: Life) -> Int {
   }
 }
 
-/// A player's defence from its properties. Its deflect, critical deflect and glance
-/// chances and its glance amount are each a rating formula's result from the player's
-/// base (101, 105, 164, 195, CreatureLevel row 101's values, the server's guess,
-/// `player.base_combat_properties`) with no rating (`0x140463340`, `0x140463ac0`,
-/// `0x140461a30`, `0x1404615f0`, `player.level1_defence`); the mitigation of a damage
-/// type is GameFormula 1234 from its Armor (property 42, with ResistPhysical at its
-/// default, 0) and the two offsets added to its base, DamageMitigationPctOffset (103) and
-/// the offset of the type (144 to 146) (`0x140464240`); and its ShieldMitigationMax
-/// (property 175) is 0 for a player with no shield.
+/// A player's defence from its properties, by the rule a creature's defence follows
+/// (`hit.defence_of`): its ratings, including those its worn items give (33, 43, 58, 61),
+/// and its ShieldMitigationMax (property 175), 0 for a player with no shield
+/// (`player.level1_defence`).
 pub fn defence(
   properties properties: Properties,
   level level: Int,
   formulas formulas: Formulas,
 ) -> Defence {
-  let read = fn(property: Int) {
+  let value = fn(property: Int) {
     unit_properties.value(properties:, property: UnitProperty2Id(property))
   }
-  let chance = fn(formula, base_property) {
-    rating.to_fraction(formula:, level:, base: read(base_property), rating: 0.0)
-  }
-  let mitigation = fn(offset_of_type) {
-    rating.mitigation_fraction(
-      formulas:,
-      level:,
-      base: read(103) +. read(offset_of_type),
-      rating: unit_properties.value(
-        properties:,
-        property: unit_properties.armor,
-      ),
-    )
-  }
-  hit.Defence(
-    deflect_chance: chance(formulas.deflect_chance, 101),
-    crit_deflect_chance: chance(formulas.crit_deflect, 105),
-    glance_chance: chance(formulas.glance_chance, 164),
-    glance_amount: chance(formulas.glance_amount, 195),
-    physical_mitigation: mitigation(144),
-    tech_mitigation: mitigation(145),
-    magic_mitigation: mitigation(146),
+  hit.defence_of(
+    formulas:,
+    level:,
+    value:,
     shield_mitigation_max: unit_properties.value(
       properties:,
       property: unit_properties.shield_mitigation_max,
     ),
-    physical_taken: damage_taken(properties:, damage_type: 1),
-    tech_taken: damage_taken(properties:, damage_type: 2),
-    magic_taken: damage_taken(properties:, damage_type: 3),
-  )
-}
-
-/// What the player's damage of `damage_type` (1 Physical, 2 Tech, 3 Magic) becomes
-/// when it is taken: its DamageTakenMultiplier (159 + type - 1) and DamageTakenOffset
-/// (150 + type - 1), as they are now, with every live modifier
-/// (`UnitProperty2.damage_heal_multipliers`).
-fn damage_taken(
-  properties properties: Properties,
-  damage_type damage_type: Int,
-) -> hit.DamageTaken {
-  let read = fn(first: UnitProperty2Id) {
-    unit_properties.value(
-      properties:,
-      property: UnitProperty2Id(first.value + damage_type - 1),
-    )
-  }
-  hit.DamageTaken(
-    multiplier: read(unit_properties.damage_taken_multiplier_physical),
-    offset: read(unit_properties.damage_taken_offset_physical),
   )
 }
 
