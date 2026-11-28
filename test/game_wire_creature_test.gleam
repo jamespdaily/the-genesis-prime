@@ -507,7 +507,7 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
       as "death.creature_respawn: 0x355, then a 0x262 with the same unit id, to each viewer"
   })
   // The picture of the respawned Beast is alive again: a press strikes it.
-  let #(_, after_respawn) =
+  let #(_, after_respawn, respawn_hit) =
     press_until_a_hit(
       time:,
       game: first,
@@ -517,8 +517,8 @@ pub fn a_medic_kills_a_planted_beast_with_paralytic_surge_and_a_watcher_reads_th
       beast: beast_unit,
       cast_id: 100,
     )
-  assert after_respawn == 38
-    as "the respawned Beast has its 52 health again and was struck for 14, so the caster's picture holds it alive again: the 0x355 cleared it and the respawn's 0x262 restored it"
+  assert after_respawn == 52 - damage_of_tick(critical: respawn_hit)
+    as "the respawned Beast has its 52 health again and was struck for 14, or 21 when the hit was critical (a player's chance is 0.05, CreatureLevel row 101), so the caster's picture holds it alive again: the 0x355 cleared it and the respawn's 0x262 restored it"
   game_client.close(game: first)
   game_client.close(game: second)
   login_support.stop(started)
@@ -870,7 +870,8 @@ fn last_cast_of(frames: List(Frame)) -> Int {
 }
 
 /// Presses the ability of the bag index until a press hits the Beast (a deflected one
-/// is shown by a 0x7fb and strikes again), and gives the Beast's health after the hit.
+/// is shown by a 0x7fb and strikes again), and gives the Beast's health after the hit
+/// and whether that hit was critical.
 fn press_until_a_hit(
   time time: driven_time.Time,
   game game: game_client.Game,
@@ -879,7 +880,7 @@ fn press_until_a_hit(
   cast_ms cast_ms: Int,
   beast beast: Int,
   cast_id cast_id: Int,
-) -> #(BitArray, Int) {
+) -> #(BitArray, Int, Bool) {
   let #(frames, have) =
     press_and_fire(time:, game:, have:, bag_index:, cast_ms:, cast_id:)
   assert game_client.health_in(frames:) != []
@@ -888,7 +889,11 @@ fn press_until_a_hit(
   case
     list.find(game_client.health_in(frames:), fn(health) { health.0 == beast })
   {
-    Ok(health) -> #(have, health.1)
+    Ok(health) -> {
+      let assert [critical] = critical_hits_on(beast, in: frames)
+        as "one hit on the Beast"
+      #(have, health.1, critical)
+    }
     Error(Nil) ->
       press_until_a_hit(
         time:,
@@ -1260,8 +1265,12 @@ pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_lande
     )
   // The Dagun's attack tick, its interval after the aggro: the bot is in its reach
   // by then, and the strike's chain ends in the bot's 0x8f5 of the stealth ending.
-  driven_time.advance(time:, ms: dagun_attack_interval_ms())
-  let #(struck, _) = game_client.read_until_pong(game:, have:, number: 3)
+  // A blow the bot deflects (0.05, CreatureLevel row 101) ends nothing, so the next
+  // interval's is waited for.
+  let #(struck, _) =
+    blows_until(time:, game:, have:, found: fn(frames) {
+      list.contains(stealth_changes_in(frames:), #(own, 0))
+    })
   let frames = list.flatten([entered, taken, struck])
   assert stealth_changes_in(frames:) == [#(own, 1), #(own, 0)]
     as "opcode.0x8f5: the press enters stealth, and the Dagun, which keeps fighting the bot it already had on its threat list, strikes it: Spell4Effects.effectType.83 (83834, dataBits02 0) ends the stealth on the damage taken"
@@ -1354,13 +1363,34 @@ fn killed_by_the_dagun(
       dagun:,
       pongs: #(1, 2),
     )
-  driven_time.advance(time:, ms: dagun_attack_interval_ms())
   let #(_, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
+    blows_until(time:, game:, have:, found: fn(frames) {
       list.contains(game_client.deaths_in(frames:), #(own, True))
       && list.any(frames, fn(frame) { frame.message_id == 0x0636 })
     })
   have
+}
+
+/// The clock moves on by one attack interval of the Dagun and the player is read until
+/// `found` holds of the frames read, or a blow was deflected (a 0x7fb: a player deflects
+/// a blow by chance, 0.05, CreatureLevel row 101); a deflected blow is followed by the
+/// next interval's, until `found` holds. The frames of the read that ended it, and the
+/// bytes kept.
+fn blows_until(
+  time time: driven_time.Time,
+  game game: game_client.Game,
+  have have: BitArray,
+  found found: fn(List(Frame)) -> Bool,
+) -> #(List(Frame), BitArray) {
+  driven_time.advance(time:, ms: dagun_attack_interval_ms())
+  let #(frames, have) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      found(frames) || game_client.missed_in(frames:) != []
+    })
+  case found(frames) {
+    True -> #(frames, have)
+    False -> blows_until(time:, game:, have:, found:)
+  }
 }
 
 /// 0x15a for the unit and the choice, with the value 0, sent inside 0x038C.
@@ -1531,9 +1561,8 @@ pub fn a_bot_killed_by_a_dagun_in_its_ring_is_struck_no_more_the_dagun_rests_at_
     )
   // The attack tick strikes and kills, and the clock fires the home timer the leash
   // started at the same instant, each after the barrier of the one before it.
-  driven_time.advance(time:, ms: dagun_attack_interval_ms())
   let #(died, have) =
-    game_client.read_until(game:, have:, found: fn(frames) {
+    blows_until(time:, game:, have:, found: fn(frames) {
       list.contains(game_client.deaths_in(frames:), #(own, True))
       && list.any(frames, fn(frame) { frame.message_id == 0x0636 })
       && list.contains(
