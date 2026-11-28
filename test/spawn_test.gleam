@@ -35,7 +35,7 @@ import genesis_prime/game/start_place
 import genesis_prime/game/vendor
 import genesis_prime/shared/area
 import genesis_prime/shared/creature_combat.{Attackable, Charged, Hostile}
-import genesis_prime/shared/creature_kind.{Kinds}
+import genesis_prime/shared/creature_kind.{type Kinds, Kinds}
 import genesis_prime/shared/creature_unit_type.{Turret}
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/hit.{Blow, Worked}
@@ -2616,8 +2616,8 @@ pub fn a_creature_the_client_draws_dead_never_fights_unless_a_kill_objective_nam
     #(
       13_277,
       [#("uiFlags", Integer(0xAF))],
-      True,
-      "bit 8 cleared with flags bit 0 kept: bit 0 alone keeps a creature in its fights",
+      False,
+      "bit 8 cleared with flags bit 0 and no attack row of its own: the creature never fights",
     ),
     #(
       40_115,
@@ -2628,8 +2628,14 @@ pub fn a_creature_the_client_draws_dead_never_fights_unless_a_kill_objective_nam
     #(
       8047,
       [],
-      True,
-      "Vault Data Crystal: flags bit 0 and uiFlags 47 without bit 8 fights as it did",
+      False,
+      "Vault Data Crystal: flags bit 0 and uiFlags 47 without bit 8, and no attack row of its own",
+    ),
+    #(
+      25_777,
+      [],
+      False,
+      "the flavor spotlight: flags bit 0 (0x1403b44b0), faction 218 Hostile, no attack row",
     ),
     #(73_464, [], True, "the Virtual Battle Beast, an ordinary enemy"),
     #(73_465, [], True, "the Virtual Defense Dagun, an ordinary enemy"),
@@ -2652,6 +2658,93 @@ pub fn a_creature_the_client_draws_dead_never_fights_unless_a_kill_objective_nam
   })
 }
 
+/// Whether Creature2 `creature_id`, started over the committed rows with these kinds, fights.
+fn fights_over_kinds(creature_id creature_id: Int, kinds kinds: Kinds) -> Bool {
+  let tables = character_tables.content_over(tables: character_tables.shared())
+  let assert [started] =
+    spawn_support.started_over_kinds(
+      tables:,
+      rows: [spawn_support.creature_row_of(tables:, number: 1, creature_id:)],
+      kinds:,
+    )
+    as "the creature starts"
+  started.combat.fights
+}
+
+pub fn a_flavor_spotlight_with_flags_bit_0_and_no_recorded_strike_never_fights_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Creature2 25777: flags 16385 (bit 0, `0x1403b44b0`: a player cannot target it), faction
+  // 218 (Hostile to both player factions), and no attack row of its own.
+  assert !fights_over_kinds(creature_id: 25_777, kinds: spawn_support.kinds())
+    as "bit 0 and no attack row of its own: no ring aggro, no approach, no strike"
+}
+
+pub fn a_creature_with_flags_bit_0_and_a_recorded_auto_attack_special_or_kind_row_still_fights_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Creature2 8047 has flags bit 0; each kinds value holds a row of its own for it, as the
+  // retail record does (`creature_kind` `by_creature`). A kind row of its own is the
+  // default's fields under its id.
+  let cases = [
+    #(
+      spawn_support.kinds_with_autos(creature_id: 8047, spell4_ids: [5649]),
+      "an auto-attack row",
+    ),
+    #(
+      spawn_support.kinds_with_specials(creature_id: 8047, spell4_ids: [5649]),
+      "a special row",
+    ),
+    #(
+      spawn_support.kinds_with_specials(creature_id: 8047, spell4_ids: []),
+      "a kind row of its own",
+    ),
+  ]
+  list.each(cases, fn(row) {
+    let #(kinds, reason) = row
+    assert fights_over_kinds(creature_id: 8047, kinds:) as reason
+  })
+}
+
+pub fn every_creature2_row_with_flags_bit_0_and_no_kind_row_or_kill_objective_stays_out_of_fights_test() -> Nil {
+  use <- owned_test.run(120_000)
+  use <- unitest.tag("registry")
+  use <- unitest.guard(client_tables.present())
+  let tables = client_tables.shared()
+  let rows = creature2.all(tables)
+  let kill_named = lying_body.kill_named(tables)
+  // Creature2 8047 is given a row of its own, so it is the one bit 0 creature with a row.
+  let kinds =
+    spawn_support.kinds_with_autos(creature_id: 8047, spell4_ids: [5649])
+  let drawn_dead = fn(row: creature2.Creature2) {
+    int.bitwise_and(row.ui_flags, 0x100) != 0
+  }
+  let fights = fn(row: creature2.Creature2) {
+    lying_body.fights(
+      kill_named:,
+      has_attack_row: creature_kind.has_row(kinds:, creature2_id: row.id),
+      creature: row,
+    )
+  }
+  let with_bit_0 =
+    list.filter(rows, fn(row) {
+      int.bitwise_and(row.flags, 0x1) != 0 && !drawn_dead(row)
+    })
+  assert list.length(with_bit_0) == 30_954
+    as "Creature2.tbl: 30,954 rows have flags bit 0 and not uiFlags bit 8"
+  let stopped =
+    list.filter(with_bit_0, fn(row) {
+      !set.contains(kill_named, row.id) && row.id != 8047
+    })
+  let stopped_count = list.length(stopped)
+  assert stopped_count == 30_894
+    as "30,954 less the 59 a kill objective names and Creature2 8047, which has a row of its own"
+  assert list.all(stopped, fn(row) { !fights(row) }) as "each stops fighting"
+  let others = list.filter(rows, fn(row) { !list.contains(stopped, row) })
+  assert list.all(others, fn(row) {
+    fights(row) == { !drawn_dead(row) || set.contains(kill_named, row.id) }
+  })
+    as "every other row fights as the lying-body rule alone decides"
+}
+
 pub fn only_a_creature_the_client_draws_dead_and_no_kill_objective_names_stays_out_of_fights_test() -> Nil {
   use <- owned_test.run(120_000)
   use <- unitest.tag("registry")
@@ -2664,7 +2757,7 @@ pub fn only_a_creature_the_client_draws_dead_and_no_kill_objective_names_stays_o
     as "Creature2.tbl: 969 of its 56,369 rows have uiFlags bit 8 (the bit the client draws a lying body by)"
   let kill_named = lying_body.kill_named(tables)
   let fights = fn(row: creature2.Creature2) {
-    lying_body.fights(kill_named:, creature: row)
+    lying_body.fights(kill_named:, has_attack_row: True, creature: row)
   }
   assert list.map(list.filter(bodies, fights), fn(row) { row.id })
     == [37_640, 37_641, 37_642]

@@ -771,12 +771,21 @@ pub fn started_over(
   tables tables: table_store.Tables,
   rows rows: List(Row),
 ) -> List(Spawn) {
+  started_over_kinds(tables:, rows:, kinds: kinds())
+}
+
+/// The same over these kinds (`kinds_with_autos`, `kinds_with_specials`).
+pub fn started_over_kinds(
+  tables tables: table_store.Tables,
+  rows rows: List(Row),
+  kinds kinds: Kinds,
+) -> List(Spawn) {
   let selection =
     spawn.select(
       rows:,
       tables:,
       formulas: rating_support.formulas(),
-      kinds: kinds(),
+      kinds:,
       vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )

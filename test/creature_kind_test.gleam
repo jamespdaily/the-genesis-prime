@@ -24,8 +24,10 @@ import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
 import genesis_prime/content/sql
 import genesis_prime/message/crowd_control_state
+import genesis_prime/shared/creature_auto_attack
 import genesis_prime/shared/creature_guard_spells as guard_spells
 import genesis_prime/shared/creature_kind.{Kind, Kinds, Row}
+import genesis_prime/shared/creature_special
 import genesis_prime/shared/strike_tell
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/spell4
@@ -850,4 +852,37 @@ pub fn a_creature_kind_row_holds_its_guard_and_opening_spells_both_or_neither_te
       assert content_creature_kind.row_of(row: returned) == expected as reason
     },
   )
+}
+
+pub fn the_kind_load_names_the_creatures_with_their_own_attack_row_for_the_fight_rule_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // 73464 has a kind row, 73465 an auto-attack row and 73494 a special row; 73499 has none.
+  let assert Ok(kinds) =
+    creature_kind.select(
+      rows: [default_row, Row(..default_row, creature_id: 73_464)],
+      special_rows: [
+        creature_special.Row(
+          creature_id: 73_494,
+          spell4_id: 55_317,
+          order_index: 0,
+          cooldown_ms: 10_000,
+        ),
+      ],
+      auto_attack_rows: [
+        creature_auto_attack.Row(
+          creature_id: 73_465,
+          spell4_id: 5649,
+          order_index: 0,
+        ),
+      ],
+      tables: fixture_tables.shared(),
+    )
+  assert creature_kind.has_row(kinds:, creature2_id: 73_464) as "a kind row"
+  assert creature_kind.has_row(kinds:, creature2_id: 73_465)
+    as "an auto-attack row"
+  assert creature_kind.has_row(kinds:, creature2_id: 73_494) as "a special row"
+  assert !creature_kind.has_row(kinds:, creature2_id: 73_499)
+    as "no row of its own"
+  assert !creature_kind.has_row(kinds:, creature2_id: 0)
+    as "the default row 0 is no creature's own"
 }

@@ -1631,3 +1631,4 @@ Spell4	28770	Dash Left (Knockdown)	dash_test
 Spell4	28771	Dash Right (Knockdown)	dash_test
 Spell4	28772	Dash Forward (Knockdown)	dash_test
 Spell4	28773	Dash Backward (Knockdown)	dash_test
+Creature2	25777	a flavor spotlight: flags bit 0, faction 218 Hostile, no attack row	spawn_test

@@ -54,10 +54,14 @@ pub fn kill_named(tables tables: table_store.Tables) -> Set(Int) {
 /// draws as a lying body does not, unless a kill objective names it (`kill_named`).
 pub fn fights(
   kill_named kill_named: Set(Int),
+  has_attack_row has_attack_row: Bool,
   creature creature: Creature2,
 ) -> Bool {
-  int.bitwise_and(creature.ui_flags, drawn_dead_flag) == 0
-  || set.contains(kill_named, creature.id)
+  {
+    int.bitwise_and(creature.ui_flags, drawn_dead_flag) == 0
+    || set.contains(kill_named, creature.id)
+  }
+  && has_attack_row
 }
 
 /// What the rule leaves undone, for the coverage measure.
