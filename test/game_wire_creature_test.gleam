@@ -1267,11 +1267,18 @@ pub fn a_dagun_fighting_a_bot_that_then_stealths_keeps_striking_it_and_its_lande
   // by then, and the strike's chain ends in the bot's 0x8f5 of the stealth ending.
   // A blow the bot deflects (0.05, CreatureLevel row 101) ends nothing, so the next
   // interval's is waited for.
-  let #(struck, _) =
+  let #(struck, have) =
     blows_until(time:, game:, have:, found: fn(frames) {
       list.contains(stealth_changes_in(frames:), #(own, 0))
     })
-  let frames = list.flatten([entered, taken, struck])
+  // The bot's 0x8f5 is written by its connection and the Dagun's go comes from the
+  // creature through the map, so the read that found the 0x8f5 may end before the go:
+  // the go is waited for, not assumed in the same read.
+  let #(went, _) =
+    game_client.read_until(game:, have:, found: fn(frames) {
+      struck_by(frames: list.append(struck, frames), caster: dagun, target: own)
+    })
+  let frames = list.flatten([entered, taken, struck, went])
   assert stealth_changes_in(frames:) == [#(own, 1), #(own, 0)]
     as "opcode.0x8f5: the press enters stealth, and the Dagun, which keeps fighting the bot it already had on its threat list, strikes it: Spell4Effects.effectType.83 (83834, dataBits02 0) ends the stealth on the damage taken"
   assert struck_by(frames:, caster: dagun, target: own)
