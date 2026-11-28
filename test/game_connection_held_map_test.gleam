@@ -79,10 +79,11 @@ import genesis_prime/table/id.{
   UnitProperty2Id,
 }
 import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
+import map_support
 import owned_test
 import planted_table.{Integer}
 import quest_support
@@ -94,13 +95,13 @@ import vendor_support
 const beast = 73_464
 
 /// The credit of the Beast (Creature2 73464, level 1, no faction) as unit `unit_id`,
-/// told to the connection for `stay`.
+/// told to the unit `address`.
 fn kill_of(
   unit_id unit_id: Int,
-  stay stay: Stay,
+  address address: UnitAddress,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  connection_support.for_stay(
-    stay:,
+  connection_support.for_unit(
+    address:,
     sent: SentByKill(Credit(
       unit_id:,
       creature_id: Creature2Id(beast),
@@ -259,7 +260,7 @@ pub fn a_kill_during_a_buy_counts_once_the_buy_is_answered_test() -> Nil {
       state:,
       event: kill_of(
         unit_id: experience_support.creature_unit_id,
-        stay: connection_support.own_stay(),
+        address: connection_support.own_address(),
       ),
     )
   assert connection_support.written_ids(held) == []
@@ -362,16 +363,18 @@ fn a_change_told(
     unit_properties.Source(cast_id: 100, effect_id: Spell4EffectsId(203_798))
   let assert Ok(multiplier) = float32.of_column(1_062_836_634)
     as "dataBits02 of row 203798 is a finite float"
-  connection_support.for_stay(
-    stay: connection_support.own_stay(),
+  connection_support.for_unit(
+    address: connection_support.own_address(),
     sent: client_connection.SentByPlayer(
       tell: client_connection.Change(case ends {
         True ->
-          player_change.PlayerChangeEnds(from: step.ConnectionId(from), source:)
+          player_change.PlayerChangeEnds(
+            from: map_support.address(number: from),
+            source:,
+          )
         False ->
           player_change.PlayerChangeStarts(
-            from: step.ConnectionId(from),
-            from_stay: connection_support.viewer_stay(from),
+            from: map_support.address(number: from),
             source:,
             change: player_change.Applies(
               player_change.Property(unit_properties.Change(
@@ -401,12 +404,12 @@ pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test()
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: kill_of(unit_id: 8, stay: connection_support.own_stay()),
+      event: kill_of(unit_id: 8, address: connection_support.own_address()),
     )
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: kill_of(unit_id: 7, stay: connection_support.own_stay()),
+      event: kill_of(unit_id: 7, address: connection_support.own_address()),
     )
   let #(state, _) =
     connection_support.feed(
@@ -416,11 +419,10 @@ pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test()
   let #(state, held) =
     connection_support.feed(
       state:,
-      event: connection_support.for_stay(
-        stay: connection_support.own_stay(),
+      event: connection_support.for_unit(
+        address: connection_support.own_address(),
         sent: connection_support.a_player_strike(
           from: 3,
-          stay: connection_support.viewer_stay(3),
           cast_id: 100,
           outgoing: 1.0,
           heals: [#(effect_kind.Shield, 10), #(effect_kind.Health, 40)],
@@ -434,8 +436,7 @@ pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test()
     list.fold(
       [
         connection_support.sent_by_the_map(map_message.SeenBy(
-          by: step.ConnectionId(3),
-          stay: connection_support.viewer_stay(3),
+          by: connection_support.viewer_address(3),
           unit_id: connection_support.viewer_unit_id(3),
           generation: connection_support.viewer_sight(3),
         )),
@@ -469,7 +470,7 @@ pub fn map_messages_held_while_the_store_works_are_taken_in_arrival_order_test()
     as "the sale's frames, then one experience for each kill, the Beast's strike (shield, health), the heal's (shield, health), and last the held change's start and its end (a 0x93a each: the player ends holding nothing)"
   assert kill_sources(taken: answered) == [8, 7]
     as "the kill of unit 8 came first, so its experience is written first"
-  let assert [#(3, _, PlayerAnswered(outcome: HealsLanded(heals:), ..))] =
+  let assert [#(3, PlayerAnswered(outcome: HealsLanded(heals:), ..))] =
     connection_support.player_answers(answered)
     as "the heal is answered once, to its caster, when taken"
   assert list.map(heals, fn(heal) { heal.split })
@@ -486,12 +487,12 @@ pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: kill_of(unit_id: 8, stay: connection_support.viewer_stay(2)),
+      event: kill_of(unit_id: 8, address: connection_support.viewer_address(2)),
     )
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: kill_of(unit_id: 7, stay: connection_support.own_stay()),
+      event: kill_of(unit_id: 7, address: connection_support.own_address()),
     )
   let #(_, answered) =
     connection_support.answer(state:, taken:, outcome: sale_saved())
@@ -502,9 +503,9 @@ pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {
   use <- unitest.guard(client_tables.present())
   let #(caster, _) =
     connection_support.spellslinger_holding_a_salve_on_the_ally()
-  let blow_for = fn(stay) {
-    connection_support.for_stay(
-      stay:,
+  let blow_for = fn(address) {
+    connection_support.for_unit(
+      address:,
       sent: client_connection.SentByPlayer(
         tell: client_connection.Event(
           event: strike_tell.PlayerEvent(unit_id: 9, events: [
@@ -528,7 +529,7 @@ pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {
     connection_support.at(
       state: caster,
       ms: 4000,
-      event: blow_for(connection_support.own_stay()),
+      event: blow_for(connection_support.own_address()),
     )
   assert connection_support.started_spells(frames: connection_support.written(
       taken:,
@@ -539,7 +540,7 @@ pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {
     connection_support.at(
       state: caster,
       ms: 4000,
-      event: blow_for(connection_support.viewer_stay(2)),
+      event: blow_for(connection_support.viewer_address(2)),
     )
   assert connection_support.written_ids(taken) == []
     as "the event for another stay of the caster is dropped: the row fires nothing and nothing is written"
@@ -547,7 +548,7 @@ pub fn a_held_message_for_another_stay_is_dropped_when_taken_test() -> Nil {
     connection_support.at(
       state: connection_support.in_select(),
       ms: 4000,
-      event: blow_for(connection_support.own_stay()),
+      event: blow_for(connection_support.own_address()),
     )
   assert connection_support.written_ids(taken) == []
     as "an event that arrives while the caster is not in the world is dropped"
@@ -565,7 +566,7 @@ pub fn a_connection_that_ends_while_holding_map_messages_takes_none_test() -> Ni
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: kill_of(unit_id: 7, stay: connection_support.own_stay()),
+      event: kill_of(unit_id: 7, address: connection_support.own_address()),
     )
   let #(state, _) =
     connection_support.feed(
@@ -601,7 +602,7 @@ pub fn a_kill_during_the_periodic_save_counts_once_the_save_is_answered_test() -
       state:,
       event: kill_of(
         unit_id: experience_support.creature_unit_id,
-        stay: connection_support.own_stay(),
+        address: connection_support.own_address(),
       ),
     )
   assert connection_support.written_ids(held) == []
@@ -629,13 +630,13 @@ pub fn a_held_kill_that_achieves_a_quest_leaves_the_next_held_message_for_the_co
       state:,
       event: kill_of(
         unit_id: experience_support.creature_unit_id,
-        stay: connection_support.own_stay(),
+        address: connection_support.own_address(),
       ),
     )
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: kill_of(unit_id: 8, stay: connection_support.own_stay()),
+      event: kill_of(unit_id: 8, address: connection_support.own_address()),
     )
   let #(state, bought) =
     connection_support.answer(state:, taken:, outcome: buy_saved())
@@ -1248,7 +1249,7 @@ pub fn a_deadline_held_behind_a_kill_credit_starts_the_deadline_timer_once_test(
       state:,
       event: kill_of(
         unit_id: experience_support.creature_unit_id,
-        stay: connection_support.own_stay(),
+        address: connection_support.own_address(),
       ),
     )
   let #(state, fired) =
@@ -1410,11 +1411,10 @@ pub fn go_in_the_same_world_moves_the_unit_the_client_sees_test() -> Nil {
   list.each([2, 3, 4, 5], fn(viewer) {
     assert list.any(connection_support.move_tells(taken:), fn(tell) {
       tell.0 == viewer
-      && tell.1 == connection_support.viewer_stay(viewer)
-      && tell.2.unit_id == connection_support.own_unit_id
-      && list.key_find(sights, viewer) == Ok(tell.2.generation)
-      && tell.2.server_time_ms == 1000
-      && tell.2.commands
+      && tell.1.unit_id == connection_support.own_unit_id
+      && list.key_find(sights, viewer) == Ok(tell.1.generation)
+      && tell.1.server_time_ms == 1000
+      && tell.1.commands
       == [
         relayed_movement.Position(at_the_place),
         relayed_movement.Rotation(MovementRotation(

@@ -211,7 +211,6 @@ fn told(
     ],
     [
       connection_state.broadcast(
-        session:,
         entered:,
         news: unit_news.PropertiesChanged(properties: sent),
       ),

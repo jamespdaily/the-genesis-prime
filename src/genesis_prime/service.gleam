@@ -73,6 +73,11 @@ pub type Reach(outgoing) {
     /// `Error(Nil)` when no process is running there; the message is
     /// dropped.
     send: fn(Address, outgoing) -> Result(Nil, Nil),
+    /// Makes the process at `member` a member of the group `group` names, for
+    /// `Register`; nothing happens when no process is running at `member`.
+    register: fn(Address, Address) -> Nil,
+    /// Removes every member of the group `group` names, for `Unregister`.
+    unregister: fn(Address) -> Nil,
     /// Starts the creature a rule's `StartCreature` names and returns once it
     /// is running and found by its `Creature` address, or says why it did not
     /// start, as the creature supervisor reported it.
@@ -86,6 +91,8 @@ pub fn watch_only(locate locate: Locate) -> Reach(outgoing) {
   Reach(
     locate:,
     send: fn(_to, _message) { Error(Nil) },
+    register: fn(_group, _member) { Nil },
+    unregister: fn(_group) { Nil },
     start_creature: fn(_creature) { Error(SupervisorNotRunning) },
   )
 }

@@ -12,7 +12,7 @@ import fixture_tables
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, ForStay, FromMap, SentBySessions,
+  type Answer, type Message, type Request, ForUnit, FromMap, SentBySessions,
 }
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
@@ -78,6 +78,7 @@ import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import map_support
 import owned_test
 import place_support
 import planted_table
@@ -566,7 +567,7 @@ pub fn the_stays_first_0xf2_tells_the_map_the_player_is_ready_and_a_second_does_
           game_connection_support.incarnation,
         ),
         request: client_connection.TellReady(
-          connection: ConnectionId(1),
+          unit: map_support.address(number: 1),
           seq: 0,
         ),
       )),
@@ -733,7 +734,7 @@ pub fn a_stay_entered_again_before_any_move_tells_the_map_ready_with_the_connect
           game_connection_support.incarnation,
         ),
         request: client_connection.TellReady(
-          connection: ConnectionId(1),
+          unit: map_support.address(number: 1),
           seq: 2,
         ),
       )),
@@ -1325,7 +1326,7 @@ fn to_the_medic(taken: step.ServiceStep(creature.Outgoing)) -> List(Message) {
     fn(delivered) {
       server.relayed_message(
         delivered:,
-        stay: game_connection_support.own_stay(),
+        address: game_connection_support.own_address(),
       )
     },
   )
@@ -1830,8 +1831,8 @@ pub fn a_medic_and_a_beast_striking_each_other_at_one_instant_both_get_their_ans
   let #(started, held_attack) =
     list.partition(to_the_medic(ticked), fn(message) {
       case message {
-        ForStay(sent: client_connection.SentByFoe(..), ..) -> False
-        ForStay(..) | SentBySessions(..) | client_connection.SentByChat(..) ->
+        ForUnit(sent: client_connection.SentByFoe(..), ..) -> False
+        ForUnit(..) | SentBySessions(..) | client_connection.SentByChat(..) ->
           True
       }
     })

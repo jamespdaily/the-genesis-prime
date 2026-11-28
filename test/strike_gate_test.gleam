@@ -59,7 +59,7 @@ import genesis_prime/shared/spell_plan.{
 import genesis_prime/shared/spend
 import genesis_prime/shared/strike_tell.{Answered, Landed, Refused}
 import genesis_prime/shared/ticking
-import genesis_prime/step.{ConnectionId, LogDebug, Now}
+import genesis_prime/step.{LogDebug, Now}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4_effects
 import gleam/dict
@@ -378,11 +378,7 @@ fn poses_of_unit_10() -> dict.Dict(Int, Pose) {
 
 /// The player 9 on connection 3, which a heal row is told to.
 fn ally() -> PlayerAddress {
-  PlayerAddress(
-    connection: ConnectionId(3),
-    unit_id: 9,
-    stay: map_support.stay(count: 2),
-  )
+  PlayerAddress(address: map_support.address(number: 3), unit_id: 9)
 }
 
 /// Mind Over Body's real row 62019 as an instant heal of the primary target, behind the
@@ -779,9 +775,7 @@ pub fn a_heal_row_reaches_a_player_only_past_its_gates_and_the_rows_around_it_st
       condition: GatedOnTarget(prerequisite:),
     )
   }
-  let in_sight = fn(unit_id) {
-    PlayerAddress(..ally(), unit_id:, stay: map_support.stay(count: 2))
-  }
+  let in_sight = fn(unit_id) { PlayerAddress(..ally(), unit_id:) }
   let health_of = fn(unit_id, health) {
     #(
       unit_id,
@@ -920,8 +914,7 @@ pub fn gate_rolls_follow_each_units_hit_rolls_in_row_then_selection_order_test()
     as "the heal row takes the rolls after the states': the caster roll 1 passes and the player's roll 50 fails the target gate 860 (read before the states', it would have been given the rolls 1 and 5 and told)"
   // The same row aimed at the caster and the area, whose area found the allies 9 and 12: its
   // target gate is rolled once for each ally, after the one caster roll.
-  let other_ally =
-    PlayerAddress(..ally(), unit_id: 12, stay: map_support.stay(count: 3))
+  let other_ally = PlayerAddress(..ally(), unit_id: 12)
   let area_heal =
     spell_area.InstantHeal(
       ..heal_row(caster_apply: 3286, target_apply: 860),
@@ -962,11 +955,7 @@ pub fn gate_rolls_follow_each_units_hit_rolls_in_row_then_selection_order_test()
   // as candidates: the caster's side is rolled once, then the target gate once for the
   // caster as a unit the row reaches and once for the ally, so the go draws no roll of its own.
   let caster_address =
-    PlayerAddress(
-      connection: ConnectionId(2),
-      unit_id: 7,
-      stay: map_support.stay(count: 1),
-    )
+    PlayerAddress(address: map_support.address(number: 2), unit_id: 7)
   let at_the_area_alone =
     spell_area.InstantHeal(
       ..heal_row(caster_apply: 3286, target_apply: 860),

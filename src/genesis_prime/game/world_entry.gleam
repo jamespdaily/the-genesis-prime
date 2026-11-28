@@ -10,7 +10,7 @@
 //// Loaded(character, unset items)
 ////                            ─▶ loaded         ─▶ Ask store FillCharges(account, id, epoch, each unset item's row charges)
 //// ChargesFilled(ItemsSaved)  ─▶ loaded         ─▶ (as the next line; ItemsNotSaved refuses the play, SaveRefused is a Fault)
-//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(connection, character, place, stay, alive, hidden)
+//// Loaded(character)          ─▶ loaded         ─▶ Ask map MapId(world, 0): Join(joiner, character, place, alive, hidden)
 ////                                                 (or Refused, for a level with no XpPerLevel row too: the rule hands back to select)
 //// Joined(unit record, loadout, run)
 ////                            ─▶ joined         ─▶ Send 0xAD, 0x262, 0x19B, 0x92C, 0x169, 0x25E (a play only), 0x111 x 10 (x 11 with an
@@ -19,7 +19,7 @@
 ////                                                 (a player saved dead: the ghost's 0x262 and
 ////                                                 0x1B3 before 0x636, which names the ghost)
 //// NotJoined(reason)          ─▶ joined         ─▶ NotInTheWorld: the rule hands back to select
-//// the Holocrypt, map left    ─▶ rejoining      ─▶ Ask map of the place's world: Join(connection, character, place, stay, alive: True, hidden)
+//// the Holocrypt, map left    ─▶ rejoining      ─▶ Ask map of the place's world: Join(joiner, character, place, alive: True, hidden)
 ////                                                 (then Joined and NotJoined as above)
 //// ```
 ////
@@ -131,10 +131,10 @@
 ////   asked, or the reverse, or the map's `Left`, which answers a leave)
 ////   is `Error(Nil)`, as character select gives, and the
 ////   rule treats it as a bug.
-//// - **The stay** (genesis_prime/world_map/stay) is the one the connection gives
-////   each join, after every earlier one; `Entered` keeps it, and the connection
-////   takes a message another process sent for the player's stay only when it
-////   names that one.
+//// - **The address** (genesis_prime/world_map/unit_address) is the one the map issues
+////   each join and names in `Joined`; `Entered` is built from that answer and keeps it,
+////   so a connection waiting for its join holds none, and takes a message another
+////   process sent to the player's unit only when it names that one.
 //// - **Instance 0** for every world: open worlds share one instance
 ////   (genesis_prime/world_map/map_id), so an instanced world has no instance
 ////   to ask for.
@@ -207,7 +207,6 @@ import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn_id.{type LoadedSpawns, SpawnId}
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -304,7 +303,6 @@ pub opaque type State {
     action_sets: store.ActionSets,
     buyback: Buyback,
     map: MapId,
-    stay: Stay,
     entry: Entry,
     hidden: Set(PrerequisiteId),
   )
@@ -357,8 +355,8 @@ pub type Joined {
 
 /// A player in the world: its character as the store loaded it (which a join at
 /// the Holocrypt asks the map with again), the place it entered this stay at, the
-/// stay its join named, its map, the run of the map that took it, which the rule watches as
-/// `Map(map, incarnation)`, its unit id, the
+/// address the map issued for its join, its map, the run of the map that took it, which the
+/// rule watches as `Map(map, incarnation)`, its unit id, the
 /// origin of the map's clock (`Joined` carries it), its loadout (typed, from the
 /// tables: the abilities and the innate), its gear (what the items it holds at
 /// location 0 give: the weapon, the visuals and the properties the 0x262 carries as bits,
@@ -374,7 +372,7 @@ pub type Joined {
 /// (genesis_prime/game/chat), which the rule keeps up to date. A player that has
 /// just entered is not camping, has no viewers and shows no unit: the map's
 /// `SeenBy` and `UnseenBy` keep `viewers`, the connections whose players see
-/// this one, each with its player's stay and unit id as the map named them, the
+/// this one, each with its player's unit id as the map named them, the
 /// connection sends everything about the player's own unit to them, and `shown`
 /// and `gone` are the units its client holds and the ones the map reported gone
 /// (genesis_prime/game/connection).
@@ -382,7 +380,6 @@ pub type Entered {
   Entered(
     character: Character,
     entered_at: Place,
-    stay: Stay,
     address: UnitAddress,
     character_id: CharacterId,
     map: MapId,
@@ -432,7 +429,7 @@ pub type Entered {
     /// the properties it gave them.
     gear: Gear,
     clock_origin_ms: Int,
-    viewers: Dict(ConnectionId, player_address.Viewer),
+    viewers: Dict(UnitAddress, player_address.Viewer),
     shown: shown.Picture,
     /// The casts the client holds that the connection must end, each by its caster's
     /// frames, by an ally's tell or by the player's own ledger
@@ -457,7 +454,7 @@ pub type Entered {
     /// The changes other players' casts hold on the player, by caster
     /// (genesis_prime/game/held_changes): empty at each entry, and gone with the entry at
     /// a camp or a leave.
-    held: held_changes.Held(ConnectionId),
+    held: held_changes.Held,
     resources: class_resource.Resources,
     camp: camp.Camp,
     cast: cast_state.State,
@@ -683,7 +680,7 @@ pub fn awaiting(state state: State) -> Awaiting {
 }
 
 /// The store's answer to `play_requested`'s ask: the map is asked to take the
-/// character at its saved world for the stay `stay`, or the play is refused, for
+/// character at its saved world, or the play is refused, for
 /// a character the account does not have, one with no saved place or one whose
 /// level has no XpPerLevel row (`character_state.frame`). A load that holds items with no
 /// charges recorded (`store.UnsetItem`) first asks the store to store each one's row charges
@@ -697,7 +694,6 @@ pub fn loaded(
   state state: State,
   answer answer: store.WorldAnswer,
   connection connection: ConnectionId,
-  stay stay: Stay,
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
   spawns spawns: LoadedSpawns,
@@ -759,7 +755,6 @@ pub fn loaded(
                     lost:,
                     action_sets:,
                     connection:,
-                    stay:,
                     tables:,
                     visibility:,
                   )
@@ -811,7 +806,6 @@ pub fn loaded(
             lost: [],
             action_sets:,
             connection:,
-            stay:,
             tables:,
             visibility:,
           )
@@ -974,7 +968,6 @@ fn joining_a_play(
   lost lost: List(quest_log.Lost),
   action_sets action_sets: store.ActionSets,
   connection connection: ConnectionId,
-  stay stay: Stay,
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> Loaded {
@@ -1019,7 +1012,6 @@ fn joining_a_play(
           action_sets:,
           buyback: Buyback(next_id: 1, entries: []),
           connection:,
-          stay:,
           entry: PlayEntry(character_state: frame),
           tables:,
           visibility:,
@@ -1067,7 +1059,6 @@ pub fn joined(
       action_sets:,
       buyback:,
       map:,
-      stay:,
       entry:,
       hidden:,
     ) -> {
@@ -1165,7 +1156,6 @@ pub fn joined(
             entered: Entered(
               character:,
               entered_at: place,
-              stay:,
               address:,
               character_id: character.character_id,
               map:,
@@ -1531,7 +1521,7 @@ fn character_state_sent(entry entry: Entry) -> List(Effect) {
 
 /// The player has left its map for another place in the game (the Holocrypt, a
 /// departures terminal's landing): the map of `place`'s world is asked to take it
-/// there for the stay `stay`, with the earlier stay's movement placed at `place`
+/// there, with the earlier stay's movement placed at `place`
 /// and `health` as its saved health (`None` is a full one, as the Holocrypt's join
 /// gives). The system line `told`, when there is one, is written after the entry
 /// burst. The map's answer comes back to `joined`, as at a play.
@@ -1541,7 +1531,6 @@ pub fn rejoining(
   health health: Option(Int),
   told told: Option(String),
   connection connection: ConnectionId,
-  stay stay: Stay,
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
 ) -> #(State, List(Effect)) {
@@ -1557,7 +1546,6 @@ pub fn rejoining(
     action_sets: limited_action_set.rows(saved: entered.action_sets),
     buyback: entered.buyback,
     connection:,
-    stay:,
     entry: InWorldEntry(completing: entered.completing, told:),
     tables:,
     visibility:,
@@ -1580,7 +1568,6 @@ fn joining(
   action_sets action_sets: store.ActionSets,
   buyback buyback: Buyback,
   connection connection: ConnectionId,
-  stay stay: Stay,
   entry entry: Entry,
   tables tables: table_store.Tables,
   visibility visibility: Dict(Int, List(Prerequisite)),
@@ -1609,7 +1596,6 @@ fn joining(
       action_sets:,
       buyback:,
       map:,
-      stay:,
       entry:,
       hidden:,
     ),
@@ -1617,10 +1603,9 @@ fn joining(
       AskMap(
         map:,
         message: map_message.Join(
-          connection:,
+          joiner: connection,
           character:,
           place: start_place.within_the_worlds_box(place),
-          stay:,
           alive: bool.negate(player_life.saved_dead(saved: saved_health)),
           hidden:,
         ),

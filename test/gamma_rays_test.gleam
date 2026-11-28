@@ -27,7 +27,6 @@ import genesis_prime/shared/area.{Point, Pose}
 import genesis_prime/shared/creature_combat.{Attackable, Hostile}
 import genesis_prime/shared/creature_path
 import genesis_prime/shared/spell_area
-import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/creature2_display_info
 import genesis_prime/table/id.{Creature2DisplayInfoId, Creature2Id, Spell4Id}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -50,12 +49,10 @@ const right_spell = 35_886
 fn gamma_caster(x x: Float, z z: Float, yaw yaw: Float) -> Attacker {
   Attacker(
     unit_id: 1,
-    connection: ConnectionId(2),
     address: map_support.address(number: 2),
     pose: Pose(at: Point(x:, z:), yaw:),
     place: place_support.at(world_id: 3460, world_zone_id: 5967, x:, y: 0.0, z:),
     move_seq: 1,
-    stay: map_support.stay(count: 1),
     hit_radius: place_support.player_hit_radius,
     faction: Exile,
     stats: attacker_support.fresh(),

@@ -897,7 +897,7 @@ pub fn a_kill_sends_its_experience_then_objective_progress_and_achieved_test() -
   let #(state, stale) =
     experience_support.credited_in(
       state:,
-      stay: connection_support.viewer_stay(2),
+      address: connection_support.viewer_address(2),
       creature_id: 73_464,
       level: 1,
     )
@@ -947,7 +947,7 @@ pub fn a_kill_counts_toward_a_group_objective_by_the_credits_faction_test() -> N
   let #(_, other) =
     experience_support.credited_of_faction(
       state:,
-      stay: connection_support.own_stay(),
+      address: connection_support.own_address(),
       creature_id: 73_464,
       faction_id: 249,
       level: 1,
@@ -959,7 +959,7 @@ pub fn a_kill_counts_toward_a_group_objective_by_the_credits_faction_test() -> N
   let #(_, member) =
     experience_support.credited_of_faction(
       state:,
-      stay: connection_support.own_stay(),
+      address: connection_support.own_address(),
       creature_id: 73_464,
       faction_id: 248,
       level: 1,
@@ -1016,7 +1016,7 @@ pub fn a_group_member_credit_for_another_stay_counts_nothing_test() -> Nil {
   let #(state, stale) =
     experience_support.credited_in(
       state:,
-      stay: connection_support.viewer_stay(2),
+      address: connection_support.viewer_address(2),
       creature_id: 38_117,
       level: 1,
     )

@@ -50,16 +50,14 @@ import genesis_prime/shared/spell_tier
 import genesis_prime/shared/unit_fields
 import genesis_prime/shared/unit_news
 import genesis_prime/step.{
-  type About, type ConnectionEffect, type ConnectionId, type Effect, type Now,
-  type TimerId, About, CancelTimer, LogWarning, OwnEffect, StartTimer, Stop,
-  TimerId, WatchId, Write,
+  type About, type ConnectionEffect, type Effect, type Now, type TimerId, About,
+  CancelTimer, LogWarning, OwnEffect, StartTimer, Stop, TimerId, WatchId, Write,
 }
 import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/game_number.{type GameNumbers}
-import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn_id.{type LoadedSpawns}
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -241,16 +239,11 @@ pub type Session {
     /// creature never takes a move of an earlier stay for a newer one
     /// (genesis_prime/world_map/creature_fight).
     move_seq: Int,
-    /// The stay the connection's last join named (genesis_prime/world_map/stay):
-    /// each join asks with the one after it, so the stays count for the
-    /// connection's life and a message of an earlier stay never names the
-    /// current one.
-    last_stay: Stay,
     /// What reached the connection while an ask was out whose answer returns it
     /// to the world (`holds_map_messages`), oldest first: what other processes
-    /// sent for a stay and the connection's own timers that fired. Each is taken,
+    /// sent to a unit and the connection's own timers that fired. Each is taken,
     /// in this order, once the answer returns the connection there
-    /// (genesis_prime/game/connection `stay_sent`, `timer_fired`).
+    /// (genesis_prime/game/connection `unit_sent`, `timer_fired`).
     held: List(Held),
     status: Status,
   )
@@ -258,8 +251,8 @@ pub type Session {
 
 /// What the connection holds until an ask returns it to the world.
 pub type Held {
-  /// What another process sent for `stay`.
-  HeldSend(stay: Stay, sent: client_connection.StaySent)
+  /// What another process sent to the unit `address`.
+  HeldSend(address: UnitAddress, sent: client_connection.StaySent)
   /// A timer of the connection that fired during the wait.
   HeldTimer(timer: TimerId)
 }
@@ -557,13 +550,13 @@ pub fn misrouted(
   )
 }
 
-/// The connections that see the player, each with what the player's copy holds of
-/// that viewer (its stay and the generation of its sight), in the order of their
-/// numbers.
+/// The units that see the player, each with what the player's copy holds of that
+/// viewer (its unit id and the generation of its sight), in the order of their
+/// addresses.
 pub fn sorted_viewers(
   entered entered: world_entry.Entered,
-) -> List(#(ConnectionId, player_address.Viewer)) {
-  map.sorted_by_connection(entered.viewers)
+) -> List(#(UnitAddress, player_address.Viewer)) {
+  unit_address.sorted_entries(entered.viewers)
 }
 
 /// The player's level: its unit's stat 10, 1 when it has none.
@@ -718,41 +711,30 @@ pub fn saves_the_place(status: Status) -> Bool {
 /// to each player whose relation with this one relays, in the map's order
 /// (genesis_prime/world_map/map `PlayerBroadcast`): the owner tells no viewer itself.
 pub fn broadcast(
-  session session: Session,
   entered entered: world_entry.Entered,
   news news: unit_news.News,
 ) -> Effect(ConnectionEffect(Request)) {
   tells_the_map(
     entered:,
     request: client_connection.TellBroadcast(
-      connection: client_connection.connection(session.link),
-      stay: entered.stay,
+      unit: entered.address,
       news: unit_news.PeerNews(unit_id: entered.unit_id, news:),
     ),
   )
 }
 
-/// The tell of `landing` to the run of the player's map, for the player of connection `to`
-/// in its stay `to_stay`: what the player's cast lands on that player, or its answer to
-/// one. The map admits it by the kind's checks and relays it to `to`
+/// The tell of `landing` to the run of the player's map, for the unit `to`: what the
+/// player's cast lands on that player, or its answer to one. The map admits it by the kind's checks and relays it to `to`
 /// (genesis_prime/world_map/map `TellLanding`), in the order this connection told it
 /// beside its broadcasts; the player tells no other player itself.
 pub fn tells_the_landing(
-  session session: Session,
   entered entered: world_entry.Entered,
-  to to: ConnectionId,
-  to_stay to_stay: Stay,
+  to to: UnitAddress,
   landing landing: map_message.Landing,
 ) -> Effect(ConnectionEffect(Request)) {
   tells_the_map(
     entered:,
-    request: client_connection.TellLanding(
-      connection: client_connection.connection(session.link),
-      stay: entered.stay,
-      to:,
-      to_stay:,
-      landing:,
-    ),
+    request: client_connection.TellLanding(unit: entered.address, to:, landing:),
   )
 }
 
@@ -770,8 +752,8 @@ pub fn tells_the_map(
 }
 
 /// The tell of `payload` to the creature `unit_id` of life `life`, which no answer
-/// follows (`step.Tell`): sent to the run of the player's map with the connection and the
-/// stay the player entered in, for the map to admit and pass on to the creature
+/// follows (`step.Tell`): sent to the run of the player's map with the unit address the
+/// player entered as, for the map to admit and pass on to the creature
 /// (genesis_prime/world_map/map `TellCreature`). A connection tells a creature only
 /// through its map, so a creature hears about a player from one sender in one order.
 pub fn tells_the_creature(

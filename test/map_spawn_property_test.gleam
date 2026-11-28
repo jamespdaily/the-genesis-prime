@@ -22,6 +22,7 @@ import genesis_prime/step.{
 }
 import genesis_prime/world_map/map.{type State, Live, Retiring}
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/unit_address
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -148,7 +149,9 @@ fn settle(
           ),
           retired,
         )
-        OwnEffect(StartCreature(..))
+        OwnEffect(step.Register(..))
+        | OwnEffect(step.Unregister(..))
+        | OwnEffect(StartCreature(..))
         | OwnEffect(Send(..))
         | OwnEffect(Reply(..))
         | OwnEffect(CancelServiceTimer(..))
@@ -232,10 +235,9 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
             event: OwnEvent(step.Asked(
               caller: step.CallerId(connection),
               message: map_message.Join(
-                connection: ConnectionId(connection),
+                joiner: step.ConnectionId(connection),
                 character: map_support.character(100 + connection),
                 place: map_spawn_support.at(x_of(stop)),
-                stay: map_support.stay(count: 1),
                 alive: True,
                 hidden: set.new(),
               ),
@@ -255,7 +257,7 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
             ),
             event: OwnEvent(
               step.Told(message: map_message.Moved(
-                connection: ConnectionId(connection),
+                unit: map_support.address(number: connection),
                 place: map_spawn_support.at(x_of(stop)),
                 seq: stop,
               )),
@@ -272,7 +274,9 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
             play: Play(..play, players: dict.delete(play.players, connection)),
             event: OwnEvent(step.Asked(
               caller: step.CallerId(99),
-              message: map_message.Leave(connection: ConnectionId(connection)),
+              message: map_message.Leave(unit: map_support.address(
+                number: connection,
+              )),
             )),
             connection:,
             fire_sweeps:,
@@ -385,7 +389,11 @@ fn broken(play: Play) -> List(String) {
         Ok(Live(relations:, idle_since_ms:, ..)), _ ->
           live_spawn_problems(
             name:,
-            viewers: set.from_list(dict.keys(relations)),
+            viewers: set.from_list(
+              list.map(dict.keys(relations), fn(address) {
+                step.ConnectionId(unit_address.rank(address:))
+              }),
+            ),
             seen:,
             idle_since_ms:,
             now_ms: play.now_ms,

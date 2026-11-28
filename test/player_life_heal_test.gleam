@@ -34,12 +34,11 @@ import genesis_prime/shared/heal_parts.{Split}
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties.{type Properties}
-import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, UnitProperty2Id}
-import genesis_prime/world_map/stay
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
+import map_support
 import owned_test
 import player_life_support
 import properties_support
@@ -616,8 +615,7 @@ pub fn heal_rows_told_by_another_player_are_applied_in_order_each_on_the_life_th
       life:,
       properties: unmodified(),
       strike: strike_support.heal_strike(
-        from: ConnectionId(3),
-        stay: stay.none_yet(),
+        from: map_support.address(number: 3),
         cast_id: 32_820,
         unit_id: 9,
         outgoing: 1.0,
@@ -744,8 +742,7 @@ pub fn a_heal_row_list_never_raises_a_vital_past_its_maximum_and_each_split_acco
           life: before,
           properties:,
           strike: strike_support.heal_strike(
-            from: ConnectionId(3),
-            stay: stay.none_yet(),
+            from: map_support.address(number: 3),
             cast_id: 32_820,
             unit_id: 9,
             outgoing:,

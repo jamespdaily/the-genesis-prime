@@ -38,7 +38,6 @@ import genesis_prime/shared/spell_plan.{type Proxy, type Spell, Proxy, Spell}
 import genesis_prime/shared/spend
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/ticking
-import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import gleam/dict
 import gleam/int
@@ -869,9 +868,8 @@ fn live_go_at_the_ally(
         #(
           ally,
           PlayerAddress(
-            connection: ConnectionId(ally),
+            address: map_support.address(number: ally),
             unit_id: ally,
-            stay: map_support.stay(count: ally),
           ),
         ),
       ]),
@@ -1204,11 +1202,7 @@ const creature = 21
 const other_bystander = 42
 
 fn address_of(unit_id unit_id: Int) -> PlayerAddress {
-  PlayerAddress(
-    connection: ConnectionId(unit_id),
-    unit_id:,
-    stay: map_support.stay(count: unit_id),
-  )
+  PlayerAddress(address: map_support.address(number: unit_id), unit_id:)
 }
 
 /// The default caster, who sees these players.

@@ -11,9 +11,14 @@
 //// - **Who issues.** Only the map, once for each join, in its join step
 ////   (`genesis_prime/world_map/map`). Another process holds an address only as
 ////   the map sent it (`Joined`, `Seen`, `RingMember`) and names it back.
-//// - **The connection's stay.** `number` is the map's issue number, not the
-////   connection's stay: the connection keeps its own stay count beside the
-////   address (`genesis_prime/world_map/stay`), and its fence compares that.
+//// - **The fence.** A connection that hosts a player takes a message sent to one
+////   of its addresses only while that address is its player's own
+////   (genesis_prime/game/connection), so a message for an earlier unit of the same
+////   connection is dropped there.
+//// - **The rank.** `rank` is the order a creature breaks ties among players by
+////   (`compare`): the number of the connection the unit was issued for, so a creature
+////   picks as it did when it named connections. A server's choice, since the client
+////   holds no rule for it; it is the one key the address holds of a connection.
 
 import genesis_prime/world_map/map_id.{type MapId}
 import gleam/dict.{type Dict}
@@ -24,26 +29,26 @@ import gleam/set.{type Set}
 
 /// One unit of a player in one run of a map. Made only by `issue`.
 pub opaque type UnitAddress {
-  UnitAddress(map: MapId, incarnation: Int, number: Int, joiner: Int)
+  UnitAddress(map: MapId, incarnation: Int, number: Int, rank: Int)
 }
 
-/// The address the map `map` in the run `incarnation` issues as its `number`th, for the
-/// connection numbered `joiner`: the map counts `number` up from 1 and never issues one
-/// twice in a run. `joiner` is the order a creature ranks players that tie by
-/// (`compare`), so a creature picks among players as it did when it named their
-/// connections; it is the connection's number and the creature reads nothing else of it.
+/// The address the map `map` in the run `incarnation` issues as its `number`th: the map
+/// counts `number` up from 1 and never issues one twice in a run. `rank` is the order a
+/// creature ranks players that tie by (`compare`), the number of the connection the unit
+/// was issued for.
 pub fn issue(
   map map: MapId,
   incarnation incarnation: Int,
   number number: Int,
-  joiner joiner: Int,
+  rank rank: Int,
 ) -> UnitAddress {
-  UnitAddress(map:, incarnation:, number:, joiner:)
+  UnitAddress(map:, incarnation:, number:, rank:)
 }
 
-/// The number of the connection the address was issued for.
-pub fn joiner(address address: UnitAddress) -> Int {
-  address.joiner
+/// The order key the address was issued with: the number of the connection the unit was
+/// issued for.
+pub fn rank(address address: UnitAddress) -> Int {
+  address.rank
 }
 
 /// The number the map issued the address as.
@@ -51,8 +56,8 @@ pub fn number(address address: UnitAddress) -> Int {
   address.number
 }
 
-/// The order of two addresses: the number of the connection each was issued for, as a
-/// creature ordered connections, then the number of the address, then the run, so two
+/// The order of two addresses: their ranks, as a creature ordered connections, then the
+/// number of the address, then the run, so two
 /// addresses of one connection (it joined again) and of two runs are ordered too. Where a
 /// creature picks among players that tie (the first target, a tie of threat), it picks the
 /// lowest by this order: a choice of the server's, since the
@@ -61,7 +66,7 @@ pub fn compare(
   first first: UnitAddress,
   second second: UnitAddress,
 ) -> order.Order {
-  int.compare(first.joiner, second.joiner)
+  int.compare(first.rank, second.rank)
   |> order.break_tie(int.compare(first.number, second.number))
   |> order.break_tie(int.compare(first.incarnation, second.incarnation))
 }

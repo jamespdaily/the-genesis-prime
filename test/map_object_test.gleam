@@ -85,15 +85,15 @@ fn object_notices(
 ) -> List(ObjectNotice) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      map_message.Noticed(notice: map_message.ObjectsSeen(units:), ..) ->
+      map_message.Noticed(notice: map_message.ObjectsSeen(units:)) ->
         Ok(Seen(sent.0, list.map(units, fn(unit) { holoring_message(unit.1) })))
-      map_message.Noticed(notice: map_message.ObjectsUnseen(unit_ids:), ..) ->
+      map_message.Noticed(notice: map_message.ObjectsUnseen(unit_ids:)) ->
         Ok(Unseen(sent.0, unit_ids))
-      map_message.Noticed(notice: map_message.SeenBy(..), ..)
-      | map_message.Noticed(notice: map_message.UnseenBy(..), ..)
-      | map_message.Noticed(notice: map_message.Gone(..), ..)
-      | map_message.Noticed(notice: map_message.UnitUnseen(..), ..)
-      | map_message.Noticed(notice: map_message.PlayerUnseen(..), ..)
+      map_message.Noticed(notice: map_message.SeenBy(..))
+      | map_message.Noticed(notice: map_message.UnseenBy(..))
+      | map_message.Noticed(notice: map_message.Gone(..))
+      | map_message.Noticed(notice: map_message.UnitUnseen(..))
+      | map_message.Noticed(notice: map_message.PlayerUnseen(..))
       | map_message.Joined(..)
       | map_message.NotJoined(..)
       | map_message.Left
@@ -123,12 +123,14 @@ fn kinds_of(taken: ServiceStep(map_message.Outgoing)) -> List(String) {
     case effect {
       OwnEffect(Reply(answer: map_message.Joined(..), ..)) -> "Joined"
       OwnEffect(Send(
-        message: map_message.Noticed(notice: map_message.ObjectsSeen(..), ..),
+        message: map_message.Noticed(notice: map_message.ObjectsSeen(..)),
         ..,
       )) -> "ObjectsSeen"
+      OwnEffect(step.Register(..)) -> "Register"
       OwnEffect(step.StartCreature(..)) -> "StartCreature"
       step.Watch(..) -> "Watch"
       OwnEffect(Reply(..))
+      | OwnEffect(step.Unregister(..))
       | OwnEffect(Send(..))
       | OwnEffect(step.StartServiceTimer(..))
       | OwnEffect(step.CancelServiceTimer(..))
@@ -166,7 +168,7 @@ pub fn an_object_notice_names_the_objects_spawn_and_not_its_unit_id_test() -> Ni
   // spawn of each object it is told of: spawns 101 and 102 here, under unit ids 2 and 3.
   let state = started(creatures: [], objects: [0.0, 1.0])
   let #(_, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
-  let assert [map_message.Noticed(notice: map_message.ObjectsSeen(units:), ..)] =
+  let assert [map_message.Noticed(notice: map_message.ObjectsSeen(units:))] =
     list.map(support.sends(taken), fn(sent) { sent.1 })
     as "one notice of objects"
   assert list.map(units, fn(unit) { unit.0 }) == [SpawnId(101), SpawnId(102)]
@@ -282,10 +284,9 @@ pub fn a_leave_sends_nothing_about_objects_and_a_join_again_sees_them_under_the_
       event: OwnEvent(Asked(
         caller: CallerId(1),
         message: map_message.Join(
-          connection: ConnectionId(1),
+          joiner: ConnectionId(1),
           character: map_support.character(101),
           place: spawns.at(0.0),
-          stay: map_support.stay(count: 2),
           alive: True,
           hidden: set.new(),
         ),

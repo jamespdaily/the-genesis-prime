@@ -49,7 +49,7 @@ import genesis_prime/shared/spend
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_properties.{type Source}
-import genesis_prime/step.{type ConnectionId, type TimerId, ConnectionId}
+import genesis_prime/step.{type TimerId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell_level
@@ -80,11 +80,7 @@ const absorb_id = 130_470
 const modifier_id = 130_474
 
 fn address() -> PlayerAddress {
-  PlayerAddress(
-    connection: ConnectionId(2),
-    unit_id: ally,
-    stay: map_support.stay(count: 2),
-  )
+  PlayerAddress(address: map_support.address(number: 2), unit_id: ally)
 }
 
 /// The Novice Esper, who holds 1000 Focus (Phantasmal Armor's cost) and sees these players.
@@ -3078,9 +3074,7 @@ fn started_at_a_player(
 
 /// The ledger of the ally's connection after the changes `effects` tell it, from the caster's
 /// connection 1 and its unit 7.
-fn ledger_told(
-  effects effects: List(Effect),
-) -> held_changes.Held(ConnectionId) {
+fn ledger_told(effects effects: List(Effect)) -> held_changes.Held {
   list.fold(told(effects:), held_changes.new(), fn(held, change) {
     case change {
       cast_state.OtherPlayerChangeStarts(
@@ -3092,7 +3086,7 @@ fn ledger_told(
       ) ->
         held_changes.started(
           held:,
-          by: ConnectionId(1),
+          by: map_support.address(number: 1),
           unit_id: 7,
           source:,
           sight:,

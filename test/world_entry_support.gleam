@@ -268,7 +268,6 @@ fn loaded_answer(
         action_sets:,
       ),
       connection: ConnectionId(1),
-      stay: map_support.stay(count: 1),
       tables:,
       visibility:,
       spawns:,
@@ -302,7 +301,6 @@ pub fn answered(
     state:,
     answer:,
     connection: ConnectionId(1),
-    stay: map_support.stay(count: 1),
     tables:,
     visibility: dict.new(),
     spawns: spawn_id.LoadedSpawns(ids: set.new()),
@@ -407,7 +405,6 @@ pub fn rejoined(
       health: None,
       told: None,
       connection: ConnectionId(1),
-      stay: map_support.stay(count: 2),
       tables:,
       visibility: dict.new(),
     )

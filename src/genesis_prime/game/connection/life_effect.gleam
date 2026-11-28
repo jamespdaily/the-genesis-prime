@@ -40,7 +40,7 @@ pub fn life_effects(
         ),
       ]
       player_life.ToViewers(news:) -> [
-        connection_state.broadcast(session:, entered:, news:),
+        connection_state.broadcast(entered:, news:),
       ]
       player_life.Answer(unit_id:, life:, answered:) -> [
         connection_state.tells_the_creature(

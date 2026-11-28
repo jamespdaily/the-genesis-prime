@@ -40,7 +40,6 @@ import gleam/list
 import gleam/otp/static_supervisor as supervisor
 import gleam/set
 import mailbox_support
-import map_support
 import open_wait
 import owned_test
 import place_support
@@ -186,10 +185,9 @@ fn found_run(
 /// The join of the connection as `character`, at the live character's place.
 fn join_of(id id: Int, character character: Character) -> map_message.Message {
   map_message.Join(
-    connection: ConnectionId(id),
+    joiner: step.ConnectionId(id),
     character:,
     place: place_support.live_character_place(),
-    stay: map_support.stay(count: 1),
     alive: True,
     hidden: set.new(),
   )

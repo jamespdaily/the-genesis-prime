@@ -25,12 +25,12 @@ import genesis_prime/shared/player_change
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_casts.{EndsAt, HeldEffect}
 import genesis_prime/shared/unit_properties.{Source}
-import genesis_prime/step.{ConnectionId}
+import genesis_prime/step
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
-import genesis_prime/world_map/stay
+import genesis_prime/world_map/unit_address
 import gleam/float
 import gleam/int
 import gleam/list
@@ -91,8 +91,8 @@ fn written_for_c(scene scene: scene.Scene) -> List(String) {
 fn relation(scene scene: scene.Scene) -> option.Option(map.Relation) {
   map.player_relation(
     state: scene.map,
-    owner: ConnectionId(1),
-    viewer: ConnectionId(2),
+    owner: map_support.address(number: 1),
+    viewer: map_support.address(number: 2),
   )
 }
 
@@ -113,11 +113,8 @@ fn v_moves_out_and_back(entered entered: scene.Scene) -> scene.Scene {
 pub fn a_pair_is_shown_by_the_owners_snapshot_and_one_that_leaves_and_returns_is_two_generations_and_needs_a_new_snapshot_in_every_legal_order_test() -> Nil {
   use <- owned_test.run(10_000)
   let entered = two_players_entering()
-  let assert Some(map.Relation(
-    generation: first,
-    state: map.AwaitingSnapshot,
-    ..,
-  )) = relation(scene: entered)
+  let assert Some(map.Relation(generation: first, state: map.AwaitingSnapshot)) =
+    relation(scene: entered)
     as "the pair awaits the owner's snapshot of its first generation"
   // C's snapshot of that generation is in flight to the map while V's client moves out of
   // C's sight and back: V's connection tells the map each place, and the map takes C's
@@ -130,7 +127,7 @@ pub fn a_pair_is_shown_by_the_owners_snapshot_and_one_that_leaves_and_returns_is
       as "no frame of C before its 0x262 or after its 0x355, whatever the order"
     assert shows_c_once_at_the_end(names: written_for_c(scene: done))
       as "V is written C's 0x262, and after a 0x355 a 0x262 of the new sight: the snapshot of the sight that ended, taken after it, writes nothing"
-    let assert Some(map.Relation(generation: second, state: map.Relaying, ..)) =
+    let assert Some(map.Relation(generation: second, state: map.Relaying)) =
       relation(scene: done)
       as "the new sight relays after its own snapshot"
     assert generation.compare(second, first) == order.Gt
@@ -225,7 +222,7 @@ pub fn a_unit_that_leaves_and_returns_is_shown_in_its_new_generation_and_a_move_
       as "no frame of C before its 0x262 or after its 0x355"
     assert leaves_and_returns(names: written_for_c(scene: done))
       as "V is written C's 0x262, then its 0x355, then a 0x262 of the new sight and only moves after it: a move of the sight that ended never moves the unit again"
-    let assert Some(map.Relation(generation: second, state: map.Relaying, ..)) =
+    let assert Some(map.Relation(generation: second, state: map.Relaying)) =
       relation(scene: done)
       as "the new sight relays"
     assert generation.compare(second, first) == order.Gt
@@ -515,7 +512,7 @@ fn t_leaves_c_sight(pressed pressed: scene.Scene) -> scene.Scene {
     from: scene.FromConnection(2),
     event: step.OwnEvent(
       step.Told(message: map_message.Moved(
-        connection: ConnectionId(2),
+        unit: map_support.address(number: 2),
         place: scene.at(x: 1030.0),
         seq: 1,
       )),
@@ -587,7 +584,7 @@ fn v_leaves_c_sight(pressed pressed: scene.Scene) -> scene.Scene {
     from: scene.FromConnection(3),
     event: step.OwnEvent(
       step.Told(message: map_message.Moved(
-        connection: ConnectionId(3),
+        unit: map_support.address(number: 3),
         place: scene.at(x: 1030.0),
         seq: 1,
       )),
@@ -780,17 +777,16 @@ fn heal_pressed(
   )
 }
 
-/// The stay each heal strike in flight names for the connection it heals, as the strike's
-/// tell to the map names it.
-fn heal_strikes_in_flight(scene scene: scene.Scene) -> List(#(Int, stay.Stay)) {
+/// The number of the address each heal strike in flight names for the unit it heals, as the
+/// strike's tell to the map names it.
+fn heal_strikes_in_flight(scene scene: scene.Scene) -> List(Int) {
   list.filter_map(scene.mail, fn(mail) {
     case mail.input {
       scene.ToMap(step.OwnEvent(step.Told(message: map_message.TellLanding(
-        to: ConnectionId(to),
-        to_stay:,
+        to:,
         landing: map_message.HealStrike(..),
         ..,
-      )))) -> Ok(#(to, to_stay))
+      )))) -> Ok(unit_address.number(address: to))
       _ -> Error(Nil)
     }
   })
@@ -812,8 +808,8 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
   let assert Some(map.Relation(generation: first, ..)) =
     map.player_relation(
       state: settled.map,
-      owner: ConnectionId(1),
-      viewer: ConnectionId(2),
+      owner: map_support.address(number: 1),
+      viewer: map_support.address(number: 2),
     )
     as "the map holds the sight E has of H"
   // H's connection enters again from its own state, in its second stay, the map taking the
@@ -826,17 +822,15 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
       level: 1,
       place: scene.at(x: 20.0),
     )
-  let assert Some(map.Relation(generation: second, stay: viewer_stay, ..)) =
+  let assert Some(map.Relation(generation: second, ..)) =
     map.player_relation(
       state: again.map,
-      owner: ConnectionId(1),
-      viewer: ConnectionId(2),
+      owner: map_support.address(number: 1),
+      viewer: map_support.address(number: 2),
     )
     as "the map holds a new sight of H for E"
   assert generation.compare(second, first) == order.Gt
     as "the new sight is a new generation"
-  assert viewer_stay == map_support.stay(count: 1)
-    as "E is in the stay it was in"
   // H's own new connection answers the new sight's SeenBy with its snapshot.
   let done = scene.settle(scene: again)
   assert list.drop(written_for_h(done), 1) == ["0x355(1)"]
@@ -858,9 +852,8 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
   // the map's SeenBy of the new sight, and H, in that stay, takes it and answers.
   let healing =
     heal_pressed(world: done, bag_index:, target_unit_id: unit_of_h_again)
-  assert heal_strikes_in_flight(scene: healing)
-    == [#(1, map_support.stay(count: 2))]
-    as "the strike names H's second stay, not the stay of the sight E held before"
+  assert heal_strikes_in_flight(scene: healing) == [3]
+    as "the strike names H's second unit, not the unit of the sight E held before"
   let healed = scene.settle(scene: healing)
   assert list.any(healed.taken, fn(taken) {
     taken.name == "tell of 1 to the map: TellLanding"
@@ -874,14 +867,14 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
 /// against the map's notices to T.
 fn c_tells_t_a_move(
   scene scene: scene.Scene,
-  stay stay: stay.Stay,
+  address address: unit_address.UnitAddress,
   move move: move_stamp.Move,
 ) -> scene.Scene {
   let assert Ok(message) =
-    client_connection.told_to_a_connection(request: client_connection.TellMove(
-      stay:,
-      move:,
-    ))
+    client_connection.told_to_a_connection(
+      to: step.Unit(address),
+      request: client_connection.TellMove(move:),
+    )
     as "a move is a tell to a connection"
   scene.Scene(
     ..scene,
@@ -923,7 +916,7 @@ pub fn an_unseen_ends_a_real_cast_the_departed_ally_is_relayed_nothing_after_it_
       from: scene.FromConnection(2),
       event: step.OwnEvent(
         step.Told(message: map_message.Moved(
-          connection: ConnectionId(2),
+          unit: map_support.address(number: 2),
           place: scene.at(x: 3000.0),
           seq: 1,
         )),
@@ -932,17 +925,17 @@ pub fn an_unseen_ends_a_real_cast_the_departed_ally_is_relayed_nothing_after_it_
     )
   // A move of C of the sight T held, sent to T itself, is in flight with T's leaving: it
   // reaches T before the map's notice that the sight ended or after it.
-  let assert Some(map.Relation(generation: sight, stay: t_stay, ..)) =
+  let assert Some(map.Relation(generation: sight, ..)) =
     map.player_relation(
       state: held.map,
-      owner: ConnectionId(1),
-      viewer: ConnectionId(2),
+      owner: map_support.address(number: 1),
+      viewer: map_support.address(number: 2),
     )
     as "the map holds the sight T has of C"
   let late_move =
     c_tells_t_a_move(
       scene: leaving,
-      stay: t_stay,
+      address: map_support.address(number: 2),
       move: move_stamp.Move(
         unit_id: unit_of(connection: 1),
         generation: sight,
@@ -1113,8 +1106,7 @@ pub fn at_the_ally_a_change_start_then_the_casters_unseen_ends_or_keeps_it_by_it
   let source = Source(cast_id: 100, effect_id: Spell4EffectsId(62_024))
   let start = fn(sight: player_change.Sight) {
     map_message.ChangeStart(change: player_change.PlayerChangeStarts(
-      from: ConnectionId(1),
-      from_stay: map_support.stay(count: 1),
+      from: map_support.address(number: 1),
       source:,
       change: player_change.Applies(player_change.Absorb(amount: 300, mask: 7)),
       sight:,
@@ -1132,10 +1124,8 @@ pub fn at_the_ally_a_change_start_then_the_casters_unseen_ends_or_keeps_it_by_it
       from: scene.FromConnection(1),
       event: step.OwnEvent(
         step.Told(message: map_message.TellLanding(
-          from: ConnectionId(1),
-          stay: map_support.stay(count: 1),
-          to: ConnectionId(2),
-          to_stay: map_support.stay(count: 1),
+          from: map_support.address(number: 1),
+          to: map_support.address(number: 2),
           landing: start(sight),
         )),
       ),
@@ -1205,14 +1195,11 @@ pub fn a_change_told_to_a_player_before_it_took_the_notice_of_its_caster_is_appl
       from: scene.FromConnection(1),
       event: step.OwnEvent(
         step.Told(message: map_message.TellLanding(
-          from: ConnectionId(1),
-          stay: map_support.stay(count: 1),
-          to: ConnectionId(2),
-          to_stay: map_support.stay(count: 1),
+          from: map_support.address(number: 1),
+          to: map_support.address(number: 2),
           landing: map_message.ChangeStart(
             change: player_change.PlayerChangeStarts(
-              from: ConnectionId(1),
-              from_stay: map_support.stay(count: 1),
+              from: map_support.address(number: 1),
               source:,
               change: player_change.Applies(player_change.Absorb(
                 amount: 300,
@@ -1310,9 +1297,8 @@ pub fn a_heal_the_map_accepted_before_its_caster_left_sight_is_applied_and_one_f
   let #(world, bag_index) = heal_world(tables:)
   let healing =
     heal_pressed(world:, bag_index:, target_unit_id: unit_of(connection: 1))
-  assert heal_strikes_in_flight(scene: healing)
-    == [#(1, map_support.stay(count: 1))]
-    as "the strike in flight names H's stay"
+  assert heal_strikes_in_flight(scene: healing) == [1]
+    as "the strike in flight names H's unit"
   // E's heal reaches the map and then E's move out of H's sight: H takes the heal and
   // answers it through the map, E's round closes and its go names H, in every order.
   list.each(
@@ -1399,13 +1385,12 @@ pub fn a_heal_the_map_accepted_before_its_caster_left_sight_is_applied_and_one_f
   let #(_, taken) =
     connection_support.feed(
       state: scene.connection_state(scene: world, connection: 1),
-      event: connection_support.for_stay(
-        stay: map_support.stay(count: 0),
+      event: connection_support.for_unit(
+        address: map_support.address_in(incarnation: 0, number: 1),
         sent: client_connection.SentByPlayer(
           tell: client_connection.Strike(
             strike: strike_support.heal_strike(
-              from: ConnectionId(2),
-              stay: map_support.stay(count: 1),
+              from: map_support.address(number: 2),
               cast_id: 100,
               unit_id: unit_of(connection: 1),
               outgoing: 1.0,

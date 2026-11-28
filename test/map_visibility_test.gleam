@@ -149,19 +149,19 @@ fn object_notices(
 ) -> List(ObjectNotice) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      map_message.Noticed(notice: map_message.ObjectsSeen(units:), ..) ->
+      map_message.Noticed(notice: map_message.ObjectsSeen(units:)) ->
         Ok(Seen(
           sent.0,
           list.map(units, fn(unit) { holoring_message(unit.1).creature_id }),
           list.map(units, fn(unit) { holoring_message(unit.1).unit_id }),
         ))
-      map_message.Noticed(notice: map_message.ObjectsUnseen(unit_ids:), ..) ->
+      map_message.Noticed(notice: map_message.ObjectsUnseen(unit_ids:)) ->
         Ok(Unseen(sent.0, unit_ids))
-      map_message.Noticed(notice: map_message.SeenBy(..), ..)
-      | map_message.Noticed(notice: map_message.UnseenBy(..), ..)
-      | map_message.Noticed(notice: map_message.Gone(..), ..)
-      | map_message.Noticed(notice: map_message.UnitUnseen(..), ..)
-      | map_message.Noticed(notice: map_message.PlayerUnseen(..), ..)
+      map_message.Noticed(notice: map_message.SeenBy(..))
+      | map_message.Noticed(notice: map_message.UnseenBy(..))
+      | map_message.Noticed(notice: map_message.Gone(..))
+      | map_message.Noticed(notice: map_message.UnitUnseen(..))
+      | map_message.Noticed(notice: map_message.PlayerUnseen(..))
       | map_message.Joined(..)
       | map_message.NotJoined(..)
       | map_message.Left

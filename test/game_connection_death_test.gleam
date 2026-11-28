@@ -465,7 +465,7 @@ pub fn while_dead_every_0x637_is_dropped_and_after_coming_back_a_move_moves_the_
           game_connection_support.incarnation,
         ),
         request: TellMoved(
-          connection: ConnectionId(1),
+          unit: map_support.address(number: 1),
           place: game_connection_support.standing_at(x: 1.5, y: 2.5, z: 3.5),
           seq: 1,
         ),
@@ -712,10 +712,9 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
     == AskMap(
       map: MapId(world_id: 3460, instance: 0),
       message: Join(
-        connection: ConnectionId(1),
+        joiner: ConnectionId(1),
         character: game_connection_support.world_character(),
         place: start,
-        stay: map_support.stay(count: 2),
         alive: True,
         hidden: set.new(),
       ),
@@ -754,10 +753,9 @@ pub fn the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_th
   let #(_, watched) =
     game_connection_support.feed(
       state,
-      game_connection_support.in_second_stay(
+      game_connection_support.in_second_unit(
         game_connection_support.sent_by_the_map(SeenBy(
-          by: ConnectionId(3),
-          stay: game_connection_support.viewer_stay(3),
+          by: map_support.address(number: 3),
           unit_id: game_connection_support.viewer_unit_id(3),
           generation: game_connection_support.viewer_sight(3),
         )),
@@ -873,10 +871,9 @@ pub fn the_holocrypt_of_a_world_with_no_start_of_the_race_and_faction_is_the_pla
     == AskMap(
       map: game_connection_support.camp_map(),
       message: Join(
-        connection: ConnectionId(1),
+        joiner: ConnectionId(1),
         character: game_connection_support.world_character(),
         place: game_connection_support.entry_place(),
-        stay: map_support.stay(count: 2),
         alive: True,
         hidden: set.new(),
       ),
@@ -969,8 +966,7 @@ pub fn a_viewer_that_arrives_while_the_player_is_dead_gets_its_0x262_with_health
     game_connection_support.feed(
       state,
       game_connection_support.sent_by_the_map(SeenBy(
-        by: ConnectionId(3),
-        stay: game_connection_support.viewer_stay(3),
+        by: map_support.address(number: 3),
         unit_id: game_connection_support.viewer_unit_id(3),
         generation: game_connection_support.viewer_sight(3),
       )),
@@ -1001,8 +997,7 @@ pub fn a_viewer_that_arrives_after_a_hit_gets_the_players_shield_and_health_now_
     game_connection_support.feed(
       state,
       game_connection_support.sent_by_the_map(SeenBy(
-        by: ConnectionId(3),
-        stay: game_connection_support.viewer_stay(3),
+        by: map_support.address(number: 3),
         unit_id: game_connection_support.viewer_unit_id(3),
         generation: game_connection_support.viewer_sight(3),
       )),
@@ -1149,8 +1144,7 @@ pub fn a_viewer_that_arrives_while_the_player_entered_dead_gets_health_0_and_shi
     game_connection_support.feed(
       state,
       game_connection_support.sent_by_the_map(SeenBy(
-        by: ConnectionId(3),
-        stay: game_connection_support.viewer_stay(3),
+        by: map_support.address(number: 3),
         unit_id: game_connection_support.viewer_unit_id(3),
         generation: game_connection_support.viewer_sight(3),
       )),
@@ -1428,13 +1422,13 @@ pub fn a_player_struck_to_0_tells_its_map_life_changed_false_before_its_stealths
     == [
       game_connection_support.map_tell(
         request: client_connection.TellLifeChanged(
-          connection: ConnectionId(1),
+          unit: map_support.address(number: 1),
           alive: False,
         ),
       ),
       game_connection_support.map_tell(
         request: client_connection.TellStealthChanged(
-          connection: ConnectionId(1),
+          unit: map_support.address(number: 1),
           stealthed: False,
         ),
       ),
@@ -1460,7 +1454,7 @@ pub fn wake_here_tells_the_map_life_changed_true_after_the_coming_backs_frames_a
     == [
       game_connection_support.map_tell(
         request: client_connection.TellLifeChanged(
-          connection: ConnectionId(1),
+          unit: map_support.address(number: 1),
           alive: True,
         ),
       ),

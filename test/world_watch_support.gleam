@@ -7,7 +7,7 @@ import cast_support
 import driven_time
 import event_wait
 import genesis_prime/client_connection.{
-  type Message, ForStay, SentByMap, SentByPeer,
+  type Message, ForUnit, SentByMap, SentByPeer,
 }
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/start_place.{type Place}
@@ -166,9 +166,9 @@ pub fn throw() -> forced_move.Throw {
 /// The path of a creature's 0x638 the connection was sent.
 pub fn moved(message: Message) -> Result(Path, Nil) {
   case message {
-    ForStay(sent: SentByPeer(PeerNews(news: CreatureMoved(path:), ..)), ..) ->
+    ForUnit(sent: SentByPeer(PeerNews(news: CreatureMoved(path:), ..)), ..) ->
       Ok(path)
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -191,7 +191,7 @@ pub fn left(run run: MapProcess, connection connection: Int) -> Nil {
     ask_support.ask_and_wait(send: fn(reply) {
       service.call_subject(
         run.subject,
-        map_message.Leave(connection: ConnectionId(connection)),
+        map_message.Leave(unit: address_of(run:, connection:)),
         reply,
       )
     })
@@ -222,10 +222,9 @@ pub fn join_at(
       service.call_subject(
         run.subject,
         map_message.Join(
-          connection: ConnectionId(connection),
+          joiner: ConnectionId(connection),
           character:,
           place:,
-          stay: map_support.stay(count: 1),
           alive: True,
           hidden: set.new(),
         ),
@@ -250,7 +249,7 @@ pub fn moved_to(
     service.tell_subject(
       run.subject,
       map_message.Moved(
-        connection: ConnectionId(connection),
+        unit: address_of(run:, connection:),
         place: place_support.at(
           world_id: 3460,
           world_zone_id: spawn_support.warfare_woods,
@@ -297,11 +296,11 @@ pub fn appearance(message: Message) -> Result(UnitCreateCreature, Nil) {
 /// can hand the same news to a real connection.
 pub fn appeared_news(message: Message) -> Result(PeerNews, Nil) {
   case message {
-    ForStay(
+    ForUnit(
       sent: SentByPeer(PeerNews(news: CreatureAppeared(..), ..) as news),
       ..,
     ) -> Ok(news)
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -368,14 +367,14 @@ pub fn left_sight(
 /// is that.
 pub fn strike_told(message: Message) -> Result(strike_tell.Key, Nil) {
   case message {
-    ForStay(
+    ForUnit(
       sent: client_connection.SentByFoe(strike_tell.Attacks(tell: Strike(
         key:,
         ..,
       ))),
       ..,
     ) -> Ok(key)
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -388,10 +387,10 @@ pub fn answer_to(
   cast_id cast_id: Int,
 ) -> Result(strike_tell.Outcome, Nil) {
   case message {
-    ForStay(sent: client_connection.SentByTarget(answered:), ..)
+    ForUnit(sent: client_connection.SentByTarget(answered:), ..)
       if answered.key.cast_id == cast_id
     -> Ok(answered.outcome)
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -530,9 +529,9 @@ pub fn tally(
 /// player no longer sees the unit.
 pub fn is_removal(message: Message) -> Bool {
   case message {
-    ForStay(sent: SentByPeer(PeerNews(news: unit_news.Removed, ..)), ..) -> True
-    ForStay(sent: SentByMap(map_message.UnitUnseen(..)), ..) -> True
-    ForStay(..)
+    ForUnit(sent: SentByPeer(PeerNews(news: unit_news.Removed, ..)), ..) -> True
+    ForUnit(sent: SentByMap(map_message.UnitUnseen(..)), ..) -> True
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> False
   }
@@ -555,8 +554,8 @@ pub fn removals_waiting(received received: Subject(Message)) -> Int {
 /// The unit the map says is gone, when the message is that.
 pub fn gone_unit(message: Message) -> Result(Int, Nil) {
   case message {
-    ForStay(sent: SentByMap(map_message.Gone(unit_id:)), ..) -> Ok(unit_id)
-    ForStay(..)
+    ForUnit(sent: SentByMap(map_message.Gone(unit_id:)), ..) -> Ok(unit_id)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -617,7 +616,7 @@ pub fn address_of(
   map_support.address_for(
     incarnation: run.incarnation,
     number: connection,
-    joiner: connection,
+    rank: connection,
   )
 }
 

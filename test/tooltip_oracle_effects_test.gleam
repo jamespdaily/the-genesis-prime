@@ -61,7 +61,6 @@ import genesis_prime/shared/lasting
 import genesis_prime/shared/spell_area
 import genesis_prime/shared/spell_plan.{type Spell}
 import genesis_prime/shared/unit_properties
-import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/class
 import genesis_prime/table/id.{
   ClassId, Creature2Id, Spell4AoeTargetConstraintsId, Spell4BaseId,
@@ -1042,7 +1041,6 @@ fn foe_at(z z: Float) -> shown.Shown {
 fn caster_of_the_go(unit_id unit_id: Int) -> strike.Attacker {
   strike.Attacker(
     unit_id:,
-    connection: ConnectionId(2),
     address: map_support.address(number: 2),
     pose: area.Pose(at: area.Point(x: 0.0, z: 0.0), yaw: 0.0),
     place: place_support.at(
@@ -1053,7 +1051,6 @@ fn caster_of_the_go(unit_id unit_id: Int) -> strike.Attacker {
       z: 0.0,
     ),
     move_seq: 1,
-    stay: map_support.stay(count: 1),
     hit_radius: place_support.player_hit_radius,
     faction: shown.Exile,
     stats: attacker_support.novice(),

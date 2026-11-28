@@ -10,10 +10,8 @@ import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/static_object.{type StaticObject}
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
-import gleam/list
 import gleam/option
 import spawn_support
 
@@ -127,28 +125,20 @@ pub fn address_in(
   incarnation incarnation: Int,
   number number: Int,
 ) -> UnitAddress {
-  address_for(incarnation:, number:, joiner: number)
+  address_for(incarnation:, number:, rank: number)
 }
 
 /// The address the map of the run `incarnation` issues as its `number`th, to the connection
-/// numbered `joiner`.
+/// ranked `rank`.
 pub fn address_for(
   incarnation incarnation: Int,
   number number: Int,
-  joiner joiner: Int,
+  rank rank: Int,
 ) -> UnitAddress {
   unit_address.issue(
     map: MapId(world_id: 3460, instance: 0),
     incarnation:,
     number:,
-    joiner:,
+    rank:,
   )
-}
-
-/// The stay a connection's `count`th join names: the one after `count - 1` others
-/// (genesis_prime/world_map/stay).
-pub fn stay(count count: Int) -> Stay {
-  list.fold(list.repeat(Nil, count), stay.none_yet(), fn(earlier, _) {
-    stay.next(earlier)
-  })
 }

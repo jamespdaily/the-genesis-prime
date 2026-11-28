@@ -28,9 +28,10 @@ import genesis_prime/shared/strike_tell.{
   HealLanded, HealsLanded, Key, PlayerAnswered,
 }
 import genesis_prime/shared/unit_news
-import genesis_prime/step.{type ConnectionStep, ConnectionId}
+import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/table/id.{Spell4EffectsId}
 import gleam/list
+import map_support
 import owned_test
 import strike_support
 
@@ -74,11 +75,10 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
   let #(state, taken) =
     support.feed(
       state:,
-      event: support.for_stay(
-        stay: support.own_stay(),
+      event: support.for_unit(
+        address: support.own_address(),
         sent: support.a_player_strike(
           from: 3,
-          stay: support.viewer_stay(3),
           cast_id: 100,
           outgoing: 1.0,
           heals: [#(effect_kind.Shield, 10), #(effect_kind.Health, 40)],
@@ -120,16 +120,13 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
         ),
       ]),
     )
-  assert support.player_answers(taken)
-    == [#(3, support.viewer_stay(3), answered)]
+  assert support.player_answers(taken) == [#(3, answered)]
     as "one answer, to the caster's connection for the caster's stay, with the key unchanged and each row's split"
   assert list.first(rule_support.effects_of(taken))
     == Ok(
       support.map_tell(client_connection.TellLanding(
-        connection: ConnectionId(1),
-        stay: support.own_stay(),
-        to: ConnectionId(3),
-        to_stay: support.viewer_stay(3),
+        unit: map_support.address(number: 1),
+        to: map_support.address(number: 3),
         landing: map_message.HealAnswer(answered:),
       )),
     )
@@ -138,11 +135,10 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
   let #(_, second) =
     support.feed(
       state:,
-      event: support.for_stay(
-        stay: support.own_stay(),
+      event: support.for_unit(
+        address: support.own_address(),
         sent: support.a_player_strike(
           from: 4,
-          stay: support.viewer_stay(4),
           cast_id: 101,
           outgoing: 1.0,
           heals: [#(effect_kind.Health, 40)],
@@ -155,7 +151,6 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
     == [
       #(
         4,
-        support.viewer_stay(4),
         PlayerAnswered(
           key: Key(
             cast_id: 101,
@@ -193,13 +188,12 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
   let #(_, ticked) =
     support.feed(
       state: hurt,
-      event: support.for_stay(
-        stay: support.own_stay(),
+      event: support.for_unit(
+        address: support.own_address(),
         sent: client_connection.SentByPlayer(tell: client_connection.Strike(
           strike: strike_tell.PlayerStrike(
             ..strike_support.heal_strike(
-              from: ConnectionId(5),
-              stay: support.viewer_stay(5),
+              from: map_support.address(number: 5),
               cast_id: 102,
               unit_id: support.own_unit_id,
               outgoing: 1.0,
@@ -221,7 +215,6 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
     == [
       #(
         5,
-        support.viewer_stay(5),
         PlayerAnswered(
           key: tick_key,
           outcome: HealsLanded(heals: [

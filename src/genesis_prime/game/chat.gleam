@@ -66,7 +66,6 @@ import genesis_prime/step.{type Address, type ConnectionId, type WatchId}
 import genesis_prime/table/chat_channel.{type ChatChannel} as chat_channel_table
 import genesis_prime/table/id.{ChatChannelId}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/stay.{type Stay}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -90,11 +89,11 @@ pub type Effect {
   Send(frame: Frame)
   /// Tell the process at `to` a chat tell (genesis_prime/step `Tell`).
   Tell(to: Address, tell: Tell)
-  /// Tell the speaker's map, the run its `Said` names, a line of local chat from the player
-  /// of `connection` in its stay `stay`, for the map to relay to each player that sees the
-  /// speaker, for that player's stay, so that a line queued across a re-entry of the same
-  /// run is dropped at the connection (genesis_prime/client_connection `TellSay`).
-  TellSay(connection: ConnectionId, stay: Stay, said: Said)
+  /// Tell the speaker's map, the run its `Said` names, a line of local chat from the
+  /// speaker's unit, for the map to relay to each player that sees the speaker, to that
+  /// player's unit, so that a line queued across a re-entry of the same run is dropped at the
+  /// connection (genesis_prime/client_connection `TellSay`).
+  TellSay(said: Said)
   /// Tell the process the open watch `watch` found, through that watch
   /// (genesis_prime/step `TellWatched`): a whisper to its target.
   TellWatched(watch: WatchId, tell: Tell)
@@ -296,8 +295,7 @@ fn zone_joined_frame() -> Frame {
 }
 
 /// What one chat message of the client does: its body is decoded and the line or
-/// the whisper is answered, told to the map or its target, or refused. `stay` is the stay of
-/// the speaker's connection in the world, which a line carries to the map, `realm_name` the server's own,
+/// the whisper is answered, told to the map or its target, or refused. `realm_name` the server's own,
 /// `tables` the client's ChatChannel rows, and `dev_commands` whether a Say line
 /// that starts with `!` is a development command
 /// (genesis_prime/game/dev_command). A body the client's reader would refuse is
@@ -306,15 +304,13 @@ pub fn take(
   chat chat: Chat,
   message message: Message,
   body body: BitArray,
-  stay stay: Stay,
   realm_name realm_name: String,
   connection connection: ConnectionId,
   tables tables: table_store.Tables,
   dev_commands dev_commands: Bool,
 ) -> Result(#(Chat, List(Effect)), Refusal) {
   case message {
-    LineSent ->
-      line_sent(chat:, body:, connection:, stay:, tables:, dev_commands:)
+    LineSent -> line_sent(chat:, body:, tables:, dev_commands:)
     WhisperSent -> whisper_sent(chat:, body:, realm_name:, connection:)
   }
 }
@@ -496,8 +492,6 @@ const unclosed_end = 65_535
 fn line_sent(
   chat chat: Chat,
   body body: BitArray,
-  connection connection: ConnectionId,
-  stay stay: Stay,
   tables tables: table_store.Tables,
   dev_commands dev_commands: Bool,
 ) -> Result(#(Chat, List(Effect)), Refusal) {
@@ -540,11 +534,7 @@ fn line_sent(
         Send(accepted_frame(chat:, chat_message_id: sent.chat_message_id)),
         ..case reach {
           Say -> [
-            TellSay(
-              connection:,
-              stay:,
-              said: chat_tell.Said(speaker: chat.speaker, line:),
-            ),
+            TellSay(said: chat_tell.Said(speaker: chat.speaker, line:)),
           ]
           Zone ->
             case chat.zone {

@@ -61,7 +61,6 @@ import genesis_prime/table/id.{Item2Id}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set
-import map_support
 import owned_test
 import world_entry_support
 
@@ -115,7 +114,6 @@ pub fn message_0x07dd_asks_the_store_for_the_character_then_the_map_and_the_answ
         ConnectionId(1),
         game_connection_support.world_character(),
         game_connection_support.entry_place(),
-        game_connection_support.own_stay(),
         True,
         set.new(),
       ),
@@ -261,12 +259,11 @@ pub fn a_load_with_an_unset_item_asks_the_store_to_fill_it_before_the_map_is_ask
         ConnectionId(1),
         game_connection_support.world_character(),
         game_connection_support.entry_place(),
-        map_support.stay(count: 2),
         True,
         set.new(),
       ),
     )
-    as "the stored fills take the play to the map's join, whose stay is the second the connection counted: the load and the fill answer each took one, and a stay only has to be above every earlier one"
+    as "the stored fills take the play to the map's join, with the same character and place"
   let #(state, taken) = loaded_with_unset()
   let #(_, taken) =
     game_connection_support.answer(

@@ -23,7 +23,7 @@ import connection_rule_support as support
 import fixture_tables
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/map/message as map_message
-import genesis_prime/step.{CallerId, ConnectionId, WatchId}
+import genesis_prime/step.{CallerId, WatchId}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn
@@ -139,7 +139,10 @@ pub fn a_summoned_creature_is_live_under_its_run_only_spawn_with_its_viewers_tes
   assert life == creature_life && creature.life == life
     as "its life is the number of the watch it is started under"
   assert set.from_list(dict.keys(relations))
-    == set.from_list([ConnectionId(1), ConnectionId(2)])
+    == set.from_list([
+      map_support.address(number: 1),
+      map_support.address(number: 2),
+    ])
   let assert Ok(spawn) = map.run_spawn(state:, spawn: SpawnId(-1))
     as "the map keeps the run-only spawn"
   assert spawn.place == standing()

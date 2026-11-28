@@ -102,7 +102,7 @@
 import genesis_prime/account_session
 import genesis_prime/client_connection.{
   type Answer, type Message, type Request, AskHandOff, AskMap, AskMapRun,
-  AskSessions, AskStore, ForStay, FromHandOff, FromMap, FromSessions, FromStore,
+  AskSessions, AskStore, ForUnit, FromHandOff, FromMap, FromSessions, FromStore,
   SentByChat, SentByFoe, SentByKill, SentByLine, SentByMap, SentByPeer,
   SentByPlayer, SentBySessions, SentByTarget, TellBroadcast, TellChat,
   TellCreature, TellLanding, TellLifeChanged, TellMove, TellMoved, TellReady,
@@ -141,7 +141,7 @@ import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_source
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/erlang/process.{type Name, type Subject}
 import gleam/option.{type Option, None, Some}
@@ -308,7 +308,7 @@ pub fn start(
     name: settings.sessions,
     settings: service_shell.Settings(
       rule: account_session.rule(),
-      reach: connection_reach(settings, fn(message) {
+      reach: connection_reach(settings, fn(_to, message) {
         Ok(SentBySessions(message))
       }),
       shutdown_ms: settings.sessions_shutdown_ms,
@@ -402,7 +402,8 @@ fn locate(settings: Settings) -> Locate {
       step.Connection(connection:) -> registry.find(registry, connection)
       step.CharacterNamed(folded_name:) ->
         registry.find_named(registry, folded_name)
-      step.ZoneChannel(..) | step.Unit(..) -> Error(Nil)
+      step.ZoneChannel(..) -> Error(Nil)
+      step.Unit(..) -> registry.find_unit(registry, address)
       step.Creature(map:, incarnation:, unit_id:, life:) ->
         creature_registry.find(
           settings.world.creatures,
@@ -529,7 +530,7 @@ pub fn tell_the_run(
 /// How a connection's shell sends a request to another connection by address
 /// (`Tell` to a `Connection`) or to every connection of a zone channel (`Tell` to
 /// a `ZoneChannel`): a player's move (`TellMove`) goes through the
-/// registry as `SentByMove` for the viewer's stay (`ForStay`), and a chat tell
+/// registry as `SentByMove` to the viewer's `Unit` (`ForUnit`), and a chat tell
 /// between characters (`TellChat`) as `SentByChat`, by the
 /// same reach the services' sends take (`connection_reach`). Any other request is no
 /// tell to a connection: a rule that sends one has a bug, logged as an error, and nothing
@@ -537,9 +538,10 @@ pub fn tell_the_run(
 fn connection_deliver(
   settings: Settings,
 ) -> fn(step.Address, Request) -> Result(Nil, Nil) {
-  let reach = connection_reach(settings, fn(message: Message) { Ok(message) })
+  let reach =
+    connection_reach(settings, fn(_to, message: Message) { Ok(message) })
   fn(to: step.Address, request: Request) {
-    case client_connection.told_to_a_connection(request:) {
+    case client_connection.told_to_a_connection(to:, request:) {
       Ok(message) -> reach.send(to, message)
       Error(Nil) -> {
         runtime.log(
@@ -554,20 +556,21 @@ fn connection_deliver(
 }
 
 /// How a service reaches the processes its rule names: the same lookups, and
-/// a send to a connection, which takes what the service sends wrapped by
-/// `wrap` (`SentBySessions`, a map's notice for a stay). Only a connection is sent
-/// to; any other address has no process that takes a message from a service. A
-/// send `wrap` has no message for is a bug of the sender's rule: an error line,
-/// and nothing is sent.
+/// a send to a connection, which takes what the service sends to the address `to`
+/// wrapped by `wrap` (`SentBySessions`, a map's notice for a unit), and the
+/// registration of a unit's address for the connection that hosts it. Only a
+/// connection, a zone channel or a unit is sent to; any other address has no process
+/// that takes a message from a service. A send `wrap` has no message for is a bug of
+/// the sender's rule: an error line, and nothing is sent.
 fn connection_reach(
   settings: Settings,
-  wrap: fn(outgoing) -> Result(Message, Nil),
+  wrap: fn(step.Address, outgoing) -> Result(Message, Nil),
 ) -> Reach(outgoing) {
   let registry = settings.registry
   service.Reach(
     locate: locate(settings),
     send: fn(to, outgoing) {
-      case wrap(outgoing), to {
+      case wrap(to, outgoing), to {
         Error(Nil), _ -> {
           runtime.log(
             LogError,
@@ -580,71 +583,129 @@ fn connection_reach(
           registry.deliver(registry, connection, message)
         Ok(message), step.ZoneChannel(..) ->
           registry.deliver_group(registry, to, message)
+        Ok(message), step.Unit(..) ->
+          registry.deliver_unit(registry, to, message)
         Ok(_), step.Sessions
         | Ok(_), step.HandOff
         | Ok(_), step.Store
         | Ok(_), step.Maps
         | Ok(_), step.Map(..)
         | Ok(_), step.Creature(..)
-        | Ok(_), step.Unit(..)
         | Ok(_), step.CharacterNamed(..)
         -> Error(Nil)
+      }
+    },
+    register: fn(group, member) {
+      case group, member {
+        step.Unit(..), step.Connection(connection:) ->
+          case registry.find(registry, connection) {
+            Ok(pid) -> registry.join_unit(registry, group, pid)
+            Error(Nil) -> Nil
+          }
+        step.Unit(..), step.Sessions
+        | step.Unit(..), step.HandOff
+        | step.Unit(..), step.Store
+        | step.Unit(..), step.Maps
+        | step.Unit(..), step.Map(..)
+        | step.Unit(..), step.Unit(..)
+        | step.Unit(..), step.Creature(..)
+        | step.Unit(..), step.CharacterNamed(..)
+        | step.Unit(..), step.ZoneChannel(..)
+        | step.Sessions, _
+        | step.HandOff, _
+        | step.Store, _
+        | step.Maps, _
+        | step.Map(..), _
+        | step.Connection(..), _
+        | step.Creature(..), _
+        | step.CharacterNamed(..), _
+        | step.ZoneChannel(..), _
+        ->
+          runtime.log(
+            LogError,
+            "a service registered something other than a connection under a unit",
+            step.no_one,
+          )
+      }
+    },
+    unregister: fn(group) {
+      case group {
+        step.Unit(..) -> registry.leave_unit(registry, group)
+        step.Sessions
+        | step.HandOff
+        | step.Store
+        | step.Maps
+        | step.Map(..)
+        | step.Connection(..)
+        | step.Creature(..)
+        | step.CharacterNamed(..)
+        | step.ZoneChannel(..) ->
+          runtime.log(
+            LogError,
+            "a service emptied a group that is no unit",
+            step.no_one,
+          )
       }
     },
     start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
   )
 }
 
-/// The message a connection takes what a map sends it as: a notice for the
-/// player's stay. Any other outgoing of a map is an answer or a creature's, never
-/// sent to a connection, and has none.
+/// The message a connection takes what a map sends to the address `to`: a notice or a
+/// relay for the unit `to` names, as `ForUnit(to, ..)`. Any other outgoing of a map is an
+/// answer or a creature's, and a send to any address but a unit is no connection's: none
+/// has a message.
 pub fn map_message(
+  to to: step.Address,
   outgoing outgoing: map_message.Outgoing,
 ) -> Result(Message, Nil) {
-  case outgoing {
-    map_message.Noticed(stay:, notice:) ->
-      Ok(ForStay(stay:, sent: SentByMap(notice:)))
-    map_message.Relayed(stay:, delivered:) ->
-      Ok(relayed_message(delivered:, stay:))
-    map_message.Joined(..)
-    | map_message.Summoned(..)
-    | map_message.NotSummoned(..)
-    | map_message.NotJoined(..)
-    | map_message.Left
-    | map_message.Seen(..)
-    | map_message.Unseen(..)
-    | map_message.Retire
-    | map_message.Approached(..)
-    | map_message.Withdrew(..)
-    | map_message.PlayerDied(..)
-    | map_message.CasterGone(..)
-    | map_message.ToldCreature(..) -> Error(Nil)
+  case outgoing, to {
+    map_message.Noticed(notice:), step.Unit(address:) ->
+      Ok(ForUnit(address:, sent: SentByMap(notice:)))
+    map_message.Relayed(delivered:), step.Unit(address:) ->
+      Ok(relayed_message(delivered:, address:))
+    map_message.Noticed(..), _
+    | map_message.Relayed(..), _
+    | map_message.Joined(..), _
+    | map_message.Summoned(..), _
+    | map_message.NotSummoned(..), _
+    | map_message.NotJoined(..), _
+    | map_message.Left, _
+    | map_message.Seen(..), _
+    | map_message.Unseen(..), _
+    | map_message.Retire, _
+    | map_message.Approached(..), _
+    | map_message.Withdrew(..), _
+    | map_message.PlayerDied(..), _
+    | map_message.CasterGone(..), _
+    | map_message.ToldCreature(..), _
+    -> Error(Nil)
   }
 }
 
-/// The message a connection takes what a creature told it through the map as: the
-/// news of a unit as `SentByPeer`, a local chat line as `SentByLine`, what another player
-/// landed on it as `SentByPlayer`, the creature's threat, release or strike as
+/// The message a connection takes what a creature or a player told it through the map
+/// as: the news of a unit as `SentByPeer`, a local chat line as `SentByLine`, what another
+/// player landed on it as `SentByPlayer`, the creature's threat, release or strike as
 /// `SentByFoe`, the answer to its strike as `SentByTarget`, and the credit for its
-/// death as `SentByKill`, each for the stay the relay names.
+/// death as `SentByKill`, each for the unit `address` the relay was sent to.
 pub fn relayed_message(
   delivered delivered: map_message.Delivered,
-  stay stay: Stay,
+  address address: UnitAddress,
 ) -> Message {
   case delivered {
-    map_message.News(news:) -> ForStay(stay:, sent: SentByPeer(news:))
+    map_message.News(news:) -> ForUnit(address:, sent: SentByPeer(news:))
     map_message.Landed(landing:) ->
-      ForStay(
-        stay:,
+      ForUnit(
+        address:,
         sent: SentByPlayer(tell: client_connection.player_tell_of(landing:)),
       )
-    map_message.Said(said:) -> ForStay(stay:, sent: SentByLine(said:))
+    map_message.Said(said:) -> ForUnit(address:, sent: SentByLine(said:))
     map_message.Tell(payload: map_message.Struck(answered:)) ->
-      ForStay(stay:, sent: SentByTarget(answered))
+      ForUnit(address:, sent: SentByTarget(answered))
     map_message.Tell(payload: map_message.KillCredit(credit:)) ->
-      ForStay(stay:, sent: SentByKill(credit))
+      ForUnit(address:, sent: SentByKill(credit))
     map_message.Tell(payload: map_message.Fight(told:)) ->
-      ForStay(stay:, sent: SentByFoe(told))
+      ForUnit(address:, sent: SentByFoe(told))
   }
 }
 
@@ -661,7 +722,9 @@ fn world(
     time: settings.service_time,
     realm_id: settings.game.settings.realm_id,
     tables: settings.game.settings.tables,
-    reach: connection_reach(settings, fn(outgoing) { map_message(outgoing:) }),
+    reach: connection_reach(settings, fn(to, outgoing) {
+      map_message(to:, outgoing:)
+    }),
   )
 }
 
@@ -786,6 +849,8 @@ fn map_reach(
         | step.ZoneChannel(..) -> reach.send(to, outgoing)
       }
     },
+    register: reach.register,
+    unregister: reach.unregister,
     start_creature: fn(creature) {
       creature_supervisor.start_creature(
         supervisor: world.creature_supervisor,
@@ -918,6 +983,8 @@ fn creature_reach(
         | step.ZoneChannel(..) -> Error(Nil)
       }
     },
+    register: fn(_group, _member) { Nil },
+    unregister: fn(_group) { Nil },
     start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
   )
 }

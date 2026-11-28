@@ -91,7 +91,6 @@ pub fn chat_message(
       chat: entered.chat,
       message:,
       body: inner.body,
-      stay: entered.stay,
       realm_name: session.settings.realm_name,
       connection: client_connection.connection(session.link),
       tables: session.settings.tables,
@@ -143,7 +142,7 @@ pub fn summoning(
           map: entered.map,
           incarnation: entered.incarnation,
           message: map_message.Summon(
-            connection: client_connection.connection(session.link),
+            unit: entered.address,
             creature_id: creature2_id,
             level:,
           ),
@@ -310,12 +309,12 @@ pub fn chat_effects(
           OwnEffect(step.Tell(to:, request: TellChat(tell))),
           ..written
         ])
-        chat.TellSay(connection:, stay:, said:) ->
+        chat.TellSay(said:) ->
           case connection_state.entered_of(session.status) {
             Some(entered) -> #(session, [
               connection_state.tells_the_map(
                 entered:,
-                request: TellSay(connection:, stay:, said:),
+                request: TellSay(unit: entered.address, said:),
               ),
               ..written
             ])

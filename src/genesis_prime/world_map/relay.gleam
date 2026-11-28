@@ -2,8 +2,8 @@
 //// map, and the checks the map makes before it delivers either
 //// (genesis_prime/world_map/map). A creature sends the map a `Relay` naming the player's
 //// unit address with a `Payload`; the map admits it by the creature's running state and
-//// life and by the table below, then sends the connection that joined that unit the
-//// payload in the form it takes, for the stay of the join. A player's connection sends
+//// life and by the table below, then sends the payload, in the form it takes, to the unit's
+//// address (`Unit(to)`). A player's connection sends
 //// the map a `TellCreature` naming its unit address, the creature's unit and life and an
 //// `Inbound`; the map admits it by the creature's running state and life and by the
 //// table below, then sends the creature `ToldCreature` with the sender the relay named,
@@ -15,7 +15,7 @@
 //// creature                 map                                        player's connection
 //// Relay(unit, life, to, payload) ─▶ spawn of (unit, life) runs?  no: dropped
 ////                                         `to` is a unit of this run?  no: dropped
-////                                         Relayed(stay of to's join, Tell(payload)) ─▶ ForStay(stay, ..)
+////                                         Relayed(Tell(payload)) to Unit(to) ─▶ ForUnit(to, ..)
 ////
 //// player's connection P    map                                        creature
 //// TellCreature(a, unit, life, inbound) ─▶ spawn of (unit, life) runs?  no: dropped
@@ -29,7 +29,7 @@
 //// is never sight: an answer or a tell reaches a unit of the run whether or not it sees the
 //// creature, and a tell reaches a running creature whatever the sender sees. A
 //// landing is what one player's connection tells another through the map: it reaches the told
-//// player in the stay the tell names whatever the two see of each other. A local chat line
+//// unit whatever the two see of each other, while it is a unit of this run. A local chat line
 //// and a unit's news are no landing: the map relays them through a player's relation.
 ////
 //// | Payload | Kind | Destination check | Source check |
@@ -48,12 +48,12 @@
 //// | `CastViewSet` | what a player's cast holds on the creature | the running creature | the sender is a unit of this run |
 //// | `CastViewEnds` | a cast holds nothing on the creature any more | the running creature | none |
 //// | `ControlsEnd` | the states a cast landed on the creature end | the running creature | none |
-//// | `HealStrike` | the heal rows of a caster's cast, for the told player's life | the told player's current stay | none |
-//// | `HealAnswer` | the told player's answer to a heal strike, for the caster's round | the told player's current stay | none |
-//// | `ChangeStart` | a change the caster's cast puts on the told player | the told player's current stay | the sender is a player of the map in the stay the tell names |
-//// | `ChangeEnd` | the end of a change the caster's cast put on the told player | the told player's current stay | none |
-//// | `CastWent` | the caster's go has told the told player each of its changes | the told player's current stay | none |
-//// | `AllyEvent` | the events of a blow on the told player that the caster's Proc rows on it wait for | the told player's current stay | none |
+//// | `HealStrike` | the heal rows of a caster's cast, for the told player's life | a unit of this run | none |
+//// | `HealAnswer` | the told player's answer to a heal strike, for the caster's round | a unit of this run | none |
+//// | `ChangeStart` | a change the caster's cast puts on the told player | a unit of this run | the sender is a unit of this run |
+//// | `ChangeEnd` | the end of a change the caster's cast put on the told player | a unit of this run | none |
+//// | `CastWent` | the caster's go has told the told player each of its changes | a unit of this run | none |
+//// | `AllyEvent` | the events of a blow on the told player that the caster's Proc rows on it wait for | a unit of this run | none |
 
 import genesis_prime/map/message.{
   type Inbound, type Landing, type Payload, AllyEvent, CastViewEnds, CastViewSet,
@@ -138,17 +138,16 @@ pub fn inbound_kind_of(inbound inbound: Inbound) -> InboundKind {
 
 /// The check on where a landing goes.
 pub type LandingDestination {
-  /// The told player is in the map in the stay the tell names, whether or not it sees the
-  /// sender.
-  TellsCurrentStay
+  /// The told unit is a unit of this run, whether or not it sees the sender.
+  TellsUnitOfRun
 }
 
 /// The check on where a landing comes from.
 pub type LandingSource {
   /// No check: the landing's own rules decide.
   NoLandingSourceCheck
-  /// The sender is a player of the map in the stay the tell names for it.
-  SenderStayIsCurrent
+  /// The sender is a unit of this run.
+  SenderIsUnitOfRun
 }
 
 /// The destination and source checks of a landing's kind.
@@ -160,16 +159,16 @@ pub type LandingKind {
 pub fn landing_kind_of(landing landing: Landing) -> LandingKind {
   case landing {
     HealStrike(..) ->
-      LandingKind(destination: TellsCurrentStay, source: NoLandingSourceCheck)
+      LandingKind(destination: TellsUnitOfRun, source: NoLandingSourceCheck)
     HealAnswer(..) ->
-      LandingKind(destination: TellsCurrentStay, source: NoLandingSourceCheck)
+      LandingKind(destination: TellsUnitOfRun, source: NoLandingSourceCheck)
     ChangeStart(..) ->
-      LandingKind(destination: TellsCurrentStay, source: SenderStayIsCurrent)
+      LandingKind(destination: TellsUnitOfRun, source: SenderIsUnitOfRun)
     ChangeEnd(..) ->
-      LandingKind(destination: TellsCurrentStay, source: NoLandingSourceCheck)
+      LandingKind(destination: TellsUnitOfRun, source: NoLandingSourceCheck)
     CastWent(..) ->
-      LandingKind(destination: TellsCurrentStay, source: NoLandingSourceCheck)
+      LandingKind(destination: TellsUnitOfRun, source: NoLandingSourceCheck)
     AllyEvent(..) ->
-      LandingKind(destination: TellsCurrentStay, source: NoLandingSourceCheck)
+      LandingKind(destination: TellsUnitOfRun, source: NoLandingSourceCheck)
   }
 }

@@ -43,6 +43,7 @@ import genesis_prime/store.{Character, ForSelect, Listed}
 import genesis_prime/table/id.{ClassId}
 import gleam/int
 import gleam/list
+import map_support
 import owned_test
 import spawn_support
 
@@ -108,7 +109,7 @@ fn stealth_told(
   stealthed stealthed: Bool,
 ) -> step.Effect(step.ConnectionEffect(Request)) {
   support.map_tell(request: client_connection.TellStealthChanged(
-    connection: step.ConnectionId(1),
+    unit: map_support.address(number: 1),
     stealthed:,
   ))
 }
@@ -378,14 +379,13 @@ fn create_flags_sent_to_a_new_viewer(
 ) -> Int {
   let seen =
     support.sent_by_the_map(SeenBy(
-      by: step.ConnectionId(2),
-      stay: support.viewer_stay(2),
+      by: map_support.address(number: 2),
       unit_id: support.viewer_unit_id(2),
       generation: support.viewer_sight(2),
     ))
   let #(_, taken) =
     support.feed(state, case second_stay {
-      True -> support.in_second_stay(seen)
+      True -> support.in_second_unit(seen)
       False -> seen
     })
   let assert [PeerNews(news: Appeared(unit:, ..), ..)] =

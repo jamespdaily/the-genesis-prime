@@ -92,7 +92,6 @@ fn placed(
       ..connection_state.with_entered(session:, change: fn(_) { placed }),
       move_seq: echo_value,
     )
-  let connection = client_connection.connection(session.link)
   let hit_radius =
     hit_radius.of_playing(
       tables: session.settings.tables,
@@ -108,7 +107,7 @@ fn placed(
         connection_state.tells_the_map(
           entered: placed,
           request: client_connection.TellMoved(
-            connection:,
+            unit: placed.address,
             place:,
             seq: echo_value,
           ),

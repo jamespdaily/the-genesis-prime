@@ -1052,7 +1052,7 @@ pub fn the_buyback_list_survives_a_world_change_and_is_empty_after_entering_the_
   let #(rejoined, _) =
     connection_support.feed(
       state: rejoined,
-      event: connection_support.in_second_stay(walker_appears(
+      event: connection_support.in_second_unit(walker_appears(
         unit_id: walker_unit,
         gap: sale_reach -. 0.1,
         health: 52,
@@ -1094,7 +1094,7 @@ pub fn the_buyback_list_survives_a_world_change_and_is_empty_after_entering_the_
   let #(entered, _) =
     connection_support.feed(
       state: entered,
-      event: connection_support.in_stay(
+      event: connection_support.in_unit(
         count: 3,
         event: walker_appears(
           unit_id: walker_unit,

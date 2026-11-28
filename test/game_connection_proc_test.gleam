@@ -47,8 +47,8 @@ import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news.{CastStarted}
 import genesis_prime/shared/unit_properties.{Source}
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionStep, type Event, ConnectionId,
-  LogWarning, Now, OwnEvent,
+  type ConnectionEvent, type ConnectionStep, type Event, LogWarning, Now,
+  OwnEvent,
 }
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/generation
@@ -935,11 +935,7 @@ fn caster_holding_an_ally_proc(
   let source =
     Source(cast_id: 2_147_500_000, effect_id: Spell4EffectsId(86_457))
   let address =
-    PlayerAddress(
-      connection: ConnectionId(2),
-      unit_id: ally_unit,
-      stay: map_support.stay(count: 2),
-    )
+    PlayerAddress(address: map_support.address(number: 2), unit_id: ally_unit)
   let row =
     spell_plan.ProcRow(
       ..cast_support.held_proc_row(
@@ -982,9 +978,8 @@ fn caster_holding_an_ally_proc(
       cast:,
       viewers: dict.from_list([
         #(
-          ConnectionId(2),
+          map_support.address(number: 2),
           player_address.Viewer(
-            stay: address.stay,
             unit_id: ally_unit,
             generation: generation.first(),
           ),

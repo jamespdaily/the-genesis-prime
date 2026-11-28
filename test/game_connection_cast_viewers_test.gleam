@@ -33,10 +33,12 @@ import genesis_prime/message/unit_create_cast
 import genesis_prime/message/unit_create_player.{UnitCreatePlayer}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/shared/unit_news.{type News, Appeared, PeerNews}
-import genesis_prime/step.{type ConnectionStep, ConnectionId, OwnEffect}
+import genesis_prime/step.{type ConnectionStep, OwnEffect}
 import genesis_prime/world_map/generation
+import genesis_prime/world_map/unit_address
 import gleam/list
 import gleam/option.{None}
+import map_support
 import owned_test
 import planted_table
 import unitest
@@ -162,16 +164,12 @@ fn told_in(
           )),
         ]
         OwnEffect(step.Tell(
-          request: client_connection.TellSnapshot(
-            viewer: ConnectionId(to),
-            burst:,
-            ..,
-          ),
+          request: client_connection.TellSnapshot(viewer:, burst:, ..),
           ..,
         )) ->
           list.map(burst, fn(item) {
             Snapshot(
-              to:,
+              to: unit_address.number(address: viewer),
               news: PeerNews(
                 unit_id: sender,
                 news: news_as_seen(news: item.news, sender:),
@@ -179,13 +177,14 @@ fn told_in(
             )
           })
         OwnEffect(step.Tell(
-          request: client_connection.TellLanding(
-            to: ConnectionId(to),
-            landing:,
-            ..,
-          ),
+          request: client_connection.TellLanding(to:, landing:, ..),
           ..,
-        )) -> [Change(to:, change: client_connection.player_tell_of(landing:))]
+        )) -> [
+          Change(
+            to: unit_address.number(address: to),
+            change: client_connection.player_tell_of(landing:),
+          ),
+        ]
         _ -> []
       }
     })
@@ -201,8 +200,8 @@ fn ally_taking(
   let #(ally, taken) =
     connection_support.feed(
       state: ally,
-      event: connection_support.for_stay(
-        connection_support.own_stay(),
+      event: connection_support.for_unit(
+        connection_support.own_address(),
         SentByPlayer(change),
       ),
     )
@@ -327,8 +326,7 @@ fn seen_after_the_go_by(
     connection_support.feed(
       state:,
       event: connection_support.sent_by_the_map(SeenBy(
-        by: ConnectionId(late),
-        stay: connection_support.viewer_stay(late),
+        by: map_support.address(number: late),
         unit_id: connection_support.viewer_unit_id(late),
         generation: connection_support.viewer_sight(late),
       )),

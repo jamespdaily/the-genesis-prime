@@ -15,7 +15,7 @@ import cast_struck_support
 import driven_time
 import game_connection_support
 import genesis_prime/client_connection.{
-  type Message, ForStay, SentByKill, SentByPeer, SentByTarget,
+  type Message, ForUnit, SentByKill, SentByPeer, SentByTarget,
 }
 import genesis_prime/game/strike
 import genesis_prime/map/message as map_message
@@ -75,13 +75,13 @@ fn held_at_least(
 /// What the connection was sent that a creature's answer, credit or health news is.
 fn heard_kind(message: Message) -> Result(String, Nil) {
   case message {
-    ForStay(sent: SentByTarget(..), ..) -> Ok("answer")
-    ForStay(sent: SentByKill(..), ..) -> Ok("credit")
-    ForStay(sent: SentByPeer(PeerNews(news: unit_news.Health(..), ..)), ..) ->
+    ForUnit(sent: SentByTarget(..), ..) -> Ok("answer")
+    ForUnit(sent: SentByKill(..), ..) -> Ok("credit")
+    ForUnit(sent: SentByPeer(PeerNews(news: unit_news.Health(..), ..)), ..) ->
       Ok("health")
-    ForStay(sent: SentByPeer(PeerNews(news: unit_news.Died, ..)), ..) ->
+    ForUnit(sent: SentByPeer(PeerNews(news: unit_news.Died, ..)), ..) ->
       Ok("death")
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -90,8 +90,8 @@ fn heard_kind(message: Message) -> Result(String, Nil) {
 /// The answer to a strike, whole, when the message is one.
 fn answered_of(message: Message) -> Result(Answered, Nil) {
   case message {
-    ForStay(sent: SentByTarget(answered:), ..) -> Ok(answered)
-    ForStay(..)
+    ForUnit(sent: SentByTarget(answered:), ..) -> Ok(answered)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -364,9 +364,9 @@ pub fn the_map_delivers_a_relay_held_past_the_strike_deadline_unchanged_and_the_
 /// The creature's tell that the connection's player is threatened, when the message is that.
 fn threatened_by_the_creature(message: Message) -> Result(Nil, Nil) {
   case message {
-    ForStay(sent: client_connection.SentByFoe(strike_tell.Threatened(..)), ..) ->
+    ForUnit(sent: client_connection.SentByFoe(strike_tell.Threatened(..)), ..) ->
       Ok(Nil)
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }

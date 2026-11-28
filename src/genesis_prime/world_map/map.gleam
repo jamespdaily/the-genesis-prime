@@ -24,24 +24,23 @@
 ////
 //// ```
 //// connection c1                      map                                      shell
-////   Join(c1, character, place, stay, alive, hidden) ─▶ Asked ─▶ loadout of its class and faction
-////                                          a c1 that is in the map already is removed as a Leave
-////                                            removes it (its creatures told `Unseen` and
-////                                            `CasterGone` of its old address), then joins as below
+////   Join(c1, character, place, alive, hidden) ─▶ Asked ─▶ loadout of its class and faction
+////                                          a unit of c1 in the map already (a scan of `players` by
+////                                            joiner) is removed as a Leave removes it, then c1 joins
 ////                                          unit id u = next unit id; next + 1
 ////                                          address a1 = the next address of this run (`issue_address`)
 ////                                          unit = the character at place as unit u,
 ////                                                 with the body visuals of its look and its loadout
-////                                          player = (c1, stay, a1, unit, watch w1, sees, hidden);
-////                                          a1 is indexed to c1 (`by_address`)
-////                                          Watch(w1, Connection(c1))           ─▶ monitors c1
+////                                          player = (c1 as joiner, a1, unit, watch w1, sees, hidden)
+////                                          Register(Unit(a1), Connection(c1)) ─▶ c1 joins the group
+////                                          Watch(w1, Unit(a1))                 ─▶ monitors c1 there
 ////   ◀─ Joined(0x262's record of unit, loadout, a1, run, the map's clock origin)
 ////                                ◀─ OwnEffect(Reply(caller, Joined(..)))
 ////   ◀─ NotJoined(reason)         when the class and faction have no Novice set:
-////                                    no unit id is given, no player kept, no watch opened
-////                                          for each player c2 in sight, in the same step:
-////   ◀─ Noticed(c1's stay, SeenBy(c2, c2's stay, c2's unit id, g(c2 sees c1)))                ─▶ send to c1
-////                                          Noticed(c2's stay, SeenBy(c1, c1's stay, c1's unit id, g(c1 sees c2))) ─▶ send to c2
+////                                    no unit id is given, no player kept, nothing registered or watched
+////                                          for each player a2 in sight, in the same step:
+////   ◀─ Noticed(SeenBy(a2, a2's unit id, g(a2 sees a1)))                 ─▶ Send(Unit(a1), ..)
+////                                          Noticed(SeenBy(a1, a1's unit id, g(a1 sees a2))) ─▶ Send(Unit(a2), ..)
 //// ```
 ////
 //// Leave, from the map's side, for a player whose connection goes on after its
@@ -49,11 +48,12 @@
 ////
 //// ```
 //// connection c1                      map                                      shell
-////   Leave(c1)                  ─▶ Asked ─▶ player of c1 removed with its unit
+////   Leave(a1)                  ─▶ Asked ─▶ player of a1 removed with its unit
 ////                                          its watch w1 forgotten
+////                                          Unregister(Unit(a1))                ─▶ the group is empty
 ////                                          Unwatch(w1)                         ─▶ drops the watch on c1
-////                                          to each player c2 who saw c1:
-////                                          UnseenBy(c1, g(c1 sees c2)), for c2's stay ─▶ sends to c2
+////                                          to each player a2 who saw a1:
+////                                          UnseenBy(a1, g(a1 sees a2))         ─▶ Send(Unit(a2), ..)
 ////   ◀─ Left                    ◀─ OwnEffect(Reply(caller, Left))
 //// ```
 ////
@@ -93,11 +93,11 @@
 ////                                           UnseenBy(A, g) ─▶ B      UnseenBy(B, g') ─▶ A
 //// A connection's end (its watch's DOWN)   ─▶ to each player c2 who saw it: UnseenBy(it, g)
 ////                                           to every player in the map: Gone(its unit)
-//// (every notice to a player's connection goes as Noticed(its stay, notice))
+//// (every notice to a player goes as Send(Unit(its address), Noticed(notice)))
 //// ```
 ////
 //// The relation of one player with another, kept once, in the viewer's `Player.sees` under
-//// the owner's connection (`Relation`), with the generation of the sight the viewer has of the
+//// the owner's address (`Relation`), with the generation of the sight the viewer has of the
 //// owner, as the creature's is; the owner finds its viewers among its own `sees`, whose
 //// sights are symmetric. A pair that comes into sight begins it awaiting the owner's
 //// snapshot; the owner's news is relayed only through a relation that relays, in the order
@@ -107,23 +107,23 @@
 //// decides sight from the place a move ends at.
 ////
 //// ```
-//// owner's connection C                map                                        viewer's connection V
-////   SeenBy(V, stay, unit, g) ◀──── pair comes into sight: g new; (V, g) AwaitingSnapshot
-////   PlayerSnapshot(C, V, g, burst) ─▶ (V, g) awaited, V in its stay: Relayed(stay, News(item)) ─▶ V
-////                                     for each item, in order; (V, g) Relaying
-////   PlayerBroadcast(C, news) ───────▶ Relayed(stay, News(news)) to each Relaying viewer, in
-////                                     connection order; none to an awaiting or departed one
-////   TellLanding(C, T, landing) ─────▶ the kind's checks (`relay.landing_kind_of`); Relayed(stay,
-////                                     Landed(landing)) ─▶ T
-////   Say(C, line) ───────────────────▶ Relayed(stay, Said(line)) to each Relaying viewer, in
-////                                     connection order
+//// owner's unit C                      map                                        viewer's unit V
+////   SeenBy(V, unit, g) ◀────────── pair comes into sight: g new; (V, g) AwaitingSnapshot
+////   PlayerSnapshot(C, V, g, burst) ─▶ (V, g) awaited, C and V units of the run:
+////                                     Relayed(News(item)) ─▶ Unit(V), each item in order; Relaying
+////   PlayerBroadcast(C, news) ───────▶ Relayed(News(news)) to Unit(V) of each Relaying viewer, in
+////                                     the order of the addresses; none to an awaiting or departed one
+////   TellLanding(C, T, landing) ─────▶ the kind's checks (`relay.landing_kind_of`); Relayed(
+////                                     Landed(landing)) ─▶ Unit(T)
+////   Say(C, line) ───────────────────▶ Relayed(Said(line)) to Unit(V) of each Relaying viewer, in
+////                                     the order of the addresses
 ////   the pair leaves sight ──────────▶ UnseenBy(V, g) ─▶ C   and   PlayerUnseen(unit, g) ─▶ V;
 ////                                     the relation is dropped, and a snapshot of g is dropped
 //// ```
 ////
-//// - A local chat line is relayed as a broadcast is: to the viewers whose relation relays,
-////   for each viewer's stay, so a line that reaches a viewer after it camped and entered
-////   again is dropped by the stay fence of its connection.
+//// - A local chat line is relayed as a broadcast is: to the units of the viewers whose
+////   relation relays, so a line that reaches a viewer after it camped and entered again
+////   is dropped by the address fence of its connection.
 ////
 //// The map's start, from the map's side, and the creatures a player's sight starts
 //// and stops. A spawn that no player sees has no process and no state, only its unit
@@ -139,7 +139,7 @@
 ////                                 StartCreature(w, spawn, u, life w, viewers [c]) ─▶ the creature supervisor starts it;
 ////                                                                       the shell watches Creature(map, run, u, w) as w;
 ////                                                                       the creature answers c with its snapshot as it starts
-////   a live spawn, seen now:      Seen(by: c, c's stay, a new generation) ─▶ Creature(.., u, w); idle ends;
+////   a live spawn, seen now:      Seen(by: a, a new generation) ─▶ Creature(.., u, w); idle ends;
 ////                                 the creature answers with its snapshot
 ////   a live spawn, no longer:     Unseen(by: c, g) ─▶ Creature(.., u, w), and c is sent the notice that the
 ////                                 unit is unseen, which writes c's 0x355
@@ -178,7 +178,7 @@
 ////   Expired(unit, life) ─▶ Live ─▶ Respawning(unit, life): relations end (no Unseen, no Gone)
 ////   Stop                    WatchEnded(life) ─▶ Respawning: players_seeing ─▶ start_creature:
 ////                             fresh relations (g', new life, AwaitingSnapshot), ring = ring_of(inside now)
-////                             StartCreature(viewers (c, stay, g'), ring) ─────────▶ Started: Watch(run),
+////                             StartCreature(viewers (a, g'), ring) ─────────▶ Started: Watch(run),
 ////                                                                                   Snapshot(c, g', burst) for each
 ////                                                                                   viewer, then one aggro over the
 ////                                                                                   ring players who are viewers
@@ -254,7 +254,7 @@
 ////                                           order ─────────────────────────▶ near without c;
 ////                                                                            threat list kept
 ////                                         c ready, s False: the rings it stands in now:
-////                                           Approached(c, unit, place, seq, stay), each Live
+////                                           Approached(a, unit, place, seq), each Live
 ////                                           spawn, in spawn order ─────────▶ may aggro, as a walk-in
 //// ```
 ////
@@ -283,7 +283,7 @@
 ////                                                                          the threat list
 ////                                         a True: c's life = Alive; c still loading: nothing more
 ////                                           (Ready decides); c ready: the rings it stands in now:
-////                                           Approached(c, unit, place, seq, stay), each Live
+////                                           Approached(a, unit, place, seq), each Live
 ////                                           spawn, in spawn order ─────────▶ may aggro, as a walk-in
 ////
 //// Where a dead player's rings are decided, in order (the connection tells `Join`, `Moved`,
@@ -376,7 +376,7 @@
 ////   - A map that dies ends every connection in it; no stealth copy outlives it.
 ////
 //// What a connection does with them is its own (genesis_prime/game/connection):
-//// told `SeenBy(v, stay, unit_id, generation)`, it builds its snapshot of that sight (its 0x262
+//// told `SeenBy(v, unit_id, generation)`, it builds its snapshot of that sight (its 0x262
 //// at its current place) and tells it to the map (`PlayerSnapshot`), which relays it to v; its
 //// 0x638s go to v itself as it moves, each stamped with that generation; told
 //// `UnseenBy(v, generation)`, it stops stamping moves for v. The 0x355 of its unit at v is the
@@ -393,23 +393,17 @@
 //// - **The incarnation** is in every `Joined`, so the joiner watches the run
 ////   of the map that holds its player, not a later one started after this
 ////   one ended.
-//// - **The unit address** (genesis_prime/world_map/unit_address) is what a creature and
-////   a player's tell to a creature name a player's unit by. The map issues one for each
-////   join from a counter that never goes back, keeps it in `Player.address` and indexes
-////   it to the joiner's connection (`by_address`); `Joined` carries it, and a creature
-////   names it back in `Snapshot` and `Relay`, which the map delivers to the connection
-////   that joined it (`Delivery`, `player_at`). Nothing is sent to an address.
-//// - **The stay** (genesis_prime/world_map/stay) of each player is the one its Join
-////   named: the connection fences by its count (`ForStay`,
-////   genesis_prime/game/connection), so a message for an earlier stay is dropped there;
-////   every notice (`Noticed`) and `SeenBy` names it. A message to a creature has none.
-//// - **A message for an address that is not a unit of this run** is dropped (the failure
-////   table below): `player_at` finds a connection only while its unit is in the map.
-//// - **Held until the player interface names addresses.** The connection's stay count,
-////   `Join.stay`, `Player.stay`, `Entered.stay`, `player_at`, `Delivery`, `by_address`,
-////   `UnitAddress.joiner` (a creature's tie-break by connection, kept when it goes),
-////   `players` keyed by connection and the type parameter of genesis_prime/game/held_changes
-////   still route a message to a player by connection.
+//// - **The unit address** (genesis_prime/world_map/unit_address) names a player's unit in every
+////   message about it: the map issues one for each join from a counter that never goes back,
+////   keeps `players` and every relation by it, and `Joined` carries it. The joiner is the
+////   one connection (`Player.joiner`) the map registers under `Unit(address)` and watches
+////   there; a send to the address reaches that connection while the unit is in the map, and
+////   no process once it left (the registry's group is empty) or ended.
+//// - **The host's fence.** A connection takes a message sent to one of its addresses only while
+////   it is its player's own (genesis_prime/game/connection `unit_sent`): one sent to an
+////   earlier unit of the same connection, before a camp or the Holocrypt, is dropped there.
+//// - **A message from or for an address that is not a unit of this run** is dropped (the
+////   failure table below): `in_run` finds a unit only while it is in the map.
 //// - **Unit ids** start at 1 and are never given to two units at once, whoever
 ////   leaves or ends: the client refuses a 0x262 whose unit id it already holds
 ////   (opcode.0x262), and a 0x262 with unit id 0 makes the client's controlled unit
@@ -424,11 +418,11 @@
 ////   them all crashes, and its players' connections end.
 //// - **A second Join from a connection in the map** removes the first unit as a Leave
 ////   does, then joins a new unit under a new address, and logs nothing.
-//// - **A Leave** removes the connection's player with its unit and its watch, tells each
-////   player that saw it `UnseenBy` and `PlayerUnseen`, and is answered `Left`, so the
-////   connection, which lives on in character select, is not watched by a map it has
-////   left. A Leave from a connection not in the map changes nothing, logs an error and
-////   is answered `Left`: the connection's rule leaves once.
+//// - **A Leave** removes the unit's player with its unit, its registration and its watch,
+////   tells each player that saw it `UnseenBy` and `PlayerUnseen`, and is answered `Left`.
+////   A Leave of an address that is no unit of the map changes nothing, logs an error and
+////   is answered `Left`. A leave answered by `EndedBeforeAnswer` leaves the host a member
+////   of the dead run's `Unit(a)` group until it ends: its fence drops what is sent there.
 //// - **A player's connection ends.** Its watch comes back as `WatchEnded(w)`; the player
 ////   whose watch is `w` is removed as a Leave removes it, and every player in the map
 ////   is sent `Gone(unit)`: the ended connection cannot send its 0x355, so this is the
@@ -581,15 +575,15 @@
 //// join:   Join ─▶ Reply(Joined(.., a_V, ..)); start_creature: relation(V) = g1, AwaitingSnapshot
 ////         StartCreature(viewers [(a_V, g1)])
 ////         creature Started ─▶ Send(map, Snapshot(unit, life, a_V, g1, burst))
-////         map: (V, g1, life) is current and AwaitingSnapshot ─▶ Relayed(stay, News(item)) per
+////         map: (V, g1, life) is current and AwaitingSnapshot ─▶ Relayed(News(item)) to Unit(a_V) per
 ////              burst item, in order; the relation is Relaying
 //// later:  map ─▶ creature Seen(a_W, g2) ─▶ Snapshot(unit, life, a_W, g2, burst); the copy gains a_W
-//// news:   creature ─▶ Broadcast(unit, life, news) ─▶ map: Relayed to each Relaying viewer, in
-////         connection order; an AwaitingSnapshot or departed viewer is sent none
+//// news:   creature ─▶ Broadcast(unit, life, news) ─▶ map: Relayed to Unit(a) of each Relaying
+////         viewer, in the order of the addresses; an AwaitingSnapshot or departed viewer is sent none
 //// tell:   creature ─▶ Relay(unit, life, to: a_P, payload) ─▶ map admits it (`admitted`: the
 ////         spawn is live, retiring, respawning or releasing under that life; then the destination
-////         check of the payload's kind, `relay.kind_of`: a_P is a unit of this run) ─▶ Relayed(the
-////         stay of a_P's join, payload) to the connection that joined a_P (`player_at`)
+////         check of the payload's kind, `relay.kind_of`: a_P is a unit of this run) ─▶
+////         Send(Unit(a_P), Relayed(payload)): the host takes it only while a_P is its player's own
 //// told:   a player's connection P ─▶ TellCreature(a_P, unit, life, inbound) ─▶ map admits it
 ////         (`admitted_inbound`: the spawn check as above; then the source check of the inbound's
 ////         kind, `relay.inbound_kind_of`: a_P is a unit of this run, and a `Strike` names a_P
@@ -635,13 +629,13 @@
 //// | a creature lies dead and retiring and holds a caster's view | dropped at the caster's leave or its connection's end, before the corpse expires (`a_dead_retiring_creature_holding_a_view_of_a_caster_drops_it_when_the_casters_connection_ends_before_its_corpse_expires_test`) |
 //// | `CasterGone` is for a creature that ended or was replaced | dropped by the registry (`a_tell_to_the_life_that_ended_is_dropped_and_the_same_tell_to_the_life_that_replaced_it_is_taken_for_every_kind_of_tell_test`) |
 //// | a `TellCreature` is for a creature that ended, or of an earlier life | dropped by `admitted_inbound`, with no line; the player's round closes by its deadline (`a_players_tell_is_delivered_to_a_running_creature_unchanged_and_dropped_for_an_ended_one_or_an_earlier_life_test`) |
-//// | a `Relay` names an address that ended, one of an earlier run of the map, or one the map never issued | dropped by `admitted` (`DestinationRefused`): `player_at` finds no connection (`a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test`) |
+//// | a `Relay` names an address that ended, one of an earlier run of the map, or one the map never issued | dropped by `admitted` (`DestinationRefused`): `in_run` finds no unit (`a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test`) |
 //// | a `Snapshot` names such an address | dropped, as a snapshot of a pair that ended is (`a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test`) |
 //// | a creature takes `Unseen` of a joiner's earlier address after `Seen` of its later one | the later viewer stays: viewers are keyed by address (`a_creature_names_a_viewer_by_its_address_and_an_unseen_of_an_earlier_address_keeps_the_later_viewer_test`) |
 //// | a creature is told `Seen` of a joiner's new address while it charges a telegraph at the first | the row bound to the first address is gone and the new unit, never its target, is struck by nothing: the client drops a telegraph when its unit is gone (`0x14054b1b0.unit_gone`) and the 0xAD of the new join removes every unit (`a_telegraph_whose_target_left_and_joined_again_during_the_charge_strikes_nobody_test`) |
 //// | a creature picks among players that tie (the first target, a tie of threat) | the lowest connection of the joiners, as it did when it named connections: a server's choice, the client holds no rule (`a_creature_that_ranks_players_ties_by_their_connection_and_not_by_the_order_they_joined_test`) |
-//// | two runs of a map both issue the connection the number 1 | the host's own stay count fences, as the address is in no player-bound message (`a_map_change_between_two_runs_that_both_issue_stay_1_drops_the_first_runs_notice_test`) |
-//// | a creature relays to an address of the run | the map delivers it to the connection that joined it, for the stay of that join (`a_creature_relay_reaches_the_host_by_the_connection_and_the_connections_stay_test`) |
+//// | two runs of a map both issue the connection the number 1 | the run is part of the address, so the host's fence compares unequal addresses and drops the first run's notice (`a_map_change_between_two_runs_that_both_issue_stay_1_drops_the_first_runs_notice_test`) |
+//// | a creature relays to an address of the run | the map sends it to `Unit(a)`, which the host takes while a is its player's own (`a_creature_relay_reaches_the_host_by_the_connection_and_the_connections_stay_test`) |
 //// | a join is answered with an address | the next of the run, never one a join of the run had, a restarted run's apart (`a_map_run_never_issues_one_address_twice_over_any_sequence_of_joins_leaves_and_ends_test`, `a_restarted_run_that_reuses_a_wire_unit_id_names_another_address_test`, `a_join_issues_the_next_address_and_keeps_the_connections_stay_test`) |
 //// | a `TargetMoved`, `ModifierStarts` or `CastViewSet` is from an address that is not a unit of this run | dropped (`SourceRefused`), with no line: a start or a view told after its connection's leave holds nothing on the creature (`a_start_told_after_its_casters_leave_holds_nothing_on_the_creature_test`) |
 //// | a `Strike` or a `StrikeAnswered` is from a sender that left | delivered: the damage applies and the answer closes its round (`a_strike_or_an_answer_of_an_address_that_ended_still_lands_and_a_move_or_a_holding_is_taken_only_from_a_unit_of_the_run_test`) |
@@ -654,7 +648,7 @@
 //// | an ask (`Join`, `Leave`, `Summon`) waits behind relays | the asker's own `ask_deadline_ms` decides; the load gate keeps the queue near zero (`a_store_a_maps_or_a_map_that_gives_no_answer_ends_the_play_with_0x036a_reason_8_and_a_warning_test`, `a_leave_that_gets_no_answer_in_time_tells_the_client_reason_8_and_ends_the_connection_with_no_second_save_test`, `a_map_that_is_not_running_ended_or_gave_no_answer_in_time_answers_not_summoned_and_the_connection_goes_on_test`, `a_run_that_showed_fewer_players_than_pairs_a_map_that_falls_behind_and_a_delay_past_its_guard_each_fail_and_a_run_that_holds_all_three_passes_test`) |
 //// | a creature never answers `Seen` | the viewer stays `AwaitingSnapshot` and shown nothing until the creature ends (then `Gone`); no deadline, since a creature answers every `Seen` in its step (`a_creature_answers_a_seen_with_a_snapshot_of_its_burst_live_dead_or_despawned_test`, `a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_test`, `a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_under_a_new_unit_id_if_seen_test`) |
 //// | a viewer's connection fails a write while it takes a relayed burst | the connection ends (nothing after the failed write is written), its watch ends and the map sends each creature `Unseen` (`a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_and_the_map_unsees_the_creature_test`) |
-//// | a creature is released while a viewer awaits its snapshot | the relations are kept by `Releasing` as they were, each with the stay it was made in: the snapshot and the news still reach the viewer until the creature ends, and none reaches a player that left and joined again in another stay meanwhile (`a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_test`) |
+//// | a creature is released while a viewer awaits its snapshot | the relations are kept by `Releasing` as they were: the snapshot and the news still reach the viewer until the creature ends, and none reaches a player that left and joined again in another stay meanwhile (`a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_test`) |
 //// | a `Relay` is taken twice | cannot happen: a creature sends each relay once and a mailbox delivers a message once; a relay of a creature that ended or of an earlier life is dropped by `admitted` |
 //// | `WatchEnded` of a creature's watch is taken twice, or after `CreatureNotStarted` | a second `WatchEnded` finds no creature watch, is read as a player's end, finds no player and changes nothing but one error line (`a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_under_a_new_unit_id_if_seen_test`); after `CreatureNotStarted` the shell opens no watch (`a_creature_that_does_not_start_comes_back_as_not_started_and_no_watch_is_opened_test`) |
 //// | the map's end (its process stops) is taken twice | cannot happen: a process stops once; a restarted map is a new process with no relations, and every creature stopped with the run it watched |
@@ -662,9 +656,9 @@
 //// | the creature's end waits past a deadline | `Gone` goes to every player when the map takes `WatchEnded`, and the respawn time counts from then; the map keeps no deadline for it (`a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_under_a_new_unit_id_if_seen_test`) |
 //// | the map's end waits past a deadline | the shell's `shutdown_ms` bounds it, after which the supervisor kills the map and its relations are lost with it (`started_starts_the_sweep_timer_and_stopping_stops_the_rule_test`, `the_trees_stop_arrives_as_stopping_with_the_childs_shutdown_time_from_its_arrival_test`) |
 //// | a map dies | its players and their relations live only in its process, and every connection in it ends; no relation, hold or tombstone outlives it, since holds end with the stay (as in the creature row `the map is killed`) (`a_map_that_ended_keeps_no_player_so_the_same_connection_joins_the_new_run_as_unit_1_test`, `the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_and_ends_the_connection_test`) |
-//// | an owner's snapshot of an earlier generation, a second one, one after the pair's `PlayerUnseen`, or for a viewer in another stay | dropped; the relation is as it was (`a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relation_awaits_and_news_while_awaiting_is_dropped_test`) |
+//// | an owner's snapshot of an earlier generation, a second one, one after the pair's `PlayerUnseen`, or from or for an address that is no unit of the run | dropped; the relation is as it was (`a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relation_awaits_and_news_while_awaiting_is_dropped_test`) |
 //// | an owner's snapshot does not begin with its own 0x262 of the relation's generation | one error line, nothing relayed, the relation still awaits (`a_players_snapshot_is_relayed_only_for_the_generation_and_stay_the_relation_awaits_and_news_while_awaiting_is_dropped_test`) |
-//// | an owner's news reaches the map while a viewer awaits its snapshot, after the pair left sight, or from the owner's earlier stay | not relayed to that viewer, or dropped (`a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_and_news_naming_another_unit_is_dropped_test`) |
+//// | an owner's news reaches the map while a viewer awaits its snapshot, after the pair left sight, or from an address that is no unit of the run | not relayed to that viewer, or dropped (`a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_and_news_naming_another_unit_is_dropped_test`) |
 //// | an owner's news names another unit than the owner's | dropped with one error line (`a_players_news_is_relayed_to_each_relaying_viewer_in_connection_order_and_to_no_awaiting_or_departed_viewer_and_news_naming_another_unit_is_dropped_test`) |
 //// | a pair leaves sight while its snapshot is awaited | `PlayerUnseen` to the viewer, and the late snapshot is dropped (`a_pair_that_leaves_while_its_snapshot_is_awaited_tells_the_viewer_its_unseen_and_the_late_snapshot_is_dropped_test`) |
 //// | a connection joins a second time | its first unit is removed as a `Leave` removes it and a new unit joins under a new address, so each pair's sight ends under the generation it held and begins again under a new one, the viewer's end for the stay it had, and each creature is told `Unseen` and `CasterGone` of the old address and `Seen` of the new (`a_second_join_of_one_joiner_removes_its_first_unit_as_a_leave_does_and_joins_a_new_unit_test`) |
@@ -703,9 +697,9 @@
 //// | an owner's connection ends (a crash, a close, a takeover) | it sends nothing; the map sends each viewer `PlayerUnseen` and every player in the map `Gone`, and a player writes the 0x355 if its client shows the unit (one that stopped seeing the owner just before may never have been sent it, since an end saves the place first) (`a_connection_ending_tells_gone_to_every_player_in_the_map_even_one_that_no_longer_sees_it_test`) |
 //// | an owner's 0x262 lands after the map's `Gone` of it | the viewer drops it: the unit is no ghost (`the_maps_gone_before_the_owners_notice_drops_what_is_held_for_the_unit_with_one_warning_that_names_it_and_counts_the_chunks_test`) |
 //// | an owner's 0x638 reaches a viewer before the owner's 0x262 of it, or after its 0x355 | not possible from one sender; one that lands after `Gone` is dropped, since the viewer shows no such unit (`a_viewer_writes_a_0x262_only_for_a_unit_its_client_does_not_hold_and_a_0x638_or_0x355_only_for_one_it_holds_test`) |
-//// | a 0x262, 0x638 or 0x355 for a unit of another run of the map, or another map | dropped by the viewer's connection: it was sent for another stay (`messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the_same_unit_id_test`) |
+//// | a 0x262, 0x638 or 0x355 for a unit of another run of the map, or another map | dropped by the viewer's connection: it was sent to an earlier address of its connection (`messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the_same_unit_id_test`) |
 //// | `Moved` reaches the map after that connection's `Leave` | ignored, with an error line (`a_moved_after_the_connections_leave_is_ignored_with_an_error_test`) |
-//// | a connection's `SeenBy` or `UnseenBy` reaches it with no player in the world, or in a later stay | dropped: a player that enters again starts with no viewers and is sent a `SeenBy` for each player in sight by its new join (`after_the_players_own_leave_nothing_more_is_written_for_other_units_test`, `messages_of_the_stay_before_a_camp_are_dropped_after_the_next_entry_test`) |
+//// | a connection's `SeenBy` or `UnseenBy` reaches it with no player in the world, or as a later unit | dropped: a player that enters again starts with no viewers and is sent a `SeenBy` for each player in sight by its new join (`after_the_players_own_leave_nothing_more_is_written_for_other_units_test`, `messages_of_the_stay_before_a_camp_are_dropped_after_the_next_entry_test`) |
 //// | the same pair crosses sight twice in one `Moved` batch | the map decides on the final place: at most one `SeenBy` or `UnseenBy` per pair per `Moved` (`a_pair_that_crosses_sight_twice_in_one_batch_is_decided_on_the_final_place_test`) |
 //// | a creature does not start | an error line with the supervisor's reason; the spawn stays empty for the run; the burst's other spawns start (`a_creature_that_does_not_start_leaves_its_spawn_empty_for_the_run_and_the_others_appear_test`) |
 //// | the map crashes in the middle of a burst of starts | every creature started sees the run end and stops; the players' connections end with the run (`a_map_that_ends_while_its_burst_of_starts_runs_ends_every_creature_it_started_test`, `the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_and_ends_the_connection_test`) |
@@ -736,7 +730,7 @@
 //// | a `LifeChanged(True)` reaches the map before the player's first `Ready` (Wake Here before the first 0xF2) | the player is only marked alive; its `Ready` decides its rings (`a_player_that_wakes_before_its_ready_is_only_marked_and_ready_sends_approached_to_each_ring_test`) |
 //// | a dead player's connection ends or camps | its creatures are told `Unseen`; the next entry's `Join` names `alive` False from its saved health 0 (`a_ready_player_in_a_ring_that_leaves_or_whose_connection_ends_alive_or_dead_sends_its_creature_unseen_and_caster_gone_and_no_withdrew_test`, `an_entry_at_a_saved_health_of_0_joins_its_map_dead_and_any_other_entry_and_the_holocrypts_join_alive_test`, `a_player_dead_at_camp_enters_again_dead_at_the_body_and_a_character_never_saved_enters_alive_and_full_test`) |
 //// | the Holocrypt's `Leave`, then its `Join` | `alive` True; the old map sent no `LifeChanged(True)`, so no ring creature aggroes the player for one step before the leave (`the_holocrypt_comes_back_as_wake_here_then_leaves_the_map_and_joins_at_the_start_of_the_race_and_faction_in_its_world_test`) |
-//// | an `ObjectsSeen` or `ObjectsUnseen` reaches a later stay | dropped by the connection's stay envelope (`an_object_notice_for_another_stay_is_dropped_test`) |
+//// | an `ObjectsSeen` or `ObjectsUnseen` reaches a later unit of its connection | dropped by the host's address fence (`an_object_notice_for_another_stay_is_dropped_test`) |
 //// | the map crashes and restarts | the player's connection's watch of the map ends: it saves the place, writes 0x036A reason 8 (LostUserServer) and ends, so no rejoin happens and the hidden set dies with the connection (`the_end_of_the_players_map_saves_the_place_then_writes_0x036a_reason_8_and_ends_the_connection_test`); the next play's `Join` carries the set worked out from the store |
 //// | the connection ends | the existing path: the map removes the player and sends `UnseenBy`, `PlayerUnseen` and `Gone` (`a_players_connection_ending_removes_the_player_so_its_next_join_is_a_new_unit_test`, `a_connection_ending_tells_each_player_who_saw_it_unwatched_and_gone_once_test`, `the_news_a_connection_sent_before_it_ended_is_relayed_before_its_removal_test`) |
 //// | a `VisibilityChanged` reaches a map the player has left, or from a connection never in it | dropped, like `Moved`, with an error line (`a_late_or_unchanged_visibility_changed_gives_no_effect_test`) |
@@ -779,9 +773,9 @@ import genesis_prime/step.{
   type ServiceEffect, type ServiceInput, type ServiceRule, type ServiceStep,
   type TimerId, type WatchId, Asked, CancelServiceTimer, Connection,
   ConnectionId, CreatureStart, Effects, Log, LogError, LogLine, OwnEffect,
-  OwnEvent, Reply, RingMember, Send, ServiceTimerFired, StartCreature,
-  StartServiceTimer, Started, Stop, Stopping, TimerId, Told, Unwatch, Watch,
-  WatchEnded, WatchId,
+  OwnEvent, Register, Reply, RingMember, Send, ServiceTimerFired, StartCreature,
+  StartServiceTimer, Started, Stop, Stopping, TimerId, Told, Unit, Unregister,
+  Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/id.{type Creature2Id, type PrerequisiteId}
@@ -795,7 +789,6 @@ import genesis_prime/world_map/spawn_cell
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/static_object
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -864,9 +857,8 @@ pub type Settings {
 pub opaque type State {
   State(
     settings: Settings,
-    players: Dict(ConnectionId, Player),
-    watches: Dict(WatchId, ConnectionId),
-    by_address: Dict(UnitAddress, ConnectionId),
+    players: Dict(UnitAddress, Player),
+    watches: Dict(WatchId, UnitAddress),
     spawns: Dict(SpawnId, SpawnState),
     creature_watches: Dict(WatchId, SpawnId),
     unit_of_spawn: Dict(SpawnId, Int),
@@ -895,7 +887,7 @@ pub type SpawnState {
   Live(
     unit_id: Int,
     life: Int,
-    relations: Dict(ConnectionId, Relation),
+    relations: Dict(UnitAddress, Relation),
     idle_since_ms: Option(Int),
   )
   /// The creature was told `Retire` and has not ended. The players who see the
@@ -919,7 +911,7 @@ pub type SpawnState {
     unit_id: Int,
     life: Int,
     wait_ms: Int,
-    relations: Dict(ConnectionId, Relation),
+    relations: Dict(UnitAddress, Relation),
   )
   /// The creature crashed: the unit was sent `Gone`, and the spawn's restart
   /// timer runs.
@@ -935,7 +927,7 @@ pub type SpawnState {
 /// awaited or has been relayed. The map relays a creature's news only to a viewer that
 /// is `Relaying`.
 pub type Relation {
-  Relation(generation: Generation, stay: Stay, state: RelationState)
+  Relation(generation: Generation, state: RelationState)
 }
 
 /// Where a relation is in the creature's first picture for the viewer.
@@ -966,11 +958,11 @@ pub type RelationState {
 /// visibility prerequisite is in `hidden` is in neither `objects` nor `seen`.
 type Player {
   Player(
-    stay: Stay,
+    joiner: ConnectionId,
     address: UnitAddress,
     unit: PlayerUnit,
     watch: WatchId,
-    sees: Dict(ConnectionId, Relation),
+    sees: Dict(UnitAddress, Relation),
     seen: Set(SpawnId),
     objects: Set(SpawnId),
     readiness: Readiness,
@@ -1083,7 +1075,6 @@ pub fn new(settings: Settings) -> State {
     settings:,
     players: dict.new(),
     watches: dict.new(),
-    by_address: dict.new(),
     spawns: dict.new(),
     creature_watches: dict.new(),
     unit_of_spawn: dict.new(),
@@ -1117,40 +1108,33 @@ pub fn step(
       timer_fired(state:, timer:, now_ms: input.now.monotonic_ms)
     OwnEvent(Asked(
       caller:,
-      message: Join(connection:, character:, place:, stay:, alive:, hidden:),
+      message: Join(joiner:, character:, place:, alive:, hidden:),
     )) ->
       joined(
         state:,
         caller:,
-        connection:,
+        joiner:,
         character:,
         place:,
-        stay:,
         alive:,
         hidden:,
         now_ms: input.now.monotonic_ms,
       )
-    OwnEvent(Asked(caller:, message: Leave(connection:))) ->
-      left(state:, caller:, connection:, now_ms: input.now.monotonic_ms)
-    OwnEvent(Told(message: Moved(connection:, place:, seq:))) ->
-      moved(state:, connection:, place:, seq:, now_ms: input.now.monotonic_ms)
-    OwnEvent(Told(message: Ready(connection:, seq:))) ->
-      ready(state:, connection:, seq:)
-    OwnEvent(Told(message: StealthChanged(connection:, stealthed:))) ->
-      stealth_changed(state:, connection:, stealthed:)
-    OwnEvent(Told(message: LifeChanged(connection:, alive:))) ->
-      life_changed(state:, connection:, alive:)
-    OwnEvent(Told(message: VisibilityChanged(connection:, hidden:))) ->
-      visibility_changed(
-        state:,
-        connection:,
-        hidden:,
-        now_ms: input.now.monotonic_ms,
-      )
+    OwnEvent(Asked(caller:, message: Leave(unit:))) ->
+      left(state:, caller:, unit:, now_ms: input.now.monotonic_ms)
+    OwnEvent(Told(message: Moved(unit:, place:, seq:))) ->
+      moved(state:, unit:, place:, seq:, now_ms: input.now.monotonic_ms)
+    OwnEvent(Told(message: Ready(unit:, seq:))) -> ready(state:, unit:, seq:)
+    OwnEvent(Told(message: StealthChanged(unit:, stealthed:))) ->
+      stealth_changed(state:, unit:, stealthed:)
+    OwnEvent(Told(message: LifeChanged(unit:, alive:))) ->
+      life_changed(state:, unit:, alive:)
+    OwnEvent(Told(message: VisibilityChanged(unit:, hidden:))) ->
+      visibility_changed(state:, unit:, hidden:, now_ms: input.now.monotonic_ms)
     OwnEvent(Told(message: Released(unit_id:))) ->
       released(state:, unit_id:, now_ms: input.now.monotonic_ms)
-    OwnEvent(Asked(caller:, message: Summon(connection:, creature_id:, level:))) ->
-      summoned(state:, caller:, connection:, creature_id:, level:)
+    OwnEvent(Asked(caller:, message: Summon(unit:, creature_id:, level:))) ->
+      summoned(state:, caller:, unit:, creature_id:, level:)
     OwnEvent(Told(message: Snapshot(unit_id:, life:, by:, generation:, burst:))) ->
       snapshot_taken(state:, unit_id:, life:, by:, generation:, burst:)
     OwnEvent(Told(message: Broadcast(unit_id:, life:, news:))) ->
@@ -1161,20 +1145,14 @@ pub fn step(
       expired(state:, unit_id:, life:)
     OwnEvent(Told(message: TellCreature(from:, unit_id:, life:, payload:))) ->
       told_creature(state:, from:, unit_id:, life:, payload:)
-    OwnEvent(Told(message: PlayerSnapshot(
-      by:,
-      stay:,
-      viewer:,
-      generation:,
-      burst:,
-    ))) ->
-      player_snapshot_taken(state:, by:, stay:, viewer:, generation:, burst:)
-    OwnEvent(Told(message: PlayerBroadcast(from:, stay:, news:))) ->
-      player_broadcast(state:, from:, stay:, news:)
-    OwnEvent(Told(message: TellLanding(from:, stay:, to:, to_stay:, landing:))) ->
-      landing_told(state:, from:, stay:, to:, to_stay:, landing:)
-    OwnEvent(Told(message: Say(from:, stay:, said:))) ->
-      line_said(state:, from:, stay:, said:)
+    OwnEvent(Told(message: PlayerSnapshot(by:, viewer:, generation:, burst:))) ->
+      player_snapshot_taken(state:, by:, viewer:, generation:, burst:)
+    OwnEvent(Told(message: PlayerBroadcast(from:, news:))) ->
+      player_broadcast(state:, from:, news:)
+    OwnEvent(Told(message: TellLanding(from:, to:, landing:))) ->
+      landing_told(state:, from:, to:, landing:)
+    OwnEvent(Told(message: Say(from:, said:))) ->
+      line_said(state:, from:, said:)
     OwnEvent(Asked(message: Moved(..), ..))
     | OwnEvent(Asked(message: PlayerSnapshot(..), ..))
     | OwnEvent(Asked(message: PlayerBroadcast(..), ..))
@@ -1203,14 +1181,14 @@ pub fn step(
 }
 
 /// A development summon: the creature is made a run-only spawn at the place and
-/// facing the map holds for the connection's player, under the next run-only id
+/// facing the map holds for the unit's player, under the next run-only id
 /// (`spawn_source.run_only_id_after`, so never a stored id), checked as a spawn
 /// is (`spawn.summoned`), and started for the players who see that place under a
 /// new life, as a dormant spawn is started when its first viewer comes; the
 /// answer waits for the start's outcome (`summon_settled`, `summon_not_started`):
 /// the asker is held in `summoning`, and a timer of 0 ms under the run-only id is
 /// started with the creature, which the shell fires after the start's failure, if
-/// there was one. A creature that fails the checks, or a connection with no player
+/// there was one. A creature that fails the checks, or a unit that is not a player
 /// here, is `NotSummoned` at once and changes nothing: no id is taken and no
 /// creature starts. The spawn is kept in `run_spawns` for as long as its creature
 /// lives: sight and rings read it beside the stored spawns, and the creature's
@@ -1220,14 +1198,14 @@ pub fn step(
 fn summoned(
   state state: State,
   caller caller: CallerId,
-  connection connection: ConnectionId,
+  unit unit: UnitAddress,
   creature_id creature_id: Creature2Id,
   level level: Option(Int),
 ) -> #(State, ServiceStep(Outgoing)) {
   let refused = fn(reason) {
     #(state, Effects([OwnEffect(Reply(caller, NotSummoned(reason:)))]))
   }
-  case dict.get(state.players, connection) {
+  case dict.get(state.players, unit) {
     Error(Nil) -> refused(NoPlayerHere)
     Ok(summoner) -> {
       let id = state.next_run_only_id
@@ -1327,66 +1305,62 @@ fn summon_settled(
   )
 }
 
-/// The relation the map holds with the player of connection `viewer` as a viewer of the
-/// player of connection `owner`, for a test.
+/// The relation the map holds with the unit `viewer` as a viewer of the unit `owner`, for a
+/// test.
 pub fn player_relation(
   state state: State,
-  owner owner: ConnectionId,
-  viewer viewer: ConnectionId,
+  owner owner: UnitAddress,
+  viewer viewer: UnitAddress,
 ) -> Option(Relation) {
   dict.get(state.players, viewer)
   |> result.try(fn(player) { dict.get(player.sees, owner) })
   |> option.from_result
 }
 
-/// The send of an owner's news to the connection of a viewer, for the stay its relation was
-/// made in: what the map relays of a creature's or a player's snapshot and news.
+/// The send of an owner's news to the unit of a viewer: what the map relays of a creature's
+/// or a player's snapshot and news.
 fn news_relayed(
-  to to: ConnectionId,
-  stay stay: Stay,
+  to to: UnitAddress,
   news news: PeerNews,
 ) -> Effect(ServiceEffect(Outgoing)) {
   OwnEffect(Send(
-    to: Connection(to),
-    message: Relayed(stay:, delivered: map_message.News(news:)),
+    to: Unit(to),
+    message: Relayed(delivered: map_message.News(news:)),
   ))
 }
 
-/// An owner's snapshot of a sight of its unit: relayed to the viewer, each item as
-/// `Relayed(stay, News(item))` in the order the owner built it, when the owner is in the
-/// stay the tell names, the viewer holds a relation of exactly that generation with it, the
-/// relation awaits its snapshot and the viewer is still in the stay of the relation; the
-/// relation is then `Relaying`. Any other snapshot is dropped, as a creature's is
-/// (`snapshot_taken`): one of an earlier generation (the pair left and came back), one
-/// taken twice, one after the pair's `PlayerUnseen`, one for a viewer in another stay, one
-/// of an earlier stay of the owner. A burst that does not begin with the owner's
+/// An owner's snapshot of a sight of its unit: relayed to the viewer's unit, each item as
+/// `Relayed(News(item))` in the order the owner built it, when the owner and the viewer are
+/// units of this run, the viewer holds a relation of exactly that generation with the owner
+/// and the relation awaits its snapshot; the relation is then `Relaying`. Any other snapshot
+/// is dropped, as a creature's is (`snapshot_taken`): one of an earlier generation (the pair
+/// left and came back), one taken twice, one after the pair's `PlayerUnseen`, one from or for
+/// an address that is no unit of this run (it left, or is an earlier unit of its connection).
+/// A burst that does not begin with the owner's
 /// `Appeared` of that generation is an error line and is not relayed, since the viewer
 /// releases the moves it holds by the generation that 0x262 names.
 fn player_snapshot_taken(
   state state: State,
-  by by: ConnectionId,
-  stay stay: Stay,
-  viewer viewer: ConnectionId,
+  by by: UnitAddress,
+  viewer viewer: UnitAddress,
   generation generation: Generation,
   burst burst: List(PeerNews),
 ) -> #(State, ServiceStep(Outgoing)) {
-  let ConnectionId(viewer_number) = viewer
   let awaited = {
     use owner <- result.try(dict.get(state.players, by))
-    use <- bool.guard(when: owner.stay != stay, return: Error(Nil))
     use viewing <- result.try(dict.get(state.players, viewer))
     use relation <- result.try(dict.get(viewing.sees, by))
     case relation {
-      Relation(generation: held, stay: viewing_stay, state: AwaitingSnapshot)
-        if held == generation && viewing.stay == viewing_stay
-      -> Ok(#(player_unit.unit_id(unit: owner.unit), viewing, viewing_stay))
+      Relation(generation: held, state: AwaitingSnapshot)
+        if held == generation
+      -> Ok(#(player_unit.unit_id(unit: owner.unit), viewing))
       Relation(state: AwaitingSnapshot, ..) | Relation(state: Relaying, ..) ->
         Error(Nil)
     }
   }
   case awaited {
     Error(Nil) -> #(state, Effects([]))
-    Ok(#(owner_unit_id, viewing, viewing_stay)) ->
+    Ok(#(owner_unit_id, viewing)) ->
       case burst {
         [PeerNews(unit_id:, news: Appeared(generation: shown, ..)), ..]
           if unit_id == owner_unit_id && shown == generation
@@ -1401,29 +1375,23 @@ fn player_snapshot_taken(
                 sees: dict.insert(
                   viewing.sees,
                   by,
-                  Relation(generation:, stay: viewing_stay, state: Relaying),
+                  Relation(generation:, state: Relaying),
                 ),
               ),
             ),
           ),
-          Effects(
-            list.map(burst, news_relayed(
-              to: viewer,
-              stay: viewing_stay,
-              news: _,
-            )),
-          ),
+          Effects(list.map(burst, news_relayed(to: viewer, news: _))),
         )
         _ -> #(
           state,
           Effects([
             log_error(
               state:,
-              about: step.About(..step.no_one, connection: Some(by)),
+              about: about_unit(state:, address: by),
               text: "the snapshot of the sight "
                 <> int.to_string(generation.number(generation:))
-                <> " that viewer "
-                <> int.to_string(viewer_number)
+                <> " that unit "
+                <> int.to_string(unit_address.number(address: viewer))
                 <> " has of this player does not begin with the player's own 0x262 of that sight, so it is not relayed",
             ),
           ]),
@@ -1432,26 +1400,24 @@ fn player_snapshot_taken(
   }
 }
 
-/// News of a player's own unit: relayed to each viewer whose relation relays, in
-/// connection order, as `Relayed(stay, News(news))` for the viewer's stay, and to no viewer
-/// awaiting its snapshot or gone from the relations (`broadcast`). News from a player not in
-/// the map or in another stay than the tell names (it left, or joined again, while the news
-/// was on its way) is dropped; news that names another unit than the sender's is dropped
-/// with an error line.
+/// News of a player's own unit: relayed to each viewer whose relation relays, in the
+/// order of their addresses, as `Relayed(News(news))` to the viewer's unit, and to no viewer
+/// awaiting its snapshot or gone from the relations (`broadcast`). News from an address that
+/// is no unit of this run (it left, or ended, while the news was on its way) is dropped; news
+/// that names another unit than the sender's is dropped with an error line.
 fn player_broadcast(
   state state: State,
-  from from: ConnectionId,
-  stay stay: Stay,
+  from from: UnitAddress,
   news news: PeerNews,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, from) {
-    Ok(owner) if owner.stay == stay ->
+    Ok(owner) ->
       case news.unit_id == player_unit.unit_id(unit: owner.unit) {
         True -> #(
           state,
           Effects(
             list.map(relaying_viewers(state:, from:, owner:), fn(viewer) {
-              news_relayed(to: viewer.0, stay: viewer.1, news:)
+              news_relayed(to: viewer, news:)
             }),
           ),
         )
@@ -1460,7 +1426,7 @@ fn player_broadcast(
           Effects([
             log_error(
               state:,
-              about: step.About(..step.no_one, connection: Some(from)),
+              about: about_unit(state:, address: from),
               text: "the player told news of unit "
                 <> int.to_string(news.unit_id)
                 <> ", which is not its unit "
@@ -1470,62 +1436,51 @@ fn player_broadcast(
           ]),
         )
       }
-    Ok(_) | Error(Nil) -> #(state, Effects([]))
+    Error(Nil) -> #(state, Effects([]))
   }
 }
 
-/// The viewers of the player `from` whose relation with it relays and whose stay is the one
-/// the relation was made in, each with that stay, in connection order: the viewers a news or
-/// a line of the player reaches. A viewer awaiting its snapshot, gone from the relations or
-/// in another stay now is not one.
+/// The viewers of the player `from` whose relation with it relays, in the order of their
+/// addresses: the viewers a news or a line of the player reaches. A viewer awaiting its
+/// snapshot or gone from the relations is not one.
 fn relaying_viewers(
   state state: State,
-  from from: ConnectionId,
+  from from: UnitAddress,
   owner owner: Player,
-) -> List(#(ConnectionId, Stay)) {
-  list.filter_map(sorted_by_connection(owner.sees), fn(entry) {
+) -> List(UnitAddress) {
+  list.filter_map(unit_address.sorted_entries(owner.sees), fn(entry) {
     use viewing <- result.try(dict.get(state.players, entry.0))
     use relation <- result.try(dict.get(viewing.sees, from))
     case relation {
-      Relation(state: Relaying, stay: relation_stay, ..)
-        if viewing.stay == relation_stay
-      -> Ok(#(entry.0, relation_stay))
-      Relation(state: Relaying, ..) | Relation(state: AwaitingSnapshot, ..) ->
-        Error(Nil)
+      Relation(state: Relaying, ..) -> Ok(entry.0)
+      Relation(state: AwaitingSnapshot, ..) -> Error(Nil)
     }
   })
 }
 
 /// One player's landing on another: admitted by the kind's destination and source checks
-/// (`relay.landing_kind_of`) and sent as `Relayed(to_stay, Landed(landing))`; a tell that
-/// fails a check is dropped.
+/// (`relay.landing_kind_of`) and sent as `Relayed(Landed(landing))` to the told unit; a
+/// tell that fails a check is dropped.
 fn landing_told(
   state state: State,
-  from from: ConnectionId,
-  stay stay: Stay,
-  to to: ConnectionId,
-  to_stay to_stay: Stay,
+  from from: UnitAddress,
+  to to: UnitAddress,
   landing landing: Landing,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let relay.LandingKind(destination: relay.TellsCurrentStay, source:) =
+  let relay.LandingKind(destination: relay.TellsUnitOfRun, source:) =
     relay.landing_kind_of(landing:)
-  let destination_admits =
-    in_current_stay(state:, connection: to, stay: to_stay)
+  let destination_admits = in_run(state:, address: to)
   let source_admits = case source {
     relay.NoLandingSourceCheck -> True
-    relay.SenderStayIsCurrent ->
-      in_current_stay(state:, connection: from, stay:)
+    relay.SenderIsUnitOfRun -> in_run(state:, address: from)
   }
   case destination_admits && source_admits {
     True -> #(
       state,
       Effects([
         OwnEffect(Send(
-          to: Connection(to),
-          message: Relayed(
-            stay: to_stay,
-            delivered: map_message.Landed(landing:),
-          ),
+          to: Unit(to),
+          message: Relayed(delivered: map_message.Landed(landing:)),
         )),
       ]),
     )
@@ -1533,30 +1488,26 @@ fn landing_told(
   }
 }
 
-/// A local chat line of a player: relayed to each relaying viewer of the speaker, in
-/// connection order, as `Relayed(stay, Said(said))` for the viewer's stay, and to no viewer
-/// awaiting its snapshot or gone from the relations. A line from a player not in the map or
-/// in another stay than the tell names is dropped; one whose speaker names another unit
+/// A local chat line of a player: relayed to each relaying viewer of the speaker, in the
+/// order of their addresses, as `Relayed(Said(said))` to the viewer's unit, and to no viewer
+/// awaiting its snapshot or gone from the relations. A line from an address that is no unit
+/// of this run is dropped; one whose speaker names another unit
 /// than the sender's is dropped with an error line.
 fn line_said(
   state state: State,
-  from from: ConnectionId,
-  stay stay: Stay,
+  from from: UnitAddress,
   said said: ChatSaid,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.players, from) {
-    Ok(owner) if owner.stay == stay ->
+    Ok(owner) ->
       case said.speaker.unit_id == player_unit.unit_id(unit: owner.unit) {
         True -> #(
           state,
           Effects(
             list.map(relaying_viewers(state:, from:, owner:), fn(viewer) {
               OwnEffect(Send(
-                to: Connection(viewer.0),
-                message: Relayed(
-                  stay: viewer.1,
-                  delivered: map_message.Said(said:),
-                ),
+                to: Unit(viewer),
+                message: Relayed(delivered: map_message.Said(said:)),
               ))
             }),
           ),
@@ -1566,7 +1517,7 @@ fn line_said(
           Effects([
             log_error(
               state:,
-              about: step.About(..step.no_one, connection: Some(from)),
+              about: about_unit(state:, address: from),
               text: "the player told a line spoken by unit "
                 <> int.to_string(said.speaker.unit_id)
                 <> ", which is not its unit "
@@ -1576,18 +1527,17 @@ fn line_said(
           ]),
         )
       }
-    Ok(_) | Error(Nil) -> #(state, Effects([]))
+    Error(Nil) -> #(state, Effects([]))
   }
 }
 
-/// A creature's snapshot of the sight `generation` of the player of connection `by`:
-/// when the creature `unit_id` of life `life` is running, the player holds a relation
-/// with it of exactly that generation, the relation awaits its snapshot and the player
-/// is still in the stay the relation was made in, the burst is relayed to the player in
-/// the order the creature built it, each item as `Relayed(stay, News(item))`, and the
+/// A creature's snapshot of the sight `generation` of the unit `by`: when the creature
+/// `unit_id` of life `life` is running, `by` is a unit of this run and holds a relation
+/// with it of exactly that generation that awaits its snapshot, the burst is relayed to
+/// the unit in the order the creature built it, each item as `Relayed(News(item))`, and the
 /// relation is `Relaying`. Any other snapshot is dropped: one of an earlier generation
 /// (the pair left and came back), one taken twice, one after the player's `Unseen`, one
-/// of an earlier life, one for a player that is in another stay now.
+/// of an earlier life, one for an address that is no unit of this run.
 fn snapshot_taken(
   state state: State,
   unit_id unit_id: Int,
@@ -1599,23 +1549,19 @@ fn snapshot_taken(
   let awaited = {
     use #(spawn, spawn_state) <- result.try(running(state:, unit_id:, life:))
     use relations <- result.try(relations_of(spawn_state:))
-    use #(by, _) <- result.try(player_at(state:, address: by))
-    use stay <- result.try(case dict.get(relations, by) {
-      Ok(Relation(generation: held, stay:, state: AwaitingSnapshot))
+    use <- bool.guard(when: !in_run(state:, address: by), return: Error(Nil))
+    use _ <- result.try(case dict.get(relations, by) {
+      Ok(Relation(generation: held, state: AwaitingSnapshot))
         if held == generation
-      -> Ok(stay)
+      -> Ok(Nil)
       Ok(Relation(state: AwaitingSnapshot, ..))
       | Ok(Relation(state: Relaying, ..))
       | Error(Nil) -> Error(Nil)
     })
-    use <- bool.guard(
-      when: !in_current_stay(state:, connection: by, stay:),
-      return: Error(Nil),
-    )
-    Ok(#(spawn, spawn_state, relations, stay, by))
+    Ok(#(spawn, spawn_state, relations))
   }
   case awaited {
-    Ok(#(spawn, spawn_state, relations, stay, by)) -> #(
+    Ok(#(spawn, spawn_state, relations)) -> #(
       State(
         ..state,
         spawns: dict.insert(
@@ -1626,21 +1572,21 @@ fn snapshot_taken(
             relations: dict.insert(
               relations,
               by,
-              Relation(generation:, stay:, state: Relaying),
+              Relation(generation:, state: Relaying),
             ),
           ),
         ),
       ),
-      Effects(list.map(burst, news_relayed(to: by, stay:, news: _))),
+      Effects(list.map(burst, news_relayed(to: by, news: _))),
     )
     Error(Nil) -> #(state, Effects([]))
   }
 }
 
 /// News the creature `unit_id` of life `life` tells every viewer: it is relayed to
-/// each player whose relation with the creature is `Relaying` and who is still in the
-/// stay of the relation, in connection order, as `Relayed(stay, News(news))` for that
-/// stay; a player whose relation awaits its snapshot is sent none, since the snapshot
+/// each unit whose relation with the creature is `Relaying` and that is still a unit of
+/// this run, in the order of their addresses, as `Relayed(News(news))`; a player whose
+/// relation awaits its snapshot is sent none, since the snapshot
 /// comes after everything the creature sent earlier, and a player that is not in the
 /// relations is sent none.
 fn broadcast(
@@ -1653,11 +1599,11 @@ fn broadcast(
     use #(_, spawn_state) <- result.try(running(state:, unit_id:, life:))
     use relations <- result.try(relations_of(spawn_state:))
     Ok(
-      list.filter_map(sorted_by_connection(relations), fn(entry) {
+      list.filter_map(unit_address.sorted_entries(relations), fn(entry) {
         case entry.1 {
-          Relation(state: Relaying, stay:, ..) ->
-            case in_current_stay(state:, connection: entry.0, stay:) {
-              True -> Ok(news_relayed(to: entry.0, stay:, news:))
+          Relation(state: Relaying, ..) ->
+            case in_run(state:, address: entry.0) {
+              True -> Ok(news_relayed(to: entry.0, news:))
               False -> Error(Nil)
             }
           Relation(state: AwaitingSnapshot, ..) -> Error(Nil)
@@ -1668,9 +1614,8 @@ fn broadcast(
   #(state, Effects(result.unwrap(relaying, [])))
 }
 
-/// A creature's tell to one player: sent as `Relayed(stay, Tell(payload))` to the
-/// connection that joined the unit `to`, for the stay of that join, when `admitted` finds
-/// the creature running and `to` a unit of this run, and dropped otherwise.
+/// A creature's tell to one player: sent as `Relayed(Tell(payload))` to `Unit(to)` when
+/// `admitted` finds the creature running and `to` a unit of this run, and dropped otherwise.
 fn relayed(
   state state: State,
   unit_id unit_id: Int,
@@ -1679,27 +1624,17 @@ fn relayed(
   payload payload: Payload,
 ) -> #(State, ServiceStep(Outgoing)) {
   case admitted(state:, unit_id:, life:, to:, payload:) {
-    Ok(delivery) -> #(
+    Ok(payload) -> #(
       state,
       Effects([
         OwnEffect(Send(
-          to: Connection(delivery.to),
-          message: Relayed(
-            stay: delivery.stay,
-            delivered: map_message.Tell(payload: delivery.payload),
-          ),
+          to: Unit(to),
+          message: Relayed(delivered: map_message.Tell(payload:)),
         )),
       ]),
     )
     Error(CreatureEnded) | Error(DestinationRefused) -> #(state, Effects([]))
   }
-}
-
-/// A relay the map delivers: to the connection that joined the unit the relay named, for
-/// the stay of that join (the address-to-connection translation of `player_at`), the
-/// payload.
-pub type Delivery {
-  Delivery(to: ConnectionId, stay: Stay, payload: Payload)
 }
 
 /// Why the map dropped a relay.
@@ -1712,43 +1647,43 @@ pub type Dropped {
   DestinationRefused
 }
 
-/// Whether a relay of the creature `unit_id` of life `life` is delivered: the spawn
-/// of that unit must be live, retiring, respawning or releasing under that life (a creature
-/// that has been told to end, or has expired, may still answer its last strikes), and then the destination
-/// check of the payload's kind must pass (`relay.kind_of`): the unit `to` is a unit of
-/// this run, and the delivery goes to the connection that joined it, for its stay.
+/// The payload of a relay of the creature `unit_id` of life `life`, when it is delivered:
+/// the spawn of that unit must be live, retiring, respawning or releasing under that life (a
+/// creature that has been told to end, or has expired, may still answer its last strikes), and
+/// then the destination check of the payload's kind must pass (`relay.kind_of`): the unit
+/// `to` is a unit of this run.
 pub fn admitted(
   state state: State,
   unit_id unit_id: Int,
   life life: Int,
   to to: UnitAddress,
   payload payload: Payload,
-) -> Result(Delivery, Dropped) {
+) -> Result(Payload, Dropped) {
   use _ <- result.try(result.replace_error(
     running(state:, unit_id:, life:),
     CreatureEnded,
   ))
   let relay.Kind(destination: relay.UnitOfRun, source: relay.NoSourceCheck) =
     relay.kind_of(payload:)
-  case player_at(state:, address: to) {
-    Ok(#(connection, player)) ->
-      Ok(Delivery(to: connection, stay: player.stay, payload:))
-    Error(Nil) -> Error(DestinationRefused)
+  case in_run(state:, address: to) {
+    True -> Ok(payload)
+    False -> Error(DestinationRefused)
   }
 }
 
-/// The connection and player that joined the unit `address`, while the unit is in this
-/// run: the translation from a creature's name of a player to the connection and the
-/// connection's stay the player interface still names (`Delivery`, the log's `About`).
-/// Nothing is found for an address the map did not issue, or one whose unit left or
-/// ended.
-fn player_at(
-  state state: State,
-  address address: UnitAddress,
-) -> Result(#(ConnectionId, Player), Nil) {
-  use connection <- result.try(dict.get(state.by_address, address))
-  use player <- result.map(dict.get(state.players, connection))
-  #(connection, player)
+/// Whether the unit `address` is in this run of the map now: issued by it and neither
+/// left nor ended. An address of another run, or one the map never issued, is not.
+fn in_run(state state: State, address address: UnitAddress) -> Bool {
+  dict.has_key(state.players, address)
+}
+
+/// What a log line about the unit `address` is about: the connection that hosts it while the
+/// unit is in the map, nothing else when it is not.
+fn about_unit(state state: State, address address: UnitAddress) -> step.About {
+  case dict.get(state.players, address) {
+    Ok(player) -> step.About(..step.no_one, connection: Some(player.joiner))
+    Error(Nil) -> step.no_one
+  }
 }
 
 /// A player's tell to a creature: sent as `ToldCreature(by, payload)` when
@@ -1783,12 +1718,7 @@ fn told_creature(
       Effects([
         log_error(
           state:,
-          about: step.About(
-            ..step.no_one,
-            connection: option.from_result(
-              result.map(player_at(state:, address: from), fn(found) { found.0 }),
-            ),
-          ),
+          about: about_unit(state:, address: from),
           text: "a connection told a creature a strike that names another striker than the unit the tell came from",
         ),
       ]),
@@ -1835,9 +1765,9 @@ pub fn admitted_inbound(
   use _ <- result.try(case source {
     relay.NoSenderCheck -> Ok(Nil)
     relay.SenderUnitOfRun ->
-      case player_at(state:, address: from) {
-        Ok(_) -> Ok(Nil)
-        Error(Nil) -> Error(SourceRefused)
+      case in_run(state:, address: from) {
+        True -> Ok(Nil)
+        False -> Error(SourceRefused)
       }
   })
   use _ <- result.try(case payload {
@@ -1896,7 +1826,7 @@ fn running_creature(
 /// spawn no one sees.
 fn relations_of(
   spawn_state spawn_state: SpawnState,
-) -> Result(Dict(ConnectionId, Relation), Nil) {
+) -> Result(Dict(UnitAddress, Relation), Nil) {
   case spawn_state {
     Live(relations:, ..) | Releasing(relations:, ..) -> Ok(relations)
     Retiring(..) | Respawning(..) | WaitingForRestart | Failed -> Error(Nil)
@@ -1906,24 +1836,12 @@ fn relations_of(
 /// The spawn's state with these relations, for a state that holds relations.
 fn with_relations(
   spawn_state spawn_state: SpawnState,
-  relations relations: Dict(ConnectionId, Relation),
+  relations relations: Dict(UnitAddress, Relation),
 ) -> SpawnState {
   case spawn_state {
     Live(..) -> Live(..spawn_state, relations:)
     Releasing(..) -> Releasing(..spawn_state, relations:)
     Retiring(..) | Respawning(..) | WaitingForRestart | Failed -> spawn_state
-  }
-}
-
-/// Whether the connection's player is in the map and in the stay `stay` now.
-fn in_current_stay(
-  state state: State,
-  connection connection: ConnectionId,
-  stay stay: Stay,
-) -> Bool {
-  case dict.get(state.players, connection) {
-    Ok(player) -> player.stay == stay
-    Error(Nil) -> False
   }
 }
 
@@ -1970,7 +1888,7 @@ fn issue_address(
       map: state.settings.map,
       incarnation: state.settings.incarnation,
       number: state.next_address,
-      joiner: joiner_number,
+      rank: joiner_number,
     ),
   )
 }
@@ -2264,7 +2182,7 @@ type Releasable {
     spawn: SpawnId,
     unit_id: Int,
     life: Int,
-    relations: Dict(ConnectionId, Relation),
+    relations: Dict(UnitAddress, Relation),
   )
   /// A creature that expired and has not ended: it stops by itself, so it is told
   /// nothing, and it holds no relations.
@@ -2572,43 +2490,21 @@ fn ring_member(state state: State, player player: Player) -> RingMember {
   )
 }
 
-/// The connections of the players who see the spawn from where they stand, each
-/// with its player's stay, in the order of their numbers.
+/// The addresses of the players who see the spawn from where they stand, in the order of
+/// `unit_address.compare`.
 fn players_seeing(
   state state: State,
   spawn spawn: SpawnId,
-) -> List(#(ConnectionId, Stay, UnitAddress)) {
+) -> List(UnitAddress) {
   players_in_order(state)
   |> list.filter(fn(player) { set.contains({ player.1 }.seen, spawn) })
-  |> list.map(fn(player) {
-    #(player.0, { player.1 }.stay, { player.1 }.address)
-  })
+  |> list.map(fn(player) { player.0 })
 }
 
-/// The entries of a dict keyed by connection in the order of the connections'
-/// numbers, so what is sent to each is the same on every run.
-pub fn sorted_by_connection(
-  entries: Dict(ConnectionId, value),
-) -> List(#(ConnectionId, value)) {
-  dict.to_list(entries)
-  |> list.sort(fn(first, second) {
-    compare_connections(first: first.0, second: second.0)
-  })
-}
-
-/// The order of two connections by their numbers.
-fn compare_connections(
-  first first: ConnectionId,
-  second second: ConnectionId,
-) -> order.Order {
-  let ConnectionId(first) = first
-  let ConnectionId(second) = second
-  int.compare(first, second)
-}
-
-/// The players by their connection's number.
-fn players_in_order(state: State) -> List(#(ConnectionId, Player)) {
-  sorted_by_connection(state.players)
+/// The players in the order of their addresses (`unit_address.compare`), so what is sent
+/// to each is the same on every run.
+fn players_in_order(state: State) -> List(#(UnitAddress, Player)) {
+  unit_address.sorted_entries(state.players)
 }
 
 fn compare_spawns(first: SpawnId, second: SpawnId) -> order.Order {
@@ -2636,7 +2532,7 @@ fn source_of(
 }
 
 /// Starts a creature at the spawn with these players as its first viewers, each
-/// by its connection and its stay: under the spawn's unit id for the run, taken
+/// by its address: under the spawn's unit id for the run, taken
 /// from the counter when the spawn has had none (the first creature there, or the
 /// first after a crash gave its id up), and a new life, the number of the watch it
 /// is started under. The spawn is then live with those viewers, each in a relation of
@@ -2645,14 +2541,14 @@ fn source_of(
 fn start_creature(
   state state: State,
   spawn spawn: SpawnId,
-  viewers viewers: List(#(ConnectionId, Stay, UnitAddress)),
+  viewers viewers: List(UnitAddress),
   ring ring: List(RingMember),
 ) -> #(State, Effect(ServiceEffect(Outgoing))) {
   let #(state, unit_id) = unit_of(state:, spawn:)
   let #(state, viewers) =
     list.map_fold(viewers, state, fn(state, viewer) {
       let #(state, generation) = issued(state:)
-      #(state, #(viewer.0, viewer.1, viewer.2, generation))
+      #(state, #(viewer, generation))
     })
   let watch = WatchId(state.next_watch)
   let WatchId(life) = watch
@@ -2667,7 +2563,7 @@ fn start_creature(
           life:,
           relations: dict.from_list(
             list.map(viewers, fn(viewer) {
-              #(viewer.0, sight_begun(generation: viewer.3, stay: viewer.1))
+              #(viewer.0, sight_begun(generation: viewer.1))
             }),
           ),
           idle_since_ms: option.None,
@@ -2685,7 +2581,7 @@ fn start_creature(
         life:,
         spawn: source_of(state:, spawn:),
         clock_origin_ms: state.started_ms,
-        viewers: list.map(viewers, fn(viewer) { #(viewer.2, viewer.3) }),
+        viewers:,
         ring:,
       ),
     )),
@@ -2780,7 +2676,7 @@ fn shown(
 /// spawn order; none when a list is empty.
 fn objects_decided(
   state state: State,
-  to player: #(ConnectionId, Player),
+  to player: #(UnitAddress, Player),
   was was: Set(SpawnId),
   now now: Set(SpawnId),
   now_ms now_ms: Int,
@@ -2840,7 +2736,7 @@ fn unit_of(state state: State, spawn spawn: SpawnId) -> #(State, Int) {
   }
 }
 
-/// The state and effects of the player of `connection` coming to see the spawns
+/// The state and effects of the player of the unit `address` coming to see the spawns
 /// `now` after it saw `was`, at monotonic time `now_ms`: a dormant spawn it now
 /// sees starts a creature with the player as its first viewer (the creature
 /// answers the start with its snapshot), a live one is told `Seen` under a generation
@@ -2849,12 +2745,10 @@ fn unit_of(state state: State, spawn spawn: SpawnId) -> #(State, Int) {
 /// creature is told `Unseen` of the generation the pair held, the player is sent the
 /// notice that the unit is unseen, and the spawn is idle from `now_ms` when the player
 /// was its last viewer. The starts come first, in the order of the spawns, then the sends. A
-/// spawn the player saw and sees is not told. `stay` is the player's, which a
-/// creature names in everything it sends the player.
+/// spawn the player saw and sees is not told. `address` is the player's, which a creature
+/// names in everything it sends the player.
 fn spawns_decided(
   state state: State,
-  connection connection: ConnectionId,
-  stay stay: Stay,
   address address: UnitAddress,
   was was: Set(SpawnId),
   now now: Set(SpawnId),
@@ -2869,12 +2763,7 @@ fn spawns_decided(
       case dict.get(state.spawns, spawn) {
         Error(Nil) -> {
           let #(state, start) =
-            start_creature(
-              state:,
-              spawn:,
-              viewers: [#(connection, stay, address)],
-              ring: [],
-            )
+            start_creature(state:, spawn:, viewers: [address], ring: [])
           #(state, [start, ..starts], sends)
         }
         Ok(Live(unit_id:, life:, relations:, ..)) -> {
@@ -2886,8 +2775,6 @@ fn spawns_decided(
               life:,
               relations:,
               idle_since_ms: option.None,
-              connection:,
-              stay:,
               address:,
             )
           #(state, starts, [seen, ..sends])
@@ -2909,12 +2796,10 @@ fn spawns_decided(
               state:,
               unit_id:,
               life:,
-              connection:,
-              stay:,
               address:,
-              relation: dict.get(relations, connection),
+              relation: dict.get(relations, address),
             )
-          let relations = dict.delete(relations, connection)
+          let relations = dict.delete(relations, address)
           let idle_since_ms = case dict.is_empty(relations) {
             True -> Some(now_ms)
             False -> idle_since_ms
@@ -2949,10 +2834,8 @@ fn sight_began(
   spawn spawn: SpawnId,
   unit_id unit_id: Int,
   life life: Int,
-  relations relations: Dict(ConnectionId, Relation),
+  relations relations: Dict(UnitAddress, Relation),
   idle_since_ms idle_since_ms: Option(Int),
-  connection connection: ConnectionId,
-  stay stay: Stay,
   address address: UnitAddress,
 ) -> #(State, Effect(ServiceEffect(Outgoing))) {
   let #(state, generation) = issued(state:)
@@ -2965,11 +2848,7 @@ fn sight_began(
         Live(
           unit_id:,
           life:,
-          relations: dict.insert(
-            relations,
-            connection,
-            sight_begun(generation:, stay:),
-          ),
+          relations: dict.insert(relations, address, sight_begun(generation:)),
           idle_since_ms:,
         ),
       ),
@@ -2984,14 +2863,12 @@ fn sight_began(
 }
 
 /// The sends that end a player's sight of a live creature: the creature is told
-/// `Unseen` of the generation the pair held, and the player, in its stay `stay`, is sent
+/// `Unseen` of the generation the pair held, and the player's unit `address` is sent
 /// the notice that the unit is unseen. Nothing when the pair held no relation.
 fn unseen_sends(
   state state: State,
   unit_id unit_id: Int,
   life life: Int,
-  connection connection: ConnectionId,
-  stay stay: Stay,
   address address: UnitAddress,
   relation relation: Result(Relation, Nil),
 ) -> List(Effect(ServiceEffect(Outgoing))) {
@@ -3004,8 +2881,8 @@ fn unseen_sends(
         message: Unseen(by: address, generation:),
       ),
       OwnEffect(Send(
-        to: Connection(connection),
-        message: Noticed(stay:, notice: UnitUnseen(unit_id:, generation:)),
+        to: Unit(address),
+        message: Noticed(notice: UnitUnseen(unit_id:, generation:)),
       )),
     ]
     Error(Nil) -> []
@@ -3024,7 +2901,7 @@ fn seen_in_order(player: Player) -> List(SpawnId) {
 }
 
 /// The send that tells the creature `unit_id` under `life` that the player of
-/// connection `by` sees it (`Seen`) or no longer does (`Unseen`), or that
+/// the unit `by` sees it (`Seen`) or no longer does (`Unseen`), or that
 /// it ends (`Retire`).
 fn tell_creature(
   state state: State,
@@ -3062,10 +2939,10 @@ pub fn server_time(
   { monotonic_ms - origin_ms } % server_time_modulus
 }
 
-/// The relation of a sight that has begun: its generation and the viewer's stay, awaiting
-/// the owner's snapshot of that generation.
-fn sight_begun(generation generation: Generation, stay stay: Stay) -> Relation {
-  Relation(generation:, stay:, state: AwaitingSnapshot)
+/// The relation of a sight that has begun: its generation, awaiting the owner's snapshot of
+/// that generation.
+fn sight_begun(generation generation: Generation) -> Relation {
+  Relation(generation:, state: AwaitingSnapshot)
 }
 
 /// What a move decides of one pair: the pair that comes into sight is given the two
@@ -3075,23 +2952,23 @@ fn sight_begun(generation generation: Generation, stay stay: Stay) -> Relation {
 fn pair_decided(
   held held: #(
     State,
-    Dict(ConnectionId, Relation),
-    Dict(ConnectionId, Player),
+    Dict(UnitAddress, Relation),
+    Dict(UnitAddress, Player),
     List(Effect(ServiceEffect(Outgoing))),
   ),
-  mover mover: #(ConnectionId, Player),
-  other other: #(ConnectionId, Player),
+  mover mover: #(UnitAddress, Player),
+  other other: #(UnitAddress, Player),
   place place: Place,
 ) -> #(
   State,
-  Dict(ConnectionId, Relation),
-  Dict(ConnectionId, Player),
+  Dict(UnitAddress, Relation),
+  Dict(UnitAddress, Player),
   List(Effect(ServiceEffect(Outgoing))),
 ) {
   let #(state, mover_sees, players, effects) = held
-  let #(connection, mover_player) = mover
-  let #(other_connection, player) = other
-  let was = dict.has_key(mover_player.sees, other_connection)
+  let #(mover_address, mover_player) = mover
+  let #(other_address, player) = other
+  let was = dict.has_key(mover_player.sees, other_address)
   let is = sight.sees(place, player_unit.place(player.unit))
   case was, is {
     False, True -> {
@@ -3101,18 +2978,18 @@ fn pair_decided(
         state,
         dict.insert(
           mover_sees,
-          other_connection,
-          sight_begun(generation: mover_sight, stay: mover_player.stay),
+          other_address,
+          sight_begun(generation: mover_sight),
         ),
         dict.insert(
           players,
-          other_connection,
+          other_address,
           Player(
             ..player,
             sees: dict.insert(
               player.sees,
-              connection,
-              sight_begun(generation: other_sight, stay: player.stay),
+              mover_address,
+              sight_begun(generation: other_sight),
             ),
           ),
         ),
@@ -3132,16 +3009,16 @@ fn pair_decided(
         sights_of_pair(
           first: mover_player,
           second: player,
-          first_connection: connection,
-          second_connection: other_connection,
+          first_address: mover_address,
+          second_address: other_address,
         )
       #(
         state,
-        dict.delete(mover_sees, other_connection),
+        dict.delete(mover_sees, other_address),
         dict.insert(
           players,
-          other_connection,
-          Player(..player, sees: dict.delete(player.sees, connection)),
+          other_address,
+          Player(..player, sees: dict.delete(player.sees, mover_address)),
         ),
         list.append(
           effects,
@@ -3158,44 +3035,41 @@ fn pair_decided(
   }
 }
 
-/// A connection's move: its unit is placed at `place`, and each pair it makes
+/// A unit's move: its unit is placed at `place`, and each pair it makes
 /// or breaks with a player, by the place it ends at, is told: `SeenBy` both ways
 /// for a pair that comes into sight, `UnseenBy` both ways for one that leaves
-/// it, each in one step. The map sends no unit and no move. A connection not in
-/// the map is an error line and changes nothing.
+/// it, each in one step. The map sends no unit and no move. An address that is
+/// no unit of the map is an error line and changes nothing.
 fn moved(
   state state: State,
-  connection connection: ConnectionId,
+  unit unit: UnitAddress,
   place place: Place,
   seq seq: Int,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  case dict.get(state.players, connection) {
+  case dict.get(state.players, unit) {
     Error(Nil) -> #(
       state,
       Effects([
         log_error(
           state:,
-          about: step.About(..step.no_one, connection: Some(connection)),
-          text: "the connection moved in the map, but it is not in it",
+          about: step.no_one,
+          text: "a unit moved in the map, but it is not in it",
         ),
       ]),
     )
     Ok(mover) -> {
-      let unit = player_unit.moved(mover.unit, place)
+      let moved_unit = player_unit.moved(mover.unit, place)
       let #(state, mover_sees, others, effects) =
         dict.fold(
           state.players,
           #(state, mover.sees, state.players, []),
-          fn(held, other_connection, player) {
-            use <- bool.guard(
-              when: other_connection == connection,
-              return: held,
-            )
+          fn(held, other_address, player) {
+            use <- bool.guard(when: other_address == unit, return: held)
             pair_decided(
               held:,
-              mover: #(connection, mover),
-              other: #(other_connection, player),
+              mover: #(unit, mover),
+              other: #(other_address, player),
               place:,
             )
           },
@@ -3205,7 +3079,7 @@ fn moved(
       let #(state, object_effects) =
         objects_decided(
           state:,
-          to: #(connection, mover),
+          to: #(unit, mover),
           was: mover.objects,
           now: objects,
           now_ms:,
@@ -3213,21 +3087,26 @@ fn moved(
       let #(state, spawn_effects) =
         spawns_decided(
           state:,
-          connection:,
-          stay: mover.stay,
-          address: mover.address,
+          address: unit,
           was: mover.seen,
           now: seen,
           now_ms:,
         )
       let mover =
-        Player(..mover, unit:, sees: mover_sees, seen:, objects:, seq:)
+        Player(
+          ..mover,
+          unit: moved_unit,
+          sees: mover_sees,
+          seen:,
+          objects:,
+          seq:,
+        )
       let #(mover, ring_effects) = case mover.readiness {
         StillLoading -> #(mover, [])
         Loaded -> rings_decided(state:, player: mover)
       }
       #(
-        State(..state, players: dict.insert(others, connection, mover)),
+        State(..state, players: dict.insert(others, unit, mover)),
         Effects(
           list.flatten([effects, object_effects, spawn_effects, ring_effects]),
         ),
@@ -3236,16 +3115,16 @@ fn moved(
   }
 }
 
-/// The player of `connection` is ready: each Live hostile creature whose ring it
+/// The player of the unit `unit` is ready: each Live hostile creature whose ring it
 /// stands in is sent `Approached`, and its later moves are checked against the
-/// rings. A second `Ready` in one stay, or one from a connection not in the map,
+/// rings. A second `Ready` of one unit, or one from an address that is no unit of the map,
 /// changes nothing.
 fn ready(
   state state: State,
-  connection connection: ConnectionId,
+  unit unit: UnitAddress,
   seq seq: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  case dict.get(state.players, connection) {
+  case dict.get(state.players, unit) {
     Ok(Player(readiness: StillLoading, ..) as player) -> {
       let #(player, effects) =
         rings_decided(
@@ -3257,7 +3136,7 @@ fn ready(
           ),
         )
       #(
-        State(..state, players: dict.insert(state.players, connection, player)),
+        State(..state, players: dict.insert(state.players, unit, player)),
         Effects(effects),
       )
     }
@@ -3265,7 +3144,7 @@ fn ready(
   }
 }
 
-/// The player of `connection` entered stealth or left it. A connection not in the
+/// The player of the unit `unit` entered stealth or left it. An address that is no unit of the
 /// map is an error line and changes nothing, as for `Moved`; a value the map
 /// already holds changes nothing and sends nothing. A change is kept, and a ready
 /// player's rings are decided again (`rings_decided`): entering stealth sends
@@ -3274,7 +3153,7 @@ fn ready(
 /// player still loading is only marked: `ready` decides its rings.
 fn stealth_changed(
   state state: State,
-  connection connection: ConnectionId,
+  unit unit: UnitAddress,
   stealthed stealthed: Bool,
 ) -> #(State, ServiceStep(Outgoing)) {
   let stealth = case stealthed {
@@ -3283,7 +3162,7 @@ fn stealth_changed(
   }
   told_about_player(
     state:,
-    connection:,
+    unit:,
     about: "stealth",
     change: fn(player) { Player(..player, stealth:) },
     decided: fn(player) {
@@ -3296,26 +3175,26 @@ fn stealth_changed(
 }
 
 /// A connection's tell about its player's own state (`StealthChanged`, `LifeChanged`):
-/// from a connection not in the map it is an error line naming `about` and changes
+/// from an address that is no unit of the map it is an error line naming `about` and changes
 /// nothing, as for `Moved`; a `change` that leaves the player as it is changes nothing and
 /// sends nothing; else the changed player is `decided` (its rings, or its creatures' news)
 /// and kept with that decision's sends.
 fn told_about_player(
   state state: State,
-  connection connection: ConnectionId,
+  unit unit: UnitAddress,
   about about: String,
   change change: fn(Player) -> Player,
   decided decided: fn(Player) ->
     #(Player, List(Effect(ServiceEffect(Outgoing)))),
 ) -> #(State, ServiceStep(Outgoing)) {
-  case dict.get(state.players, connection) {
+  case dict.get(state.players, unit) {
     Error(Nil) -> #(
       state,
       Effects([
         log_error(
           state:,
-          about: step.About(..step.no_one, connection: Some(connection)),
-          text: "the connection told its "
+          about: step.no_one,
+          text: "a unit told its "
             <> about
             <> " to the map, but it is not in it",
         ),
@@ -3326,32 +3205,32 @@ fn told_about_player(
       use <- bool.guard(when: changed == player, return: #(state, Effects([])))
       let #(player, effects) = decided(changed)
       #(
-        State(..state, players: dict.insert(state.players, connection, player)),
+        State(..state, players: dict.insert(state.players, unit, player)),
         Effects(effects),
       )
     }
   }
 }
 
-/// The connection's player now has `hidden` as the visibility prerequisites that
+/// The unit's player now has `hidden` as the visibility prerequisites that
 /// fail for it: the units whose prerequisite left the set are shown within its
 /// sight and the units whose prerequisite entered it are hidden, with the same
-/// unit ids, as the module's `VisibilityChanged` says. A connection with no player
-/// here, or a set equal to the held one, changes nothing.
+/// unit ids, as the module's `VisibilityChanged` says. An address that is no unit
+/// of the map, or a set equal to the held one, changes nothing.
 fn visibility_changed(
   state state: State,
-  connection connection: ConnectionId,
+  unit unit: UnitAddress,
   hidden hidden: Set(PrerequisiteId),
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  case dict.get(state.players, connection) {
+  case dict.get(state.players, unit) {
     Error(Nil) -> #(
       state,
       Effects([
         log_error(
           state:,
-          about: step.About(..step.no_one, connection: Some(connection)),
-          text: "the connection told its visibility to the map, but it is not in it",
+          about: step.no_one,
+          text: "a unit told its visibility to the map, but it is not in it",
         ),
       ]),
     )
@@ -3366,7 +3245,7 @@ fn visibility_changed(
       let #(state, object_effects) =
         objects_decided(
           state:,
-          to: #(connection, player),
+          to: #(unit, player),
           was: player.objects,
           now: objects,
           now_ms:,
@@ -3374,9 +3253,7 @@ fn visibility_changed(
       let #(state, spawn_effects) =
         spawns_decided(
           state:,
-          connection:,
-          stay: player.stay,
-          address: player.address,
+          address: unit,
           was: player.seen,
           now: seen,
           now_ms:,
@@ -3387,15 +3264,15 @@ fn visibility_changed(
         Loaded -> rings_decided(state:, player:)
       }
       #(
-        State(..state, players: dict.insert(state.players, connection, player)),
+        State(..state, players: dict.insert(state.players, unit, player)),
         Effects(list.flatten([object_effects, spawn_effects, ring_effects])),
       )
     }
   }
 }
 
-/// The player of `connection` died or woke where its body lies. A connection not in
-/// the map is an error line and changes nothing, as for `Moved`; a value the map
+/// The player of the unit `unit` died or woke where its body lies. An address that is no unit
+/// of the map is an error line and changes nothing, as for `Moved`; a value the map
 /// already holds changes nothing and sends nothing. A death is kept, empties the
 /// player's `inside` with no `Withdrew`, and sends `PlayerDied` to each Live creature
 /// whose spawn the player sees, in spawn order, a ring or not. A waking is kept and a
@@ -3404,13 +3281,13 @@ fn visibility_changed(
 /// and `ready` decides its rings.
 fn life_changed(
   state state: State,
-  connection connection: ConnectionId,
+  unit unit: UnitAddress,
   alive alive: Bool,
 ) -> #(State, ServiceStep(Outgoing)) {
   let life = life_of(alive:)
   told_about_player(
     state:,
-    connection:,
+    unit:,
     about: "life",
     change: fn(player) { Player(..player, life:) },
     decided: fn(player) {
@@ -3465,7 +3342,7 @@ fn tell_live(
   }
 }
 
-/// The rings the ready `player` of `connection` stands in at its place, against
+/// The rings the ready `player` stands in at its place, against
 /// the ones it stood in (`inside`): `Approached` to each Live creature whose ring it
 /// entered and `Withdrew` to each whose ring it left, in the order of the spawns,
 /// and the player with its new `inside`.
@@ -3578,38 +3455,30 @@ fn hostile(spawn spawn: spawn.Spawn, faction_id faction_id: Int) -> Bool {
   && hostile_to_player_faction(hostile_to: spawn.combat.hostile_to, faction_id:)
 }
 
-/// A connection's leave: its player is removed with its unit and its watch,
+/// A unit's leave: its player is removed with its unit, its registration and its watch,
 /// each player who saw it is sent `UnseenBy` and `PlayerUnseen`, and `Left` is
-/// answered. A connection that is not in the map is an error line and the same
+/// answered. An address that is no unit of the map (it left already, or a leave
+/// answered by a map that ended is the host's own) is an error line and the same
 /// answer.
 fn left(
   state state: State,
   caller caller: CallerId,
-  connection connection: ConnectionId,
+  unit unit: UnitAddress,
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  case dict.get(state.players, connection) {
+  case dict.get(state.players, unit) {
     Ok(player) -> {
       let #(state, told) =
-        without(state:, connection:, player:, why: Camped, now_ms:)
-      #(
-        state,
-        Effects(
-          list.flatten([
-            [Unwatch(watch: player.watch)],
-            told,
-            [OwnEffect(Reply(caller, Left))],
-          ]),
-        ),
-      )
+        without(state:, address: unit, player:, why: Camped, now_ms:)
+      #(state, Effects(list.append(told, [OwnEffect(Reply(caller, Left))])))
     }
     Error(Nil) -> #(
       state,
       Effects([
         log_error(
           state:,
-          about: step.About(..step.no_one, connection: Some(connection)),
-          text: "the connection left the map, but it is not in it",
+          about: step.no_one,
+          text: "a unit left the map, but it is not in it",
         ),
         OwnEffect(Reply(caller, Left)),
       ]),
@@ -3617,43 +3486,39 @@ fn left(
   }
 }
 
-/// A connection's join: its player's unit is built with the next unit id and
-/// the body of the character's look and the worn visuals of its Novice set
-/// (genesis_prime/shared/loadout), kept under the next address of the run, and answered
-/// as 0x262's record with that address, and the connection is watched. The joiner is then
-/// sent a `SeenBy` for each player in sight, and each of them a `SeenBy` of the joiner. A
-/// connection already in the map has its first unit removed as a `Leave` removes it (its
-/// watch dropped, its creatures told `Unseen` and `CasterGone` of the old address, the
-/// players who saw it `UnseenBy` and `PlayerUnseen`) and then joins as a new unit: the
-/// connection joins again only after its `Left`, so this is the rule for a join the
-/// connection never sends.
+/// A join: the player's unit is built with the next unit id, the body of the character's look
+/// and the worn visuals of its Novice set (genesis_prime/shared/loadout), kept under the next
+/// address of the run. The joiner's connection is registered for that address (`Register`),
+/// watched there and answered `Joined`; the joiner is then sent a `SeenBy` for each player in
+/// sight, and each of them a `SeenBy` of the joiner. A joiner that has a unit in the map
+/// already (found by `joiner`) has it removed as a `Leave` removes it, then joins as a new
+/// unit: a connection joins again only after its `Left`, so this is a join it never sends.
 fn joined(
   state state: State,
   caller caller: CallerId,
-  connection connection: ConnectionId,
+  joiner joiner: ConnectionId,
   character character: Character,
   place place: Place,
-  stay stay: Stay,
   alive alive: Bool,
   hidden hidden: Set(PrerequisiteId),
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
-  let #(state, removal) = case dict.get(state.players, connection) {
-    Ok(player) -> {
-      let #(state, told) =
-        without(state:, connection:, player:, why: Camped, now_ms:)
-      #(state, [Unwatch(watch: player.watch), ..told])
-    }
+  let #(state, removal) = case
+    list.find(unit_address.sorted_entries(state.players), fn(entry) {
+      { entry.1 }.joiner == joiner
+    })
+  {
+    Ok(#(address, player)) ->
+      without(state:, address:, player:, why: Camped, now_ms:)
     Error(Nil) -> #(state, [])
   }
   let #(state, joining) =
     joined_new(
       state:,
       caller:,
-      connection:,
+      joiner:,
       character:,
       place:,
-      stay:,
       life: life_of(alive:),
       hidden:,
       now_ms:,
@@ -3673,27 +3538,25 @@ fn effects_after(
   }
 }
 
-/// A join of a connection that is not in the map: the unit is built, kept and answered,
-/// the connection watched, and each pair with a player in sight made: `SeenBy`
-/// both ways.
+/// A join of a joiner that has no unit in the map: the unit is built, kept and answered,
+/// the connection registered and watched, and each pair with a player in sight made:
+/// `SeenBy` both ways.
 fn joined_new(
   state state: State,
   caller caller: CallerId,
-  connection connection: ConnectionId,
+  joiner joiner: ConnectionId,
   character character: Character,
   place place: Place,
-  stay stay: Stay,
   life life: Life,
   hidden hidden: Set(PrerequisiteId),
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   let tables = state.settings.tables
   case loadout_of(tables:, character:) {
-    Error(reason) ->
-      not_joined(state:, caller:, connection:, character:, reason:)
+    Error(reason) -> not_joined(state:, caller:, joiner:, character:, reason:)
     Ok(loadout) -> {
       let #(state, unit_id) = take_unit_id(state)
-      let #(state, address) = issue_address(state:, joiner: connection)
+      let #(state, address) = issue_address(state:, joiner:)
       let watch = WatchId(state.next_watch)
       let state = State(..state, next_watch: state.next_watch + 1)
       let unit =
@@ -3710,11 +3573,10 @@ fn joined_new(
       joined_with(
         state:,
         caller:,
-        connection:,
         place:,
         now_ms:,
         player: Player(
-          stay:,
+          joiner:,
           address:,
           unit:,
           watch:,
@@ -3755,7 +3617,7 @@ fn loadout_of(
 fn not_joined(
   state state: State,
   caller caller: CallerId,
-  connection connection: ConnectionId,
+  joiner joiner: ConnectionId,
   character character: Character,
   reason reason: NotJoined,
 ) -> #(State, ServiceStep(Outgoing)) {
@@ -3767,7 +3629,7 @@ fn not_joined(
         state:,
         about: step.About(
           ..step.no_one,
-          connection: Some(connection),
+          connection: Some(joiner),
           character_id: Some(character_id),
         ),
         text: "the character cannot join the map: "
@@ -3787,20 +3649,21 @@ pub fn describe_not_joined(reason reason: NotJoined) -> String {
   <> int.to_string(faction_id)
 }
 
-/// The rest of the first join, once the player is built with its unit and its
-/// watch, seeing nothing: its sight, its watch and its answer.
+/// The rest of the join, once the player is built with its unit and its
+/// watch, seeing nothing: its sight, its registration, its watch and its answer, in that
+/// order, then the sends of the pairs it makes.
 fn joined_with(
   state state: State,
   caller caller: CallerId,
-  connection connection: ConnectionId,
   place place: Place,
   now_ms now_ms: Int,
   player player: Player,
 ) -> #(State, ServiceStep(Outgoing)) {
   let unit = player.unit
   let watch = player.watch
+  let address = player.address
   let in_sight =
-    list.filter(others_of(state:, connection:), fn(other) {
+    list.filter(others_of(state:, address:), fn(other) {
       sight.sees(place, player_unit.place({ other.1 }.unit))
     })
   let #(state, sights) =
@@ -3819,22 +3682,22 @@ fn joined_with(
           ..other.1,
           sees: dict.insert(
             { other.1 }.sees,
-            connection,
-            sight_begun(generation: other_sight, stay: other.1.stay),
+            address,
+            sight_begun(generation: other_sight),
           ),
         ),
       )
     })
   let sees =
     list.map(sights, fn(sight) {
-      #(sight.0.0, sight_begun(generation: sight.1, stay: player.stay))
+      #(sight.0.0, sight_begun(generation: sight.1))
     })
     |> dict.from_list
   let pairs =
     list.flat_map(sights, fn(sight) {
       let #(other, joiner_sight, other_sight) = sight
       comes_into_sight(
-        newcomer: #(connection, player),
+        newcomer: #(address, player),
         other:,
         newcomer_sight: joiner_sight,
         other_sight:,
@@ -3844,40 +3707,32 @@ fn joined_with(
   let #(state, object_effects) =
     objects_decided(
       state:,
-      to: #(connection, player),
+      to: #(address, player),
       was: set.new(),
       now: objects,
       now_ms:,
     )
   let #(state, spawn_effects) =
-    spawns_decided(
-      state:,
-      connection:,
-      stay: player.stay,
-      address: player.address,
-      was: set.new(),
-      now: seen,
-      now_ms:,
-    )
+    spawns_decided(state:, address:, was: set.new(), now: seen, now_ms:)
   #(
     State(
       ..state,
       players: dict.insert(
         players,
-        connection,
+        address,
         Player(..player, sees:, seen:, objects:),
       ),
-      watches: dict.insert(state.watches, watch, connection),
-      by_address: dict.insert(state.by_address, player.address, connection),
+      watches: dict.insert(state.watches, watch, address),
     ),
     Effects(
       list.flatten([
         [
-          Watch(watch:, target: Connection(connection)),
-          OwnEffect(Reply(
-            caller,
-            answer(state:, unit:, address: player.address),
+          OwnEffect(Register(
+            group: Unit(address),
+            member: Connection(player.joiner),
           )),
+          Watch(watch:, target: Unit(address)),
+          OwnEffect(Reply(caller, answer(state:, unit:, address:))),
         ],
         object_effects,
         pairs,
@@ -3887,40 +3742,37 @@ fn joined_with(
   )
 }
 
-/// The send that tells the player `to` that the player `by`, in its stay, sees
-/// it.
+/// The send that tells the player `to` that the player `by` sees it.
 fn watched(
-  to to: #(ConnectionId, Player),
-  by by: #(ConnectionId, Player),
+  to to: #(UnitAddress, Player),
+  by by: #(UnitAddress, Player),
   generation generation: Generation,
 ) -> Effect(ServiceEffect(Outgoing)) {
   notify(
     to:,
     notice: SeenBy(
       by: by.0,
-      stay: { by.1 }.stay,
       unit_id: player_unit.unit_id(unit: { by.1 }.unit),
       generation:,
     ),
   )
 }
 
-/// The send that tells the player `to` that the player of connection `by` no
+/// The send that tells the player `to` that the player of the unit `by` no
 /// longer sees it.
 fn unwatched(
-  to to: #(ConnectionId, Player),
-  by by: ConnectionId,
+  to to: #(UnitAddress, Player),
+  by by: UnitAddress,
   generation generation: Generation,
 ) -> Effect(ServiceEffect(Outgoing)) {
   notify(to:, notice: UnseenBy(by:, generation:))
 }
 
 /// The sends of a pair that comes into sight, in one step: each of the two is
-/// told the other sees it, in the other's stay. A joiner and a mover are the
-/// newcomer.
+/// told the other sees it. A joiner and a mover are the newcomer.
 fn comes_into_sight(
-  newcomer newcomer: #(ConnectionId, Player),
-  other other: #(ConnectionId, Player),
+  newcomer newcomer: #(UnitAddress, Player),
+  other other: #(UnitAddress, Player),
   newcomer_sight newcomer_sight: Generation,
   other_sight other_sight: Generation,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
@@ -3930,23 +3782,20 @@ fn comes_into_sight(
   ]
 }
 
-/// The send that tells the player `viewer`, in the stay its sight began in, that the unit
+/// The send that tells the player `viewer` that the unit
 /// of the player `owner` is out of its sight from the generation `relation` holds, whether
 /// or not the viewer took the owner's snapshot of it.
 fn player_unseen(
-  viewer viewer: ConnectionId,
+  viewer viewer: UnitAddress,
   relation relation: Relation,
   owner owner: Player,
 ) -> Effect(ServiceEffect(Outgoing)) {
   OwnEffect(Send(
-    to: Connection(viewer),
-    message: Noticed(
-      stay: relation.stay,
-      notice: PlayerUnseen(
-        unit_id: player_unit.unit_id(unit: owner.unit),
-        generation: relation.generation,
-      ),
-    ),
+    to: Unit(viewer),
+    message: Noticed(notice: PlayerUnseen(
+      unit_id: player_unit.unit_id(unit: owner.unit),
+      generation: relation.generation,
+    )),
   ))
 }
 
@@ -3955,8 +3804,8 @@ fn player_unseen(
 /// each from the sight that ended. The viewer's end comes first so that its connection
 /// still holds the other as one of its viewers when it ends what the other put on it.
 fn goes_out_of_sight(
-  first first: #(ConnectionId, Player),
-  second second: #(ConnectionId, Player),
+  first first: #(UnitAddress, Player),
+  second second: #(UnitAddress, Player),
   first_sight first_sight: Relation,
   second_sight second_sight: Relation,
 ) -> List(Effect(ServiceEffect(Outgoing))) {
@@ -3974,12 +3823,12 @@ fn goes_out_of_sight(
 fn sights_of_pair(
   first first: Player,
   second second: Player,
-  first_connection first_connection: ConnectionId,
-  second_connection second_connection: ConnectionId,
+  first_address first_address: UnitAddress,
+  second_address second_address: UnitAddress,
 ) -> #(Relation, Relation) {
-  let assert Ok(first_sight) = dict.get(first.sees, second_connection)
+  let assert Ok(first_sight) = dict.get(first.sees, second_address)
     as "a pair that sees each other is in both players' sees"
-  let assert Ok(second_sight) = dict.get(second.sees, first_connection)
+  let assert Ok(second_sight) = dict.get(second.sees, first_address)
     as "a pair that sees each other is in both players' sees"
   #(first_sight, second_sight)
 }
@@ -4011,11 +3860,11 @@ fn ended(
   now_ms now_ms: Int,
 ) -> #(State, ServiceStep(Outgoing)) {
   case dict.get(state.watches, watch) {
-    Ok(connection) ->
-      case dict.get(state.players, connection) {
+    Ok(address) ->
+      case dict.get(state.players, address) {
         Ok(player) -> {
           let #(state, told) =
-            without(state:, connection:, player:, why: Ended, now_ms:)
+            without(state:, address:, player:, why: Ended, now_ms:)
           #(state, Effects(told))
         }
         Error(Nil) -> no_player_for_watch(state)
@@ -4037,9 +3886,10 @@ fn no_player_for_watch(state: State) -> #(State, ServiceStep(Outgoing)) {
   )
 }
 
-/// The map with the connection's player and its watch removed, the player out of
-/// the `sees` of each player who saw it, and each of them sent `UnseenBy` of its
-/// connection. When the connection ended, every player in the map is sent `Gone`
+/// The map with the unit's player and its watch removed, its address unregistered (the
+/// first effect, so no send after it reaches the removed unit) and, for a leave, unwatched,
+/// the player out of the `sees` of each player who saw it, and each of them sent `UnseenBy`
+/// of its address. When the connection ended, every player in the map is sent `Gone`
 /// of its unit, those who saw it as well as those who no longer do: the
 /// connection that ended sent nobody a 0x355, and a player that stopped seeing it
 /// a moment before may not have taken the notice that would have had it sent
@@ -4047,79 +3897,69 @@ fn no_player_for_watch(state: State) -> #(State, ServiceStep(Outgoing)) {
 /// connection that does not show the unit ignores it.
 fn without(
   state state: State,
-  connection connection: ConnectionId,
+  address address: UnitAddress,
   player player: Player,
   why why: Removal,
   now_ms now_ms: Int,
 ) -> #(State, List(Effect(ServiceEffect(Outgoing)))) {
-  let others = others_of(state:, connection:)
+  let others = others_of(state:, address:)
   let viewers =
     list.filter_map(others, fn(other) {
       dict.get(player.sees, other.0)
       |> result.map(fn(sight) { #(other, sight) })
     })
   let players =
-    list.fold(viewers, dict.delete(state.players, connection), fn(players, v) {
+    list.fold(viewers, dict.delete(state.players, address), fn(players, v) {
       let #(viewer, _) = v
       dict.insert(
         players,
         viewer.0,
-        Player(..viewer.1, sees: dict.delete({ viewer.1 }.sees, connection)),
+        Player(..viewer.1, sees: dict.delete({ viewer.1 }.sees, address)),
       )
     })
   let #(state, spawn_effects) =
-    spawns_decided(
-      state:,
-      connection:,
-      stay: player.stay,
-      address: player.address,
-      was: player.seen,
-      now: set.new(),
-      now_ms:,
-    )
-  // What each player that saw the connection's player is told of the end: the owner's
-  // notice that the connection no longer sees it, and the viewer's that the unit is unseen.
-  let sights_ended = fn(other: #(ConnectionId, Player)) {
-    case
-      dict.get(player.sees, other.0),
-      dict.get({ other.1 }.sees, connection)
-    {
+    spawns_decided(state:, address:, was: player.seen, now: set.new(), now_ms:)
+  // What each player that saw the unit's player is told of the end: the owner's
+  // notice that the unit no longer sees it, and the viewer's that the unit is unseen.
+  let sights_ended = fn(other: #(UnitAddress, Player)) {
+    case dict.get(player.sees, other.0), dict.get({ other.1 }.sees, address) {
       Ok(own_sight), Ok(other_sight) -> [
         player_unseen(viewer: other.0, relation: other_sight, owner: player),
-        unwatched(to: other, by: connection, generation: own_sight.generation),
+        unwatched(to: other, by: address, generation: own_sight.generation),
       ]
       Ok(_), Error(Nil) | Error(Nil), Ok(_) | Error(Nil), Error(Nil) -> []
     }
   }
   #(
-    State(
-      ..state,
-      players:,
-      watches: dict.delete(state.watches, player.watch),
-      by_address: dict.delete(state.by_address, player.address),
-    ),
+    State(..state, players:, watches: dict.delete(state.watches, player.watch)),
     list.append(
-      case why {
-        Camped -> list.flat_map(others, sights_ended)
-        Ended ->
-          list.flat_map(others, fn(other) {
-            list.append(sights_ended(other), [
-              notify(
-                to: other,
-                notice: Gone(unit_id: player_unit.unit_id(unit: player.unit)),
-              ),
-            ])
-          })
-      },
+      list.append([OwnEffect(Unregister(group: Unit(address)))], case why {
+        Camped -> [Unwatch(watch: player.watch)]
+        Ended -> []
+      }),
       list.append(
-        spawn_effects,
-        caster_gone_sends(state:, address: player.address),
+        case why {
+          Camped -> list.flat_map(others, sights_ended)
+          Ended ->
+            list.flat_map(others, fn(other) {
+              list.append(sights_ended(other), [
+                notify(
+                  to: other,
+                  notice: Gone(unit_id: player_unit.unit_id(unit: player.unit)),
+                ),
+              ])
+            })
+        },
+        list.append(
+          spawn_effects,
+          caster_gone_sends(state:, address: player.address),
+        ),
       ),
     ),
   )
 }
 
-/// The `CasterGone` of the connection for each running creature (live, retiring,
+/// The `CasterGone` of the unit for each running creature (live, retiring,
 /// respawning or releasing: the states `running` admits), in spawn order: the removal's
 /// last sends, after the `Unseen`s of `spawns_decided`. A spawn with no creature (waiting
 /// for its restart, failed) is sent nothing.
@@ -4136,27 +3976,23 @@ fn caster_gone_sends(
   })
 }
 
-/// The players other than the connection's, in the order the map's table
+/// The players other than the unit's, in the order the map's table
 /// gives them: a step's sends are in that order, which a test of a few players
 /// can name, and no sort is made on each move.
 fn others_of(
   state state: State,
-  connection connection: ConnectionId,
-) -> List(#(ConnectionId, Player)) {
+  address address: UnitAddress,
+) -> List(#(UnitAddress, Player)) {
   dict.to_list(state.players)
-  |> list.filter(fn(entry) { entry.0 != connection })
+  |> list.filter(fn(entry) { entry.0 != address })
 }
 
-/// A send to the connection of a player in the map: the notice, for the
-/// player's stay.
+/// A send to the unit of a player in the map: the notice.
 fn notify(
-  to player: #(ConnectionId, Player),
+  to player: #(UnitAddress, Player),
   notice notice: Notice,
 ) -> Effect(ServiceEffect(Outgoing)) {
-  OwnEffect(Send(
-    to: Connection(player.0),
-    message: Noticed(stay: { player.1 }.stay, notice:),
-  ))
+  OwnEffect(Send(to: Unit(player.0), message: Noticed(notice:)))
 }
 
 /// An error line about the map, and what `about` adds.

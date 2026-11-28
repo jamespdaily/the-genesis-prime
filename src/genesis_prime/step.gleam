@@ -249,9 +249,9 @@ pub type ConnectionEffect(request) {
   /// through the way to `to` that the rule's open watch on `to` found, so the
   /// rule watches `to` before it tells; a tell with no such watch, or after the
   /// process has ended, is dropped with a warning, and a rule that must know
-  /// watches it. A `Connection` and a `ZoneChannel` need no watch: the shell
-  /// sends the tell through the registry, to the connection or to every member
-  /// of the group. The process takes it as `ServiceEvent`'s `Told`.
+  /// watches it. A `Connection`, a `Unit` and a `ZoneChannel` need no watch: the shell
+  /// sends the tell through the registry, to the connection, to the unit's one
+  /// member or to every member of the group. The process takes it as `ServiceEvent`'s `Told`.
   Tell(to: Address, request: request)
   /// Tell the process that the open watch `watch` found, through that watch's
   /// own way to tell it (`Tellable`), and go on at once, as `Tell` does. It is
@@ -281,6 +281,14 @@ pub type ServiceEffect(outgoing) {
   /// by its id); a receiver that is not running drops the message, and a rule
   /// that must know watches the receiver.
   Send(to: Address, message: outgoing)
+  /// Make the process at `member` (a `Connection`) a member of the group at `group`,
+  /// a `Unit` the rule issued, so a send to the unit reaches it. A `member` that is
+  /// not running, or a `group` no `Unit`, does nothing: the rule learns of a joiner
+  /// that ended from the watch on the unit.
+  Register(group: Address, member: Address)
+  /// Remove every member of the group at `group`, a `Unit` the rule issued; a group
+  /// with no member does nothing. A send to the unit then finds no process.
+  Unregister(group: Address)
   /// Start the creature the value describes under the creature supervisor, wait
   /// for it to be running, then watch it under `watch`, so the step's later
   /// effects (a `Send` to its `Creature` address) find it and its end comes back
@@ -394,9 +402,13 @@ pub type Address {
   /// One connection.
   Connection(connection: ConnectionId)
   /// One unit of a player in one run of a map, as the map issued it
-  /// (genesis_prime/world_map/unit_address). It names the sender of a player's
-  /// strike (`strike_tell.Tell.from`); no process is registered under it, so a
-  /// watch or a send to it finds none.
+  /// (genesis_prime/world_map/unit_address): a group of the connections' registry
+  /// (genesis_prime/connection/registry) whose one member is the connection of the
+  /// player, which the map joins to it as the unit joins (`Register`) and removes as
+  /// the unit leaves (`Unregister`). A send or a tell to it reaches that connection
+  /// while the unit is in the map; once it left, or when it never joined, it reaches
+  /// no process. It also names the sender of a player's strike
+  /// (`strike_tell.Tell.from`).
   Unit(address: UnitAddress)
   /// One creature, in one run of one map: its unit id there and its life, the
   /// number of the map's watch it was started under. A spawn's unit id is kept

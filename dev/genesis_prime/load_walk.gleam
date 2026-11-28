@@ -38,7 +38,7 @@
 ////   creatures started in any second; and the time the creatures took to end.
 
 import argv
-import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
+import genesis_prime/client_connection.{type Message, ForUnit, SentByPeer}
 import genesis_prime/connection/registry
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/start_place
@@ -57,7 +57,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_cell
-import genesis_prime/world_map/stay
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bool
 import gleam/dict
 import gleam/erlang/process.{type Name, type Subject}
@@ -221,23 +221,23 @@ fn player(
         service.call_subject(
           run.subject,
           map_message.Join(
-            connection: ConnectionId(id),
+            joiner: ConnectionId(id),
             character: character(id),
             place: place(x:, y:, z:),
-            stay: stay.next(stay.none_yet()),
             alive: True,
             hidden: set.new(),
           ),
           fn(answer) { process.send(replies, answer) },
         )
-      let assert Ok(_joined) = process.receive(replies, within: 60_000)
+      let assert Ok(map_message.Joined(address:, ..)) =
+        process.receive(replies, within: 60_000)
         as "the map answered the join"
       let at_join = collect(selector:, wait: fn() { join_quiet_ms }, found: [])
       let seen =
         walk_steps(
           run:,
           selector:,
-          id:,
+          address:,
           step: 1,
           steps:,
           position:,
@@ -250,7 +250,7 @@ fn player(
       let _sent =
         service.call_subject(
           run.subject,
-          map_message.Leave(connection: ConnectionId(id)),
+          map_message.Leave(unit: address),
           fn(answer) { process.send(replies, answer) },
         )
       let _left = process.receive(replies, within: 60_000)
@@ -266,7 +266,7 @@ const join_quiet_ms = 500
 fn walk_steps(
   run run: world_map_registry.MapProcess,
   selector selector: process.Selector(Message),
-  id id: Int,
+  address address: UnitAddress,
   step step: Int,
   steps steps: Int,
   position position: fn(Int) -> #(Float, Float, Float),
@@ -278,11 +278,7 @@ fn walk_steps(
   let _sent =
     service.tell_subject(
       run.subject,
-      map_message.Moved(
-        connection: ConnectionId(id),
-        place: place(x:, y:, z:),
-        seq: step,
-      ),
+      map_message.Moved(unit: address, place: place(x:, y:, z:), seq: step),
     )
   let deadline_us = sent_us + move_every_ms * 1000
   let arrived =
@@ -294,7 +290,7 @@ fn walk_steps(
   walk_steps(
     run:,
     selector:,
-    id:,
+    address:,
     step: step + 1,
     steps:,
     position:,
@@ -319,7 +315,7 @@ fn collect(
 ) -> List(Int) {
   case process.selector_receive(selector, within: wait()) {
     Error(Nil) -> found
-    Ok(ForStay(sent: SentByPeer(PeerNews(news: CreatureAppeared(..), ..)), ..)) ->
+    Ok(ForUnit(sent: SentByPeer(PeerNews(news: CreatureAppeared(..), ..)), ..)) ->
       collect(selector:, wait:, found: [now_us(), ..found])
     Ok(_other) -> collect(selector:, wait:, found:)
   }

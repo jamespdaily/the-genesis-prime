@@ -4,17 +4,17 @@
 ////
 //// - **Other players' units.** The map decides who sees whom
 ////   (genesis_prime/world_map/map) and tells the connection of each player in
-////   it, as the message `SentByMap`, who sees its player (`SeenBy(by, stay, unit_id,
+////   it, as the message `SentByMap`, who sees its player (`SeenBy(by, unit_id,
 ////   generation)` when a player comes to see it, `UnseenBy(by, generation)` when one
 ////   stops), and `Gone(unit)` when a player's connection has ended. The connection
 ////   keeps the connections that see its player as its viewers, each with its player's
-////   stay and the generation of that sight, in the player's `Entered`, and sends its
+////   address and the generation of that sight, in the player's `Entered`, and sends its
 ////   moves to them itself, as `SentByMove`; everything else about its unit reaches a
 ////   viewer from the map (`PlayerUnseen`, and the relays of its snapshot and its news):
 ////
 ////   ```
 ////   owner's connection (player in the world)           map                      viewer's connection             client
-////   SeenBy(v, stay, unit, g) ─▶ TellSnapshot(v, g, [Appeared(0x262 at its place, g)]) ─▶ Relayed(News) ─▶ writes 0x262 if not shown ─▶ the unit is created
+////   SeenBy(v, unit, g) ─▶ TellSnapshot(v, g, [Appeared(0x262 at its place, g)]) ─▶ Relayed(News) ─▶ writes 0x262 if not shown ─▶ the unit is created
 ////   0x637 accepted             ─▶ Tell(map, Moved(place)); Tell(each viewer, Move(0x638 chunk, its g)) ─▶ writes 0x638 if the sight is g ─▶ the unit moves
 ////   UnseenBy(v, g)             ─▶ the copy drops v: no more moves for it
 ////   the pair leaves sight, its camp (0xC0), its connection's end ─▶ PlayerUnseen(unit, g) ─▶ writes 0x355 if shown ─▶ the unit is removed
@@ -50,19 +50,19 @@
 ////   `PlayerUnseen`: the viewer's client reads a cast's 0x7fe before the unit's 0x355 only
 ////   for a unit it still shows (`cast.target_node_end`).
 //// - **Chat lines.** A Say, Yell or Emote line another player says is told to the map, which
-////   relays it as `SentByLine` for the stay of the viewer's relation, and is taken by the chat
-////   feature (genesis_prime/game/chat) only in the stay's own turn: a line queued across a
-////   re-entry of the same run is dropped by the stay fence, and one that arrives while an ask
+////   relays it as `SentByLine` to the viewer's unit, and is taken by the chat
+////   feature (genesis_prime/game/chat) only in the unit's own turn: a line queued across a
+////   re-entry of the same run is dropped by the address fence, and one that arrives while an ask
 ////   is out waits for its answer.
-//// - **Stays.** Every message another process sends for the player's stay in the
+//// - **Addresses.** Every message another process sends to the player's unit in the
 ////   world (the map's notices, a peer's or a creature's news, a creature's threat,
-////   release and strike) comes in one envelope, `ForStay(stay, ..)`, which names
-////   the stay it was sent for (genesis_prime/world_map/stay), and is taken at one
-////   entry point (`stay_sent`) only when that stay is the player's: one of an
-////   earlier stay, sent before a camp or the Holocrypt, reaches a client that holds
+////   release and strike) comes in one envelope, `ForUnit(address, ..)`, which names
+////   the address it was sent to (genesis_prime/world_map/unit_address), and is taken at one
+////   entry point (`unit_sent`) only when that address is the player's: one sent to an
+////   earlier unit, before a camp or the Holocrypt, reaches a client that holds
 ////   none of its units, or a run of the map that gives the same unit ids again,
-////   and is dropped. The connection names a new stay in each join's ask, and each
-////   viewer's stay, as the map's `SeenBy` gave it, in every news it sends it.
+////   and is dropped. The map issues the address in `Joined`, and each viewer's
+////   address, as the map's `SeenBy` gave it, is where the player sends it each move.
 //// - **Static objects** are the map's own units (genesis_prime/world_map/static_object):
 ////   the map tells the connection the objects its player comes to see,
 ////   `ObjectsSeen` with each one's 0x262, and the ones it stops seeing,
@@ -230,9 +230,7 @@ import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_fields
 import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
-import genesis_prime/step.{
-  type ConnectionEffect, type ConnectionId, type Effect, type Now,
-}
+import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/table/creature2_display_info
 import genesis_prime/table/id.{Creature2DisplayInfoId, Creature2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
@@ -241,6 +239,7 @@ import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/static_object
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bool
 import gleam/dict.{type Dict}
 import gleam/int
@@ -250,12 +249,12 @@ import gleam/order
 import gleam/result
 import gleam/set
 
-/// What the map sent for the player's stay (`stay_sent`): who sees its player
+/// What the map sent to the player's unit (`unit_sent`): who sees its player
 /// (`SeenBy`, `UnseenBy`), a unit whose owner ended (`Gone`), and the static
 /// objects its player sees (`ObjectsSeen`) and stops seeing (`ObjectsUnseen`),
 /// written as `viewer_takes` writes a unit's 0x262 and 0x355. A connection
-/// sends its moves itself and tells the map the rest: told `SeenBy(by, stay, unit_id, generation)`
-/// it keeps `by` with its stay, unit id and generation and tells the map its snapshot of that
+/// sends its moves itself and tells the map the rest: told `SeenBy(by, unit_id, generation)`
+/// it keeps `by` with its unit id and generation and tells the map its snapshot of that
 /// generation, the 0x262 at its current place with its health now and the cast it holds the bar of,
 /// which the map relays to `by`; told `UnseenBy(by, generation)` for the sight it holds for `by`
 /// it drops `by` and ends the sources `by` put on it that end with its sight. The shell takes a send between steps, after
@@ -271,19 +270,18 @@ pub fn map_sent(
   notice notice: map_message.Notice,
 ) -> client_connection.Handled(Session) {
   case notice {
-    map_message.SeenBy(by:, stay:, unit_id:, generation:) ->
+    map_message.SeenBy(by:, unit_id:, generation:) ->
       Continue(
         viewers_changed(session:, change: dict.insert(
           _,
           by,
-          player_address.Viewer(stay:, unit_id:, generation:),
+          player_address.Viewer(unit_id:, generation:),
         )),
         [
           connection_state.tells_the_map(
             entered:,
             request: client_connection.TellSnapshot(
-              connection: client_connection.connection(session.link),
-              stay: entered.stay,
+              unit: entered.address,
               viewer: by,
               generation:,
               burst: [
@@ -308,7 +306,7 @@ pub fn map_sent(
           ),
         ],
       )
-    map_message.UnseenBy(by: step.ConnectionId(by_number) as by, generation:) ->
+    map_message.UnseenBy(by:, generation:) ->
       case dict.get(entered.viewers, by) {
         Ok(player_address.Viewer(generation: held, ..)) ->
           case generation.compare(first: generation, second: held) {
@@ -318,7 +316,7 @@ pub fn map_sent(
                   session:,
                   level: step.LogError,
                   text: "the map ended a sight of viewer "
-                    <> int.to_string(by_number)
+                    <> int.to_string(unit_address.number(address: by))
                     <> " that is older than the one held: "
                     <> int.to_string(generation.number(generation:))
                     <> " against "
@@ -1200,7 +1198,7 @@ fn unit_departed(
 fn viewer_unseen(
   session session: Session,
   now now: Now,
-  by by: ConnectionId,
+  by by: UnitAddress,
 ) -> client_connection.Handled(Session) {
   let #(session, ended) =
     connection_landing.caster_unseen(
@@ -1883,19 +1881,19 @@ fn stat_above_zero(stat_id stat_id: Int, value value: Int) -> List(UnitStat) {
 /// The session with the player's viewers changed by `change`.
 fn viewers_changed(
   session session: Session,
-  change change: fn(Dict(ConnectionId, player_address.Viewer)) ->
-    Dict(ConnectionId, player_address.Viewer),
+  change change: fn(Dict(UnitAddress, player_address.Viewer)) ->
+    Dict(UnitAddress, player_address.Viewer),
 ) -> Session {
   connection_state.with_entered(session:, change: fn(entered) {
     world_entry.Entered(..entered, viewers: change(entered.viewers))
   })
 }
 
-/// The connections of the viewers that own the unit `unit_id`.
+/// The addresses of the viewers that own the unit `unit_id`.
 fn viewers_of_unit(
-  viewers viewers: Dict(ConnectionId, player_address.Viewer),
+  viewers viewers: Dict(UnitAddress, player_address.Viewer),
   unit_id unit_id: Int,
-) -> List(ConnectionId) {
+) -> List(UnitAddress) {
   dict.to_list(viewers)
   |> list.filter_map(fn(viewer) {
     case { viewer.1 }.unit_id == unit_id {

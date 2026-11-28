@@ -5,9 +5,8 @@
 import genesis_prime/shared/spell_plan
 import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_properties.{type Source}
-import genesis_prime/step.{type ConnectionId}
 import genesis_prime/table/id.{type Spell4Id}
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 
 /// What a caster's cast changes on a player that is not the caster, as it is told: a
 /// property modifier (the UnitPropertyModifier and UnitPropertyConversion rows, and the
@@ -41,16 +40,14 @@ pub type Sight {
   KeptWhenUnseen
 }
 
-/// What a caster's connection tells the connection of another player, for the stay of
-/// that player (genesis_prime/client_connection `PlayerTell.Change`).
+/// What a caster's connection tells the connection of another player, sent to that
+/// player's unit (genesis_prime/client_connection `PlayerTell.Change`).
 pub type PlayerChange {
   /// The change `change` of the cast `source` names is put on the player. `from` is the
-  /// caster's connection and `from_stay` its stay, which the player holds the change
-  /// against: the player takes it only while that caster is among its viewers with that
-  /// stay.
+  /// caster's unit, which the player holds the change
+  /// against: the player takes it only while that caster is among its viewers.
   PlayerChangeStarts(
-    from: ConnectionId,
-    from_stay: Stay,
+    from: UnitAddress,
     source: Source,
     change: Told,
     sight: Sight,
@@ -59,10 +56,9 @@ pub type PlayerChange {
   )
   /// The cast's node on the player has ended: the change of `source` that `from` started
   /// is taken off.
-  PlayerChangeEnds(from: ConnectionId, source: Source)
+  PlayerChangeEnds(from: UnitAddress, source: Source)
   /// The go of the cast `cast_id` that `from` started has told the player each of its
   /// changes: the player starts the cast for its viewers, from what it holds of the
-  /// cast. It names no stay: the player's own stay is fenced where it is taken, and the
-  /// guard is the ledger's (`holds_cast_from`).
-  PlayerCastWent(from: ConnectionId, cast_id: Int)
+  /// cast. The guard is the ledger's (`holds_cast_from`).
+  PlayerCastWent(from: UnitAddress, cast_id: Int)
 }

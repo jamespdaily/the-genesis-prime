@@ -9,7 +9,7 @@ import creature_news_support
 import game_client
 import game_connection_support
 import genesis_prime/client_connection.{
-  type Answer, type Message, type Request, ForStay, FromMap, FromStore,
+  type Answer, type Message, type Request, ForUnit, FromMap, FromStore,
   SentByPeer,
 }
 import genesis_prime/connection/frame.{Frame}
@@ -36,10 +36,9 @@ import genesis_prime/shared/creature_kind.{Kind}
 import genesis_prime/shared/creature_unit_type.{NonPlayer}
 import genesis_prime/shared/unit_news.{CreatureAppeared, PeerNews, Removed}
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionId, type ConnectionStep, type Event,
-  ConnectionId, EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning,
-  OwnEffect, OwnEvent, StoppedWaiting, Unwatch, Watch, WatchEnded, WatchId,
-  Woken,
+  type ConnectionEvent, type ConnectionStep, type Event, ConnectionId,
+  EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning, OwnEffect, OwnEvent,
+  StoppedWaiting, Unwatch, Watch, WatchEnded, WatchId, Woken,
 }
 import genesis_prime/store.{CharacterLoaded, ForSelect, ForWorld, Listed}
 import genesis_prime/table/id.{Creature2Id, Spell4Id}
@@ -52,8 +51,7 @@ import genesis_prime/world_map/spawn.{
 }
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{RunOnly}
-import genesis_prime/world_map/stay.{type Stay}
-import genesis_prime/world_map/unit_address
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
@@ -81,16 +79,16 @@ fn chat_tells(
 }
 
 /// The lines of local chat a step tells the map, in the order of the step's effects: the
-/// connection and the stay each names and the line.
+/// unit each names and the line.
 fn said_to_the_map(
   taken: ConnectionStep(Request),
-) -> List(#(ConnectionId, Stay, chat_tell.Said)) {
+) -> List(#(UnitAddress, chat_tell.Said)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.Tell(
         to: step.Map(..),
-        request: client_connection.TellSay(connection:, stay:, said:),
-      )) -> Ok(#(connection, stay, said))
+        request: client_connection.TellSay(unit:, said:),
+      )) -> Ok(#(unit, said))
       OwnEffect(_) | Watch(..) | Unwatch(..) | step.Log(..) | step.Stop ->
         Error(Nil)
     }
@@ -142,12 +140,10 @@ pub fn a_say_line_in_the_world_writes_the_accept_and_tells_the_map_once_test() -
   assert chat_tells(taken) == []
     && game_connection_support.tells_to_players_but_moves(taken) == []
     as "the speaker tells no viewer's connection: the map's relations name the viewers"
-  let assert [#(connection, stay, chat_tell.Said(speaker:, line:))] =
-    said_to_the_map(taken)
+  let assert [#(unit, chat_tell.Said(speaker:, line:))] = said_to_the_map(taken)
     as "one tell to the map, which the shell sends with no answer"
-  assert connection == ConnectionId(1)
-    && stay == game_connection_support.own_stay()
-    as "the tell names the speaker's connection and the stay it entered in, which the map checks against its own"
+  assert unit == game_connection_support.own_address()
+    as "the tell names the speaker's unit, the address it entered as, which the map checks against its own"
   assert speaker.name == "Ab Cd" && speaker.character_id == 42
   assert line.channel_type == chat_channel.Say && line.channel_id == 0
   assert support.logs(taken) == [] && !support.stops(taken)
@@ -165,8 +161,7 @@ pub fn the_speaker_tells_its_map_its_snapshot_and_its_line_in_the_order_it_took_
     game_connection_support.feed(
       state,
       game_connection_support.sent_by_the_map(SeenBy(
-        by: ConnectionId(2),
-        stay: game_connection_support.viewer_stay(2),
+        by: game_connection_support.viewer_address(2),
         unit_id: game_connection_support.viewer_unit_id(2),
         generation: game_connection_support.viewer_sight(2),
       )),
@@ -183,8 +178,7 @@ pub fn the_speaker_tells_its_map_its_snapshot_and_its_line_in_the_order_it_took_
     game_connection_support.feed(
       game_connection_support.in_world(),
       game_connection_support.sent_by_the_map(SeenBy(
-        by: ConnectionId(2),
-        stay: game_connection_support.viewer_stay(2),
+        by: game_connection_support.viewer_address(2),
         unit_id: game_connection_support.viewer_unit_id(2),
         generation: game_connection_support.viewer_sight(2),
       )),
@@ -207,8 +201,8 @@ pub fn a_said_tell_writes_a_0x1c8_with_the_player_in_the_world_test() -> Nil {
   let #(_, taken) =
     game_connection_support.feed(
       game_connection_support.in_world(),
-      game_connection_support.for_stay(
-        game_connection_support.own_stay(),
+      game_connection_support.for_unit(
+        game_connection_support.own_address(),
         client_connection.SentByLine(said),
       ),
     )
@@ -233,21 +227,21 @@ pub fn a_line_queued_across_a_same_run_re_entry_is_dropped_by_the_stay_fence_tes
       camped,
       game_connection_support.world_character(),
     )
-  let written_for = fn(stay) {
+  let written_for = fn(address) {
     let #(_, taken) =
       game_connection_support.feed(
         again,
-        game_connection_support.for_stay(
-          stay,
+        game_connection_support.for_unit(
+          address,
           client_connection.SentByLine(a_said_line()),
         ),
       )
     game_connection_support.written_ids(taken)
   }
-  assert written_for(map_support.stay(count: 2)) == [0x01C8]
-    as "a line for the viewer's current stay, its second, is written as 0x1c8"
-  assert written_for(game_connection_support.own_stay()) == []
-    as "a line queued for the viewer's first stay, before its re-entry of the same run, is dropped by the stay fence, though its speaker's map and incarnation are the viewer's"
+  assert written_for(game_connection_support.own_address_again()) == [0x01C8]
+    as "a line for the viewer's current unit, its second, is written as 0x1c8"
+  assert written_for(game_connection_support.own_address()) == []
+    as "a line queued for the viewer's first unit, before its re-entry of the same run, is dropped by the address fence, though its speaker's map and incarnation are the viewer's"
   let #(_, whispered) =
     game_connection_support.feed(
       game_connection_support.in_world(),
@@ -271,8 +265,8 @@ pub fn a_line_for_the_viewers_stay_that_arrives_during_the_place_save_is_held_an
   let #(state, told) =
     game_connection_support.feed(
       state,
-      game_connection_support.for_stay(
-        game_connection_support.own_stay(),
+      game_connection_support.for_unit(
+        game_connection_support.own_address(),
         client_connection.SentByLine(a_said_line()),
       ),
     )
@@ -300,8 +294,8 @@ pub fn a_chat_tell_with_no_player_in_the_world_is_dropped_and_the_connection_goe
       ),
       #(
         "a Said line sent for the stay",
-        game_connection_support.for_stay(
-          game_connection_support.own_stay(),
+        game_connection_support.for_unit(
+          game_connection_support.own_address(),
           client_connection.SentByLine(a_said_line()),
         ),
       ),
@@ -1365,7 +1359,7 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
       support.input(
         OwnEvent(
           step.Told(message: map_message.Moved(
-            connection: ConnectionId(1),
+            unit: map_support.address(number: 1),
             place: standing,
             seq: 1,
           )),
@@ -1399,7 +1393,7 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
     )
     as "at the place the player stands at, with the Dagun's minLevel 1 (Creature2.73465) as the line named no level"
   assert list.any(start.viewers, fn(viewer) {
-    unit_address.joiner(address: viewer.0) == 1
+    unit_address.rank(address: viewer.0) == 1
   })
     as "the player sees the place, so it is a viewer"
   let #(_, settled) =
@@ -1444,7 +1438,7 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
       fn(delivered) {
         server.relayed_message(
           delivered:,
-          stay: game_connection_support.own_stay(),
+          address: game_connection_support.own_address(),
         )
       },
     )
@@ -1454,7 +1448,7 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
     game_connection_support.feed(state:, event: OwnEvent(Woken(message)))
   assert game_connection_support.written_ids(written) == [0x0262]
     as "opcode.0x262: the player's client is shown the creature"
-  let assert ForStay(
+  let assert ForUnit(
     sent: SentByPeer(PeerNews(news: CreatureAppeared(unit:, ..), ..)),
     ..,
   ) = message

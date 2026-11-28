@@ -39,13 +39,12 @@ import genesis_prime/message/whisper_failed.{type WhisperFailed, WhisperFailed}
 import genesis_prime/shared/chat_channel
 import genesis_prime/shared/chat_tell.{Line, Said, Speaker}
 import genesis_prime/shared/top_zone
-import genesis_prime/step.{type ConnectionId, ConnectionId}
+import genesis_prime/step.{ConnectionId}
 import genesis_prime/table/chat_channel as chat_channel_table
 import genesis_prime/table/id.{
   ChatChannelId, Creature2Id, CurrencyTypeId, Item2Id, Quest2Id,
 }
 import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/stay
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -126,7 +125,6 @@ fn take_with(
       chat:,
       message:,
       body:,
-      stay: speaker_stay(),
       realm_name: "Test Realm",
       connection: ConnectionId(1),
       tables: character_tables.shared(),
@@ -194,14 +192,11 @@ fn tells_of(
   })
 }
 
-/// The lines of local chat the effects tell the speaker's map, in order, each with the
-/// connection and the stay it is told for.
-fn said_to_the_map(
-  effects: List(chat.Effect),
-) -> List(#(ConnectionId, stay.Stay, chat_tell.Said)) {
+/// The lines of local chat the effects tell the speaker's map, in order.
+fn said_to_the_map(effects: List(chat.Effect)) -> List(chat_tell.Said) {
   list.filter_map(effects, fn(effect) {
     case effect {
-      chat.TellSay(connection:, stay:, said:) -> Ok(#(connection, stay, said))
+      chat.TellSay(said:) -> Ok(said)
       chat.Send(..)
       | chat.Tell(..)
       | chat.TellWatched(..)
@@ -214,11 +209,6 @@ fn said_to_the_map(
       | chat.RunCommand(..) -> Error(Nil)
     }
   })
-}
-
-/// The stay of the speaker's connection in these tests.
-fn speaker_stay() -> stay.Stay {
-  stay.next(stay.none_yet())
 }
 
 fn only_frame(effects: List(chat.Effect)) -> Frame {
@@ -298,11 +288,8 @@ pub fn the_speaker_tells_its_map_the_line_once_on_its_own_channel_type_test() ->
   list.each([4, 5, 8], fn(type_id) {
     let #(_, effects) =
       take(message: chat.LineSent, chat: a_chat(), body: hello(type_id))
-    let assert [#(connection, told_stay, Said(speaker: told, line:))] =
-      said_to_the_map(effects)
+    let assert [Said(speaker: told, line:)] = said_to_the_map(effects)
       as "one tell to the map, which relays it to the players that see the speaker (design C: one sender for each pair)"
-    assert connection == ConnectionId(1) && told_stay == speaker_stay()
-      as "the tell names the speaker's connection and its stay, which the map checks"
     assert told == speaker()
     assert line
       == Line(
@@ -516,7 +503,7 @@ pub fn an_unclosed_type_1_or_2_format_goes_with_end_65535_and_other_ranges_are_c
       )
     assert accepted(effects).chat_message_id == 5
       as "chat.format_bounds: an unclosed <#> or <*> is sent with end 65535, and a closed type 1 or 2 can have start = end"
-    let assert [#(_, _, Said(line:, ..))] = said_to_the_map(effects)
+    let assert [Said(line:, ..)] = said_to_the_map(effects)
     assert line.formats == [format]
       as "it is relayed as sent, end 65535 included"
   })
@@ -725,7 +712,7 @@ pub fn a_lone_surrogate_is_relayed_as_the_client_sent_it_test() -> Nil {
     )
   assert accepted(effects).chat_message_id == 7
     as "0x1403e0ae0 lets 0xD800 through ParseChatText, so a sound client may send it and the server does not refuse it"
-  let assert [#(_, _, Said(line:, ..))] = said_to_the_map(effects)
+  let assert [Said(line:, ..)] = said_to_the_map(effects)
   assert line.text == text as "the unit reaches the readers unchanged"
 }
 
@@ -856,7 +843,7 @@ pub fn text_and_formats_reach_readers_as_sent_with_no_format_added_and_no_word_r
     )
   assert accepted(effects).chat_message_id == 1
     as "0x140c45f50: ParseChatText runs no word filter, so no line is refused for its words"
-  let assert [#(_, _, Said(line:, ..))] = said_to_the_map(effects)
+  let assert [Said(line:, ..)] = said_to_the_map(effects)
   assert line.text == text
   assert line.formats == formats
     as "0x140c45f50: each reader masks its own filter's words, so the server adds no type 7 format"
@@ -976,7 +963,7 @@ pub fn with_the_setting_off_a_summon_line_is_a_say_line_and_nothing_is_asked_tes
     as "opcode.0x1c2: the speaker's own line is shown by the accept"
   assert list.length(said_to_the_map(effects)) == 1
     as "the design: with the setting off a `!` line is a Say line as any other, told to the map once"
-  let assert [#(_, _, Said(line:, ..)), ..] = said_to_the_map(effects)
+  let assert [Said(line:, ..), ..] = said_to_the_map(effects)
   assert line.text == bit_stream.utf16_units("!summon 75048")
     && line.channel_type == chat_channel.Say
   assert !runs_a_command(effects) as "nothing is asked of the map"

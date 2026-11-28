@@ -16,7 +16,6 @@ import genesis_prime/map/message.{Joined} as map_message
 import genesis_prime/shared/strike_tell
 import genesis_prime/step.{type ServiceStep, OwnEvent, Started, Told, WatchEnded}
 import genesis_prime/world_map/map.{type State}
-import genesis_prime/world_map/stay
 import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/list
@@ -157,31 +156,22 @@ pub fn a_restarted_run_that_reuses_a_wire_unit_id_names_another_address_test() -
     as "so a message for the first run's unit names no unit of the second"
 }
 
-/// The stay of the notice sent to each connection, for each connection.
-fn notice_stays(
-  taken: ServiceStep(map_message.Outgoing),
-) -> List(#(Int, stay.Stay)) {
-  list.map(player_support.notices(taken:), fn(sent) { #(sent.0, sent.1) })
-}
-
 pub fn a_join_issues_the_next_address_and_keeps_the_connections_stay_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, first) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state: started(incarnation: 1),
       at_ms: 6000,
       connection: 1,
-      stay_count: 3,
       x: 0.0,
       alive: True,
       hidden: set.new(),
     )
   let #(_, second) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: 6100,
       connection: 2,
-      stay_count: 5,
       x: 10.0,
       alive: True,
       hidden: set.new(),
@@ -189,12 +179,9 @@ pub fn a_join_issues_the_next_address_and_keeps_the_connections_stay_test() -> N
   assert joined_address(first) == Ok(map_support.address(number: 1))
     && joined_address(second) == Ok(map_support.address(number: 2))
     as "each join is answered with the next address of the run"
-  assert notice_stays(second)
-    == [
-      #(1, map_support.stay(count: 3)),
-      #(2, map_support.stay(count: 5)),
-    ]
-    as "the notices of the second join go to each connection for the stay its own Join named, which the address does not replace"
+  assert list.map(player_support.notices(taken: second), fn(sent) { sent.0 })
+    == [1, 2]
+    as "the notices of the second join go to the address of each player"
 }
 
 pub fn a_second_join_of_one_joiner_removes_its_first_unit_as_a_leave_does_and_joins_a_new_unit_test() -> Nil {
@@ -209,11 +196,10 @@ pub fn a_second_join_of_one_joiner_removes_its_first_unit_as_a_leave_does_and_jo
   // The map as a Leave of connection 1 leaves it, from the same state.
   let #(_, left) = spawns.leave(state:, at_ms: 6200, connection: 1)
   let #(_, again) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: 6200,
       connection: 1,
-      stay_count: 2,
       x: 0.0,
       alive: True,
       hidden: set.new(),
@@ -221,7 +207,7 @@ pub fn a_second_join_of_one_joiner_removes_its_first_unit_as_a_leave_does_and_jo
   let old = map_support.address(number: 1)
   assert joined_address(first) == Ok(old)
   assert joined_address(again)
-    == Ok(map_support.address_for(incarnation: 1, number: 3, joiner: 1))
+    == Ok(map_support.address_for(incarnation: 1, number: 3, rank: 1))
     as "the second join is a new unit under the next address of the run"
   assert spawns.joined_unit_id(again) != spawns.joined_unit_id(first)
     as "with a unit id of its own: the first unit is gone, the map keeps no unit for it"
@@ -246,11 +232,10 @@ pub fn a_creature_relay_reaches_the_host_by_the_connection_and_the_connections_s
       spawn_support.battle_beast(number: 1, x: 0.0),
     ])
   let #(state, _) =
-    spawns.join_in_stay(
+    spawns.join_hiding(
       state:,
       at_ms: 6000,
       connection: 7,
-      stay_count: 4,
       x: 0.0,
       alive: True,
       hidden: set.new(),
@@ -265,20 +250,14 @@ pub fn a_creature_relay_reaches_the_host_by_the_connection_and_the_connections_s
         Told(message: map_message.Relay(
           unit_id:,
           life:,
-          to: map_support.address_for(incarnation: 1, number: 1, joiner: 7),
+          to: map_support.address_for(incarnation: 1, number: 1, rank: 7),
           payload:,
         )),
       ),
     )
   assert support.sends(taken)
     == [
-      #(
-        7,
-        map_message.Relayed(
-          stay: map_support.stay(count: 4),
-          delivered: map_message.Tell(payload:),
-        ),
-      ),
+      #(7, map_message.Relayed(delivered: map_message.Tell(payload:))),
     ]
     as "the relay to the address goes to the connection that joined it, for the stay of that join"
 }

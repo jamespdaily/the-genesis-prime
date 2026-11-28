@@ -112,7 +112,7 @@
 
 import argv
 import genesis_prime/client_connection.{
-  type Message, type StaySent, ForStay, SentByFoe, SentByMap, SentByPeer,
+  type Message, type StaySent, ForUnit, SentByFoe, SentByMap, SentByPeer,
   SentByTarget,
 }
 import genesis_prime/connection/registry
@@ -145,7 +145,7 @@ import genesis_prime/shared/lasts
 import genesis_prime/shared/sight
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news
-import genesis_prime/step.{type ConnectionId, ConnectionId}
+import genesis_prime/step.{ConnectionId}
 import genesis_prime/step/runtime
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, Creature2Id, RaceId}
@@ -154,7 +154,6 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -538,10 +537,9 @@ fn walker(
         service.call_subject(
           run.subject,
           map_message.Join(
-            connection:,
+            joiner: connection,
             character: character(id),
             place: start,
-            stay: walkers_stay(),
             alive: True,
             hidden: set.new(),
           ),
@@ -553,7 +551,7 @@ fn walker(
       let _sent =
         service.tell_subject(
           run.subject,
-          map_message.Ready(connection:, seq: 0),
+          map_message.Ready(unit: address, seq: 0),
         )
       let start_walking = process.new_subject()
       process.send(joined, start_walking)
@@ -570,7 +568,6 @@ fn walker(
           settings:,
           run:,
           selector:,
-          connection:,
           address:,
           id:,
           step: 1,
@@ -602,7 +599,7 @@ fn walker(
       let _sent =
         service.call_subject(
           run.subject,
-          map_message.Leave(connection:),
+          map_message.Leave(unit: address),
           fn(answer) { process.send(replies, answer) },
         )
       let _left = process.receive(replies, within: 60_000)
@@ -618,7 +615,6 @@ fn walk(
   settings settings: server.Settings,
   run run: world_map_registry.MapProcess,
   selector selector: process.Selector(Message),
-  connection connection: ConnectionId,
   address address: UnitAddress,
   id id: Int,
   step step: Int,
@@ -652,7 +648,7 @@ fn walk(
     let _sent =
       service.tell_subject(
         run.subject,
-        map_message.Moved(connection:, place: shown, seq: step),
+        map_message.Moved(unit: address, place: shown, seq: step),
       )
     let counts =
       struck_back(
@@ -714,7 +710,6 @@ fn walk(
       settings:,
       run:,
       selector:,
-      connection:,
       address:,
       id:,
       step: step + 1,
@@ -911,7 +906,7 @@ fn hear(
   let received =
     process.selector_receive(selector, int.max(0, until_ms - now()))
   let counts = case received {
-    Ok(ForStay(sent:, ..)) ->
+    Ok(ForUnit(sent:, ..)) ->
       case load_round.is_answer_to_strike(sent:) {
         True -> Counts(..counts, answered_to_own: counts.answered_to_own + 1)
         False -> counts
@@ -920,16 +915,16 @@ fn hear(
   }
   case received {
     Error(Nil) -> #(fighters, counts)
-    Ok(ForStay(
+    Ok(ForUnit(
       sent: SentByFoe(fight: strike_tell.Threatened(unit_id:, life:)),
       ..,
     )) -> again(dict.insert(fighters, unit_id, life), counts)
-    Ok(ForStay(sent: SentByFoe(fight: strike_tell.Released(unit_id:)), ..)) ->
+    Ok(ForUnit(sent: SentByFoe(fight: strike_tell.Released(unit_id:)), ..)) ->
       again(
         dict.delete(fighters, unit_id),
         marked(counts:, unit_id:, sign: load_round.Released),
       )
-    Ok(ForStay(sent: SentByFoe(fight: strike_tell.Attacks(tell:)), ..)) -> {
+    Ok(ForUnit(sent: SentByFoe(fight: strike_tell.Attacks(tell:)), ..)) -> {
       let taken_us = load_sample.microseconds()
       let counts = Counts(..counts, strikes: counts.strikes + 1)
       case
@@ -954,7 +949,7 @@ fn hear(
         Error(Nil) -> again(fighters, counts)
       }
     }
-    Ok(ForStay(sent: SentByPeer(news:) as sent, ..)) -> {
+    Ok(ForUnit(sent: SentByPeer(news:) as sent, ..)) -> {
       let counts = Counts(..counts, creature_news: counts.creature_news + 1)
       let counts = respawn_told(counts:, sent:)
       case sign_of(news.news) {
@@ -963,7 +958,7 @@ fn hear(
         Error(Nil) -> again(fighters, counts)
       }
     }
-    Ok(ForStay(
+    Ok(ForUnit(
       sent: SentByTarget(answered: strike_tell.Answered(
         key:,
         outcome: strike_tell.Landed(controls:, ..),
@@ -980,7 +975,7 @@ fn hear(
           )
         False -> again(fighters, counts)
       }
-    Ok(ForStay(sent: SentByMap(..) as sent, ..)) ->
+    Ok(ForUnit(sent: SentByMap(..) as sent, ..)) ->
       again(
         fighters,
         respawn_told(
@@ -1177,11 +1172,6 @@ fn handed_over(
       Nil
     }
   }
-}
-
-/// The stay the walkers join the map in.
-fn walkers_stay() -> Stay {
-  stay.next(stay.none_yet())
 }
 
 /// The tell of a walker's connection to the creature `unit_id` of life `life`, as a

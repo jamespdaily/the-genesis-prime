@@ -1235,9 +1235,9 @@ pub fn a_creature_that_ranks_players_ties_by_their_connection_and_not_by_the_ord
   // chose among players that tied by the lowest connection when it named connections; it
   // still does (a server's choice, which the client holds no rule for), so what a player
   // sees of a fight does not depend on who joined first.
-  let five = map_support.address_for(incarnation: 1, number: 1, joiner: 5)
-  let two = map_support.address_for(incarnation: 1, number: 2, joiner: 2)
-  let three = map_support.address_for(incarnation: 1, number: 3, joiner: 3)
+  let five = map_support.address_for(incarnation: 1, number: 1, rank: 5)
+  let two = map_support.address_for(incarnation: 1, number: 2, rank: 2)
+  let three = map_support.address_for(incarnation: 1, number: 3, rank: 3)
   let member = fn(by, unit_id) {
     step.RingMember(
       by:,
@@ -2268,7 +2268,7 @@ pub fn a_strike_of_a_players_earlier_address_that_reaches_the_creature_after_its
       state:,
       at_ms: 100,
       message: creature.Seen(
-        by: map_support.address_for(incarnation: 1, number: 9, joiner: 2),
+        by: map_support.address_for(incarnation: 1, number: 9, rank: 2),
         generation: generation.after(generation: generation.first()),
       ),
     )
@@ -2622,7 +2622,9 @@ fn timers_cancelled(
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.CancelServiceTimer(timer:)) -> Ok(timer)
-      OwnEffect(step.Send(..))
+      OwnEffect(step.Register(..))
+      | OwnEffect(step.Unregister(..))
+      | OwnEffect(step.Send(..))
       | OwnEffect(step.Reply(..))
       | OwnEffect(step.StartCreature(..))
       | OwnEffect(StartServiceTimer(..))
@@ -8926,7 +8928,7 @@ pub fn a_telegraph_whose_target_left_and_joined_again_during_the_charge_strikes_
       ),
       others: [#(5, 0.0, -19.0), #(6, 2.0, -8.0)],
     )
-  let again = map_support.address_for(incarnation: 1, number: 9, joiner: 2)
+  let again = map_support.address_for(incarnation: 1, number: 9, rank: 2)
   let #(state, _) =
     tell(
       state:,
@@ -10687,7 +10689,7 @@ pub fn a_player_who_wakes_in_a_ring_after_its_killing_answer_and_death_is_near_a
   // The wake, as a viewer of the creature in the stay it names and as a player that is not.
   let a_viewer_wakes = approached(number: 2, x: 5.0, seq: 3)
   let stranger_address =
-    map_support.address_for(incarnation: 1, number: 9, joiner: 2)
+    map_support.address_for(incarnation: 1, number: 9, rank: 2)
   let a_stranger_wakes =
     creature.Approached(member: step.RingMember(
       by: stranger_address,

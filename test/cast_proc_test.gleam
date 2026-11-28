@@ -66,7 +66,7 @@ import genesis_prime/shared/strike_tell
 import genesis_prime/shared/ticking
 import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
-import genesis_prime/step.{type Now, type TimerId, ConnectionId, LogDebug}
+import genesis_prime/step.{type Now, type TimerId, LogDebug}
 import genesis_prime/table/id.{
   type Spell4BaseId, type Spell4Id, Spell4BaseId, Spell4EffectsId, Spell4Id,
   UnitProperty2Id,
@@ -4884,9 +4884,8 @@ fn item_cast_holding_a_proc_on_an_ally() -> #(State, Caster) {
     )
   let address =
     player_address.PlayerAddress(
-      connection: ConnectionId(2),
+      address: map_support.address(number: 2),
       unit_id: 40,
-      stay: map_support.stay(count: 2),
     )
   let row =
     support.held_proc_row(

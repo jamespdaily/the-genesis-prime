@@ -171,7 +171,9 @@ fn sent(taken: ServiceStep(creature.Outgoing)) -> List(#(Int, PeerNews)) {
         to: Connection(ConnectionId(number)),
         message: creature.Broadcast(news:, ..),
       )) -> Ok(#(number, news))
-      OwnEffect(Send(..))
+      OwnEffect(step.Register(..))
+      | OwnEffect(step.Unregister(..))
+      | OwnEffect(Send(..))
       | OwnEffect(Reply(..))
       | OwnEffect(StartCreature(..))
       | OwnEffect(StartServiceTimer(..))
@@ -304,7 +306,7 @@ pub fn a_creature_names_a_viewer_by_its_address_and_an_unseen_of_an_earlier_addr
   // One connection (5), two joins of one run: the map names the first unit by address 5
   // and the second by address 6, each under its own sight.
   let earlier = map_support.address(number: 5)
-  let later = map_support.address_for(incarnation: 1, number: 6, joiner: 5)
+  let later = map_support.address_for(incarnation: 1, number: 6, rank: 5)
   let #(state, _) =
     feed(state: creature(), at_ms: 5000, event: OwnEvent(Started))
   let #(state, _) =
@@ -428,7 +430,9 @@ fn outgoing(
     case effect {
       OwnEffect(Send(to: Connection(ConnectionId(number)), message:)) ->
         Ok(#(number, message))
-      OwnEffect(Send(..))
+      OwnEffect(step.Register(..))
+      | OwnEffect(step.Unregister(..))
+      | OwnEffect(Send(..))
       | OwnEffect(Reply(..))
       | OwnEffect(StartCreature(..))
       | OwnEffect(StartServiceTimer(..))
@@ -449,7 +453,7 @@ fn snapshots(
   list.filter_map(creature_news_support.to_the_map(taken), fn(sent) {
     case sent {
       creature.Snapshot(by:, generation:, burst:, ..) ->
-        Ok(#(unit_address.joiner(address: by), generation, burst))
+        Ok(#(unit_address.rank(address: by), generation, burst))
       creature.Broadcast(..) | creature.Relay(..) | creature.Expired(..) ->
         Error(Nil)
     }
@@ -733,7 +737,9 @@ fn effects_named(taken: ServiceStep(creature.Outgoing)) -> List(String) {
           ", ",
         )
       Stop -> "stop"
-      OwnEffect(Send(..))
+      OwnEffect(step.Register(..))
+      | OwnEffect(step.Unregister(..))
+      | OwnEffect(Send(..))
       | OwnEffect(Reply(..))
       | OwnEffect(StartCreature(..))
       | OwnEffect(StartServiceTimer(..))
@@ -2336,7 +2342,9 @@ fn timers_cancelled(
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.CancelServiceTimer(timer:)) -> Ok(timer)
-      OwnEffect(Send(..))
+      OwnEffect(step.Register(..))
+      | OwnEffect(step.Unregister(..))
+      | OwnEffect(Send(..))
       | OwnEffect(Reply(..))
       | OwnEffect(StartCreature(..))
       | OwnEffect(StartServiceTimer(..))
@@ -3725,12 +3733,12 @@ pub fn a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_tim
   let assert Ok(map.Live(unit_id:, life:, relations:, ..)) =
     map.spawn_state(state: map_state, spawn: SpawnId(1))
   let assert Ok(map.Relation(generation: held, ..)) =
-    dict.get(relations, ConnectionId(9))
+    dict.get(relations, map_support.address(number: 9))
   let snapshot =
     map_message.Snapshot(
       unit_id:,
       life:,
-      by: map_support.address_for(incarnation: 1, number: 1, joiner: 9),
+      by: map_support.address_for(incarnation: 1, number: 1, rank: 9),
       generation: held,
       burst: [
         PeerNews(unit_id:, news: unit_news.Health(health: 52, dead: False)),

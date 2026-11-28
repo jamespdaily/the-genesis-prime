@@ -33,7 +33,6 @@ import genesis_prime/store
 import genesis_prime/table/id.{Item2Id}
 import gleam/list
 import gleam/option.{Some}
-import map_support
 import owned_test
 import world_entry_support
 
@@ -102,7 +101,7 @@ pub fn a_credit_for_a_player_who_left_is_dropped_test() -> Nil {
   let #(after, taken) =
     experience.credited_in(
       state: second,
-      stay: support.own_stay(),
+      address: support.own_address(),
       creature_id: 73_464,
       level: 1,
     )
@@ -112,7 +111,7 @@ pub fn a_credit_for_a_player_who_left_is_dropped_test() -> Nil {
   let #(_, taken) =
     experience.credited_in(
       state: second,
-      stay: map_support.stay(count: 2),
+      address: support.own_address_again(),
       creature_id: 73_464,
       level: 1,
     )

@@ -31,7 +31,7 @@ import event_wait
 import fixture_tables
 import game_connection_support
 import genesis_prime/client_connection.{
-  type Message, ForStay, SentByMap, SentByPeer,
+  type Message, ForUnit, SentByMap, SentByPeer,
 }
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/cast/state as cast_state
@@ -72,7 +72,7 @@ import genesis_prime/shared/spend
 import genesis_prime/shared/strike_tell.{Answered, Key, Landed}
 import genesis_prime/shared/unit_fields
 import genesis_prime/shared/unit_news.{PeerNews}
-import genesis_prime/step.{ConnectionId}
+import genesis_prime/step
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{
   Creature2Id, Spell4BaseId, Spell4EffectsId, Spell4Id,
@@ -279,9 +279,9 @@ pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_u
       what: "Gone for the creature that was killed",
       wanted: fn(message) {
         case message {
-          ForStay(sent: SentByMap(map_message.Gone(unit_id:)), ..) ->
+          ForUnit(sent: SentByMap(map_message.Gone(unit_id:)), ..) ->
             Ok(unit_id)
-          ForStay(..)
+          ForUnit(..)
           | client_connection.SentBySessions(..)
           | client_connection.SentByChat(..) -> Error(Nil)
         }
@@ -816,9 +816,9 @@ pub fn a_creature_struck_dead_is_answered_shown_dead_and_stands_again_after_its_
       what: "the answer to the strike",
       wanted: fn(message) {
         case message {
-          ForStay(sent: client_connection.SentByTarget(answered:), ..) ->
+          ForUnit(sent: client_connection.SentByTarget(answered:), ..) ->
             Ok(answered)
-          ForStay(..)
+          ForUnit(..)
           | client_connection.SentBySessions(..)
           | client_connection.SentByChat(..) -> Error(Nil)
         }
@@ -1017,7 +1017,7 @@ fn summon(
     service.call_subject(
       run.subject,
       map_message.Summon(
-        connection: ConnectionId(connection),
+        unit: map_support.address(number: connection),
         creature_id: Creature2Id(creature_id),
         level: None,
       ),
@@ -1103,9 +1103,9 @@ pub fn a_summoned_creature_that_crashes_under_its_supervisor_is_gone_to_the_play
       what: "Gone for the summoned creature",
       wanted: fn(message) {
         case message {
-          ForStay(sent: SentByMap(map_message.Gone(unit_id:)), ..) ->
+          ForUnit(sent: SentByMap(map_message.Gone(unit_id:)), ..) ->
             Ok(unit_id)
-          ForStay(..)
+          ForUnit(..)
           | client_connection.SentBySessions(..)
           | client_connection.SentByChat(..) -> Error(Nil)
         }
@@ -1200,14 +1200,14 @@ fn tech_taken(told told: map_message.Inbound) -> UnitProperty {
 /// The properties of a creature's 0x93a as the connection was sent it.
 fn properties_changed(message: Message) -> Result(List(UnitProperty), Nil) {
   case message {
-    ForStay(
+    ForUnit(
       sent: SentByPeer(PeerNews(
         news: unit_news.PropertiesChanged(properties:),
         ..,
       )),
       ..,
     ) -> Ok(properties)
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -1224,7 +1224,7 @@ fn health_taken(
       what: "the answer to the strike",
       wanted: fn(message) {
         case message {
-          ForStay(
+          ForUnit(
             sent: client_connection.SentByTarget(
               answered: Answered(key: Key(cast_id: id, ..), ..) as answered,
             ),
@@ -1232,7 +1232,7 @@ fn health_taken(
           )
             if id == cast_id
           -> Ok(answered)
-          ForStay(..)
+          ForUnit(..)
           | client_connection.SentBySessions(..)
           | client_connection.SentByChat(..) -> Error(Nil)
         }
@@ -1415,7 +1415,7 @@ pub fn right_click_on_giver_opens_dialog_test() -> Nil {
   assert shown.creature_id == 74_812
     as "the creature the map showed is Dorian Walker's row"
   assert shown.unit_id != player as "he has a unit id of his own"
-  let assert ForStay(stay:, sent:) = news
+  let assert ForUnit(address:, sent:) = news
     as "the map's creature news is a message for a stay"
   let #(state, _) =
     game_connection_support.feed(
@@ -1424,7 +1424,7 @@ pub fn right_click_on_giver_opens_dialog_test() -> Nil {
       state: game_connection_support.in_world_as_exile_holding(quests: [
         quest_support.accepted(10_520, progress: [0, 0, 0, 0, 0]),
       ]),
-      event: game_connection_support.for_stay(stay:, sent:),
+      event: game_connection_support.for_unit(address:, sent:),
     )
   let #(_, taken) =
     game_connection_support.interaction_requested(
@@ -1529,7 +1529,7 @@ pub fn right_click_on_a_vendor_opens_its_window_test() -> Nil {
     as "the creature the map showed is Supplier Ingavak's row"
   assert shown.tail.create_flags == 4
     as "opcode.0x262.vendor_flag: the vendor mark of a creature that sells"
-  let assert ForStay(stay:, sent:) = news
+  let assert ForUnit(address:, sent:) = news
     as "the map's creature news is a message for a stay"
   let #(state, _) =
     game_connection_support.feed(
@@ -1539,7 +1539,7 @@ pub fn right_click_on_a_vendor_opens_its_window_test() -> Nil {
           items: vendor_support.ingavaks_items,
         ),
       ),
-      event: game_connection_support.for_stay(stay:, sent:),
+      event: game_connection_support.for_unit(address:, sent:),
     )
   let #(_, taken) =
     game_connection_support.interaction_requested(
@@ -1640,11 +1640,11 @@ fn knockback_plans() -> spell_plan.Plans {
 /// The path of a creature's flight as the connection was sent it.
 fn flight(message: Message) -> Result(creature_path.Path, Nil) {
   case message {
-    ForStay(
+    ForUnit(
       sent: SentByPeer(PeerNews(news: unit_news.CreatureMoved(path:), ..)),
       ..,
     ) -> Ok(path)
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -2338,11 +2338,11 @@ fn next_cast_started(
     what: "the creature's 0x7ff",
     wanted: fn(message) {
       case message {
-        ForStay(
+        ForUnit(
           sent: SentByPeer(PeerNews(news: unit_news.CastStarted(start:), ..)),
           ..,
         ) -> Ok(start)
-        ForStay(..)
+        ForUnit(..)
         | client_connection.SentBySessions(..)
         | client_connection.SentByChat(..) -> Error(Nil)
       }
@@ -2353,9 +2353,9 @@ fn next_cast_started(
 /// The go the message is, the creature's 0x7f4, when it is one.
 fn cast_went(message: Message) -> Result(spell_go.SpellGo, Nil) {
   case message {
-    ForStay(sent: SentByPeer(PeerNews(news: unit_news.CastWent(go:), ..)), ..) ->
+    ForUnit(sent: SentByPeer(PeerNews(news: unit_news.CastWent(go:), ..)), ..) ->
       Ok(go)
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -2380,7 +2380,7 @@ fn next_cast_finished(
     what: "the creature's 0x7fe",
     wanted: fn(message) {
       case message {
-        ForStay(
+        ForUnit(
           sent: SentByPeer(PeerNews(
             news: unit_news.CastFinished(cast_id: finished),
             ..,
@@ -2389,7 +2389,7 @@ fn next_cast_finished(
         )
           if finished == cast_id
         -> Ok(Nil)
-        ForStay(..)
+        ForUnit(..)
         | client_connection.SentBySessions(..)
         | client_connection.SentByChat(..) -> Error(Nil)
       }
@@ -2718,11 +2718,11 @@ pub fn a_player_outside_the_cone_sees_the_cast_and_takes_nothing_test() -> Nil {
       received: received_2,
       wanted: fn(message) {
         case message {
-          ForStay(
+          ForUnit(
             sent: client_connection.SentByFoe(strike_tell.Attacks(..)),
             ..,
           ) -> Ok(Nil)
-          ForStay(..)
+          ForUnit(..)
           | client_connection.SentBySessions(..)
           | client_connection.SentByChat(..) -> Error(Nil)
         }
@@ -2772,14 +2772,14 @@ pub fn a_stun_between_the_gos_ends_the_cast_and_the_creature_returns_to_its_auto
       what: "the creature's 0x7f9",
       wanted: fn(message) {
         case message {
-          ForStay(
+          ForUnit(
             sent: SentByPeer(PeerNews(
               news: unit_news.CastInterrupted(cast_id:),
               ..,
             )),
             ..,
           ) -> Ok(cast_id)
-          ForStay(..)
+          ForUnit(..)
           | client_connection.SentBySessions(..)
           | client_connection.SentByChat(..) -> Error(Nil)
         }
@@ -2794,11 +2794,11 @@ pub fn a_stun_between_the_gos_ends_the_cast_and_the_creature_returns_to_its_auto
       received: roaring.received,
       wanted: fn(message) {
         case message {
-          ForStay(
+          ForUnit(
             sent: client_connection.SentByFoe(strike_tell.Attacks(..)),
             ..,
           ) -> Ok(Nil)
-          ForStay(..)
+          ForUnit(..)
           | client_connection.SentBySessions(..)
           | client_connection.SentByChat(..) -> Error(Nil)
         }
@@ -2926,27 +2926,27 @@ type CastFrame {
 /// The frame of a message the connection was sent, or `Error(Nil)` for any other.
 fn cast_frame_of(message: Message) -> Result(CastFrame, Nil) {
   case message {
-    ForStay(
+    ForUnit(
       sent: SentByPeer(PeerNews(news: unit_news.CastStarted(start:), ..)),
       ..,
     ) -> Ok(FrameStarted(spell4_id: start.spell4_id))
-    ForStay(sent: SentByPeer(PeerNews(news: unit_news.CastWent(go:), ..)), ..) ->
+    ForUnit(sent: SentByPeer(PeerNews(news: unit_news.CastWent(go:), ..)), ..) ->
       Ok(FrameWent(
         phase: go.phase,
         targets: list.map(go.targets, fn(target) { target.unit_id }),
       ))
-    ForStay(
+    ForUnit(
       sent: SentByPeer(PeerNews(news: unit_news.CastFinished(cast_id:), ..)),
       ..,
     ) -> Ok(FrameFinished(cast_id:))
-    ForStay(
+    ForUnit(
       sent: client_connection.SentByFoe(strike_tell.Attacks(tell: strike_tell.Strike(
         key:,
         ..,
       ))),
       ..,
     ) -> Ok(FrameTold(key:))
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -3128,22 +3128,22 @@ type Seen {
 /// The news of a fight the test reads, none for any other message.
 fn seen_of(message: Message) -> Result(Seen, Nil) {
   case message {
-    ForStay(
+    ForUnit(
       sent: SentByPeer(PeerNews(
         news: unit_news.Targeting(target_unit_id:, ..),
         ..,
       )),
       ..,
     ) -> Ok(Targeted(target_unit_id))
-    ForStay(
+    ForUnit(
       sent: SentByPeer(PeerNews(news: unit_news.CreatureFaces(face:, ..), ..)),
       ..,
     ) -> Ok(Turned(face))
-    ForStay(
+    ForUnit(
       sent: SentByPeer(PeerNews(news: unit_news.CreatureMoved(path:), ..)),
       ..,
     ) -> Ok(Ran(path))
-    ForStay(..)
+    ForUnit(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
   }
@@ -3536,7 +3536,7 @@ fn marks_answered(
 ) -> List(option.Option(strike_tell.Interrupted)) {
   sent_so_far(world:, id:, received:, wanted: fn(message) {
     case message {
-      ForStay(
+      ForUnit(
         sent: client_connection.SentByTarget(answered: Answered(
           key: Key(cast_id: answered_cast, ..),
           outcome: Landed(controls:, ..),
@@ -3545,7 +3545,7 @@ fn marks_answered(
       )
         if answered_cast == cast_id
       -> Ok(list.map(controls, fn(control) { control.interrupted }))
-      ForStay(..)
+      ForUnit(..)
       | client_connection.SentBySessions(..)
       | client_connection.SentByChat(..) -> Error(Nil)
     }
@@ -3776,7 +3776,7 @@ fn next_peer_news(received received: Subject(Message)) -> unit_news.News {
     what: "the news that follows the creature's 0x262",
     wanted: fn(message) {
       case message {
-        ForStay(sent: SentByPeer(PeerNews(news:, ..)), ..) -> Ok(news)
+        ForUnit(sent: SentByPeer(PeerNews(news:, ..)), ..) -> Ok(news)
         _ -> Error(Nil)
       }
     },

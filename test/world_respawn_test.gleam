@@ -15,13 +15,12 @@
 
 import ask_support
 import driven_time
-import genesis_prime/client_connection.{ForStay, SentByFoe}
+import genesis_prime/client_connection.{ForUnit, SentByFoe}
 import genesis_prime/game/start_place
 import genesis_prime/map/message as map_message
 import genesis_prime/service
 import genesis_prime/shared/creature_path
 import genesis_prime/shared/strike_tell.{Threatened}
-import genesis_prime/step.{ConnectionId}
 import genesis_prime/world_map/creature_unit
 import gleam/erlang/process
 import gleam/int
@@ -213,7 +212,7 @@ pub fn two_ring_players_are_both_aggroed_by_the_life_that_replaces_their_killed_
     list.map([1, 2], fn(connection) {
       service.tell_subject(
         run.subject,
-        map_message.Ready(connection: ConnectionId(connection), seq: 0),
+        map_message.Ready(unit: map_support.address(number: connection), seq: 0),
       )
     })
   driven_time.wait_until_quiet(time)
@@ -249,8 +248,8 @@ pub fn two_ring_players_are_both_aggroed_by_the_life_that_replaces_their_killed_
     let threatened =
       list.filter_map(heard, fn(message) {
         case message {
-          ForStay(sent: SentByFoe(Threatened(unit_id:, ..)), ..) -> Ok(unit_id)
-          ForStay(..)
+          ForUnit(sent: SentByFoe(Threatened(unit_id:, ..)), ..) -> Ok(unit_id)
+          ForUnit(..)
           | client_connection.SentBySessions(..)
           | client_connection.SentByChat(..) -> Error(Nil)
         }

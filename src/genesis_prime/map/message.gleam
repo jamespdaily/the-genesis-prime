@@ -33,7 +33,6 @@ import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/static_object
-import genesis_prime/world_map/stay.{type Stay}
 import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/option.{type Option}
 import gleam/set.{type Set}
@@ -65,8 +64,8 @@ pub type Delivered {
 }
 
 /// What a player's connection tells one running creature through the map. No payload
-/// names its sender but `Strike`, whose `from` and striker's stay the map checks against
-/// the relay's: the map names the sender and the stay to the creature (`ToldCreature`).
+/// names its sender but `Strike`, whose `from` the map checks against the relay's: the map
+/// names the sender to the creature (`ToldCreature`).
 pub type Inbound {
   /// The strike of a cast's go, which the creature's owner process decides
   /// (genesis_prime/shared/strike_tell).
@@ -102,8 +101,7 @@ pub type Inbound {
 
 /// What one player's connection tells another's through the map: what a cast lands on
 /// the other player, or the other's answer to it. Each kind is admitted by the map
-/// with the checks of `landing_kind_of`, and delivered to the told player's connection
-/// for the stay the tell names.
+/// with the checks of `landing_kind_of`, and delivered to the told unit's address.
 pub type Landing {
   /// The heal rows of the caster's cast, for the told player's life.
   HealStrike(strike: PlayerStrike)
@@ -122,52 +120,53 @@ pub type Landing {
 /// What a connection asks or tells a map.
 pub type Message {
   /// Put the character in the map as the connection's player, placed at
-  /// `place`, the bounded place the client is told, for the connection's stay
-  /// `stay`, which every notice to it names. `alive` is False for a player that
+  /// `place`, the bounded place the client is told, as one unit the map issues an address
+  /// for (`Joined`). `joiner` is the connection that hosts the player: the map registers it
+  /// as the member of the address's group (`step.Register`) and watches it. `alive` is False for a player that
   /// enters dead (its saved health is 0, genesis_prime/game/player_life `entering`),
   /// True otherwise and for the Holocrypt's join. `hidden` is the visibility
   /// prerequisites of the world that fail for the player (genesis_prime/game/visibility
   /// `hidden_at_entry`): the map shows it no static object and no creature whose
   /// visibility prerequisite is in it, from the join on. An ask, answered `Joined`.
   Join(
-    connection: ConnectionId,
+    joiner: ConnectionId,
     character: Character,
     place: Place,
-    stay: Stay,
     alive: Bool,
     hidden: Set(PrerequisiteId),
   )
-  /// Take the connection's player out of the map, with its unit and the
-  /// watch on the connection. An ask, answered `Left`.
-  Leave(connection: ConnectionId)
-  /// The connection's player now stands at `place`. A tell: the map answers no
+  /// Take the player of the unit `unit` out of the map, with its unit, the watch on its
+  /// connection and the registration of its address. An ask, answered `Left` whether the
+  /// unit was in the map or not.
+  Leave(unit: UnitAddress)
+  /// The player of the unit `unit` now stands at `place`. A tell: the map answers no
   /// one, so a connection's rule goes on at once (8 moves a second per player).
   /// The map decides sight from it and sends no move: the connection sends its
   /// own player's moves to the players who see it. Taken only from a connection
   /// that is in the map. `seq` is the connection's move sequence number, which
   /// grows by one with each accepted 0x637, and which the map passes on with the
   /// place to a creature whose ring the player enters.
-  Moved(connection: ConnectionId, place: Place, seq: Int)
+  Moved(unit: UnitAddress, place: Place, seq: Int)
   /// The connection's player is ready: its client sent the stay's first 0xF2
   /// (`opcode.0xf2`), so a creature may fight it. `seq` is the connection's move
   /// sequence number then, which counts for the connection's life: a player that
   /// entered again and has not moved is told to creatures with it, not with an
   /// earlier stay's lower one. A tell.
-  Ready(connection: ConnectionId, seq: Int)
+  Ready(unit: UnitAddress, seq: Int)
   /// The connection's player entered stealth (`stealthed` True) or left it, as its
   /// cast rule decided (genesis_prime/game/cast `StealthChanged`). A tell. A
   /// stealthed player stands in no creature's ring, so no creature is told
   /// `Approached` for it, and one that held it in its ring is told `Withdrew`
   /// (a server choice: the client holds no rule, `UnitProperty2.stealth_detection`).
   /// Taken only from a connection that is in the map.
-  StealthChanged(connection: ConnectionId, stealthed: Bool)
+  StealthChanged(unit: UnitAddress, stealthed: Bool)
   /// The connection's player died (`alive` False) or woke where its body lies
   /// (`alive` True), as its life rule decided (genesis_prime/game/player_life). A
   /// tell. A dead player stands in no creature's ring, and each creature it sees is
   /// told `PlayerDied` (a server choice: the client holds no creature rule). A player
   /// that wakes inside a ring is told to its creatures as `Approached`. Taken only
   /// from a connection that is in the map.
-  LifeChanged(connection: ConnectionId, alive: Bool)
+  LifeChanged(unit: UnitAddress, alive: Bool)
   /// The visibility prerequisites that fail for the connection's player are now
   /// `hidden`, as its connection's end-of-step check found
   /// (genesis_prime/game/visibility `hidden`). A tell, sent only when the set
@@ -179,7 +178,7 @@ pub type Message {
   /// ring `Withdrew`, as when the player leaves its sight; a unit out of sight is
   /// sent nothing. Taken only from a connection that is in the map, and a set equal
   /// to the one held changes nothing.
-  VisibilityChanged(connection: ConnectionId, hidden: Set(PrerequisiteId))
+  VisibilityChanged(unit: UnitAddress, hidden: Set(PrerequisiteId))
   /// A player's use of the unit `unit_id` counted a unit new to an objective that counts
   /// each unit once (genesis_prime/game/objective `ReleaseUnit`): the
   /// spawn of that unit, and each spawn standing at its x and z (`spawn.captives`),
@@ -196,7 +195,7 @@ pub type Message {
   /// `NotSummoned`, with the connection's ask deadline; a map that is not running
   /// or ends before it answers is the asker's outcome, not a `NotSummoned`.
   /// Taken only from a connection that is in the map.
-  Summon(connection: ConnectionId, creature_id: Creature2Id, level: Option(Int))
+  Summon(unit: UnitAddress, creature_id: Creature2Id, level: Option(Int))
   /// A creature's answer to the map's `Seen`: the picture the creature `unit_id` of
   /// life `life` builds for the player of the unit `by` from its state when it took
   /// the `Seen` of `generation`, `burst` in the order the player's connection writes it
@@ -212,14 +211,14 @@ pub type Message {
   )
   /// News of the creature `unit_id` of life `life` for every player that holds a
   /// relation with it in the state of relaying. A tell, from a creature. The map relays
-  /// it to each such player, in connection order, and to no player awaiting its snapshot
+  /// it to each such player, in the order of their addresses, and to no player awaiting its snapshot
   /// (`broadcast`).
   Broadcast(unit_id: Int, life: Int, news: PeerNews)
   /// A tell of the creature `unit_id` of life `life` to the player of the unit `to`: an
   /// answer, a credit or a fight tell (`relay`). A tell, from a creature. The map admits
   /// it by the creature's state, the payload's kind and whether `to` is a unit of this run
-  /// (one that left or ended is not: the tell is dropped), and sends it as `Relayed` to the
-  /// connection that joined `to`, for the connection's stay of that join (`relayed`).
+  /// (one that left or ended is not: the tell is dropped), and sends it as `Relayed` to
+  /// `Unit(to)` (`relayed`).
   Relay(unit_id: Int, life: Int, to: UnitAddress, payload: Payload)
   /// The creature `unit_id` of life `life` lay dead or despawned until its corpse timer
   /// and stops now. A tell, from a creature. A live spawn of that unit and life becomes
@@ -233,47 +232,39 @@ pub type Message {
   /// of a unit that ended is dropped; the other kinds are delivered), and
   /// sends the creature `ToldCreature` (`told_creature`).
   TellCreature(from: UnitAddress, unit_id: Int, life: Int, payload: Inbound)
-  /// The owner's snapshot of the sight `generation` that `viewer` has of the player of
-  /// connection `by`, which is in its stay `stay` (a snapshot of an earlier stay of the
-  /// owner is dropped): the picture the owner built when it took the
+  /// The owner's snapshot of the sight `generation` that the unit `viewer` has of the unit
+  /// `by` (a snapshot from an address that is not a unit of this run is dropped): the
+  /// picture the owner built when it took the
   /// map's `SeenBy` of that generation, `burst` in the order the viewer's connection
   /// writes it (the 0x262 first, then what its client needs of the unit's live casts and
   /// state). A tell, from a connection. The map relays the burst when the pair holds
   /// that generation and awaits its snapshot, and drops it otherwise
   /// (`player_snapshot_taken`).
   PlayerSnapshot(
-    by: ConnectionId,
-    stay: Stay,
-    viewer: ConnectionId,
+    by: UnitAddress,
+    viewer: UnitAddress,
     generation: Generation,
     burst: List(PeerNews),
   )
-  /// News of the unit of the player of connection `from`, which is in its stay `stay` (news
-  /// of an earlier stay of the owner is dropped), for every viewer whose relation with it
+  /// News of the unit `from` (news from an address that is not a unit of this run is
+  /// dropped), for every viewer whose relation with it
   /// relays. A tell, from a connection. The news names the
   /// unit it is about, and the map drops news that names another unit than the sender's;
   /// a move is no news (`unit_news.News` holds none), the mover tells its viewers
-  /// itself. The map relays it to each relaying viewer in connection order
+  /// itself. The map relays it to each relaying viewer in the order of their addresses
   /// (`player_broadcast`).
-  PlayerBroadcast(from: ConnectionId, stay: Stay, news: PeerNews)
-  /// What the player of connection `from`, in its stay `stay`, lands on the player of
-  /// connection `to`, in the stay `to_stay`, or answers it: a heal, a change, the end of
-  /// one, a go's tell or an event. A tell, from a connection. The map admits it by the
-  /// kind's checks (`relay.landing_kind_of`) and sends it as `Relayed(to_stay,
-  /// Landed(landing))` (`landing_told`).
-  TellLanding(
-    from: ConnectionId,
-    stay: Stay,
-    to: ConnectionId,
-    to_stay: Stay,
-    landing: Landing,
-  )
-  /// A local chat line of the player of connection `from`, in its stay `stay`, for every
-  /// viewer whose relation relays. A tell, from a connection. The map relays it as
-  /// `Relayed(viewer's stay, Said(said))` in connection order (`line_said`); a line from a
-  /// player in another stay than the tell names is dropped, and one whose speaker names
+  PlayerBroadcast(from: UnitAddress, news: PeerNews)
+  /// What the unit `from` lands on the unit `to`, or answers it: a heal, a change, the end
+  /// of one, a go's tell or an event. A tell, from a connection. The map admits it by the
+  /// kind's checks (`relay.landing_kind_of`) and sends it as `Relayed(Landed(landing))` to
+  /// `Unit(to)` (`landing_told`).
+  TellLanding(from: UnitAddress, to: UnitAddress, landing: Landing)
+  /// A local chat line of the unit `from`, for every viewer whose relation relays. A tell,
+  /// from a connection. The map relays it as `Relayed(Said(said))` to `Unit(viewer)`, in the
+  /// order of the viewers' addresses (`line_said`); a line from an address that is not a
+  /// unit of this run is dropped, and one whose speaker names
   /// another unit than the sender's is dropped with an error line.
-  Say(from: ConnectionId, stay: Stay, said: ChatSaid)
+  Say(from: UnitAddress, said: ChatSaid)
 }
 
 /// Why a join is refused: the data of the one character, which the load's
@@ -303,8 +294,10 @@ pub type NotSummoned {
 /// What a map answers and sends.
 pub type Outgoing {
   /// The player is in this run of the map as this unit, which the map keeps, and as
-  /// the unit `address`, which the map issued for this join and which the joiner names
-  /// when it tells a creature (`TellCreature`); the joiner watches `Map(map, incarnation)`. `unit` is the player's own
+  /// the unit `address`, which the map issued for this join, registered the joiner as
+  /// `Unit(address)` before this answer and watches the joiner there; the joiner names
+  /// `address` in every tell it makes of its player and takes only a message sent to it
+  /// as its own; it watches `Map(map, incarnation)`. `unit` is the player's own
   /// 0x262, which its connection sends the players who see it, at its place and
   /// stamped from the map's clock; `clock_origin_ms` is the monotonic time the
   /// map started at, from which the connection stamps (`server_time`).
@@ -324,12 +317,11 @@ pub type Outgoing {
   /// No creature was started and nothing in the map changed: an answer to a
   /// `Summon`, never a send.
   NotSummoned(reason: NotSummoned)
-  /// The connection's player is not in the map any more, whether it was there
-  /// or not.
+  /// The unit is not in the map any more, whether it was there or not, and nothing is
+  /// registered under its address.
   Left
-  /// A send to a player's connection, never an answer: the notice, for the
-  /// player's stay `stay`.
-  Noticed(stay: Stay, notice: Notice)
+  /// A send to `Unit(address)` of a player, never an answer: the notice.
+  Noticed(notice: Notice)
   /// A send to a creature: the player of the unit `by` sees it from the sight
   /// `generation` names, so it answers with a snapshot of that generation.
   Seen(by: UnitAddress, generation: Generation)
@@ -337,9 +329,9 @@ pub type Outgoing {
   /// ended, so the creature drops the player from its copy of its viewers and from its
   /// threat list.
   Unseen(by: UnitAddress, generation: Generation)
-  /// A send to a player's connection, never an answer: what a creature told it, news
-  /// through the player's relation or a payload, for the player's stay `stay`.
-  Relayed(stay: Stay, delivered: Delivered)
+  /// A send to `Unit(address)` of a player, never an answer: what a creature or another
+  /// player told it, news through the player's relation or a payload.
+  Relayed(delivered: Delivered)
   /// A send to a creature, never to a connection: no player has seen it for the
   /// idle stop, so it ends (genesis_prime/world_map/creature).
   Retire
@@ -362,20 +354,20 @@ pub type Outgoing {
   CasterGone(by: UnitAddress)
 }
 
-/// What a map tells the connection of a player in it about who sees whom, for
-/// that player's stay (`Noticed`).
+/// What a map tells the connection of a player in it about who sees whom, sent to the
+/// player's `Unit` (`Noticed`).
 pub type Notice {
-  /// The player of connection `by`, in its stay `stay`, as the unit `unit_id`, sees
-  /// this connection's player, from the sight `generation` names, so this connection
-  /// sends `by` its 0x262 at its place and then its moves, each for `stay` and
-  /// stamped with `generation`, and knows `unit_id` as the address of that player.
-  SeenBy(by: ConnectionId, stay: Stay, unit_id: Int, generation: Generation)
-  /// The player of connection `by` no longer sees this connection's player, from the
+  /// The unit `by`, as the unit id `unit_id`, sees this connection's player, from the
+  /// sight `generation` names, so this connection sends `by` its 0x262 at its place and
+  /// then its moves, each to `Unit(by)` and stamped with `generation`, and knows `unit_id`
+  /// as the client's name of that player.
+  SeenBy(by: UnitAddress, unit_id: Int, generation: Generation)
+  /// The unit `by` no longer sees this connection's player, from the
   /// sight `generation` names, by distance, by leaving the map or by its connection
   /// ending, so this connection sends `by` its 0x355 and no more moves. A notice of
   /// an earlier generation than the one this connection holds for `by` changes
   /// nothing.
-  UnseenBy(by: ConnectionId, generation: Generation)
+  UnseenBy(by: UnitAddress, generation: Generation)
   /// The player no longer sees the creature `unit_id`, from the sight `generation`
   /// names: the connection writes the 0x355 of the unit if its client shows it, after
   /// the finishes of its casts.

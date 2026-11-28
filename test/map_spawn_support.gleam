@@ -141,30 +141,15 @@ pub fn join_hiding(
   alive alive: Bool,
   hidden hidden: Set(PrerequisiteId),
 ) -> #(State, ServiceStep(map_message.Outgoing)) {
-  join_in_stay(state:, at_ms:, connection:, stay_count: 1, x:, alive:, hidden:)
-}
-
-/// A join of connection `connection` at `x`, at time `at_ms`, naming the stay of its
-/// `stay_count`th join, of a player for whom these visibility prerequisites fail.
-pub fn join_in_stay(
-  state state: State,
-  at_ms at_ms: Int,
-  connection connection: Int,
-  stay_count stay_count: Int,
-  x x: Float,
-  alive alive: Bool,
-  hidden hidden: Set(PrerequisiteId),
-) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
     event: OwnEvent(Asked(
       caller: CallerId(connection),
       message: Join(
-        connection: ConnectionId(connection),
+        joiner: ConnectionId(connection),
         character: map_support.character(100 + connection),
         place: at(x),
-        stay: map_support.stay(count: stay_count),
         alive:,
         hidden:,
       ),
@@ -185,7 +170,7 @@ pub fn visibility_changed(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.VisibilityChanged(
-        connection: ConnectionId(connection),
+        unit: map_support.address(number: connection),
         hidden:,
       )),
     ),
@@ -204,7 +189,7 @@ pub fn move(
     at_ms:,
     event: OwnEvent(
       Told(message: Moved(
-        connection: ConnectionId(connection),
+        unit: map_support.address(number: connection),
         place: at(x),
         seq: at_ms,
       )),
@@ -223,7 +208,7 @@ pub fn leave(
     at_ms:,
     event: OwnEvent(Asked(
       CallerId(99),
-      Leave(connection: ConnectionId(connection)),
+      Leave(unit: map_support.address(number: connection)),
     )),
   )
 }
@@ -275,7 +260,8 @@ pub fn relation_of(
 ) -> Option(map.Relation) {
   case map.spawn_state(state:, spawn: SpawnId(spawn)) {
     Ok(map.Live(relations:, ..)) | Ok(map.Releasing(relations:, ..)) ->
-      dict.get(relations, ConnectionId(connection)) |> option.from_result
+      dict.get(relations, map_support.address(number: connection))
+      |> option.from_result
     Ok(map.Retiring(..))
     | Ok(map.Respawning(..))
     | Ok(map.WaitingForRestart)
@@ -304,7 +290,9 @@ pub fn starts(
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(StartCreature(watch:, creature:)) -> Ok(#(watch, creature))
-      OwnEffect(Reply(..))
+      OwnEffect(step.Register(..))
+      | OwnEffect(step.Unregister(..))
+      | OwnEffect(Reply(..))
       | OwnEffect(Send(..))
       | OwnEffect(StartServiceTimer(..))
       | OwnEffect(CancelServiceTimer(..))
@@ -328,7 +316,9 @@ pub fn timers(taken: ServiceStep(map_message.Outgoing)) -> List(#(Int, Int)) {
     case effect {
       OwnEffect(StartServiceTimer(timer: step.TimerId(number), after_ms:)) ->
         Ok(#(number, after_ms))
-      OwnEffect(Reply(..))
+      OwnEffect(step.Register(..))
+      | OwnEffect(step.Unregister(..))
+      | OwnEffect(Reply(..))
       | OwnEffect(Send(..))
       | OwnEffect(StartCreature(..))
       | OwnEffect(CancelServiceTimer(..))
@@ -347,7 +337,9 @@ pub fn sends(
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(Send(to:, message:)) -> Ok(#(to, message))
-      OwnEffect(StartCreature(..))
+      OwnEffect(step.Register(..))
+      | OwnEffect(step.Unregister(..))
+      | OwnEffect(StartCreature(..))
       | OwnEffect(Reply(..))
       | OwnEffect(StartServiceTimer(..))
       | OwnEffect(CancelServiceTimer(..))
@@ -443,13 +435,11 @@ pub fn player_sends(
 
 pub fn said(message: map_message.Outgoing) -> String {
   case message {
-    map_message.Noticed(
-      notice: map_message.SeenBy(by: ConnectionId(number), ..),
-      ..,
-    ) -> "Watched by " <> int.to_string(number)
-    map_message.Noticed(notice: map_message.Gone(unit_id:), ..) ->
+    map_message.Noticed(notice: map_message.SeenBy(by:, ..)) ->
+      "Watched by " <> int.to_string(unit_address.rank(address: by))
+    map_message.Noticed(notice: map_message.Gone(unit_id:)) ->
       "Gone " <> int.to_string(unit_id)
-    map_message.Noticed(notice: map_message.ObjectsSeen(units:), ..) ->
+    map_message.Noticed(notice: map_message.ObjectsSeen(units:)) ->
       "Objects seen "
       <> string.join(
         list.map(units, fn(unit) {
@@ -457,35 +447,33 @@ pub fn said(message: map_message.Outgoing) -> String {
         }),
         " ",
       )
-    map_message.Noticed(notice: map_message.ObjectsUnseen(unit_ids:), ..) ->
+    map_message.Noticed(notice: map_message.ObjectsUnseen(unit_ids:)) ->
       "Objects unseen " <> string.join(list.map(unit_ids, int.to_string), " ")
-    map_message.Noticed(
-      notice: map_message.UnseenBy(by: ConnectionId(number), ..),
-      ..,
-    ) -> "Unwatched by " <> int.to_string(number)
+    map_message.Noticed(notice: map_message.UnseenBy(by:, ..)) ->
+      "Unwatched by " <> int.to_string(unit_address.rank(address: by))
     map_message.Seen(by:, ..) ->
-      "Seen by " <> int.to_string(unit_address.joiner(address: by))
+      "Seen by " <> int.to_string(unit_address.rank(address: by))
     map_message.Unseen(by:, ..) ->
-      "Unseen by " <> int.to_string(unit_address.joiner(address: by))
-    map_message.Noticed(notice: map_message.UnitUnseen(unit_id:, ..), ..) ->
+      "Unseen by " <> int.to_string(unit_address.rank(address: by))
+    map_message.Noticed(notice: map_message.UnitUnseen(unit_id:, ..)) ->
       "Creature unseen " <> int.to_string(unit_id)
-    map_message.Noticed(notice: map_message.PlayerUnseen(unit_id:, ..), ..) ->
+    map_message.Noticed(notice: map_message.PlayerUnseen(unit_id:, ..)) ->
       "Player unseen " <> int.to_string(unit_id)
     map_message.Relayed(..) -> "Relayed"
     map_message.Retire -> "Retire"
     map_message.Approached(member: step.RingMember(by:, ..)) ->
-      "Approached by " <> int.to_string(unit_address.joiner(address: by))
+      "Approached by " <> int.to_string(unit_address.rank(address: by))
     map_message.Withdrew(by:) ->
-      "Withdrew by " <> int.to_string(unit_address.joiner(address: by))
+      "Withdrew by " <> int.to_string(unit_address.rank(address: by))
     map_message.PlayerDied(by:) ->
-      "PlayerDied by " <> int.to_string(unit_address.joiner(address: by))
+      "PlayerDied by " <> int.to_string(unit_address.rank(address: by))
     map_message.CasterGone(by:) ->
-      "CasterGone by " <> int.to_string(unit_address.joiner(address: by))
+      "CasterGone by " <> int.to_string(unit_address.rank(address: by))
     map_message.ToldCreature(by:, payload:) ->
       "Told "
       <> inbound_name(payload)
       <> " by "
-      <> int.to_string(unit_address.joiner(address: by))
+      <> int.to_string(unit_address.rank(address: by))
     map_message.Joined(..)
     | map_message.NotJoined(..)
     | map_message.Summoned(..)
@@ -507,7 +495,7 @@ pub fn move_to(
     at_ms:,
     event: OwnEvent(
       Told(message: Moved(
-        connection: ConnectionId(connection),
+        unit: map_support.address(number: connection),
         place:,
         seq: at_ms,
       )),
@@ -526,7 +514,7 @@ pub fn ready(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.Ready(
-        connection: ConnectionId(connection),
+        unit: map_support.address(number: connection),
         seq: 0,
       )),
     ),
@@ -546,7 +534,7 @@ pub fn stealth(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.StealthChanged(
-        connection: ConnectionId(connection),
+        unit: map_support.address(number: connection),
         stealthed:,
       )),
     ),
@@ -566,7 +554,7 @@ pub fn life(
     at_ms:,
     event: OwnEvent(
       Told(message: map_message.LifeChanged(
-        connection: ConnectionId(connection),
+        unit: map_support.address(number: connection),
         alive:,
       )),
     ),
@@ -607,7 +595,7 @@ pub fn summon_at_level(
     event: OwnEvent(Asked(
       caller: CallerId(caller),
       message: map_message.Summon(
-        connection: ConnectionId(connection),
+        unit: map_support.address(number: connection),
         creature_id: id.Creature2Id(creature_id),
         level:,
       ),
@@ -673,7 +661,7 @@ pub fn expired(
 /// The connections of the players a creature's start carries in its ring, in the order
 /// carried.
 pub fn ring_of(start start: step.CreatureStart) -> List(Int) {
-  list.map(start.ring, fn(member) { unit_address.joiner(address: member.by) })
+  list.map(start.ring, fn(member) { unit_address.rank(address: member.by) })
 }
 
 /// What the step tells creatures, by the life of the creature told and what it says

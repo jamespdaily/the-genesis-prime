@@ -74,6 +74,8 @@ fn starting_creatures(
         }
       },
       send: fn(_to, _message) { Error(Nil) },
+      register: fn(_group, _member) { Nil },
+      unregister: fn(_group) { Nil },
       start_creature: fn(creature) {
         process.send(started, creature)
         starting
@@ -350,6 +352,8 @@ pub fn a_creature_that_exits_before_the_shell_watches_it_comes_back_as_watch_end
       reach: service.Reach(
         locate: fn(_address) { Error(Nil) },
         send: fn(_to, _message) { Error(Nil) },
+        register: fn(_group, _member) { Nil },
+        unregister: fn(_group) { Nil },
         start_creature: fn(creature) {
           process.send(started, creature)
           Ok(Nil)

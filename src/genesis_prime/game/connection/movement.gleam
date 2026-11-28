@@ -162,7 +162,6 @@ fn body_moving(
             set.insert,
           ),
         )
-      let connection = client_connection.connection(session.link)
       // A move that changed the position can reach a marker (the client sends nothing
       // for a place), so the objectives are settled against it.
       let #(session, reached) = case
@@ -191,12 +190,16 @@ fn body_moving(
             [_, ..] ->
               list.flatten([
                 [
-                  // The player's connection, the place the movement now keeps and the
+                  // The player's unit, the place the movement now keeps and the
                   // move's sequence number, for the map to decide who sees whom and
                   // whose ring the player stands in.
                   connection_state.tells_the_map(
                     entered:,
-                    request: TellMoved(connection:, place:, seq: move_seq),
+                    request: TellMoved(
+                      unit: entered.address,
+                      place:,
+                      seq: move_seq,
+                    ),
                   ),
                 ],
                 sends_the_move_to_the_viewers(entered:, now:, commands:),
@@ -311,7 +314,7 @@ fn tells_the_map_ready(
       connection_state.tells_the_map(
         entered:,
         request: client_connection.TellReady(
-          connection: client_connection.connection(session.link),
+          unit: entered.address,
           seq: session.move_seq,
         ),
       ),
@@ -320,8 +323,8 @@ fn tells_the_map_ready(
 }
 
 /// The move sent to each connection that sees the player, as chunks of at most 31
-/// relayed commands each, in order, each stamped with the generation and the stay the
-/// player's copy of its viewers holds for that viewer and with the map's clock at the
+/// relayed commands each, in order, each stamped with the generation the
+/// player's copy of its viewers holds for that viewer and sent to that viewer's unit and with the map's clock at the
 /// time of the input (`map.server_time`, from the origin `Joined` carried): a send
 /// through the registry that the shell makes with no answer. None when no player
 /// sees this one. This is the only place a move is told to a player
@@ -346,8 +349,8 @@ pub fn sends_the_move_to_the_viewers(
       ),
       fn(move) {
         OwnEffect(step.Tell(
-          to: step.Connection(viewer.0),
-          request: client_connection.TellMove(stay: { viewer.1 }.stay, move:),
+          to: step.Unit(viewer.0),
+          request: client_connection.TellMove(move:),
         ))
       },
     )

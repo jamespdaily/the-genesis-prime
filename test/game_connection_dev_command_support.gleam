@@ -13,13 +13,12 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/map/message as map_message
-import genesis_prime/step.{
-  type ConnectionStep, type Outcome, ConnectionId, OwnEvent,
-}
+import genesis_prime/step.{type ConnectionStep, type Outcome, OwnEvent}
 import genesis_prime/store
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
+import genesis_prime/world_map/unit_address
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import place_support
@@ -158,10 +157,13 @@ fn joined_among_watchers(
   let state =
     list.fold(rule_support.sends(joined), state, fn(state, sent) {
       case sent {
-        #(1, map_message.Noticed(stay:, notice:)) ->
+        #(1, map_message.Noticed(notice:)) ->
           support.feed(
             state:,
-            event: support.for_stay(stay:, sent: SentByMap(notice)),
+            event: support.for_unit(
+              address: support.own_address(),
+              sent: SentByMap(notice),
+            ),
           ).0
         #(_, _) -> state
       }
@@ -171,15 +173,8 @@ fn joined_among_watchers(
       case sent {
         #(
           1,
-          map_message.Noticed(
-            notice: map_message.SeenBy(
-              by: ConnectionId(viewer),
-              generation:,
-              ..,
-            ),
-            ..,
-          ),
-        ) -> Ok(#(viewer, generation))
+          map_message.Noticed(notice: map_message.SeenBy(by:, generation:, ..)),
+        ) -> Ok(#(unit_address.number(address: by), generation))
         #(_, _) -> Error(Nil)
       }
     })

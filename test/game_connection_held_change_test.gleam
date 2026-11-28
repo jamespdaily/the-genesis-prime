@@ -68,16 +68,17 @@ import genesis_prime/shared/unit_news.{
 }
 import genesis_prime/shared/unit_properties.{type Source, Change, Source}
 import genesis_prime/step.{
-  type ConnectionEvent, type ConnectionStep, type Event, ConnectionId, OwnEffect,
+  type ConnectionEvent, type ConnectionStep, type Event, OwnEffect,
 }
 import genesis_prime/table/id.{
   type Spell4Id, Spell4BaseId, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
+import map_support
 import owned_test
 import place_support
 import planted_table
@@ -214,8 +215,7 @@ fn held(
 
 fn starts(hold hold: Hold) -> PlayerChange {
   PlayerChangeStarts(
-    from: ConnectionId(hold.caster),
-    from_stay: support.viewer_stay(hold.caster),
+    from: map_support.address(number: hold.caster),
     source: hold.source,
     change: hold.change,
     sight: hold.sight,
@@ -225,8 +225,8 @@ fn starts(hold hold: Hold) -> PlayerChange {
 }
 
 fn tell(change: PlayerChange) -> Event(ConnectionEvent(Message, Answer)) {
-  support.for_stay(
-    stay: support.own_stay(),
+  support.for_unit(
+    address: support.own_address(),
     sent: client_connection.SentByPlayer(tell: client_connection.Change(change:)),
   )
 }
@@ -469,10 +469,9 @@ fn watch_entry(cast_id cast_id: Int, at_ms at_ms: Int) -> UnitCreateCast {
 
 pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_the_player_a_caster_in_another_stay_and_a_dead_player_test() -> Nil {
   use <- owned_test.run(10_000)
-  let armored = fn(caster, from_stay) {
+  let armored = fn(from) {
     PlayerChangeStarts(
-      from: ConnectionId(caster),
-      from_stay:,
+      from:,
       source: armor_source(cast_id: 100),
       change: armor(),
       sight: EndsWhenUnseen,
@@ -480,10 +479,9 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       effect: effect_of(source: armor_source(cast_id: 100)),
     )
   }
-  let pooled = fn(caster, from_stay) {
+  let pooled = fn(from) {
     PlayerChangeStarts(
-      from: ConnectionId(caster),
-      from_stay:,
+      from:,
       source: pool_source(cast_id: 101),
       change: pool(amount: 300),
       sight: EndsWhenUnseen,
@@ -491,11 +489,10 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       effect: effect_of(source: pool_source(cast_id: 101)),
     )
   }
-  let watched = fn(caster, from_stay) {
+  let watched = fn(from) {
     let hold = watch_hold(cast_id: 103)
     PlayerChangeStarts(
-      from: ConnectionId(caster),
-      from_stay:,
+      from:,
       source: hold.source,
       change: hold.change,
       sight: hold.sight,
@@ -513,25 +510,37 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       "a caster that is not among the viewers",
       seen_by_two_and_three,
       4,
-      armored(4, support.viewer_stay(4)),
-      pooled(4, support.viewer_stay(4)),
-      watched(4, support.viewer_stay(4)),
+      armored(support.viewer_address(4)),
+      pooled(support.viewer_address(4)),
+      watched(support.viewer_address(4)),
     ),
     #(
-      "a caster whose stay is not the one the map named for it",
+      "a caster whose address is not the one the map named for it",
       seen_by_two_and_three,
       3,
-      armored(3, support.viewer_stay(9)),
-      pooled(3, support.viewer_stay(9)),
-      watched(3, support.viewer_stay(9)),
+      armored(map_support.address_for(
+        incarnation: support.incarnation,
+        number: 9,
+        rank: 3,
+      )),
+      pooled(map_support.address_for(
+        incarnation: support.incarnation,
+        number: 9,
+        rank: 3,
+      )),
+      watched(map_support.address_for(
+        incarnation: support.incarnation,
+        number: 9,
+        rank: 3,
+      )),
     ),
     #(
       "a dead player",
       dead,
       3,
-      armored(3, support.viewer_stay(3)),
-      pooled(3, support.viewer_stay(3)),
-      watched(3, support.viewer_stay(3)),
+      armored(support.viewer_address(3)),
+      pooled(support.viewer_address(3)),
+      watched(support.viewer_address(3)),
     ),
   ]
   list.each(rows, fn(row) {
@@ -555,7 +564,7 @@ pub fn a_start_is_refused_with_nothing_written_for_a_caster_that_does_not_see_th
       support.feed(
         state:,
         event: support.sent_by_the_map(map_message.UnseenBy(
-          by: ConnectionId(caster),
+          by: map_support.address(number: caster),
           generation: support.viewer_sight(caster),
         )),
       )
@@ -620,7 +629,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
       [armor_held],
       [
         PlayerChangeEnds(
-          from: ConnectionId(3),
+          from: map_support.address(number: 3),
           source: armor_source(cast_id: 100),
         ),
       ],
@@ -645,7 +654,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
       ],
       [
         PlayerChangeEnds(
-          from: ConnectionId(3),
+          from: map_support.address(number: 3),
           source: interrupt_armor_source(cast_id: 102),
         ),
       ],
@@ -664,7 +673,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
       [pool_held],
       [
         PlayerChangeEnds(
-          from: ConnectionId(3),
+          from: map_support.address(number: 3),
           source: pool_source(cast_id: 101),
         ),
       ],
@@ -676,7 +685,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
       [armor_held],
       [
         PlayerChangeEnds(
-          from: ConnectionId(3),
+          from: map_support.address(number: 3),
           source: armor_source(cast_id: 7),
         ),
       ],
@@ -688,7 +697,7 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
       [armor_held],
       [
         PlayerChangeEnds(
-          from: ConnectionId(2),
+          from: map_support.address(number: 2),
           source: armor_source(cast_id: 100),
         ),
       ],
@@ -700,11 +709,11 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
       [armor_held],
       [
         PlayerChangeEnds(
-          from: ConnectionId(3),
+          from: map_support.address(number: 3),
           source: armor_source(cast_id: 100),
         ),
         PlayerChangeEnds(
-          from: ConnectionId(3),
+          from: map_support.address(number: 3),
           source: armor_source(cast_id: 100),
         ),
       ],
@@ -732,12 +741,12 @@ pub fn a_change_ended_by_its_caster_ends_in_the_players_own_way_and_an_end_that_
     support.feed(
       state: feed_all(state: holding(holds: [armor_held]), events: [
         tell(PlayerChangeEnds(
-          from: ConnectionId(2),
+          from: map_support.address(number: 2),
           source: armor_source(cast_id: 100),
         )),
       ]).0,
       event: support.sent_by_the_map(map_message.UnseenBy(
-        by: ConnectionId(3),
+        by: map_support.address(number: 3),
         generation: support.viewer_sight(3),
       )),
     )
@@ -755,7 +764,7 @@ fn notice_of(notice notice: Notice) -> map_message.Notice {
   case notice {
     Unseen(caster:) ->
       map_message.UnseenBy(
-        by: ConnectionId(caster),
+        by: map_support.address(number: caster),
         generation: support.viewer_sight(caster),
       )
     UnitGone(caster:) ->
@@ -863,7 +872,7 @@ pub fn a_caster_the_map_says_no_longer_sees_the_player_ends_each_change_it_held_
     support.feed(
       state:,
       event: tell(PlayerChangeEnds(
-        from: ConnectionId(3),
+        from: map_support.address(number: 3),
         source: armor_source(cast_id: 100),
       )),
     )
@@ -942,7 +951,7 @@ pub fn a_second_tell_of_the_same_source_replaces_what_the_ally_holds_test() -> N
       support.feed(
         state:,
         event: tell(PlayerChangeEnds(
-          from: ConnectionId(second.caster),
+          from: map_support.address(number: second.caster),
           source: second.source,
         )),
       )
@@ -988,7 +997,7 @@ pub fn the_allys_ledger_clears_every_caster_at_its_death_test() -> Nil {
         held: list.fold(holds, held_changes.new(), fn(ledger, hold) {
           held_changes.started(
             held: ledger,
-            by: ConnectionId(hold.caster),
+            by: map_support.address(number: hold.caster),
             unit_id: support.viewer_unit_id(hold.caster),
             source: hold.source,
             sight: hold.sight,
@@ -1015,7 +1024,7 @@ pub fn the_allys_ledger_clears_every_caster_at_its_death_test() -> Nil {
       as "the player is still in the world"
     assert held_changes.all(held: after.held) == []
       as { reason <> ": the death clears every source" }
-    assert held_changes.connections(held: after.held) == []
+    assert held_changes.casters(held: after.held) == []
       as { reason <> ": and no caster holds a change on the player" }
   })
 }
@@ -1145,7 +1154,10 @@ fn departed(
 }
 
 fn ending(hold hold: Hold) -> Event(ConnectionEvent(Message, Answer)) {
-  tell(PlayerChangeEnds(from: ConnectionId(hold.caster), source: hold.source))
+  tell(PlayerChangeEnds(
+    from: map_support.address(number: hold.caster),
+    source: hold.source,
+  ))
 }
 
 pub fn a_caster_leaving_the_sight_of_a_player_that_holds_its_kept_change_is_not_finished_on_the_players_client_test() -> Nil {
@@ -1415,7 +1427,7 @@ pub fn the_end_of_a_kept_change_whose_caster_left_the_players_sight_writes_the_c
             from_caster(caster: 3, news: CastFinished(cast_id: 100))
           MapUnseen ->
             support.sent_by_the_map(map_message.UnseenBy(
-              by: ConnectionId(3),
+              by: map_support.address(number: 3),
               generation: support.viewer_sight(3),
             ))
           MapGone ->
@@ -1782,7 +1794,7 @@ fn went(
   caster caster: Int,
   cast_id cast_id: Int,
 ) -> Event(ConnectionEvent(Message, Answer)) {
-  tell(PlayerCastWent(from: ConnectionId(caster), cast_id:))
+  tell(PlayerCastWent(from: map_support.address(number: caster), cast_id:))
 }
 
 /// The ally, seen by connections 2, 3 and 4 (the caster's), holding `holds` as the caster's
@@ -1866,8 +1878,7 @@ pub fn a_went_tell_makes_the_ally_tell_the_map_the_casts_start_once_for_its_view
     support.feed(
       state:,
       event: support.sent_by_the_map(map_message.SeenBy(
-        by: ConnectionId(6),
-        stay: support.viewer_stay(6),
+        by: map_support.address(number: 6),
         unit_id: support.viewer_unit_id(6),
         generation: support.viewer_sight(6),
       )),
@@ -1912,7 +1923,7 @@ pub fn a_went_tell_makes_the_ally_tell_the_map_the_casts_start_once_for_its_view
         support.feed(
           state: holding_for_caster_4(holds: [hold]),
           event: support.sent_by_the_map(map_message.UnseenBy(
-            by: ConnectionId(4),
+            by: map_support.address(number: 4),
             generation: support.viewer_sight(4),
           )),
         )
@@ -1932,21 +1943,20 @@ pub fn a_went_tell_makes_the_ally_tell_the_map_the_casts_start_once_for_its_view
 }
 
 /// What the player's connection tells casters of a blow on it: each `PlayerTell.Event` a step
-/// sends, as the caster's connection number, the stay it is told for and the tell.
+/// sends, as the caster's address number and the tell.
 fn events_told(
   taken taken: ConnectionStep(Request),
-) -> List(#(Int, Stay, strike_tell.PlayerEvent)) {
+) -> List(#(Int, strike_tell.PlayerEvent)) {
   list.filter_map(support.tells(taken), fn(told) {
     case told {
       #(
         _,
         client_connection.TellLanding(
-          to: ConnectionId(caster),
-          to_stay: stay,
+          to:,
           landing: map_message.AllyEvent(event:),
           ..,
         ),
-      ) -> Ok(#(caster, stay, event))
+      ) -> Ok(#(unit_address.number(address: to), event))
       _ -> Error(Nil)
     }
   })
@@ -2029,16 +2039,12 @@ fn beast_critical_blow(
   }
 }
 
-/// The tell of `events` caster `caster` is sent for the player, as the caster's stay names it.
+/// The tell of `events` caster `caster` is sent for the player, as the caster's address names it.
 fn told_to(
   caster caster: Int,
   events events: List(proc_event.Event),
-) -> #(Int, Stay, strike_tell.PlayerEvent) {
-  #(
-    caster,
-    support.viewer_stay(caster),
-    strike_tell.PlayerEvent(unit_id: support.own_unit_id, events:),
-  )
+) -> #(Int, strike_tell.PlayerEvent) {
+  #(caster, strike_tell.PlayerEvent(unit_id: support.own_unit_id, events:))
 }
 
 pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_events_it_waits_for_and_a_lethal_blow_tells_none_test() -> Nil {
@@ -2230,7 +2236,7 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
         waits(caster: 3, cast_id: 103, trigger: spell_plan.TakesDamage),
       ]),
       event: support.sent_by_the_map(map_message.UnseenBy(
-        by: ConnectionId(3),
+        by: map_support.address(number: 3),
         generation: support.viewer_sight(3),
       )),
     ).0
@@ -2380,14 +2386,12 @@ pub fn a_caster_that_joins_again_ends_the_sources_of_its_earlier_stay_that_end_w
     as "caster 3's pool, which ends with its sight, is taken off: the player's absorption falls to caster 4's 200"
   assert seen(steps: [unseen]).properties == []
     as "the armor of the spell that keeps its buff is not taken off"
-  let new_stay = stay.next(support.viewer_stay(3))
   let new_sight = generation.after(support.viewer_sight(5))
   let #(state, _) =
     support.feed(
       state:,
       event: support.sent_by_the_map(map_message.SeenBy(
-        by: ConnectionId(3),
-        stay: new_stay,
+        by: map_support.address(number: 3),
         unit_id: support.viewer_unit_id(3),
         generation: new_sight,
       )),
@@ -2396,8 +2400,7 @@ pub fn a_caster_that_joins_again_ends_the_sources_of_its_earlier_stay_that_end_w
     support.feed(
       state:,
       event: tell(PlayerChangeStarts(
-        from: ConnectionId(3),
-        from_stay: new_stay,
+        from: map_support.address(number: 3),
         source: pool_source(cast_id: 103),
         change: pool(amount: 300),
         sight: EndsWhenUnseen,

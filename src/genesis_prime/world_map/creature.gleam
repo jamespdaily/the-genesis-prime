@@ -578,7 +578,7 @@ pub opaque type State {
     retiring: Bool,
     viewers: Dict(UnitAddress, Generation),
     properties: Properties,
-    held: held_changes.Held(UnitAddress),
+    held: held_changes.Held,
     views: Dict(Int, #(UnitAddress, unit_casts.CastView)),
     despawn_due_ms: Option(Int),
     unit_state: creature_unit_state.State,

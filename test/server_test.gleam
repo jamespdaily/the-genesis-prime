@@ -25,7 +25,6 @@ import genesis_prime/map/message as map_message
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/shared/chat_tell
-import genesis_prime/step.{ConnectionId}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import gleam/erlang/process
@@ -35,6 +34,7 @@ import gleam/otp/static_supervisor
 import gleam/otp/supervision.{Permanent}
 import log_capture
 import login_support
+import map_support
 import open_wait
 import owned_test
 import place_support
@@ -182,11 +182,11 @@ pub fn the_hand_off_sessions_and_the_world_take_each_inputs_time_from_the_trees_
 pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent_to_no_one_test() -> Nil {
   use <- owned_test.run(10_000)
   let run = process.new_subject()
-  let connection = ConnectionId(7)
+  let unit = map_support.address(number: 7)
   let place = place_support.live_character_place()
-  server.tell_the_run(run, TellMoved(connection:, place:, seq: 4))
+  server.tell_the_run(run, TellMoved(unit:, place:, seq: 4))
   assert process.receive(run, 0)
-    == Ok(service.TellCall(map_message.Moved(connection:, place:, seq: 4)))
+    == Ok(service.TellCall(map_message.Moved(unit:, place:, seq: 4)))
     as "a move reaches the run as the map's own Moved, told with no reply"
   let logged = process.new_subject()
   let capture = log_capture.start(from: process.self(), into: logged)
@@ -194,7 +194,7 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
     run,
     AskMap(
       map: MapId(world_id: 3460, instance: 0),
-      message: map_message.Leave(connection:),
+      message: map_message.Leave(unit:),
     ),
   )
   let assert #("error", _text) =

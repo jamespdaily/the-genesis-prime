@@ -49,7 +49,7 @@ import genesis_prime/shared/strike_tell.{
 import genesis_prime/shared/target_mechanic
 import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
-import genesis_prime/step.{ConnectionId, Now}
+import genesis_prime/step.{Now}
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
@@ -2545,9 +2545,8 @@ pub fn a_tick_while_the_last_is_open_closes_in_order_test() -> Nil {
   // a creature has not answered, and closes after it.
   let ally =
     player_address.PlayerAddress(
-      connection: ConnectionId(3),
+      address: map_support.address(number: 3),
       unit_id: 9,
-      stay: map_support.stay(count: 2),
     )
   let #(state, _) =
     begun(

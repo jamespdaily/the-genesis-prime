@@ -140,7 +140,7 @@ pub fn at_the_vendor(
   )
 }
 
-/// The same for a player standing at `player` in its `stay_count`th stay: Dorian Walker is
+/// The same for a player standing at `player` as its `stay_count`th unit: Dorian Walker is
 /// straight ahead of it.
 pub fn at_the_vendor_for_a_player_at(
   state state: game_connection.State,
@@ -152,7 +152,7 @@ pub fn at_the_vendor_for_a_player_at(
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: connection_support.in_stay(
+      event: connection_support.in_unit(
         count: stay_count,
         event: connection_support.creature_appears(
           unit_id: walker_unit,

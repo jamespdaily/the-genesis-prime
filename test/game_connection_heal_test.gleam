@@ -51,9 +51,7 @@ import genesis_prime/shared/heal_parts
 import genesis_prime/shared/player_change
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news
-import genesis_prime/step.{
-  type ConnectionStep, ConnectionId, OwnEvent, TimerFired,
-}
+import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/generation
@@ -588,8 +586,7 @@ fn esper_with_the_notice_of_the_ally() -> #(game_connection.State, Int) {
     connection_support.feed(
       state:,
       event: connection_support.sent_by_the_map(map_message.SeenBy(
-        by: ConnectionId(3),
-        stay: connection_support.viewer_stay(3),
+        by: map_support.address(number: 3),
         unit_id: 9,
         generation: connection_support.viewer_sight(3),
       )),
@@ -659,7 +656,7 @@ pub fn a_press_at_a_player_the_map_showed_starts_the_cast_on_that_player_test() 
     connection_support.feed(
       state:,
       event: connection_support.sent_by_the_map(map_message.UnseenBy(
-        by: ConnectionId(3),
+        by: map_support.address(number: 3),
         generation: connection_support.viewer_sight(3),
       )),
     )
@@ -734,16 +731,13 @@ pub fn a_go_at_a_player_in_sight_tells_that_players_connection_once_and_its_answ
   use <- unitest.guard(client_tables.present())
   let #(state, pressed) = esper_that_pressed_at_the_ally()
   let #(waiting, gone) = fired_when_due(state:, pressed:, pressed_at_ms: 2000)
-  let assert [#(address, stay, tell)] =
+  let assert [#(address, tell)] =
     list.flat_map(gone, connection_support.player_strikes)
-    as "the go tells one heal strike in all, to one connection"
-  assert address == step.Connection(ConnectionId(3))
-    && stay == connection_support.viewer_stay(3)
-    as "the strike is told to connection 3 for the stay its notice named"
-  assert tell.key.unit_id == 9
-    && tell.from == ConnectionId(1)
-    && tell.stay == connection_support.own_stay()
-    as "from the caster's connection and stay, which the answer comes back for, naming the unit 9"
+    as "the go tells one heal strike in all, to one unit"
+  assert address == step.Unit(connection_support.viewer_address(3))
+    as "the strike is told to the unit 3's notice named"
+  assert tell.key.unit_id == 9 && tell.from == connection_support.own_address()
+    as "from the caster's unit, which the answer comes back to, naming the unit 9"
   assert list.map(tell.heals, fn(heal) { heal.effect_id })
     == [Spell4EffectsId(62_019)]
     as "Mind Over Body's one heal row, Spell4Effects 62019"
@@ -763,8 +757,8 @@ pub fn a_go_at_a_player_in_sight_tells_that_players_connection_once_and_its_answ
   let #(_, answered) =
     connection_support.feed(
       state: waiting,
-      event: connection_support.for_stay(
-        stay: connection_support.own_stay(),
+      event: connection_support.for_unit(
+        address: connection_support.own_address(),
         sent: answer,
       ),
     )
@@ -777,8 +771,8 @@ pub fn a_go_at_a_player_in_sight_tells_that_players_connection_once_and_its_answ
   let #(still_waiting, fenced) =
     connection_support.feed(
       state: waiting,
-      event: connection_support.for_stay(
-        stay: map_support.stay(count: 2),
+      event: connection_support.for_unit(
+        address: connection_support.own_address_again(),
         sent: answer,
       ),
     )
@@ -800,7 +794,7 @@ pub fn a_go_at_a_player_in_sight_tells_that_players_connection_once_and_its_answ
     connection_support.feed(
       state: unseen,
       event: connection_support.sent_by_the_map(map_message.UnseenBy(
-        by: ConnectionId(3),
+        by: map_support.address(number: 3),
         generation: connection_support.viewer_sight(3),
       )),
     )
@@ -928,8 +922,7 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
     connection_support.feed(
       state:,
       event: connection_support.sent_by_the_map(map_message.SeenBy(
-        by: ConnectionId(4),
-        stay: connection_support.viewer_stay(4),
+        by: map_support.address(number: 4),
         unit_id: 10,
         generation: connection_support.viewer_sight(4),
       )),

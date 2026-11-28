@@ -45,7 +45,7 @@ genesis_prime/game/connection/look module The player's look on the game connecti
 genesis_prime/game/connection/properties module The player's properties on the game connection (genesis_prime/game/connection): 52
 genesis_prime/game/connection/quest_turn_in module The player's turn-in of a quest on the game connection (genesis_prime/game/connection): the 43
 genesis_prime/game/connection/viewers item The unit of the player's own record as another player is created with it: at 14
-genesis_prime/game/connection/viewers item What the map sent for the player's stay (`stay_sent`): who sees its player 15
+genesis_prime/game/connection/viewers item What the map sent to the player's unit (`unit_sent`): who sees its player 15
 genesis_prime/game/connection/viewers module Other players and creatures on the game connection 206
 genesis_prime/game/connection/world module The player's stay in the world on the game connection 57
 genesis_prime/game/dev_command module The development chat commands: a Say line that starts with `!`, read as a 47
@@ -121,7 +121,7 @@ genesis_prime/shared/spell_plan item One CCStateSet row (`Spell4Effects.effectTy
 genesis_prime/shared/spell_plan item What a Proc row says without a table: its reading, or why the row is left out. A row 13
 genesis_prime/shared/spell_plan item What the plan makes of one Spell4Effects row, in the place its spell is planned: the 17
 genesis_prime/shared/spell_tier module The tiers of an ability: the nine Spell4 rows of one Spell4Base that the ability builder's 44
-genesis_prime/shared/strike_tell module What a striker and the unit it strikes tell each other, both ways: a player's 90
+genesis_prime/shared/strike_tell module What a striker and the unit it strikes tell each other, both ways: a player's 89
 genesis_prime/shared/unit_casts module The casts a unit create (0x262) lists, so a player that comes into sight 70
 genesis_prime/shared/unit_properties module A unit's properties: each UnitProperty2 id's base and value, and the property 89
 genesis_prime/store item A character as the character list needs it: what the client's list shows 11
@@ -152,12 +152,12 @@ genesis_prime/world_map/map item A map's players, its spawns that have a creatur
 genesis_prime/world_map/map item A player's use released the unit `unit_id` (`Released`). The release goes 15
 genesis_prime/world_map/map item One player in the map: the stay its connection's Join named, its unit, the 16
 genesis_prime/world_map/map item The map's server time at monotonic time `monotonic_ms`, for a map started at 12
-genesis_prime/world_map/map item The state and effects of the player of `connection` coming to see the spawns 12
+genesis_prime/world_map/map item The state and effects of the player of the unit `address` coming to see the spawns 12
 genesis_prime/world_map/map module One map: a world of the client's World table and one instance of it, with 706
 genesis_prime/world_map/objective_spawn item The ranks of the client's tables alone, so that no stored row, added or deleted, moves 12
 genesis_prime/world_map/objective_spawn item The rows to stand for the kill objectives, given the rows the stored spawn 16
 genesis_prime/world_map/registry module Maps: the registry that finds a map by its id and starts it on the first 74
-genesis_prime/world_map/relay module What a creature tells a player and what a player tells a creature, both through the 73
+genesis_prime/world_map/relay module What a creature tells a player and what a player tells a creature, both through the 72
 genesis_prime/world_map/spawn item The attack of the spell `spell4_id` (genesis_prime/world_map/creature_life `Attack`), 23
 genesis_prime/world_map/spawn item The run-only spawn of a summon, checked as a spawn is: a row of the creature's 12
 genesis_prime/world_map/spawn module The spawns a map stands creatures at: one spawn is one place a creature of the 82

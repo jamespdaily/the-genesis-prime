@@ -50,7 +50,7 @@ import genesis_prime/shared/strike_tell
 import genesis_prime/shared/target_mechanic.{Targeted, Targeting}
 import genesis_prime/shared/ticking.{Schedule, Ticks}
 import genesis_prime/shared/unit_news.{CastTicked}
-import genesis_prime/step.{ConnectionId, LogWarning}
+import genesis_prime/step.{LogWarning}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict.{type Dict}
 import gleam/int
@@ -105,11 +105,7 @@ fn ability(base base: Int) -> Spell {
 
 /// What the map's `SeenBy` of the player of that unit would give.
 fn address(unit_id unit_id: Int) -> PlayerAddress {
-  PlayerAddress(
-    connection: ConnectionId(unit_id),
-    unit_id:,
-    stay: map_support.stay(count: unit_id),
-  )
+  PlayerAddress(address: map_support.address(number: unit_id), unit_id:)
 }
 
 fn sight(players players: List(Int)) -> Dict(Int, PlayerAddress) {

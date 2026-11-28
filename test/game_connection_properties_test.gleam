@@ -36,14 +36,13 @@ import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
 import genesis_prime/shared/unit_news.{
   type News, Appeared, PeerNews, PropertiesChanged,
 }
-import genesis_prime/step.{
-  type ConnectionStep, ConnectionId, OwnEvent, TimerFired, TimerId,
-}
+import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired, TimerId}
 import genesis_prime/table/loader/store as store_tables
 import gleam/float
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
+import map_support
 import owned_test
 import planted_table
 
@@ -132,7 +131,7 @@ fn written_properties(
 fn news_broadcast(steps steps: List(ConnectionStep(Request))) -> List(News) {
   list.flat_map(steps, fn(taken) {
     list.map(support.broadcasts(taken), fn(broadcast) {
-      let PeerNews(unit_id:, news:) = broadcast.2
+      let PeerNews(unit_id:, news:) = broadcast.1
       assert unit_id == support.own_unit_id
         as "the news names the player's own unit"
       news
@@ -216,8 +215,7 @@ fn arriving(
   support.feed(
     state,
     support.sent_by_the_map(SeenBy(
-      by: ConnectionId(viewer),
-      stay: support.viewer_stay(viewer),
+      by: map_support.address(number: viewer),
       unit_id: support.viewer_unit_id(viewer),
       generation: support.viewer_sight(viewer),
     )),
@@ -258,8 +256,7 @@ pub fn a_viewer_arriving_while_the_buff_lasts_is_created_with_the_value_in_its_0
       state:,
       ms: 1400,
       event: support.sent_by_the_map(SeenBy(
-        by: ConnectionId(6),
-        stay: support.viewer_stay(6),
+        by: map_support.address(number: 6),
         unit_id: support.viewer_unit_id(6),
         generation: support.viewer_sight(6),
       )),
