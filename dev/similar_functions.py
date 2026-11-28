@@ -15,7 +15,7 @@ least 8 six-token runs. Score is the share of tokens inside matching runs of 4 o
 (2 * matched / (length a + length b)), rounded to two places as the measure printed it; run is
 the longest matching run.
 
-Thresholds, from the measure on issue #1499: score >= 0.50 and run >= 17 flagged all five known
+Thresholds, from a measure on the five copies that result reviews found by hand: score >= 0.50 and run >= 17 flagged all five known
 copies of the last review rounds, and flagged 29% of 1,091 new functions in the last 60 merges, at
 about 10 to 30 percent precision. The measure counted cross-file matches only, because
 families of sibling functions among existing functions are its largest noise; for a function the
