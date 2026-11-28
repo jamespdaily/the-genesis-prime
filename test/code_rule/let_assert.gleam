@@ -56,11 +56,9 @@ pub const most_rows = 116
 
 /// The list as its file writes it: `module ceiling` on each line.
 pub fn parse_list(text text: String) -> List(Listed) {
-  list_file.rows(text)
+  list_file.pairs(text:, what: "is not two words")
   |> list.map(fn(entry) {
-    let #(row, line) = entry
-    let assert [module, ceiling] = string.split(row, " ")
-      as list_file.bad_row(line:, what: "is not two words")
+    let #(module, ceiling, line) = entry
     let assert Ok(ceiling) = int.parse(ceiling)
       as list_file.bad_row(line:, what: "has no ceiling")
     Listed(module:, ceiling:, line:)
@@ -167,9 +165,11 @@ fn over_ceiling(
 }
 
 fn no_ceiling(entry: Listed) -> Breach {
-  list_breach(
-    entry,
-    "has a ceiling of "
+  list_file.breach(
+    path: list_path,
+    line: entry.line,
+    name: entry.module,
+    what: "has a ceiling of "
       <> int.to_string(entry.ceiling)
       <> ": write the module's count of `let assert`, or delete the row when it holds none",
   )
@@ -180,9 +180,11 @@ fn below_row(entry: Listed, count: Int) -> Breach {
     0 -> "delete the row"
     _ -> "write " <> int.to_string(count)
   }
-  list_breach(
-    entry,
-    "holds "
+  list_file.breach(
+    path: list_path,
+    line: entry.line,
+    name: entry.module,
+    what: "holds "
       <> int.to_string(count)
       <> " `let assert`, below its row of "
       <> int.to_string(entry.ceiling)
@@ -201,9 +203,11 @@ fn list_breaches(
   let rows = list.length(listed)
   let wrong_count = case int.compare(rows, most_rows), list.last(listed) {
     order.Gt, Ok(last) -> [
-      list_breach(
-        last,
-        "is past the "
+      list_file.breach(
+        path: list_path,
+        line: last.line,
+        name: last.module,
+        what: "is past the "
           <> int.to_string(most_rows)
           <> " rows the list may hold: a new module cannot add a `let assert`;"
           <> " a module split off one that holds some raises `most_rows` by one"
@@ -211,9 +215,11 @@ fn list_breaches(
       ),
     ]
     order.Lt, Ok(last) -> [
-      list_breach(
-        last,
-        "is the last of "
+      list_file.breach(
+        path: list_path,
+        line: last.line,
+        name: last.module,
+        what: "is the last of "
           <> int.to_string(rows)
           <> " rows, under the "
           <> int.to_string(most_rows)
@@ -234,8 +240,4 @@ fn list_breaches(
       what: "is out of order or repeated: keep one row per module, sorted",
     )
   list.append(wrong_count, disordered)
-}
-
-fn list_breach(entry: Listed, what: String) -> Breach {
-  Breach(path: list_path, line: entry.line, rule: entry.module <> " " <> what)
 }

@@ -156,11 +156,9 @@ fn from_name(word: String) -> Option(Level) {
 /// The rows of the table as its file writes them: `module level` on each
 /// line.
 pub fn parse_rows(text text: String) -> List(Row) {
-  list_file.rows(text)
+  list_file.pairs(text:, what: "is not a module and a level")
   |> list.map(fn(entry) {
-    let #(row, line) = entry
-    let assert [module, word] = string.split(row, " ")
-      as list_file.bad_row(line:, what: "is not a module and a level")
+    let #(module, word, line) = entry
     let assert Some(level) = from_name(word)
       as list_file.bad_row(line:, what: "names no level")
     Row(module:, level:, line:)
@@ -191,11 +189,9 @@ pub const allowed_path = "test/code_rule/level_imports.txt"
 /// The rows of the list of allowed imports as its file writes them:
 /// `importer imported` on each line.
 pub fn parse_allowed(text text: String) -> List(Allowed) {
-  list_file.rows(text)
+  list_file.pairs(text:, what: "is not an importer and an import")
   |> list.map(fn(entry) {
-    let #(row, line) = entry
-    let assert [importer, imported] = string.split(row, " ")
-      as list_file.bad_row(line:, what: "is not an importer and an import")
+    let #(importer, imported, line) = entry
     Allowed(importer:, imported:, line:)
   })
 }

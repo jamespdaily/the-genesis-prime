@@ -100,6 +100,13 @@ class CheckWorkflowTest(unittest.TestCase):
             self.assertNotIn(reserved, leg_names, "a leg named like a required check would stand in for it")
         self.assertEqual(field(job("part"), "name"), "${{ matrix.name }}")
 
+    def test_the_tools_job_compares_a_pull_request_with_its_base_for_changed_migrations(self):
+        tools = job("tools")
+        self.assertEqual(field(tools, "fetch-depth"), "2", "the first parent of the merge commit must be fetched")
+        guard = step_named(steps(tools), "No migration of the base is changed")
+        self.assertEqual(field(guard, "if"), "${{ github.event_name == 'pull_request' }}")
+        self.assertEqual(field(guard, "run"), "python3.13 -I dev/migration_base.py HEAD^1")
+
     def test_only_the_gleam_build_leg_saves_the_build_cache(self):
         saves = [step for step in steps(job("part")) if "actions/cache/save" in step]
         self.assertEqual(len(saves), 1, saves)
