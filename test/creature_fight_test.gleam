@@ -1269,6 +1269,25 @@ pub fn a_creature_that_ranks_players_ties_by_their_connection_and_not_by_the_ord
     )
   assert names_target(taken:, unit_id: 30, to: 3)
     as "with the target gone, the threat entries tie again: the lowest connection, 3, is the new target, not the earliest join"
+  // A second row: the order of the addresses is the reverse of the order of the connections
+  // (numbers 1, 2, 3 for connections 6, 4, 1), and the key the address keeps (its rank) is
+  // the connection's number, so the last to join is still the first target.
+  let six = map_support.address_for(incarnation: 1, number: 1, rank: 6)
+  let four = map_support.address_for(incarnation: 1, number: 2, rank: 4)
+  let one = map_support.address_for(incarnation: 1, number: 3, rank: 1)
+  let #(state, taken) =
+    started_among(
+      source: spawn_source.Stored(id: SpawnId(1)),
+      spawn:,
+      kind: beast_kind(),
+      viewers: [six, four, one],
+      ring: [member(six, 60), member(four, 40), member(one, 10)],
+      armor: creature_combat.NoArmor,
+    )
+  let taken = creature_news_support.at_each_player(state:, taken:)
+  assert names_target(taken:, unit_id: 10, to: 1)
+    as "the lowest connection, 1, is the first target though its address is the last issued"
+  assert !names_target(taken:, unit_id: 60, to: 6)
 }
 
 pub fn a_creature_started_with_a_ring_answers_each_viewer_then_aggroes_the_ring_players_it_has_as_viewers_in_one_step_test() -> Nil {
