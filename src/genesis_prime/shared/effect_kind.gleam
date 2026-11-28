@@ -1,118 +1,22 @@
 //// The kind of a Spell4Effects row, decoded once from its `effectType`: the one
-//// place the server names the effect types it reads. Every rule that sorts
-//// effects by type calls `kind_of`, and the coverage measure counts a type as
-//// handled when `kind_of` does not give `Unread` for it, so a rule and the
-//// measure cannot disagree.
+//// place the server names the effect types it reads. Every rule that sorts effects
+//// by type calls `kind_of`, and the coverage measure counts a type as handled when
+//// `kind_of` does not give `Unread` for it.
 ////
-//// - **Proxy** (26) starts another spell (`Spell4Effects.effectType.26`).
-//// - **Damage** (8) hits the units it aims at (`Spell.CodeEnumSpellEffectType.damage`).
-//// - **VitalModifier** (1) changes a vital of its unit, which gives the caster a
-////   resource (`Spell4Effects.effectType.1`).
-//// - **Fluff** (17) gives its spell a life on a unit, shown as a buff
-////   (`Spell4Effects.effectType.17`).
-//// - **ForceRemove** (80) takes spells already on a unit off it
-////   (`Spell4Effects.effectType.80`).
-//// - **CrowdControl** (4) holds a crowd-control state on the unit it aims at for its
-////   time (`Spell4Effects.effectType.4`).
-//// - **PropertyModifier** (11) changes a property of the unit it aims at for its time;
-////   the server reads the rows whose aim includes the caster, and the rows aimed at
-////   the primary target, the area or both for the creatures a strike hits
-////   (`Spell4Effects.effectType.11.change`).
-//// - **ForcedMove** (3) moves the unit it aims at; the server lists the rows aimed at
-////   the caster in the go, and the client moves its own unit and reports the move
-////   (`Spell4Effects.effectType.3.player`), and throws the creatures a row aimed at the
-////   primary target, the area or both strikes (`Spell4Effects.effectType.3.other_unit`).
-//// - **CooldownModifier** (73) changes the spell cooldowns of the unit it aims at; the
-////   server reads the rows whose aim includes the caster
-////   (`Spell4Effects.effectType.73`).
-//// - **Stealth** (83) holds the caster stealthed while the effect lasts, and
-////   **RemoveStealth** (84) ends the stealth its unit holds; the client has no case
-////   for either, so the server tells it with 0x8f5; the server reads the rows aimed at
-////   the caster (`Spell4Effects.effectType.83`, `Spell4Effects.effectType.84`).
-//// - **Heal** restores a vital of the unit it aims at: health for a Heal (10), shield
-////   for a HealShields (118); the server reads the rows whose aim reaches the caster
-////   (`Spell4Effects.effectType.10`, `Spell4Effects.effectType.118`).
-//// - **ShieldOverload** (64) overloads the shield of the units it aims at for its time;
-////   the client marks and clears the overload itself, so the server lists the rows aimed
-////   at the area on each struck unit (`Spell4Effects.effectType.64`).
-//// - **Proc** (14) casts a spell when the holder's trigger happens; the client has no
-////   case for it, so the server decides every fire; the server reads the rows aimed at
-////   the caster whose trigger is one of the holder's own events
-////   (`Spell4Effects.effectType.14`).
-//// - **InterruptArmor** (52) adds Interrupt Armor to the unit it lands on for its time; the
-////   client has no case for it, so the server raises the player's maximum (property 44)
-////   and armor (stat 21) itself and reads the rows aimed at the caster
-////   (`Spell4Effects.effectType.52`).
-//// - **Scale** (18) resizes the unit it lands on; the client does all of it, so the
-////   server lists the row in the go with its life, as a Fluff row is
-////   (`Spell4Effects.effectType.18`).
-//// - **ItemVisualSwap** (76) swaps the visual of the unit it lands on for its time and
-////   restores it when its node ends; the client does all of it, so the server lists the
-////   row in the go with its delay and no lifetime, sends no 0x933 and keeps no look
-////   (`Spell4Effects.effectType.76`).
-//// - **RavelSignal** (81) signals a script the client does not hold; the client gives
-////   it no class, so the server lists the row with its life and does no more
-////   (`Spell4Effects.effectType.81`).
-//// - **FullScreenEffect** (95) draws a full-screen visual over the player's view for its
-////   life, for the player's own unit only; the client does all of it, so the server lists
-////   the row aimed at the caster in the go with its life
-////   (`Spell4Effects.effectType.95`).
-//// - **PropertyConversion** (145) adds a share of one property of its holder to
-////   another while it lasts; the client works out no property, so the server computes
-////   the amount and sends the value; the server reads the rows aimed at the caster
-////   (`Spell4Effects.effectType.145`).
-//// - **DisguiseOutfit** (112) changes the look of the unit it aims at for its time; the
-////   client has no class for it, so a look changes only by the server's 0x933 or 0x905
-////   (`Spell4Effects.effectType.112`); the server reads the rows aimed at the caster.
-//// - **Absorption** (29) gives the unit it lands on a pool that takes damage before its
-////   shield and health; the client has no class for it, so the server keeps the pool and
-////   sends its sum as stat 22; the server reads the rows whose aim reaches the caster
-////   (`Spell4Effects.effectType.29`).
-//// - **Activate** (7) is the effect a creature's activate spell has: the client's apply is
-////   empty, so the server only names the activated unit in the go with the row's effect
-////   id and raises `Activated` (`Spell4Effects.effectType.7`, genesis_prime/game/activate).
-//// - **Immunity** (79) makes its unit immune to one effect type, named by `dataBits00`
-////   (8 is Damage); the client has no class for it and reads nothing, so no rule of the
-////   server reads it and the coverage measure counts it unhandled; only a creature's guard
-////   spell is checked for it (`immune_to`, genesis_prime/world_map/creature_guard_spells;
-////   `Spell4Effects.effectType.79`, enum `0x140c34140`).
-//// - **SummonPet** (98) creates the creature `dataBits00` names (a Creature2 row) for the
-////   caster; no rule of the server builds a summoned unit, so it is not read, and
-////   `genesis_prime/shared/spell_plan` refuses a spell that holds one beside a Proc the caster
-////   holds (`Spell4Effects.effectType.98`).
-//// - **Despawn** (97) removes the creatures it aims at past the caster after its delay; the
-////   client reads no row of this type and sees the removal only as 0x355
-////   (`Spell4Effects.effectType.97`). A row is read when its targetFlags name a unit past the
-////   caster (`is_row_read`); the plan leaves out a row aimed at the caster alone, and one
-////   whose dataBits00 or dataBits01 is not 0, by name (genesis_prime/shared/spell_plan
-////   `despawn_reading`).
-//// - **UnitState** (15) holds a unit state on the unit it aims at for its time; the client
-////   reads no row of this type (its effect switch has no case 15) and shows a held state
-////   only through the cast results it gives (`Spell4Effects.effectType.15`). A row is read
-////   when its targetFlags name a unit past the caster (`is_row_read`); the plan leaves out a
-////   row aimed at the caster alone, one that lasts until removed, one behind a persistence
-////   prerequisite and one whose dataBits01 to dataBits09 is not 0, by name
-////   (genesis_prime/shared/spell_plan `unit_state_reading`). The coverage measure counts a
-////   row read only when a creature's held state of it refuses something: a row of a state
-////   with no reading, with no duration or of a spell with no Spell4 row is held where it can
-////   be and counted not read (dev/genesis_prime/coverage/effect_row).
-//// - **NpcExecutionDelay** (35) holds the creature that casts it still for its duration after
-////   the go its phases name; the client has no case for it (its effect switch skips 35), so
-////   the meaning is the server's reading and the hold's start a guess. A row is read when its
-////   targetFlags are the caster alone (1); the plan leaves out a row aimed at another unit,
-////   and one with no duration, by name (genesis_prime/shared/spell_plan `delay_reading`). A
-////   player's cast reads none (`Spell4Effects.effectType.35`).
-//// - **QuestAdvance** (42) advances the quest objective `dataBits00` (a Quest2 id) names at the index
-////   `dataBits01` by `dataBits02` for the player the cast reaches; the client has no case for it
-////   (its effect switch skips 42), so the server counts the progress and tells the client with
-////   0x361 alone. A row is read when its targetFlags include the caster or are the primary target
-////   alone (`is_row_read`; the aim is a guess, `Spell4Effects.targetFlags` has no reader)
-////   (`Spell4Effects.effectType.42`, genesis_prime/shared/spell_plan `quest_advance_reading`).
-//// - **Unread** is any other type: the client's data holds it and no rule of the
-////   server reads it.
+////   `effectType` --`kind_of`--> `Kind`
+////   `Kind` --`is_read`--> whether any rule reads the type
+////   `Kind` + `targetFlags` --`is_row_read`--> whether a rule reads the row
+////   Immunity `dataBits00` --`immune_to`--> the kind the unit is immune to
 ////
-//// Reading a row's columns stays with each rule; this decode looks at the type
-//// only, and `is_row_read` adds the aim for the types a rule reads for some aims.
+//// - `kind_of` decodes the effect type (`Spell4Effects.effectType`).
+//// - `is_read` is the coverage measure's "handled": some rule reads the type.
+//// - `is_row_read` adds the row's aim for the types a rule reads for some aims only
+////   (`Spell4Effects.targetFlags`).
+//// - `immune_to` reads an Immunity row's `dataBits00` as the effect type the unit is
+////   immune to (`Spell4Effects.effectType.79`, enum `0x140c34140`).
+////
+//// Reading a row's columns stays with each rule. What each kind does, and its
+//// evidence, sits on its `Kind` variant below.
 
 import gleam/bool
 import gleam/int

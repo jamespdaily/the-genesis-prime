@@ -1,126 +1,43 @@
-//// The player's changes of held items: the client's 0x182, which a drag in the
-//// bags or the character window sends, 0x17D, which splits a stack, and 0x149,
-//// which destroys one, a feature of the game connection's rule
-//// (genesis_prime/game/connection) taken from inside 0x038C with the player in
-//// the world.
+//// The player's changes of held items: 0x182, which a drag in the bags or the character
+//// window sends, 0x17D, which splits a stack, and 0x149, which destroys one; a feature of
+//// the game connection's rule (genesis_prime/game/connection) taken from inside 0x038C.
 ////
 //// ```
-//// 0x182 {from, to}    ─▶ take(items, life, tables, wearer, message, body)
-//// 0x17D {guid, place, count}
-//// 0x149 {place}
-////                      ├─ refused ─▶ Refused([Send(0x56A guid, code)])       no ask, items unchanged
-////                      └─ accepted ─▶ Asks(moving) ─▶ the connection asks the store (request(moving, ..))
-////                                                     and waits in MovingItem, frames held
-//// the store's answer ─▶ answered(items, moving, answer) ─▶ ItemsSaved:    the change's replies, items updated
-////                                                         ItemMade(guid): a split's replies, the new stack held
-////                                                         ItemsNotSaved:  Warning, 0x56A code 5, items unchanged
-////                                                         SaveRefused(c): Fault naming c, 0x56A code 5
+//// 0x182 {from, to}  ─▶ take(items, life, tables, wearer, message, body)
+//// 0x17D {guid, place, count}  ├─ refused ─▶ Refused([Send(0x56A guid, code)])   no ask
+//// 0x149 {place}               └─ accepted ─▶ Asks(moving) ─▶ request(moving, ..) to the store;
+////                                                            waits in MovingItem, frames held
+//// the store's answer ─▶ answered(items, moving, answer)
+////   ├─ ItemsSaved:     the change's replies, items updated
+////   ├─ ItemMade(guid): a split's replies, the new stack held
+////   ├─ ItemsNotSaved:  Warning, 0x56A code 5, items unchanged
+////   └─ SaveRefused(c): Fault naming c, 0x56A code 5
 //// ```
 ////
-//// - **A move is one message.** A move, a swap, an equip and an unequip are all
-////   0x182: from {location 9 bits, bag index 32} to {location 9, bag index 32};
-////   a swap is a move onto an occupied slot (`opcode.0x182`). The client sends
-////   one at a time and refuses the others with PlayerBusy until 0x569, 0x568,
-////   0x56A or 0x17F clears its wait (`opcode.0x182`).
-//// - **The replies.** An empty destination is answered 0x569, the item's guid and
-////   its new place as one 64-bit value, bag index in bits 0 to 7 and location in
-////   bits 8 to 15 (`opcode.0x569`). An occupied destination is answered 0x568,
-////   two {guid, place} pairs: the moved item at the destination and the other
-////   item at the source (`opcode.0x568`). A refusal is 0x56A, a guid the client
-////   does not read and a GenericError code (`opcode.0x56a`).
-//// - **The guid is the item's identity** and stays with it when it moves
-////   (`opcode.0x111.guid`).
-//// - **The check order** is the client's (`opcode.0x182`, `0x1403ad100`,
-////   `0x1403aecd0`, `0x1403b11b0`), so a refusal's code is the one the client
-////   would show:
-////   1. the player is dead: 57 Player_CantDoWhileDead
-////   2. the destination location is 100 to 299: 32 Item_Locked
-////   3. no held item at the source: 1 Params
-////   4. the same slot, a destination location of 300 or more or an equipped
-////      index above 30: 1 Params
-////   5. in combat with either side equipped: 63 Player_CannotWhileInCombat
-////   6. either side the bank, a bank bag slot (equipped 21 to 30) or location 10,
-////      which the server never opens: 2 PlayerBusy
-////   7. an inventory destination index of 96 or more, past the slot array: 1
-////      Params (0x1403ad100 tests it after 5 and 6)
-////   8. a bag worn at equipped 17 to 20 that leaves them, when it opens more
-////      slots than the item taking its place and the empty slots among the usable
-////      ones, counted before the move, are no more than the slots it closes:
-////      35 Item_BagMustBeEmpty (`0x1403aecd0`)
-////   8b. an inventory destination index at or past the usable size, 16 plus the
-////      size of each bag worn at 17 to 20 (`item_property.bag_size`): 37
-////      Item_BagToSmall, a server choice
-////   9. an item entering an equipping location (0, 8 or 9) from another one, whose
-////      Item2.bindFlags holds bit 1, while an item of its Item2 is worn, unless
-////      the item at the destination is of that Item2: 30 Item_Unique
-////   10. an item entering location 0 whose type, category and family flags lack
-////      0x400, at a slot whose bit is not in its equipped slot flags
-////      (`item_property.equipped_slot_flags`), or at a bag slot (17 to 20) whose
-////      number from 17 is not below the BagSlots sent in 0x92C: 31
-////      Item_NotValidforSlot
-////   11. an item entering location 0 that the character may not wear
-////      (`equip_requirement`): race 39, class 40, faction 132, prerequisites 144,
-////      proficiency 41, level 42. A prerequisite on a condition type the server
-////      does not read is refused with 144 and a Warning that names the type.
-////   11b. a bag leaving the bag slots for an inventory slot the smaller inventory
-////      no longer has: 38 Item_CantPutBagInItself, a server choice
-////   For a swap checks 8 to 11 are made again for the item at the destination
-////   going to the source, after the moved item's. An item with no row in the
-////   tables is the server's own broken state, not a code: the connection ends
-////   (`NoItemRow`). The client's rune-unique loop is not built.
-////   12. any other location the server keeps no items at (3 to 99 except 10): 1
-////       Params, a server choice
-//// - **What the client never sends.** The client refuses locally, before its dead
-////   check and without sending 0x182, a destination location above 299, an
-////   unset (0xffffffff) destination index and an equipped destination index
-////   above 30 with Item_InventoryFull 27 (`opcode.0x182`, sender 0x1403c17d0, the
-////   only one of 0x182), so no input here is answered 27.
-//// - **The store's answer** decides the reply, so storage and the client agree
-////   after it: `ItemsNotSaved` and `SaveRefused` leave `items` as they were and
-////   answer 0x56A code 5 DbFailure, and the connection stays. A store that is
-////   unavailable, not running or past its deadline ends the connection with
-////   reason 8, which the connection decides.
-//// - **Stacks.** A split is 0x17D {guid 64, location 9, bag index 32, count 32}
-////   and a delete 0x149 {location 9, bag index 32}; a merge is a 0x182 onto a
-////   stack of the same stackable Item2 with room under its maxStackCount, and
-////   onto any other occupied slot a 0x182 is the swap (`0x1406d50f0`, which does
-////   not test the target stack's room). Every reply to a split or a merge has
-////   the reason 0 (StackSplit), which raises no further notice (`0x1403b8060`), and
-////   a delete is answered 0x148 with the reason 21 (PlayerRequested). Replies, in
-////   order: a split 0x17F of the source then 0x111 of the new stack; a full merge
-////   0x17F of the target then 0x148 of the source; a partial merge 0x17F of the
-////   target at maxStackCount then 0x17F of the source; the order is the server's
-////   choice.
-//// - **The split's checks** (a 0x56A {the held item's guid, or 0 for none; code},
-////   no ask, items unchanged), in this order; the client's split path has no dead
-////   or combat check, so none is made here:
-////   1. no held item has the guid: 1 Params
-////   2. the count is 0, or the held count or more: 1 Params
-////   3. the destination is the bank, a bank bag slot or location 10: 2 PlayerBusy
-////   4. the destination is not the inventory, or its index is 96 or more: 1 Params
-////   5. an inventory index at or past the usable size: 37 Item_BagToSmall
-////   6. an item is held at the destination: 1 Params
-//// - **The delete's checks** (0x56A guid 0 for the first two), in this order:
-////   1. location 300 or more, bag index 0xffffffff or an equipped index of 31 or
-////      more: 1 Params
-////   2. no held item at the place: 1 Params
-////   3. no Item2 row for the held item: the connection ends (`NoItemRow`)
-////   4. Item2.flags holds 0x10000: 156 Item_CannotBeDeleted
-////   The client's sender (`opcode.0x149`, `0x1403c1360`) also sends nothing for
-////   a worn bag and for an item in a trade; a delete of a worn bag (equipped 17
-////   to 20) is answered 1 Params with guid 0, and there is no trade.
-//// - **Binding.** Each item a move puts in a worn slot (the moved one and, in a swap, the
-////   displaced one) that binds on equip and is not soulbound gets the soulbound bit in the
-////   same statement as the move (`item_flags.set_by_move`, `0x1403c17d0.equip_confirm`);
-////   the client binds nothing itself. The store's `ItemsSaved` is answered with the move's
-////   own 0x569 or 0x568, then a 0x567 with the whole byte for each bound item
-////   (`opcode.0x567`), and the held items carry the byte.
-//// - **A bag taken off** shrinks the inventory: the items held past the new end
-////   go, in index order, to the lowest free slots below it, each told with a
-////   0x569 before the answer to the move (a server choice: the client moves
-////   none, and check 8 leaves slots enough for them).
-//// - **Left to other steps:** gear properties, max health, worn visuals and the
-////   cast's weapon, which still read the fixed loadout, not the held items.
+//// - A move, a swap, an equip and an unequip are all 0x182 {from, to}; the client sends
+////   one at a time and refuses the rest with PlayerBusy (`opcode.0x182`).
+//// - Replies: 0x569 to an empty destination (`opcode.0x569`), 0x568 to an occupied one
+////   (`opcode.0x568`), 0x56A with a GenericError code to a refusal (`opcode.0x56a`).
+//// - The guid is the item's identity and stays with it when it moves (`opcode.0x111.guid`).
+//// - The refusal checks run in the client's order (`opcode.0x182`, `0x1403ad100`,
+////   `0x1403aecd0`, `0x1403b11b0`), so a refusal's code is the one the client would show.
+//// - An item with no table row is the server's broken state: the connection ends (`NoItemRow`).
+//// - The client refuses locally, before sending 0x182, a location above 299, an unset
+////   index or an equipped index above 30 (`opcode.0x182`, `0x1403c17d0`).
+//// - A store that is unavailable or past its deadline ends the connection with reason 8.
+//// - A merge is a 0x182 onto a stack of the same stackable Item2 with room under its
+////   maxStackCount (`0x1406d50f0`).
+//// - Split and merge replies carry reason 0 (StackSplit, `0x1403b8060`); a delete is
+////   answered 0x148 with reason 21 (PlayerRequested).
+//// - A refused split is answered 0x56A {the held item's guid, or 0; code}.
+//// - The client sends no delete for a worn bag or an item in a trade (`opcode.0x149`,
+////   `0x1403c1360`); a delete of a worn bag is answered 1 Params, guid 0, and there is no trade.
+//// - An item a move puts in a worn slot that binds on equip gets the soulbound bit in the
+////   move's statement, then a 0x567 (`item_flags.set_by_move`, `0x1403c17d0.equip_confirm`,
+////   `opcode.0x567`).
+//// - A bag taken off shrinks the inventory: items past the new end move to the lowest free
+////   slots below it, each told with a 0x569 before the move's answer (a server choice).
+//// - Gear properties, max health, worn visuals and the cast's weapon read the fixed loadout.
 
 import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame, Frame}

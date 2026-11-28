@@ -1,38 +1,17 @@
 //// The sessions: who is logged in to the game server, one slot per account. A
-//// game connection claims its account's slot once the hand-off has named the
-//// account; when an older connection already holds the slot, that connection
-//// is told it was taken over, and the client of the old connection is
-//// disconnected (opcode.0x036A reason 19, which the old connection's rule
-//// writes). The newest login stays connected.
+//// game connection claims its account's slot; when a newer connection claims
+//// the slot, the holder is sent `TakenOver` and its client is disconnected
+//// (opcode.0x036A reason 19, which the old connection's rule writes).
 ////
-//// The newest login is the one with the highest `ConnectionId`. A connection's
-//// id is `erlang:unique_integer([positive, monotonic])`, taken as the
-//// connection starts (src/genesis_prime_step_runtime_ffi.erl `unique_id`), which is unique
-//// and strictly increasing on the node for as long as it runs, so a login made
-//// later has a higher id, whichever order claims reach Sessions in. A node
-//// restart drops every connection, so the counter starting again never
-//// matters.
+//// This is the rule of the sessions service. Its slots live only in the
+//// process: a restart loses them, each game connection claims again
+//// (genesis_prime/game/connection), and the ids settle which login keeps each
+//// slot.
 ////
-//// This is the rule of the sessions service (genesis_prime/service/shell),
-//// started under the server's supervisor and found by its name. Its slots live
-//// only in the process: a restart loses them, and the game connections claim
-//// again, in any order, and the ids settle which login keeps each slot.
-////
-//// Each sequence, from Sessions' side. `Watch`, `Send` and `Reply` are effects
-//// its service shell carries out; a connection is named by its `ConnectionId`,
-//// never by a process (genesis_prime/step, genesis_prime/connection/registry).
-////
-//// First claim:
-////
-//// ```
-//// connection c1              Sessions                              shell
-////   Claim(account, c1) ─▶ Asked ─▶ no slot for the account
-////                                  slot = (c1, watch w1)
-////                                  Watch(w1, Connection(c1))   ─▶ monitors c1
-////   ◀─ Claimed          ◀─ OwnEffect(Reply(caller, Claimed))
-//// ```
-////
-//// Takeover, a newer connection claims the account c1 holds (c2 > c1):
+//// Takeover: a newer connection c2 claims the account c1 holds. `Watch`,
+//// `Send` and `Reply` are effects the service shell carries out
+//// (genesis_prime/service/shell); a connection is named by its `ConnectionId`,
+//// never a process.
 ////
 //// ```
 //// connection c2              Sessions                              c1
@@ -44,45 +23,16 @@
 ////                                                                  reason 19 and stops
 //// ```
 ////
-//// An older connection claims the account c2 holds (c1 < c2), as after a
-//// restart in which c2 claimed first:
-////
-//// ```
-//// connection c1 (older)      Sessions                              c2
-////   Claim(account, c1) ─▶ Asked ─▶ slot names c2
-////                                  nothing changes
-////   ◀─ TakenOver        ◀─ OwnEffect(Reply(caller, TakenOver))
-//// c1 writes 0x036A reason 19 and stops
-//// ```
-////
-//// - **A claim by the holder** answers `Claimed` and changes nothing: the
-////   slot, its watch and the connections stay as they are.
-//// - **A claim with a higher id than the holder's** is the takeover above.
-//// - **A claim with a lower id than the holder's** is answered `TakenOver`
-////   and changes nothing: no slot, no watch, and the holder is told nothing.
-//// - **The holder ends.** The watch on it comes back as `WatchEnded(w)`; the
-////   slot that names `w` is freed.
-//// - **The old holder ends after a takeover.** Its watch `w1` comes back as
-////   `WatchEnded(w1)`; the slot names `w2`, so nothing is freed, and `w1` is
-////   forgotten.
-//// - **Sessions restarts.** The new process has no slots and no watches. Each
-////   game connection watches Sessions, so each takes `WatchEnded` and, after a
-////   short wait, claims its account again (genesis_prime/game/connection).
-////   Whatever order the claims arrive in, and however many restarts the
-////   connections lived through, the highest id of an account's connections
-////   holds its slot at the end and each lower one ends with reason 19.
-//// - **A claim with no answer.** The claimer gives up at its deadline and
-////   ends, which frees its slot when Sessions did act on the claim; a holder
-////   told `TakenOver` for a claim whose claimer gave up is disconnected all
-////   the same. Sessions never knows its asker's deadline.
-//// - **A process dying.** A watched connection's death is the `WatchEnded`
-////   above, also when it was not running as the watch began. A caller that
-////   ended before its answer is dropped by the shell.
-//// - **The server stopping.** `Stopping` stops the rule at once; its state
-////   goes with the process.
-////
-//// A watch id is chosen here, from a counter in the state that does not go
-//// back, so a watch is never taken for an older one.
+//// - The newest login is the one with the highest `ConnectionId`: the id is
+////   `erlang:unique_integer([positive, monotonic])`, taken as the connection
+////   starts (src/genesis_prime_step_runtime_ffi.erl `unique_id`), unique and
+////   strictly increasing on the node.
+//// - A claim on an empty slot, or with a higher id than the holder's, takes
+////   the slot: the takeover above.
+//// - A claim by the holder is answered `Claimed` and changes nothing.
+//// - A claim with a lower id than the holder's is answered `TakenOver` and
+////   changes nothing.
+//// - A `WatchEnded` forgets the watch, and frees the slot if the slot names it.
 
 import genesis_prime/step.{
   type CallerId, type ConnectionId, type ServiceInput, type ServiceRule,
