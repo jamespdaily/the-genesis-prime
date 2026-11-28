@@ -13,76 +13,31 @@
 ////   the worker crashes ─▶ EndedBeforeAnswer
 //// ```
 ////
-//// - **Workers are temporary.** The supervisor never restarts one, and a
-////   worker the asker ends at its deadline exits with `shutdown`, which the
-////   supervisor does not report as a failure.
-//// - **A worker's start does no work.** It spawns the worker and returns, and
-////   the worker runs its query after, so `start_child`, a supervisor call with
-////   no timeout, waits only for the starts queued before it.
-//// - **The store not running.** `start_child` on a name no process holds
-////   exits the caller with `{noproc, {gen_server, call, _}}` rather than
-////   returning an error, and one made while the supervisor stops, which ends
-////   with `shutdown` before it takes the call, exits it with `{shutdown,
-////   {gen_server, call, _}}`; `ask` (through `service.start_child`) catches
-////   those two exits, and only those, as `Error(Nil)`.
-//// - **Failures.** One private `attempt` holds them for every request, so each
-////   request maps only its rows. pog's `ConnectionUnavailable` and
-////   `QueryTimeout` answer `Unavailable`, and so does the pool not running:
-////   pgo's checkout exits with `{noproc, {pgo_pool, checkout, _}}` then, which
-////   the worker catches, and only that exit. A constraint the database
-////   refused is the request's to map, by the name the schema gave it
-////   (`mapped_constraints`): a create or a rename maps its name's unique index
-////   to `NameTaken` or `NewNameTaken` and the name's rule-0 check to
-////   `NameBreaksRule` or `NewNameBreaksRule`, and a save maps the health's
-////   check to `HealthRefused`. Any other error is a bug in the query or the
-////   schema: the worker crashes with it, and the asker gets `EndedBeforeAnswer`.
-//// - **A create is one transaction.** It takes the account's row lock, so one
-////   account's creates run one after another, and then inserts the character
-////   unless the account already has its slots, in one statement; the name's
-////   uniqueness is the index on the ICU-folded `lower(name collate "und-x-icu")`,
-////   and its form is the table's rule-0 check. An account that has no row is
-////   `CreateForNoSuchAccount`. The insert is followed in the same transaction by
-////   one insert of the character's starting items, so a create that is refused
-////   stores no item.
-//// - **A load is one transaction.** World entry's load of a character names the
-////   account's id as well as the character's, so another account's character
-////   is never taken; its update raises the character's `session_epoch` by one
-////   and returns the new value with the row, so the login that loaded the
-////   character holds that epoch, and it locks the row, so the reads of the
-////   character's items and of its quest log that follow on the same connection
-////   find the items and quests the character had when the row was taken, and a
-////   delete of the character cannot land between them. No row is
-////   `NotTheAccounts`.
-//// - **A save is one statement.** It names the account's id, the character's,
-////   the epoch the saving login was told and the save's own sequence number, so
-////   a save from an older login, or one that reaches the database after a newer
-////   save of its own login, matches no row and changes nothing. It writes the
-////   health, the experience and the level with the place. A save that
-////   `character_health_is_not_negative` refuses is `HealthRefused`, one that
-////   `character_experience_is_not_negative` refuses is `ExperienceRefused`; one that any other check constraint of the table
-////   refuses is `PlaceRefused` with that constraint's name; the worker does not
-////   crash for either. The statement also writes the character's quest log under
-////   the same fence (save_place.sql); a check of the character_quest table that
-////   refuses a quest row is `QuestLogRefused` with that check's name.
-////   The same statement writes the changed slots of the character's action sets
-////   (save_place.sql); a check or the unique key of the character_action_slot table
-////   that refuses a slot, a check of the character_ability_tier table that refuses a tier
-////   and a check of the character_action_amp table that refuses an AMP is
-////   `ActionSetRefused` with its name.
-//// - **A delete and a rename are one statement each.** Both name the account's
-////   id, so another account's character is never touched; a rename also
-////   clears the character's mark in the same update, and its name's
-////   uniqueness and form are the same index and check as a create's.
-//// - **The probe.** One more kind of job, which `main` asks to know the database
-////   answers and runs the migrations the server was built with
-////   (genesis_prime/readiness). It runs `select 1`, and once that returns it
-////   reads the `schema_migration` table, one more query on the same worker. It
-////   is no `Request`, so no rule's types or recordings hold it; its answer is
-////   `Reached`, with what the table held (`NoRecord` for a database without the
-////   table, `Unreadable` with the error for a table it cannot read), or
-////   `Unreached`, which is every failure a request answers `Unavailable` for.
-//// - **The supervisor stopping.** Its workers get its shutdown timeout to end;
-////   an asker waiting on one gets `EndedBeforeAnswer`.
+//// - **Workers are temporary.** The supervisor never restarts one; one the
+////   asker ends exits `shutdown`, and a stopping supervisor gives its workers
+////   its shutdown timeout: a waiting asker gets `EndedBeforeAnswer`.
+//// - **A worker's start does no work**: it spawns the worker and returns, so
+////   `start_child` waits only for the starts queued before it.
+//// - **The store not running or stopping.** `ask` catches only
+////   `start_child`'s noproc and shutdown exits, as `Error(Nil)`.
+//// - **Failures.** `attempt` maps pog's `ConnectionUnavailable`,
+////   `QueryTimeout` and a pool not running to `Unavailable`; a refused
+////   constraint is mapped by the name the schema gave it
+////   (`mapped_constraints`); any other error crashes the worker: `EndedBeforeAnswer`.
+//// - **A create is one transaction**: the account's row lock, the insert
+////   unless the account has its slots, then the starting items. The name's
+////   uniqueness is the `lower(name collate "und-x-icu")` index, its form the rule-0 check.
+//// - **A load is one transaction**: it names the account's and character's
+////   ids and raises `session_epoch` under the row lock, so the item and quest
+////   reads on the same connection see the row as taken.
+//// - **A save is one statement** (save_place.sql) naming the account,
+////   character, epoch and sequence, writing the health, experience, level
+////   and place with the quest log (character_quest) and the action sets
+////   (character_action_slot, character_ability_tier, character_action_amp).
+//// - **A delete and a rename are one statement each**, naming the account; a
+////   rename also clears the character's mark, with the create's index and check.
+//// - **The probe** (genesis_prime/readiness) runs `select 1`, then reads
+////   the `schema_migration` table: `Reached` (`NoRecord`, `Unreadable`) or `Unreached`.
 
 import genesis_prime/game/currency_kind
 import genesis_prime/game/start_place.{type Place, Facing}

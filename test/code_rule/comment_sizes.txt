@@ -1,7 +1,6 @@
 genesis_prime item A rule's rate placeholders. The recording of the live session's game 11
 genesis_prime item Asks the database through `probe` until it answers, says through `say` what 15
 genesis_prime item How many connections each listener holds at once is the server's choice: half 12
-genesis_prime/application module The server as an OTP application (`application_start_module` in 93
 genesis_prime/client_connection item Sorts an input: what the client closing and a failed socket do is the same 11
 genesis_prime/connection/closer module Closes every listener to new sockets as the server starts to stop, before 46
 genesis_prime/connection/registry module Where the connections are found: OTP's `pg` (process groups). A group is 52
@@ -18,11 +17,9 @@ genesis_prime/game/cast item The end of an input in the world: each live or ling
 genesis_prime/game/cast item The player's standing spells become the wanted ones, in the order given: the spells a 16
 genesis_prime/game/cast item The round of a go closed with `struck`, the units it named in the order of its 28
 genesis_prime/game/cast item What a go does to the caster's stealth, after the go's other effects: each Stealth row 12
-genesis_prime/game/cast module A player's casts, a feature of the game connection's rule 102
 genesis_prime/game/cast/control item The creatures a go holds unit states on: each unit state among the effects the go 40
 genesis_prime/game/cast/control item The creatures a go removes: each despawn among the effects the go `reached` (a DespawnUnit 36
 genesis_prime/game/cast/control module The lasting modifiers, restrictions and crowd control a cast starts, and the cooldowns it arms. 41
-genesis_prime/game/cast/cost module Whether a press may start a cast: the spell's conditions, what it costs and the verdict of each check. 88
 genesis_prime/game/cast/frame item 0x7ff for a cast the caller names a caster for, from where it stands: a creature's cast 13
 genesis_prime/game/cast/gate item What a prerequisite may read about a player entering a world, before its unit and 15
 genesis_prime/game/cast/gate item Whether a modifier row takes effect on `unit_id`, one of the units its aim names. 23
@@ -36,9 +33,7 @@ genesis_prime/game/cast/state item A child a Proxy, a proc fire or a periodic Pr
 genesis_prime/game/cast/tick item The ticks of the cast `cast_id` due at the time fire, each due tick of each row, a 14
 genesis_prime/game/cast/tick item What a Proxy's target gate gives for the unit its child would be made on. The gate's 11
 genesis_prime/game/cast/tick item What a prerequisite may read about the caster, with no roll: the live casts it is 14
-genesis_prime/game/character_select module Character select, the first thing a game connection does once its session 109
 genesis_prime/game/client_casts module The casts a player's client holds, or held and saw its caster finish, that the player's 53
-genesis_prime/game/connection module The rule of one game connection: the client's connection to the game 153
 genesis_prime/game/connection/casting module The player's casts and strikes on the game connection 79
 genesis_prime/game/connection/dev_command module The development commands carried out on the game connection 81
 genesis_prime/game/connection/experience module The player's experience on the game connection (genesis_prime/game/connection): what a 43
@@ -53,7 +48,6 @@ genesis_prime/game/connection/viewers item The unit of the player's own record a
 genesis_prime/game/connection/viewers item What the map sent for the player's stay (`stay_sent`): who sees its player 15
 genesis_prime/game/connection/viewers module Other players and creatures on the game connection 206
 genesis_prime/game/connection/world module The player's stay in the world on the game connection 57
-genesis_prime/game/departures module The departures terminals at the end of the training simulation, and where each lands 104
 genesis_prime/game/dev_command module The development chat commands: a Say line that starts with `!`, read as a 47
 genesis_prime/game/experience module A player's experience and level, and what a kill's credit does to them: the pure 43
 genesis_prime/game/interaction module The player's request to talk to a unit: the client's 0x07EA, which it sends when 73
@@ -126,7 +120,6 @@ genesis_prime/shared/spell_plan item An effect's condition: its caster apply pre
 genesis_prime/shared/spell_plan item One CCStateSet row (`Spell4Effects.effectType.4`): dataBits00 is one of the 28 11
 genesis_prime/shared/spell_plan item What a Proc row says without a table: its reading, or why the row is left out. A row 13
 genesis_prime/shared/spell_plan item What the plan makes of one Spell4Effects row, in the place its spell is planned: the 17
-genesis_prime/shared/spell_plan module What the client's tables say a pressed ability does: for each ability a class 389
 genesis_prime/shared/spell_tier module The tiers of an ability: the nine Spell4 rows of one Spell4Base that the ability builder's 44
 genesis_prime/shared/strike_tell module What a striker and the unit it strikes tell each other, both ways: a player's 90
 genesis_prime/shared/unit_casts module The casts a unit create (0x262) lists, so a player that comes into sight 70
@@ -138,7 +131,6 @@ genesis_prime/store item The entry the client's active list carries for a quest 
 genesis_prime/store item The four words an item carries beside its place, as the character_item table keeps them. 12
 genesis_prime/store/worker item Runs one of the player's items' requests: each is one transaction, the 15
 genesis_prime/store/worker item Runs one of the player's movement's requests: a save is one transaction, the 13
-genesis_prime/store/worker module The store's workers: one process per ask, started under the store's 86
 genesis_prime/table/loader/derivation item Each derived value. A feature whose rule reads a value of the tables that 60
 genesis_prime/table/loader/requirement item Each required column. A feature that follows a column adds it here, with 24
 genesis_prime/table/loader/server_table item The entry of each table the server loads, in file-name order. 86
@@ -154,7 +146,6 @@ genesis_prime/world_map/creature_fight item The attack tick: with the target in 
 genesis_prime/world_map/creature_fight item What the creature fights with: its unit and address, the place of its spawn, 28
 genesis_prime/world_map/creature_fight item Where the strike go's area is centred, which is where the client draws it, or none when 18
 genesis_prime/world_map/creature_fight module A creature's fight: the feature of the creature's rule 653
-genesis_prime/world_map/creature_guard module A creature's guard: the feature of the creature's rule (genesis_prime/world_map/creature) 119
 genesis_prime/world_map/game_number module The numbers the server chooses for a fight, as the content load checks them: 65
 genesis_prime/world_map/map item A development summon: the creature is made a run-only spawn at the place and 15
 genesis_prime/world_map/map item A map's players, its spawns that have a creature or a failure, the spawns' 13
@@ -165,7 +156,6 @@ genesis_prime/world_map/map item The state and effects of the player of `connect
 genesis_prime/world_map/map module One map: a world of the client's World table and one instance of it, with 707
 genesis_prime/world_map/objective_spawn item The ranks of the client's tables alone, so that no stored row, added or deleted, moves 12
 genesis_prime/world_map/objective_spawn item The rows to stand for the kill objectives, given the rows the stored spawn 16
-genesis_prime/world_map/objective_spawn module The creatures a kill objective needs and the stored spawn table does not 86
 genesis_prime/world_map/registry module Maps: the registry that finds a map by its id and starts it on the first 74
 genesis_prime/world_map/relay module What a creature tells a player and what a player tells a creature, both through the 73
 genesis_prime/world_map/spawn item The attack of the spell `spell4_id` (genesis_prime/world_map/creature_life `Attack`), 23
