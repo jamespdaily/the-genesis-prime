@@ -114,14 +114,13 @@
 //// - **One owner rolls.** A creature keeps no random state, so the struck player's
 ////   connection draws the strike's rolls from its own seed, and a recording of the
 ////   connection replays them (genesis_prime/shared/strike_tell).
-//// - **A player's defence** reads its base deflect, critical deflect, glance chance and
-////   glance amount, 5% deflect and no other at every level (`player.level1_defence`,
-////   `player.base_combat_properties`); its mitigation of each damage type is GameFormula
-////   1234 from its Armor, its gear's unless a modifier changes it, with the mitigation
-////   offsets added to the base (`0x140464240`, `player.level1_gear_properties`), and its shield takes
-////   up to ShieldMitigationMax of each blow (genesis_prime/shared/hit). Armor,
-////   ShieldMitigationMax, the maxima and the regeneration numbers are the player's
-////   properties (genesis_prime/shared/unit_properties).
+//// - **A player's defence** reads its base deflect, critical deflect and glance, 5% deflect and no
+////   other at every level (`player.level1_defence`, `player.base_combat_properties`); its
+////   mitigation of each damage type is GameFormula 1234 from its Armor (its gear's unless a
+////   modifier changes it) plus the mitigation offsets (`0x140464240`,
+////   `player.level1_gear_properties`); its shield takes up to ShieldMitigationMax of each blow
+////   (genesis_prime/shared/hit). These are the player's properties
+////   (genesis_prime/shared/unit_properties).
 //// - **Interrupt Armor** is the maximum, property 44, unless worn below it: a raised
 ////   maximum is a raised armor, as the Soldier's Clear the Lines (Spell4 36861, row 78035:
 ////   a type 11 row of +2 on property 44, no type 52 row) says in its tooltip, text 298981,
