@@ -36,9 +36,8 @@
 ////   budget values, so taking an item off returns it to the default. BaseFocusPool (5)
 ////   is one of them, with the class's own base pool added (`bases`), so a healer's
 ////   maximum Focus is that pool plus what its items give.
-//// - **The base combat properties** are the 26 of CreatureLevel row 101 (`player_combat_bases`),
-////   the same at every level and with any gear: the server's guess, since the client gives a
-////   creature's value its three factors and a player none (`player.base_combat_properties`).
+//// - **Base combat properties:** the 26 of CreatureLevel row 101 at every level and with any gear
+////   (`player_combat_bases`), the server's guess (`player.base_combat_properties`).
 
 import genesis_prime/gap
 import genesis_prime/message/item_visual.{type ItemVisual}
@@ -279,17 +278,13 @@ const player_combat_ids = [
   155, 156, 157, 158, 164, 165, 166, 167, 195, 196,
 ]
 
-/// The base of each of a player's 26 base combat properties: the value of
-/// CreatureLevel row 101 at the column of the id less 100, the row the client reads
-/// for properties 100 and above whatever the unit's level (`0x1404585c0`). The row
-/// holds 0.05 for BaseAvoidChance (101) and BaseCritChance (102), 1.0 for
-/// CCDurationModifier (165) and 0.0 for the other 23, in id order. This is the
-/// server's guess: the client reads CreatureLevel only for a unit with a creature row,
-/// multiplies the value by the creature's archetype, difficulty and tier rows, and
-/// gives a player none of the three, so a player's value is taken as the row's alone
-/// (factor 1.0). No retail record of a player's base chances was found; the earlier
-/// server's rule is a lead only (`player.base_combat_properties`). `Error` when the
-/// table has no row 101.
+/// The base of each of a player's 26 base combat properties: the value of CreatureLevel row
+/// 101 at the column of the id less 100, the row the client reads for properties 100 and above
+/// whatever the level (`0x1404585c0`): 0.05 for BaseAvoidChance (101) and BaseCritChance (102),
+/// 1.0 for CCDurationModifier (165), 0.0 for the other 23, in id order. The server's guess: the
+/// client reads CreatureLevel only for a creature and scales it by the creature's archetype,
+/// difficulty and tier, none of which a player has, so a player takes the row's value alone
+/// (`player.base_combat_properties`). `Error` when the table has no row 101.
 pub fn player_combat_bases(
   tables tables: table_store.Tables,
 ) -> Result(List(#(UnitProperty2Id, Float)), Nil) {
