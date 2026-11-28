@@ -30,7 +30,7 @@ import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/map/message as map_message
 import genesis_prime/step.{
-  type ServiceStep, ConnectionId, OwnEvent, ServiceTimerFired, WatchEnded,
+  type ServiceStep, OwnEvent, ServiceTimerFired, WatchEnded,
 }
 import genesis_prime/table/id.{Creature2Id, PrerequisiteId}
 import genesis_prime/world_map/map.{type State}
@@ -206,7 +206,7 @@ pub fn a_released_creature_is_gone_for_every_viewer_and_starts_again_after_the_r
     as "at the timer a creature starts under a new unit id"
   let assert [start] = spawns.starts(taken)
   assert spawns.first_viewers(start: { start.1 })
-    == [#(ConnectionId(1), map_support.stay(count: 1))]
+    == [map_support.address(number: 1)]
     as "with the player in sight as its first viewer"
 }
 

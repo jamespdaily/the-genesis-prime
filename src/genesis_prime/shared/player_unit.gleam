@@ -154,12 +154,6 @@ pub fn race_id(unit unit: PlayerUnit) -> RaceId {
   unit.character.race_id
 }
 
-/// The id of the unit's character, for a log line.
-pub fn character_id(unit unit: PlayerUnit) -> Int {
-  let CharacterId(character_id) = unit.character.character_id
-  character_id
-}
-
 /// Message 0x262 for the unit, in the realm.
 pub fn create(
   unit unit: PlayerUnit,

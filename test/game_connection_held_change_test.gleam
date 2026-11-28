@@ -2057,7 +2057,6 @@ pub fn a_creatures_blow_on_a_player_tells_each_caster_among_its_viewers_the_even
             z: 0.0,
           ),
           seq: 1,
-          stay: support.viewer_stay(9),
           hit_radius: place_support.player_hit_radius,
           rolls: hit.Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
         ),

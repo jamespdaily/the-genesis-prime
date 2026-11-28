@@ -32,6 +32,7 @@ import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/spawn_source
+import genesis_prime/world_map/unit_address
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -102,13 +103,12 @@ pub fn a_join_starts_exactly_the_spawns_within_1024_with_the_player_as_first_vie
   })
     as "a creature's life is the number of the watch it is started under"
   assert list.all(creatures, fn(start) {
-    spawns.first_viewers(start: { start.1 })
-    == [#(ConnectionId(1), map_support.stay(count: 1))]
+    spawns.first_viewers(start: { start.1 }) == [map_support.address(number: 1)]
   })
     as "each starts with the player as its first viewer, its unit 1, the map's first id, taken before the starts', and sends the 0x262 as it starts"
   let generations =
     list.map(creatures, fn(start) {
-      let assert [#(_, _, generation)] = { start.1 }.viewers
+      let assert [#(_, generation)] = { start.1 }.viewers
         as "the player is the one first viewer"
       let assert Ok(map.Live(relations:, ..)) =
         map.spawn_state(
@@ -161,7 +161,7 @@ pub fn a_move_into_sight_starts_the_creature_with_the_player_as_first_viewer_tes
   let #(_, creature) = the_start(taken)
   assert creature.spawn == spawn_source.Stored(id: SpawnId(1))
   assert spawns.first_viewers(start: creature)
-    == [#(ConnectionId(1), map_support.stay(count: 1))]
+    == [map_support.address(number: 1)]
     as "the creature starts for the player and sends its one 0x262 as it starts"
   assert spawns.creature_sends(taken) == []
 }
@@ -236,8 +236,7 @@ pub fn a_spawn_stopped_and_seen_again_keeps_its_unit_id_under_a_new_life_test() 
     as "a spawn has one unit id for the run, reused after a clean stop (death.creature_respawn)"
   assert second_watch != first_watch && second.life != first.life
     as "under a new life, so its address is not the stopped creature's"
-  assert spawns.first_viewers(start: second)
-    == [#(ConnectionId(1), map_support.stay(count: 1))]
+  assert spawns.first_viewers(start: second) == [map_support.address(number: 1)]
   assert spawns.creature_sends(taken) == []
 }
 
@@ -258,8 +257,7 @@ pub fn a_spawn_seen_while_its_creature_retires_restarts_only_after_the_creatures
   let #(second_watch, second) = the_start(taken)
   assert second.unit_id == first.unit_id && second_watch != first_watch
     as "at its end a creature starts under the same unit id and a new life"
-  assert spawns.first_viewers(start: second)
-    == [#(ConnectionId(1), map_support.stay(count: 1))]
+  assert spawns.first_viewers(start: second) == [map_support.address(number: 1)]
     as "with the player who sees the spawn now as its first viewer"
 }
 
@@ -395,13 +393,12 @@ pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_un
   let #(_, second) = the_start(taken)
   assert second.unit_id != first.unit_id && second.unit_id > 0
     as "the unit id was given up with the Gone, so the new creature has another"
-  assert spawns.first_viewers(start: second)
-    == [#(ConnectionId(1), map_support.stay(count: 1))]
+  assert spawns.first_viewers(start: second) == [map_support.address(number: 1)]
     as "the player in sight is the new creature's first viewer"
   assert spawns.creature_sends(crashed) == []
     as "the creature that ended is told nothing: no Unseen to a dead creature"
-  let assert [#(_, _, first_generation)] = first.viewers
-  let assert [#(_, _, second_generation)] = second.viewers
+  let assert [#(_, first_generation)] = first.viewers
+  let assert [#(_, second_generation)] = second.viewers
   assert first_generation != second_generation
     as "the new life's first viewer holds a generation the map never gave before"
   // The same spawn's next life, started by the map after the creature expired, killed
@@ -432,10 +429,10 @@ pub fn a_creature_that_crashes_while_seen_is_gone_to_every_player_and_returns_un
       relations: dict.from_list(
         list.map(next.viewers, fn(viewer) {
           #(
-            viewer.0,
+            ConnectionId(unit_address.joiner(address: viewer.0)),
             map.Relation(
-              generation: viewer.2,
-              stay: viewer.1,
+              generation: viewer.1,
+              stay: map_support.stay(count: 1),
               state: map.AwaitingSnapshot,
             ),
           )
@@ -499,10 +496,8 @@ pub fn a_creature_that_does_not_start_leaves_its_spawn_empty_for_the_run_and_the
   let #(state, taken) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
   let assert [#(first_watch, first), #(_, second)] = spawns.starts(taken)
     as "two creatures start in the burst"
-  assert spawns.first_viewers(start: first)
-    == [#(ConnectionId(1), map_support.stay(count: 1))]
-    && spawns.first_viewers(start: second)
-    == [#(ConnectionId(1), map_support.stay(count: 1))]
+  assert spawns.first_viewers(start: first) == [map_support.address(number: 1)]
+    && spawns.first_viewers(start: second) == [map_support.address(number: 1)]
     as "both start for the player, whatever the first's start does"
   let #(state, taken) =
     spawns.feed(
@@ -643,8 +638,7 @@ pub fn a_leave_and_a_connections_end_tell_every_running_creature_that_the_caster
     spawns.tell_creature(
       state:,
       at_ms:,
-      from: 1,
-      stay_count: 1,
+      from: map_support.address(number: 1),
       unit_id: unit.0,
       life: unit.1,
       payload: map_message.ModifierEnds(source: inbound_support.source()),

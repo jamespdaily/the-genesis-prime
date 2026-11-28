@@ -1043,6 +1043,7 @@ fn caster_of_the_go(unit_id unit_id: Int) -> strike.Attacker {
   strike.Attacker(
     unit_id:,
     connection: ConnectionId(2),
+    address: map_support.address(number: 2),
     pose: area.Pose(at: area.Point(x: 0.0, z: 0.0), yaw: 0.0),
     place: place_support.at(
       world_id: 3460,

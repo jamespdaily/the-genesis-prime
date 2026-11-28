@@ -39,7 +39,7 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/spawn_source.{type SpawnSource}
-import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/option.{type Option, None}
 
 /// A rule as its shell runs it. `name` is the rule's module path, which a
@@ -319,13 +319,12 @@ pub type CreatureStart {
     /// The monotonic time the map's clock started at, from which the creature
     /// stamps its 0x262 (genesis_prime/world_map/map `server_time`).
     clock_origin_ms: Int,
-    /// The players who see the spawn as it starts, by their connection, their
-    /// stay and the generation the map gave the pair, in the order of their
-    /// numbers: the creature answers each with a snapshot of its first picture
-    /// under that generation as it starts, so a burst of starts is not followed
-    /// by a burst of `Seen` sends, and names the stay in everything it relays to
-    /// the player.
-    viewers: List(#(ConnectionId, Stay, Generation)),
+    /// The players who see the spawn as it starts, by their unit's address and the
+    /// generation the map gave the pair, in the order of their connections: the
+    /// creature answers each with a snapshot of its first picture under that
+    /// generation as it starts, so a burst of starts is not followed by a burst of
+    /// `Seen` sends, and names the address in everything it relays to the player.
+    viewers: List(#(UnitAddress, Generation)),
     /// The ready, living, unstealthed players who stand in the spawn's ring as the
     /// map starts the next life of a creature that expired, in the order of their
     /// connections. The new creature takes them all in its `Started` step and starts one
@@ -337,15 +336,14 @@ pub type CreatureStart {
 }
 
 /// A player in the ring of a creature, as the map tells the creature of it with
-/// `Approached` or in `CreatureStart.ring`: the player's connection, its unit, its place
-/// and the move's sequence number, its stay and the hit radius of its race.
+/// `Approached` or in `CreatureStart.ring`: the player's unit address, its unit id, its
+/// place and the move's sequence number and the hit radius of its race.
 pub type RingMember {
   RingMember(
-    by: ConnectionId,
+    by: UnitAddress,
     unit_id: Int,
     place: Place,
     seq: Int,
-    stay: Stay,
     hit_radius: Float,
   )
 }
@@ -395,6 +393,11 @@ pub type Address {
   Map(map: MapId, incarnation: Int)
   /// One connection.
   Connection(connection: ConnectionId)
+  /// One unit of a player in one run of a map, as the map issued it
+  /// (genesis_prime/world_map/unit_address). It names the sender of a player's
+  /// strike (`strike_tell.Tell.from`); no process is registered under it, so a
+  /// watch or a send to it finds none.
+  Unit(address: UnitAddress)
   /// One creature, in one run of one map: its unit id there and its life, the
   /// number of the map's watch it was started under. A spawn's unit id is kept
   /// across a clean stop, so the unit id alone names the stopped creature and

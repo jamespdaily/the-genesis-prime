@@ -49,7 +49,7 @@ import genesis_prime/shared/spend
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_properties.{type Source}
-import genesis_prime/step.{type TimerId, ConnectionId}
+import genesis_prime/step.{type ConnectionId, type TimerId, ConnectionId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import genesis_prime/table/spell4
 import genesis_prime/table/spell_level
@@ -3078,7 +3078,9 @@ fn started_at_a_player(
 
 /// The ledger of the ally's connection after the changes `effects` tell it, from the caster's
 /// connection 1 and its unit 7.
-fn ledger_told(effects effects: List(Effect)) -> held_changes.Held {
+fn ledger_told(
+  effects effects: List(Effect),
+) -> held_changes.Held(ConnectionId) {
   list.fold(told(effects:), held_changes.new(), fn(held, change) {
     case change {
       cast_state.OtherPlayerChangeStarts(

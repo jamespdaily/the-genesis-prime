@@ -11,6 +11,7 @@ import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/static_object.{type StaticObject}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/list
 import gleam/option
@@ -112,6 +113,35 @@ pub fn character(number number: Int) -> Character {
   Character(
     ..character_support.character(number:),
     look: character_tables.row_10_look(),
+  )
+}
+
+/// The address the map of `empty(incarnation: 1)` issues as its `number`th: the one
+/// every test of a creature names its players by (`unit_address.issue`).
+pub fn address(number number: Int) -> UnitAddress {
+  address_in(incarnation: 1, number:)
+}
+
+/// The address the map of the run `incarnation` issues as its `number`th.
+pub fn address_in(
+  incarnation incarnation: Int,
+  number number: Int,
+) -> UnitAddress {
+  address_for(incarnation:, number:, joiner: number)
+}
+
+/// The address the map of the run `incarnation` issues as its `number`th, to the connection
+/// numbered `joiner`.
+pub fn address_for(
+  incarnation incarnation: Int,
+  number number: Int,
+  joiner joiner: Int,
+) -> UnitAddress {
+  unit_address.issue(
+    map: MapId(world_id: 3460, instance: 0),
+    incarnation:,
+    number:,
+    joiner:,
   )
 }
 

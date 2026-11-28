@@ -534,6 +534,7 @@ pub fn joined_state(
       answer: map_message.Joined(
         unit: player_unit.create(unit:, realm_id: 1),
         loadout: player_unit.loadout(unit:),
+        address: map_support.address(number: 1),
         incarnation: 1,
         clock_origin_ms: 0,
       ),

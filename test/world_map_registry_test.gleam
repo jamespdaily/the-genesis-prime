@@ -128,6 +128,7 @@ fn locate(scope: Registry(Nil), address: Address) -> Result(Pid, Nil) {
     | step.Store
     | step.Maps
     | step.Map(..)
+    | step.Unit(..)
     | step.Creature(..)
     | step.CharacterNamed(..)
     | step.ZoneChannel(..) -> Error(Nil)

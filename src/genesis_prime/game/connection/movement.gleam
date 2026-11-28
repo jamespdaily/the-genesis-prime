@@ -26,8 +26,7 @@ import genesis_prime/message/relayed_movement.{type RelayedMovement}
 import genesis_prime/shared/hit_radius
 import genesis_prime/shared/top_zone
 import genesis_prime/step.{
-  type ConnectionEffect, type ConnectionId, type Effect, type Now, LogInfo,
-  OwnEffect,
+  type ConnectionEffect, type Effect, type Now, LogInfo, OwnEffect,
 }
 import genesis_prime/world_map/map
 import gleam/int
@@ -203,7 +202,6 @@ fn body_moving(
                 sends_the_move_to_the_viewers(entered:, now:, commands:),
                 list.map(player_life.fighters(life: entered.life), fn(fighter) {
                   tells_a_fighter_the_place(
-                    connection:,
                     entered:,
                     fighter:,
                     place:,
@@ -282,7 +280,6 @@ fn moving(
 /// player stands at, the move's sequence number and the hit radius of the player's race,
 /// through the player's map.
 pub fn tells_a_fighter_the_place(
-  connection connection: ConnectionId,
   entered entered: world_entry.Entered,
   fighter fighter: #(Int, Int),
   place place: Place,
@@ -291,7 +288,6 @@ pub fn tells_a_fighter_the_place(
 ) -> Effect(ConnectionEffect(Request)) {
   connection_state.tells_the_creature(
     entered:,
-    connection:,
     unit_id: fighter.0,
     life: fighter.1,
     payload: map_message.TargetMoved(place:, seq:, hit_radius:),

@@ -100,6 +100,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/static_object.{type Created}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -932,6 +933,7 @@ pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x63
   let assert map_message.Joined(
     unit:,
     loadout:,
+    address:,
     incarnation:,
     clock_origin_ms: _,
   ) = game_connection_support.map_answer(taken)
@@ -943,6 +945,7 @@ pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x63
         FromMap(map_message.Joined(
           unit:,
           loadout:,
+          address:,
           incarnation:,
           clock_origin_ms: 600,
         )),
@@ -1312,6 +1315,41 @@ pub fn messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the
     )
   assert game_connection_support.player_in(taken).unit_id
     == game_connection_support.own_unit_id
+  takes_only_its_own_stay(
+    state:,
+    stay: map_support.stay(count: 2),
+    unit_id: game_connection_support.own_unit_id,
+  )
+}
+
+pub fn a_map_change_between_two_runs_that_both_issue_stay_1_drops_the_first_runs_notice_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The player's first join is the fifth of its run and its Holocrypt join the fifth of the
+  // next run: both runs issue the player the address number 5, the map's own count. The
+  // connection counts its stays itself, so the first run's notice, which names the
+  // connection's first stay, is dropped after the second join, whatever the maps number.
+  let #(_, first) =
+    game_connection_support.mapped(
+      map_state: game_connection_support.map_with_four_players(),
+      taken: game_connection_support.joining().1,
+    )
+  let next_run =
+    game_connection_support.map_run_with_four_players(
+      game_connection_support.incarnation + 1,
+    )
+  let #(_, second) =
+    game_connection_support.mapped(
+      map_state: next_run,
+      taken: game_connection_support.holocrypt_joining().1,
+    )
+  let assert map_message.Joined(address: first_address, ..) = first
+  let assert map_message.Joined(address: second_address, ..) = second
+  assert unit_address.number(address: first_address)
+    == unit_address.number(address: second_address)
+    as "both runs issue the same number"
+  assert first_address != second_address
+    as "the addresses differ: the run is part of the address"
+  let #(state, _) = game_connection_support.at_the_holocrypt_in(next_run)
   takes_only_its_own_stay(
     state:,
     stay: map_support.stay(count: 2),
@@ -1762,6 +1800,7 @@ pub fn a_viewer_writes_the_creatures_kind_3_flight_test() -> Nil {
   let assert map_message.Joined(
     unit:,
     loadout:,
+    address:,
     incarnation:,
     clock_origin_ms: _,
   ) = game_connection_support.map_answer(taken)
@@ -1773,6 +1812,7 @@ pub fn a_viewer_writes_the_creatures_kind_3_flight_test() -> Nil {
         FromMap(map_message.Joined(
           unit:,
           loadout:,
+          address:,
           incarnation:,
           clock_origin_ms: 600,
         )),
@@ -3764,6 +3804,7 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
     legal_order_support.creature_started(start:, spawn: beast, at_ms: 6000)
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
+      from: map_support.address(number: 1),
       unit_id: start.unit_id,
       damage_type: 3,
       damage: 5,
@@ -3779,7 +3820,7 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
       ),
     )
   assert creature_fight.threatened(state: creature.fight(state: creature_state))
-    == set.from_list([ConnectionId(1)])
+    == set.from_list([map_support.address(number: 1)])
     as "the viewer's strike put it on the creature's threat list"
   // The creature's snapshot reaches the map, which relays its burst, two news, to the viewer.
   let assert Ok(map.Live(unit_id:, life:, relations:, ..)) =
@@ -3795,7 +3836,7 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
           map_message.Snapshot(
             unit_id:,
             life:,
-            by: ConnectionId(1),
+            by: map_support.address(number: 1),
             generation: held,
             burst: [
               PeerNews(
@@ -3849,18 +3890,22 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
     })
     as "the map tells the creature the viewer's sight ended, then that the viewer is gone"
   assert creature.told_by_map(caster_gone)
-    == Ok(creature.CasterGone(by: ConnectionId(1)))
+    == Ok(creature.CasterGone(by: map_support.address(number: 1)))
     as "and the second tell is the map's CasterGone of the viewer's connection"
   assert told_unit == unit_id
   let assert Ok(told) = creature.told_by_map(unseen)
-  assert told == creature.Unseen(by: ConnectionId(1), generation: held)
+  assert told
+    == creature.Unseen(by: map_support.address(number: 1), generation: held)
     as "under the generation of the sight the viewer held"
   let #(creature_state, _) =
     creature.step(
       creature_state,
       support.input_at_ms(ms: 6400, event: OwnEvent(step.Told(told))),
     )
-  assert !set.contains(creature.viewers(state: creature_state), ConnectionId(1))
+  assert !set.contains(
+    creature.viewers(state: creature_state),
+    map_support.address(number: 1),
+  )
     as "the creature's copy of its viewers drops the connection"
   assert creature_fight.threatened(state: creature.fight(state: creature_state))
     == set.new()

@@ -34,6 +34,7 @@ const sources = [
   "genesis_prime/world_map/spawn_id.gleam",
   "genesis_prime/world_map/spawn_source.gleam",
   "genesis_prime/world_map/stay.gleam",
+  "genesis_prime/world_map/unit_address.gleam",
   "genesis_prime/game/start_place.gleam",
   "genesis_prime/message/float32.gleam",
   "genesis_prime/table/id.gleam",

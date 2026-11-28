@@ -121,7 +121,6 @@ fn placed(
       ),
       list.map(player_life.fighters(life: placed.life), fn(fighter) {
         connection_movement.tells_a_fighter_the_place(
-          connection:,
           entered: placed,
           fighter:,
           place:,

@@ -166,6 +166,7 @@ fn locate(
     | step.Store
     | step.Maps
     | step.Map(..)
+    | step.Unit(..)
     | step.Creature(..)
     | step.CharacterNamed(..)
     | step.ZoneChannel(..) -> Error(Nil)
@@ -195,6 +196,7 @@ fn send(
     | step.Store
     | step.Maps
     | step.Map(..)
+    | step.Unit(..)
     | step.Creature(..)
     | step.CharacterNamed(..)
     | step.ZoneChannel(..) -> Error(Nil)

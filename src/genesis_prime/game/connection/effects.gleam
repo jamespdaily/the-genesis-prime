@@ -248,7 +248,6 @@ pub fn world_left(
   let #(left, ended) = cast_tick.left(cast: entered.cast)
   let #(compared, told) =
     connection_casting.creatures_settled(
-      session:,
       entered: world_entry.Entered(..entered, cast: left),
     )
   #(
