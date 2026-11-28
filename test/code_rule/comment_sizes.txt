@@ -1,0 +1,173 @@
+genesis_prime item A rule's rate placeholders. The recording of the live session's game 11
+genesis_prime item Asks the database through `probe` until it answers, says through `say` what 15
+genesis_prime item How many connections each listener holds at once is the server's choice: half 12
+genesis_prime/application module The server as an OTP application (`application_start_module` in 93
+genesis_prime/client_connection item Sorts an input: what the client closing and a failed socket do is the same 11
+genesis_prime/connection/closer module Closes every listener to new sockets as the server starts to stop, before 46
+genesis_prime/connection/registry module Where the connections are found: OTP's `pg` (process groups). A group is 52
+genesis_prime/connection/script module What one accepted connection takes from outside its socket: its seed, the 45
+genesis_prime/connection/shell item Waits for the outcome of the ask tagged `tag` by a selective receive that 12
+genesis_prime/content module The content tables: data the server owns, kept in Postgres and loaded once at 119
+genesis_prime/game/camp module The player's camp: leaving the world to character select, a feature of the 53
+genesis_prime/game/cast item A cast of `spell` starts as a child: a Proxy's child, a proc's spell and a periodic Proxy's 11
+genesis_prime/game/cast item A press of a quest button's spell that takes a unit, at the unit the press names, 14
+genesis_prime/game/cast item The caster died: each live cast ends with its timers cancelled and 0x7fe to 16
+genesis_prime/game/cast item The caster's 0x943, the use of an item the client sends from StartItemUseCast 18
+genesis_prime/game/cast item The children of a Proxy on the units `targets`, each the named spell as a child cast 14
+genesis_prime/game/cast item The end of an input in the world: each live or lingering cast whose spell's 22
+genesis_prime/game/cast item The player's standing spells become the wanted ones, in the order given: the spells a 16
+genesis_prime/game/cast item The round of a go closed with `struck`, the units it named in the order of its 28
+genesis_prime/game/cast item What a go does to the caster's stealth, after the go's other effects: each Stealth row 12
+genesis_prime/game/cast module A player's casts, a feature of the game connection's rule 102
+genesis_prime/game/cast/control item The creatures a go holds unit states on: each unit state among the effects the go 40
+genesis_prime/game/cast/control item The creatures a go removes: each despawn among the effects the go `reached` (a DespawnUnit 36
+genesis_prime/game/cast/control module The lasting modifiers, restrictions and crowd control a cast starts, and the cooldowns it arms. 41
+genesis_prime/game/cast/cost module Whether a press may start a cast: the spell's conditions, what it costs and the verdict of each check. 88
+genesis_prime/game/cast/frame item 0x7ff for a cast the caller names a caster for, from where it stands: a creature's cast 13
+genesis_prime/game/cast/gate item What a prerequisite may read about a player entering a world, before its unit and 15
+genesis_prime/game/cast/gate item Whether a modifier row takes effect on `unit_id`, one of the units its aim names. 23
+genesis_prime/game/cast/heal item What a heal row reaching `unit_id` comes to: for a heal applied at once (a periodic 13
+genesis_prime/game/cast/press item The plan's spell as an activate cast casts it, with the cast time the client takes for 17
+genesis_prime/game/cast/press item The primary target of a press of `spell` at the unit its message names, judged by the 11
+genesis_prime/game/cast/press module Pressing, holding and charging an ability: the thresholds, the key's repeats and the refusals of a press. 80
+genesis_prime/game/cast/proc item The events a strike round's units give the holder, in the round's order: for each 13
+genesis_prime/game/cast/proc module The procs and passives a cast holds, and the breaking of stealth. 120
+genesis_prime/game/cast/state item A child a Proxy, a proc fire or a periodic Proxy's tick started, or a cast the server 12
+genesis_prime/game/cast/tick item The ticks of the cast `cast_id` due at the time fire, each due tick of each row, a 14
+genesis_prime/game/cast/tick item What a Proxy's target gate gives for the unit its child would be made on. The gate's 11
+genesis_prime/game/cast/tick item What a prerequisite may read about the caster, with no roll: the live casts it is 14
+genesis_prime/game/character_select module Character select, the first thing a game connection does once its session 109
+genesis_prime/game/client_casts module The casts a player's client holds, or held and saw its caster finish, that the player's 53
+genesis_prime/game/connection module The rule of one game connection: the client's connection to the game 153
+genesis_prime/game/connection/casting module The player's casts and strikes on the game connection 79
+genesis_prime/game/connection/dev_command module The development commands carried out on the game connection 81
+genesis_prime/game/connection/experience module The player's experience on the game connection (genesis_prime/game/connection): what a 43
+genesis_prime/game/connection/frames item 0x638 for a creature that runs a path: kind 0, the map's time the path starts at 15
+genesis_prime/game/connection/frames item 0x638 that turns a creature standing at `standing_at`, in the map's time of `at_ms`: kind 14
+genesis_prime/game/connection/life module The player's life on the game connection (genesis_prime/game/connection): a 73
+genesis_prime/game/connection/login module The game connection's login (genesis_prime/game/connection): the hand-off's 43
+genesis_prime/game/connection/look module The player's look on the game connection (genesis_prime/game/connection): its rule 61
+genesis_prime/game/connection/properties module The player's properties on the game connection (genesis_prime/game/connection): 52
+genesis_prime/game/connection/quest_turn_in module The player's turn-in of a quest on the game connection (genesis_prime/game/connection): the 43
+genesis_prime/game/connection/viewers item The unit of the player's own record as another player is created with it: at 14
+genesis_prime/game/connection/viewers item What the map sent for the player's stay (`stay_sent`): who sees its player 15
+genesis_prime/game/connection/viewers module Other players and creatures on the game connection 206
+genesis_prime/game/connection/world module The player's stay in the world on the game connection 57
+genesis_prime/game/departures module The departures terminals at the end of the training simulation, and where each lands 104
+genesis_prime/game/dev_command module The development chat commands: a Say line that starts with `!`, read as a 47
+genesis_prime/game/experience module A player's experience and level, and what a kill's credit does to them: the pure 43
+genesis_prime/game/interaction module The player's request to talk to a unit: the client's 0x07EA, which it sends when 73
+genesis_prime/game/limited_action_set item The bars a player has from the rows the store loaded, judged as at entry: a saved 22
+genesis_prime/game/movement module The player's movement in the world, a feature of the game connection's rule 60
+genesis_prime/game/objective item The `Script` of the objective at `index` of the quest. A type 5 objective 11
+genesis_prime/game/objective item The log and the messages after what the player holds, the zones they stand in and 34
+genesis_prime/game/objective item The quest's stand-in scripts (`script_of`), a held one left open: 17
+genesis_prime/game/objective item Whether the creature gives or receives a quest none of whose objectives counts the use 13
+genesis_prime/game/player_life item A heal of the player's own `vital` by `amount` (genesis_prime/game/cast `Heal`), worked 11
+genesis_prime/game/player_life item A player entering the world with the health its last save kept: `saved` 17
+genesis_prime/game/player_life module A player's health and shield in a fight, and the creatures it fights: the 304
+genesis_prime/game/projector module The training simulation's four projectors and where each puts the player: the rule behind 45
+genesis_prime/game/quest item Whether the client marks the creature with a quest dialog for this player 11
+genesis_prime/game/quest module A player's requests that change the quest log: to accept a quest, 0x035B, to retry a 51
+genesis_prime/game/quest_log item The log after `amount` is added to the progress of the quest's objective at `index`, 14
+genesis_prime/game/quest_log item The log after a use of, or a cast at, the object of the spawn `unit` is counted for the 12
+genesis_prime/game/quest_log module The player's quest log: the quests the character has a record of, which the 69
+genesis_prime/game/quest_turn_in module The player's turn-in of a quest, the client's 0x035D: a feature of the game connection's rule 87
+genesis_prime/game/shown module The units a player's client shows, as its connection knows them: the picture 53
+genesis_prime/game/start_place item The yaw, pitch and roll that the client's QuaternionToEulerAngles 13
+genesis_prime/game/start_place module Where a new character starts: the WorldLocation2 row of each start of 41
+genesis_prime/game/strike item What a go strikes: the units, in the area row's order (Closest, Furthest or Random by the 12
+genesis_prime/game/strike module A player's strikes, a feature of the game connection's rule as the cast rule 161
+genesis_prime/game/vendor_purchase module The player's buy from the open vendor, the client's 0x00BE, and buy back of an entry of 85
+genesis_prime/game/vendor_sale module The player's sale to the open vendor: the client's 0x0166 (one stack, or part of one) 89
+genesis_prime/game/world_entry item A player in the world: its character as the store loaded it (which a join at 23
+genesis_prime/game/world_entry item The map is asked to take the character at `place`, with the movement it 21
+genesis_prime/game/world_entry item The store's answer to `play_requested`'s ask: the map is asked to take the 11
+genesis_prime/game/world_entry module Entering the world: the client's request to play a character, from the 150
+genesis_prime/login/auth_connection module The rule of one auth connection: the login the client makes with the game 49
+genesis_prime/login/sts_connection module The rule of one STS connection: the NC platform login, from the client's 66
+genesis_prime/map/message item The visibility prerequisites that fail for the connection's player are now 11
+genesis_prime/readiness module Whether the server can serve: the database answers one read and has run 62
+genesis_prime/server item Adds the creature registry, Maps, the creature supervisor and the map 14
+genesis_prime/server module The server's supervision tree. Each part of the server is added as a 79
+genesis_prime/shared/activate item The Activate rows of the spell and the RavelSignal rows it drops, or the first effect 41
+genesis_prime/shared/activate module The activate cast of a creature the player right-clicks, a collectible such as the 44
+genesis_prime/shared/area module Which units an area strikes: pure geometry on the ground, from a centre and 59
+genesis_prime/shared/class_resource module A player's class resource, a feature of the game connection's rule 110
+genesis_prime/shared/creature_combat item A creature's own attack, worked out when the content loads 12
+genesis_prime/shared/creature_combat item A special, or an auto-attack with a cast time above 0: a charge, which strikes each 21
+genesis_prime/shared/creature_kind module What the server chooses for each kind of creature, as the content load checks 68
+genesis_prime/shared/creature_special module The spells a kind of creature casts besides its attack, as the content load reads 51
+genesis_prime/shared/crowd_control item The instance id of the `count`th state the unit `caster_unit_id` told: its unit id 14
+genesis_prime/shared/damage module The value of a damage effect for a player that casts it, by the client's own 60
+genesis_prime/shared/effect_kind item Whether a row of the effect type with these `targetFlags` is read: every row of a 13
+genesis_prime/shared/focus item The whole points of Focus a cost needs, as the client's check works them out: `m x cost + 11
+genesis_prime/shared/forced_move module The path a ForcedMove effect (`Spell4Effects.effectType.3`) throws a creature 60
+genesis_prime/shared/hit module What a strike does to a unit's health and shield: the one rule of a hit. It 102
+genesis_prime/shared/item_property module What one item gives the unit that wears it, by the client's own item 74
+genesis_prime/shared/lasting item The node a go gives a unit, from the node the cast already holds there (`held`) and 13
+genesis_prime/shared/lasting module A cast's lasting effects: what a Fluff (17) effect leaves on a unit, how long 77
+genesis_prime/shared/loadout module What a character holds on entering the world, from the client's tables: the 48
+genesis_prime/shared/look module A player's look: the item visuals its model shows, and the disguises of its own 63
+genesis_prime/shared/player_unit module A player character's unit: the character's own values, alive at the place 49
+genesis_prime/shared/prerequisite item The subject of a unit the caster struck, for a target-side check (a Proxy's target apply 12
+genesis_prime/shared/quest_view item In the client's active list (opcode.0x35f): accepted or achieved, with the 21
+genesis_prime/shared/server_proxy module The spells the server casts on the caster with a go of an ability where the client's 50
+genesis_prime/shared/spell_area item How a creature's cast of the spell counts a unit as inside its area at each go, in go order, 11
+genesis_prime/shared/spell_area item The telegraph rows of the spell that say who is hit: the never-drawn twins (flag 11
+genesis_prime/shared/spell_area item Whether the strike centres a spell started as `start` where its hit rows are drawn. A 14
+genesis_prime/shared/spell_plan item A Fluff effect (`Spell4Effects.effectType.17`), Scale effect (18), ItemVisualSwap effect 12
+genesis_prime/shared/spell_plan item A ForcedMove effect (`Spell4Effects.effectType.3`) of a spell whose targetFlags are 2, 11
+genesis_prime/shared/spell_plan item A Proc effect (`Spell4Effects.effectType.14`) of a spell, aimed at the caster: when 15
+genesis_prime/shared/spell_plan item A QuestAdvanceObjective effect (`Spell4Effects.effectType.42`) of a spell whose targetFlags 11
+genesis_prime/shared/spell_plan item A UnitPropertyModifier effect (`Spell4Effects.effectType.11`), a 14
+genesis_prime/shared/spell_plan item A UnitStateSet row (`Spell4Effects.effectType.15`) as a `UnitState` of the part of its aim 11
+genesis_prime/shared/spell_plan item An effect's condition: its caster apply prerequisite and, for a Proxy 11
+genesis_prime/shared/spell_plan item One CCStateSet row (`Spell4Effects.effectType.4`): dataBits00 is one of the 28 11
+genesis_prime/shared/spell_plan item What a Proc row says without a table: its reading, or why the row is left out. A row 13
+genesis_prime/shared/spell_plan item What the plan makes of one Spell4Effects row, in the place its spell is planned: the 17
+genesis_prime/shared/spell_plan module What the client's tables say a pressed ability does: for each ability a class 389
+genesis_prime/shared/spell_tier module The tiers of an ability: the nine Spell4 rows of one Spell4Base that the ability builder's 44
+genesis_prime/shared/strike_tell module What a striker and the unit it strikes tell each other, both ways: a player's 90
+genesis_prime/shared/unit_casts module The casts a unit create (0x262) lists, so a player that comes into sight 70
+genesis_prime/shared/unit_properties module A unit's properties: each UnitProperty2 id's base and value, and the property 89
+genesis_prime/store item A character as the character list needs it: what the client's list shows 11
+genesis_prime/store item Saves where the character stands, only while its `session_epoch` is still 25
+genesis_prime/store item The account's character, taken by this login, whose `session_epoch` is 12
+genesis_prime/store item The entry the client's active list carries for a quest (opcode.0x35f): the 13
+genesis_prime/store item The four words an item carries beside its place, as the character_item table keeps them. 12
+genesis_prime/store/worker item Runs one of the player's items' requests: each is one transaction, the 15
+genesis_prime/store/worker item Runs one of the player's movement's requests: a save is one transaction, the 13
+genesis_prime/store/worker module The store's workers: one process per ask, started under the store's 86
+genesis_prime/table/loader/derivation item Each derived value. A feature whose rule reads a value of the tables that 60
+genesis_prime/table/loader/requirement item Each required column. A feature that follows a column adds it here, with 24
+genesis_prime/table/loader/server_table item The entry of each table the server loads, in file-name order. 86
+genesis_prime/table/loader/store module The client's game tables as one plain value: a map of each table by its 41
+genesis_prime/wire_recording module A recording of what one connection's shell took and wrote: each input it 47
+genesis_prime/world_map/creature item A caster's connection: a DespawnUnit effect of its spell removes the creature 63
+genesis_prime/world_map/creature item A caster's connection: the UnitStateSet rows of its go hold their states on the creature, 58
+genesis_prime/world_map/creature item The caster's connection `by` tells the creature that its cast holds `view` on it 18
+genesis_prime/world_map/creature module One creature: the process that owns a creature's unit in one run of one map, 234
+genesis_prime/world_map/creature_fight item A creature's fight: its status, where it stands or runs (kept apart from the 12
+genesis_prime/world_map/creature_fight item A go of the open charge is due (`CastEnds` of the round's generation, C alive and Fighting). 11
+genesis_prime/world_map/creature_fight item The attack tick: with the target in reach and no round open the creature 13
+genesis_prime/world_map/creature_fight item What the creature fights with: its unit and address, the place of its spawn, 28
+genesis_prime/world_map/creature_fight item Where the strike go's area is centred, which is where the client draws it, or none when 18
+genesis_prime/world_map/creature_fight module A creature's fight: the feature of the creature's rule 653
+genesis_prime/world_map/creature_guard module A creature's guard: the feature of the creature's rule (genesis_prime/world_map/creature) 119
+genesis_prime/world_map/game_number module The numbers the server chooses for a fight, as the content load checks them: 65
+genesis_prime/world_map/map item A development summon: the creature is made a run-only spawn at the place and 15
+genesis_prime/world_map/map item A map's players, its spawns that have a creature or a failure, the spawns' 13
+genesis_prime/world_map/map item A player's use released the unit `unit_id` (`Released`). The release goes 15
+genesis_prime/world_map/map item One player in the map: the stay its connection's Join named, its unit, the 16
+genesis_prime/world_map/map item The map's server time at monotonic time `monotonic_ms`, for a map started at 12
+genesis_prime/world_map/map item The state and effects of the player of `connection` coming to see the spawns 12
+genesis_prime/world_map/map module One map: a world of the client's World table and one instance of it, with 707
+genesis_prime/world_map/objective_spawn item The ranks of the client's tables alone, so that no stored row, added or deleted, moves 12
+genesis_prime/world_map/objective_spawn item The rows to stand for the kill objectives, given the rows the stored spawn 16
+genesis_prime/world_map/objective_spawn module The creatures a kill objective needs and the stored spawn table does not 86
+genesis_prime/world_map/registry module Maps: the registry that finds a map by its id and starts it on the first 74
+genesis_prime/world_map/relay module What a creature tells a player and what a player tells a creature, both through the 73
+genesis_prime/world_map/spawn item The attack of the spell `spell4_id` (genesis_prime/world_map/creature_life `Attack`), 23
+genesis_prime/world_map/spawn item The run-only spawn of a summon, checked as a spawn is: a row of the creature's 12
+genesis_prime/world_map/spawn module The spawns a map stands creatures at: one spawn is one place a creature of the 82
