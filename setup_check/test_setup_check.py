@@ -47,12 +47,13 @@ What a planted command answers (the contract the checks run against):
 - any other command stops the test with an AssertionError, so a check that
   runs something the table does not know is seen at once.
 
-The OTP build in GENESIS_OTP_DIR is checked unless GENESIS_NO_CLIENT=1 and
-GENESIS_OTP_DIR is unset (CI sets GENESIS_OTP_DIR, so it runs on the build it
-caches), and setup_check/environment.sh puts its bin first on PATH on the same
-condition. The build is plain OTP: a build with the file `GENESIS_PATCHES` in
-$GENESIS_OTP_DIR, which the build script wrote when it applied patches, asks for
-a rebuild.
+The patched OTP is checked unless GENESIS_NO_CLIENT=1 and GENESIS_OTP_DIR is
+unset (CI sets GENESIS_OTP_DIR, so it runs on the patched build it caches), and
+setup_check/environment.sh puts its bin first on PATH on the same condition.
+The patched OTP's marker is the file `GENESIS_PATCHES` in $GENESIS_OTP_DIR: one
+line per patch, "NAME SHA-256", the name and the hash of that file in the
+repository's setup_check/ folder. The check requires a line, with the matching
+hash, for every setup_check/*.patch, so a changed patch asks for a rebuild.
 
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
 """
@@ -102,12 +103,15 @@ OTP = PINS["erlang"]  # 29.1.3
 REBAR = PINS["rebar"]  # 3.28.0
 TARGET_BUILD = 16042  # client_archive.target_build: GetVersionInfo 0x1406f8360 returns 0x3eaa
 POSTGRES_MAJOR = "18"  # Jim's choice
-PATCH_FILE = "otp-1b4ac11-clear-live-hf-end.patch"  # the patch an OTP built before 29.1.3 lists in its marker
+PATCH_FILE = "otp-1b4ac11-clear-live-hf-end.patch"
 MARKER = "GENESIS_PATCHES"
+
+PATCH_SHA256 = hashlib.sha256((HERE / PATCH_FILE).read_bytes()).hexdigest()
 
 SPAWN_TSV = b"id\tentity_type\n1\t0\n"
 PATH_TSV = b"id\tspawn_id\n1\t1\n"
 IMPORT_COMMAND = "gleam run -m genesis_prime/import_world_data"
+STALE_SHA256 = hashlib.sha256(b"an older patch").hexdigest()
 
 PLANTED_CLIENT = b"planted WildStar64.exe"
 OTHER_CLIENT = b"another WildStar64.exe"
@@ -163,7 +167,7 @@ class Plan:
     no_query_process_flag: bool = False  # GENESIS_NO_QUERY_PROCESS=1
     client: str = "good"  # good, other (another SHA-256) or missing
     index_builds: tuple = (TARGET_BUILD,) * 4  # per name in INDEX_NAMES: a build, "garbage" or "signature"
-    otp_dir: str = "plain"  # plain, patched (a marker listing the removed patch) or absent
+    otp_dir: str = "patched"  # patched, unmarked, stale, unlisted_patch or absent
     erl_on_path: str = "patched"  # which erl PATH finds first: patched, elsewhere (a stock OTP) or linked (a link to the patched erl)
     otp_dir_linked: bool = False  # GENESIS_OTP_DIR names a symbolic link to the patched OTP's folder
     ghidra_version: str = "12.2"
@@ -203,6 +207,9 @@ class PlantedTestCase(unittest.TestCase):
             shutil.copyfile(REPOSITORY / name, repository / name)
         (repository / "manifest.toml").write_text("# planted\n")
         (repository / "setup_check").mkdir()
+        shutil.copyfile(HERE / PATCH_FILE, repository / "setup_check" / PATCH_FILE)
+        if plan.otp_dir == "unlisted_patch":
+            (repository / "setup_check" / "second.patch").write_text("a second patch\n")
         env = {
             "HOME": str(self.root / "home"),
             "GENESIS_HOME": str(self.root / "home" / ".genesis-prime"),
@@ -302,8 +309,13 @@ class PlantedTestCase(unittest.TestCase):
             (otp_dir / "bin").mkdir(parents=True, exist_ok=True)
             (otp_dir / "bin" / "erl").write_text("#!/bin/sh\n")
             (otp_dir / "bin" / "erl").chmod(0o755)
-        if plan.otp_dir == "patched":
-            (otp_dir / MARKER).write_text("%s %s\n" % (PATCH_FILE, "0" * 64))
+        lines = {
+            "patched": ["%s %s" % (PATCH_FILE, PATCH_SHA256)],
+            "unlisted_patch": ["%s %s" % (PATCH_FILE, PATCH_SHA256)],
+            "stale": ["%s %s" % (PATCH_FILE, STALE_SHA256)],
+        }
+        if plan.otp_dir in lines:
+            (otp_dir / MARKER).write_text("\n".join(lines[plan.otp_dir]) + "\n")
         if plan.otp_dir_linked:
             link = self.root / "otp-link"
             if not link.exists():
@@ -501,26 +513,17 @@ class GleamTest(PlantedTestCase):
 
 
 class ErlangTest(PlantedTestCase):
-    def test_an_otp_other_than_the_pinned_version_is_named_with_what_was_found(self):
+    def test_an_erl_of_another_version_than_tool_versions_is_refused_with_the_fix_command_and_the_pinned_one_passes(self):
+        # nothing is planted at GENESIS_OTP_DIR: the erl on PATH is the only OTP there is
+        self.assertEqual(setup_check.check_erlang(self.plant(otp_dir="absent")), [])
         for found in ("28.3.1", "29.1.2"):
             with self.subTest(found=found):
-                missing = self.only(setup_check.check_erlang(self.plant(otp=found)))
+                missing = self.only(setup_check.check_erlang(self.plant(otp=found, otp_dir="absent")))
                 self.assert_part(missing, "erlang", "otp")
                 self.assert_found(missing, found)
                 self.assertIn(OTP, missing.part + missing.fix)
-                self.assert_fix(missing, *INSTALL_WORDS)
-
-    def test_an_otp_missing_at_genesis_otp_dir_is_named_where_the_client_is(self):
-        missing = self.only(setup_check.check_erlang(self.plant(otp_dir="absent")))
-        self.assert_part(missing, "otp")
-        self.assert_fix(missing, "GENESIS_OTP_DIR", "build_otp.sh")
-
-    def test_an_otp_built_with_no_patch_is_accepted_and_one_built_with_the_old_patch_asks_for_a_rebuild(self):
-        self.assertEqual(setup_check.check_erlang(self.plant(otp_dir="plain")), [])
-        missing = self.only(setup_check.check_erlang(self.plant(otp_dir="patched")))
-        self.assert_part(missing, "otp")
-        self.assertIn(PATCH_FILE, missing.part + missing.found)
-        self.assert_fix(missing, "rebuild", "build_otp.sh")
+                self.assert_fix(missing, "brew upgrade erlang")
+                self.assert_fix(missing, "asdf install erlang " + OTP)
 
 
 class PostgresTest(PlantedTestCase):
