@@ -356,49 +356,117 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
     )
     == ForSelect(
       Listed([
-        Character(
-          character_id: CharacterId(first),
-          name: "Zed Qu",
-          gender: 1,
-          race_id: RaceId(3),
-          class_id: ClassId(4),
-          faction_id: 166,
-          level: 9,
-          path: 2,
-          place: Some(place_support.at(
-            world_id: 1387,
-            world_zone_id: 1100,
-            x: 1.5,
-            y: 2.5,
-            z: 3.5,
-          )),
-          look: [],
-          bones: [],
-          naming: NameStands,
+        store.ListedCharacter(
+          worn: character_support.novice_worn(class_id: 4),
+          character: Character(
+            character_id: CharacterId(first),
+            name: "Zed Qu",
+            gender: 1,
+            race_id: RaceId(3),
+            class_id: ClassId(4),
+            faction_id: 166,
+            level: 9,
+            path: 2,
+            place: Some(place_support.at(
+              world_id: 1387,
+              world_zone_id: 1100,
+              x: 1.5,
+              y: 2.5,
+              z: 3.5,
+            )),
+            look: [],
+            bones: [],
+            naming: NameStands,
+          ),
         ),
-        Character(
-          character_id: CharacterId(second),
-          name: "Abe Qu",
-          gender: 1,
-          race_id: RaceId(3),
-          class_id: ClassId(12),
-          faction_id: 166,
-          level: 9,
-          path: 0,
-          place: Some(place_support.at(
-            world_id: 1387,
-            world_zone_id: 1100,
-            x: 1.5,
-            y: 2.5,
-            z: 3.5,
-          )),
-          look: [],
-          bones: [],
-          naming: NameStands,
+        store.ListedCharacter(
+          worn: [],
+          character: Character(
+            character_id: CharacterId(second),
+            name: "Abe Qu",
+            gender: 1,
+            race_id: RaceId(3),
+            class_id: ClassId(12),
+            faction_id: 166,
+            level: 9,
+            path: 0,
+            place: Some(place_support.at(
+              world_id: 1387,
+              world_zone_id: 1100,
+              x: 1.5,
+              y: 2.5,
+              z: 3.5,
+            )),
+            look: [],
+            bones: [],
+            naming: NameStands,
+          ),
         ),
       ]),
     )
-    as "the account's two rows as inserted, in the order of their ids, and not the other account's row"
+    as "the account's two rows as inserted, in the order of their ids, the first holding the Novice set its class is made with, and not the other account's row"
+  account_store_support.stop(store)
+}
+
+pub fn the_character_list_answers_each_characters_items_worn_at_location_0_in_bag_order_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let store = account_store_support.start_store(pool_size: 2)
+  let account =
+    account_store_support.insert_account(store:, login_name: "login-1")
+  let other =
+    account_store_support.insert_account(store:, login_name: "login-2")
+  // `insert` stores the Novice set of the class at location 0: class 4 holds one, class 12 none.
+  let first =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Zed Qu",
+      class_id: 4,
+      path: 2,
+    )
+  let _second =
+    character_support.insert(
+      pool: store.pool,
+      account:,
+      name: "Abe Qu",
+      class_id: 12,
+      path: 0,
+    )
+  let _theirs =
+    character_support.insert(
+      pool: store.pool,
+      account: other,
+      name: "Cal Qu",
+      class_id: 4,
+      path: 1,
+    )
+  // An item in the bag (location 1) and one in the bank (location 2).
+  let assert Ok(_) =
+    put_item(
+      store:,
+      character_id: CharacterId(first),
+      item2_id: 81_346,
+      location: 1,
+      bag_index: 0,
+      stack_count: 1,
+    )
+    as "a bag item is stored"
+  let assert Ok(_) =
+    put_item(
+      store:,
+      character_id: CharacterId(first),
+      item2_id: 8534,
+      location: 2,
+      bag_index: 0,
+      stack_count: 1,
+    )
+    as "a bank item is stored"
+  let assert ForSelect(Listed(characters)) =
+    account_store_support.ask(store:, request: Select(ListCharacters(account)))
+    as "one ask answers the list"
+  assert list.map(characters, fn(listed) { listed.worn })
+    == [character_support.novice_worn(class_id: 4), []]
+    as "opcode.0x262.worn_visuals: only location 0 is worn, so the set of the first character is listed in bag order and not its bag or bank item; the character with none gets an empty list; the other account's set is not listed"
   account_store_support.stop(store)
 }
 
@@ -617,22 +685,24 @@ pub fn a_character_the_developer_tool_adds_is_listed_with_the_values_it_was_give
       request: Select(ListCharacters(account)),
     )
     == ForSelect(
-      Listed([
-        Character(
-          character_id: CharacterId(character_id),
-          name: "Dev Qu",
-          gender: 1,
-          race_id: RaceId(1),
-          class_id: ClassId(1),
-          faction_id: 167,
-          level: 1,
-          path: 0,
-          place: None,
-          look: [],
-          bones: [],
-          naming: NameStands,
-        ),
-      ]),
+      Listed(
+        character_support.unequipped([
+          Character(
+            character_id: CharacterId(character_id),
+            name: "Dev Qu",
+            gender: 1,
+            race_id: RaceId(1),
+            class_id: ClassId(1),
+            faction_id: 167,
+            level: 1,
+            path: 0,
+            place: None,
+            look: [],
+            bones: [],
+            naming: NameStands,
+          ),
+        ]),
+      ),
     )
     as "the tool's doc comment: level 1, path 0, no world, zone or position"
   let assert Ok(none) =
@@ -657,7 +727,7 @@ fn names_listed(store: Store, account: AccountId) -> List(String) {
   let assert ForSelect(Listed(characters)) =
     account_store_support.ask(store:, request: Select(ListCharacters(account)))
     as "a list is answered with a list"
-  list.map(characters, fn(character) { character.name })
+  list.map(characters, fn(listed) { listed.character.name })
 }
 
 fn deleted(
@@ -782,7 +852,7 @@ fn naming_of(store: Store, account: AccountId) -> List(store.Naming) {
   let assert ForSelect(Listed(characters)) =
     account_store_support.ask(store:, request: Select(ListCharacters(account)))
     as "a list is answered with a list"
-  list.map(characters, fn(character) { character.naming })
+  list.map(characters, fn(listed) { listed.character.naming })
 }
 
 pub fn a_rename_to_a_name_taken_in_any_case_is_new_name_taken_and_changes_nothing_test() -> Nil {
@@ -895,34 +965,36 @@ pub fn a_create_stores_the_character_at_the_level_it_was_given_with_the_values_i
       request: Select(ListCharacters(account)),
     )
     == ForSelect(
-      Listed([
-        Character(
-          character_id:,
-          name: "Ab Cd",
-          gender: 1,
-          race_id: RaceId(1),
-          class_id: ClassId(1),
-          faction_id: 167,
-          level: 3,
-          path: 2,
-          place: Some(place_support.at(
-            world_id: 3460,
-            world_zone_id: 6009,
-            x: 29.128599166870117,
-            y: -853.87158203125,
-            z: -560.18798828125,
-          )),
-          look: [
-            LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
-            LookEntry(
-              label: CharacterCustomizationLabelId(22),
-              value: 4_000_000_000,
-            ),
-          ],
-          bones: [0xBF800000, 0x3F800000, 0],
-          naming: NameStands,
-        ),
-      ]),
+      Listed(
+        character_support.unequipped([
+          Character(
+            character_id:,
+            name: "Ab Cd",
+            gender: 1,
+            race_id: RaceId(1),
+            class_id: ClassId(1),
+            faction_id: 167,
+            level: 3,
+            path: 2,
+            place: Some(place_support.at(
+              world_id: 3460,
+              world_zone_id: 6009,
+              x: 29.128599166870117,
+              y: -853.87158203125,
+              z: -560.18798828125,
+            )),
+            look: [
+              LookEntry(label: CharacterCustomizationLabelId(2), value: 1),
+              LookEntry(
+                label: CharacterCustomizationLabelId(22),
+                value: 4_000_000_000,
+              ),
+            ],
+            bones: [0xBF800000, 0x3F800000, 0],
+            naming: NameStands,
+          ),
+        ]),
+      ),
     )
     as "the create's result: race, sex, class and faction from the creation row, the level the create gave (3, not 1), the start place the create gave (World 3460, zone 6009 and the position of WorldLocation2 row 51596, as 32-bit floats), the look and the bones as the client sent them (32-bit values come back as they went in)"
   account_store_support.stop(store)
@@ -961,7 +1033,7 @@ pub fn a_stored_character_with_world_0_loads_as_no_place_test() -> Nil {
       store:,
       request: Select(ListCharacters(account)),
     )
-    == ForSelect(Listed([character]))
+    == ForSelect(Listed(character_support.unequipped([character])))
     as "world 0 is no World row, which 0xAD needs (opcode.0xad), so the list reads no place"
   assert account_store_support.ask(
       store:,

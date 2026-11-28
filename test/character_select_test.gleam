@@ -21,6 +21,7 @@
 
 import character_support
 import character_tables
+import fixture_tables
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/character_select.{Ask, Send, Warn}
 import genesis_prime/message/account_entitlements
@@ -49,12 +50,16 @@ import genesis_prime/store.{
   NewNameBreaksRule, NewNameTaken, NoFreeSlot, NoSuchCharacter, NotRenamable,
   RenameCharacter as StoreRename,
 }
-import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
+import genesis_prime/table/id.{
+  CharacterCustomizationLabelId, ClassId, Item2Id, RaceId,
+}
+import genesis_prime/table/loader/store as table_store
 import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/string
 import owned_test
+import planted_table.{Integer}
 
 const filetime = 133_900_000_000_000_000
 
@@ -72,7 +77,7 @@ fn listed_with_slots(
 ) -> Result(#(character_select.State, List(character_select.Effect)), Nil) {
   character_select.listed(
     state,
-    characters,
+    character_support.unequipped(characters),
     filetime:,
     realm_id: 1,
     max_characters: 2,
@@ -263,13 +268,128 @@ pub fn an_entry_carries_the_body_visuals_of_its_look_and_its_bones_test() -> Nil
   )
     as "CharacterCustomization row 10 (race 1, sex 0, slot 25, labels 21 = 2 and 2 = 1, display 137): a Dominion human male with that look has display 137 on BodyFace"
   assert entry.worn_visuals == []
-    as "0x14004adb0: the client never builds worn visuals from the creation row; gear comes with the inventory in world entry"
+    as "opcode.0x117.worn_visuals: a character that holds nothing at location 0 is drawn with none"
   assert entry.bone_values == [0x3F800000, 0x40000000]
     as "opcode.0x25b: the bone values the client sent come back as they were"
   assert entry.costume_slot_mask == 0
     && entry.costume_item_ids == []
     && entry.costume_dyes == []
-    as "0x140027380: no costume"
+    as "0x140027380: a character with no worn items has no mask bit, so every armour and weapon slot draws nothing"
+}
+
+/// The Warrior of faction 167's chest and weapon (CharacterCreation row 466,
+/// Item2.novice_visuals): the displays 3838 in slot 1 and 119 in slot 20.
+const novice_chest = 81_359
+
+const novice_weapon = 81_346
+
+fn worn_by(
+  character character: Character,
+  items items: List(Int),
+) -> store.ListedCharacter {
+  store.ListedCharacter(character:, worn: list.map(items, Item2Id))
+}
+
+fn listed_worn(
+  characters characters: List(store.ListedCharacter),
+  tables tables: table_store.Tables,
+) -> List(character_select.Effect) {
+  let #(asking, _) = character_select.started(AccountId(7))
+  let assert Ok(#(_, effects)) =
+    character_select.listed(
+      asking,
+      characters,
+      filetime:,
+      realm_id: 1,
+      max_characters: 2,
+      character_slots: 2,
+      tables:,
+    )
+  effects
+}
+
+pub fn an_entry_carries_the_worn_visuals_and_slot_mask_of_a_chest_piece_and_a_weapon_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let effects =
+    listed_worn(
+      [
+        worn_by(stored(id: 1, name: "Ab Cd", level: 1), [
+          novice_weapon,
+          novice_chest,
+        ]),
+      ],
+      tables: character_tables.shared(),
+    )
+  let assert [entry] = entries(effects)
+  assert entry.worn_visuals
+    == [
+      ItemVisual(slot: 1, display_id: 3838, item_color_set_id: 0, dye: 0),
+      ItemVisual(slot: 20, display_id: 119, item_color_set_id: 0, dye: 0),
+    ]
+    as "opcode.0x262.worn_visuals, Item2.novice_visuals: the chest and the weapon are drawn in slots 1 and 20, in slot order"
+  assert entry.costume_slot_mask == 0x41
+    as "0x140027380: bit 0 for slot 1 and bit 6 for slot 20 are the only ones set"
+  assert entry.costume_item_ids == [novice_chest, 0, 0, 0, 0, 0, novice_weapon]
+    as "0x140027380: the item of each set bit in its place, 0 in the others"
+  assert entry.costume_dyes == [0, 0, 0, 0, 0, 0, 0]
+    as "a dye of 0 beside each id, as the 0x262 sends"
+}
+
+pub fn each_entry_carries_the_worn_items_of_its_own_character_in_the_lists_order_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let effects =
+    listed_worn(
+      [
+        worn_by(stored(id: 1, name: "Ab Cd", level: 1), [novice_chest]),
+        worn_by(stored(id: 2, name: "Ef Gh", level: 1), [novice_weapon]),
+        worn_by(stored(id: 3, name: "Ij Kl", level: 1), []),
+      ],
+      tables: character_tables.shared(),
+    )
+  assert list.map(entries(effects), fn(entry) {
+      #(entry.character_id, entry.costume_slot_mask, entry.worn_visuals)
+    })
+    == [
+      #(1, 0x01, [
+        ItemVisual(slot: 1, display_id: 3838, item_color_set_id: 0, dye: 0),
+      ]),
+      #(2, 0x40, [
+        ItemVisual(slot: 20, display_id: 119, item_color_set_id: 0, dye: 0),
+      ]),
+      #(3, 0, []),
+    ]
+    as "opcode.0x117: each entry holds the visuals and mask of the items its own character wears, in the order of the list"
+}
+
+pub fn a_worn_item_the_tables_cannot_dress_is_warned_about_and_the_entry_is_still_sent_test() -> Nil {
+  use <- owned_test.run(60_000)
+  // A copy of the weapon at a power level no ItemDisplaySourceEntry of its source holds.
+  use tables <- fixture_tables.added(
+    table: "Item2",
+    copy_of: novice_weapon,
+    id: 99_002,
+    with: [#("powerLevel", Integer(9999))],
+  )
+  let effects =
+    listed_worn(
+      [worn_by(stored(id: 1, name: "Ab Cd", level: 1), [novice_chest, 99_002])],
+      tables:,
+    )
+  let assert [entry] = entries(effects)
+  assert entry.costume_slot_mask == 0x01
+    && list.map(entry.worn_visuals, fn(visual) { visual.slot }) == [1]
+    as "the chest is still drawn and the entry still sent"
+  let assert [Warn(text:)] =
+    list.filter(effects, fn(effect) {
+      case effect {
+        Warn(..) -> True
+        Ask(..) | Send(..) -> False
+      }
+    })
+    as "one warning, for the one item the tables cannot dress"
+  assert string.contains(text, "99002")
+    && string.contains(text, "ItemDisplaySourceEntry")
+    as "the warning names the item and says which table has no row"
 }
 
 // ---- create ----

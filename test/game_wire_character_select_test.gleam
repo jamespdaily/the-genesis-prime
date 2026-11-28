@@ -453,6 +453,29 @@ pub fn a_created_warriors_entry_gives_the_bot_its_novice_weapon_three_abilities_
   login_support.stop(started)
 }
 
+pub fn a_created_warriors_next_list_entry_draws_its_set_test() -> Nil {
+  use <- owned_test.run(60_000)
+  let time = driven_time.new()
+  let #(started, port, account) = start(time:)
+  let game = in_select(started:, port:, account:)
+  game_client.send_create(game:, body: create_request("Ab Cd"))
+  let _created = created_result(game)
+  let assert [entry] = listed_entries(game)
+    as "the list holds the new character"
+  assert list.map(entry.worn_visuals, fn(visual) {
+      #(visual.slot, visual.display_id)
+    })
+    == novice_tables.worn_visuals(class_id: 1, faction_id: 167)
+    as "0x140027380, opcode.0x262.worn_visuals: the Warrior of faction 167 is listed with its chest 3838, legs 3840, shoulder 530, feet 3841, hands 3839 and weapon 119 (Item2.novice_visuals)"
+  assert entry.costume_slot_mask == 0x7B
+    && entry.costume_item_ids
+    == [81_359, 81_344, 0, 81_381, 81_345, 81_380, 81_346]
+    && entry.costume_dyes == [0, 0, 0, 0, 0, 0, 0]
+    as "0x140027380: the mask has the bits of slots 1, 2, 4, 5, 6 and 20, each naming its item of row 466 (opcode.0x111.equipped_set)"
+  game_client.close(game:)
+  login_support.stop(started)
+}
+
 pub fn a_created_warriors_entry_holds_its_six_armor_pieces_draws_its_set_and_leaves_the_sheet_as_it_was_test() -> Nil {
   use <- owned_test.run(60_000)
   // A created entry whose items are stored at another equipped location fails the loadout asserts.

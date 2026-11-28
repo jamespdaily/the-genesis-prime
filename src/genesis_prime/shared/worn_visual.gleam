@@ -31,8 +31,8 @@
 
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/table/id.{
-  type ItemDisplayId, type ItemSlotId, Item2Id, Item2TypeId, ItemDisplayId,
-  ItemSlotId,
+  type Item2Id, type ItemDisplayId, type ItemSlotId, Item2Id, Item2TypeId,
+  ItemDisplayId, ItemSlotId,
 }
 import genesis_prime/table/item2
 import genesis_prime/table/item2_type
@@ -146,6 +146,38 @@ fn display_of(
       }
     display, _ -> Ok(Some(ItemDisplayId(display)))
   }
+}
+
+/// A drawn visual and the item that gave it.
+pub type Drawn {
+  Drawn(item2_id: Item2Id, visual: WornVisual)
+}
+
+/// The drawn visuals of a list of worn items, in slot order, and each item that
+/// is not drawn because the tables cannot say, with the reason.
+pub type Worn {
+  Worn(drawn: List(Drawn), undrawn: List(#(Item2Id, WornVisualError)))
+}
+
+/// The visuals of worn items.
+pub fn of_items(
+  tables tables: table_store.Tables,
+  item2_ids item2_ids: List(Item2Id),
+) -> Worn {
+  let _ = tables
+  let _ = item2_ids
+  Worn(drawn: [], undrawn: [])
+}
+
+/// What 0x117 holds for the armour and weapon slots.
+pub type SlotMask {
+  SlotMask(mask: Int, item2_ids: List(Item2Id), dyes: List(Int))
+}
+
+/// The slot mask of drawn visuals.
+pub fn slot_mask(drawn drawn: List(Drawn)) -> SlotMask {
+  let _ = drawn
+  SlotMask(mask: 0, item2_ids: [], dyes: [])
 }
 
 /// The item visual of a worn item as 0x262 carries it: colour set 0 and dye 0,

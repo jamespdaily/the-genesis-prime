@@ -127,8 +127,8 @@ import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result.{type RenameResult}
 import genesis_prime/shared/appearance
 import genesis_prime/store.{
-  type AccountId, type Character, type CharacterId, CharacterId, NameStands,
-  NeedsRename,
+  type AccountId, type CharacterId, type ListedCharacter, CharacterId,
+  NameStands, NeedsRename,
 }
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
@@ -382,7 +382,7 @@ pub fn rename_requested(
 /// server's time the client keeps the difference from.
 pub fn listed(
   state state: State,
-  characters characters: List(Character),
+  characters characters: List(ListedCharacter),
   filetime filetime: Int,
   realm_id realm_id: Int,
   max_characters max_characters: Int,
@@ -589,7 +589,7 @@ fn slot_effects(character_slots character_slots: Int) -> List(Effect) {
 
 /// 0x0036 with the highest level and 0x0117 with the list.
 fn list_effects(
-  characters characters: List(Character),
+  characters characters: List(ListedCharacter),
   selected selected: Option(CharacterId),
   filetime filetime: Int,
   realm_id realm_id: Int,
@@ -599,8 +599,8 @@ fn list_effects(
   let level =
     bit_stream.must(
       MaxCharacterLevel(
-        highest_level: list.fold(characters, 0, fn(highest, character) {
-          int.max(highest, character.level)
+        highest_level: list.fold(characters, 0, fn(highest, listed) {
+          int.max(highest, listed.character.level)
         }),
       ),
       max_character_level.encode,
@@ -610,8 +610,8 @@ fn list_effects(
     bit_stream.must(
       CharacterList(
         server_time: filetime,
-        characters: list.map(characters, fn(character) {
-          entry(character:, selected:, index:)
+        characters: list.map(characters, fn(listed) {
+          entry(listed:, selected:, index:, tables:)
         }),
         enabled_creation_ids: [],
         disabled_creation_ids: [],
@@ -639,10 +639,13 @@ fn list_effects(
 /// items or dyes), and its bone values; a last logout only for the selected
 /// character.
 fn entry(
-  character character: Character,
+  listed listed: ListedCharacter,
   selected selected: Option(CharacterId),
   index index: appearance.Index,
+  tables tables: table_store.Tables,
 ) -> CharacterListEntry {
+  let _ = tables
+  let character = listed.character
   let CharacterId(character_id) = character.character_id
   let #(world_id, world_zone_id, position_x, position_y, position_z) = case
     character.place
