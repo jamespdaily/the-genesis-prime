@@ -100,6 +100,7 @@ import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/static_object.{type Created}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -1314,6 +1315,41 @@ pub fn messages_of_the_stay_before_are_dropped_in_a_restarted_run_that_gives_the
     )
   assert game_connection_support.player_in(taken).unit_id
     == game_connection_support.own_unit_id
+  takes_only_its_own_stay(
+    state:,
+    stay: map_support.stay(count: 2),
+    unit_id: game_connection_support.own_unit_id,
+  )
+}
+
+pub fn a_map_change_between_two_runs_that_both_issue_stay_1_drops_the_first_runs_notice_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // The player's first join is the fifth of its run and its Holocrypt join the fifth of the
+  // next run: both runs issue the player the address number 5, the map's own count. The
+  // connection counts its stays itself, so the first run's notice, which names the
+  // connection's first stay, is dropped after the second join, whatever the maps number.
+  let #(_, first) =
+    game_connection_support.mapped(
+      map_state: game_connection_support.map_with_four_players(),
+      taken: game_connection_support.joining().1,
+    )
+  let next_run =
+    game_connection_support.map_run_with_four_players(
+      game_connection_support.incarnation + 1,
+    )
+  let #(_, second) =
+    game_connection_support.mapped(
+      map_state: next_run,
+      taken: game_connection_support.holocrypt_joining().1,
+    )
+  let assert map_message.Joined(address: first_address, ..) = first
+  let assert map_message.Joined(address: second_address, ..) = second
+  assert unit_address.number(address: first_address)
+    == unit_address.number(address: second_address)
+    as "both runs issue the same number"
+  assert first_address != second_address
+    as "the addresses differ: the run is part of the address"
+  let #(state, _) = game_connection_support.at_the_holocrypt_in(next_run)
   takes_only_its_own_stay(
     state:,
     stay: map_support.stay(count: 2),

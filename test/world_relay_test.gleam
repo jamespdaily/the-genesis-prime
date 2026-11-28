@@ -381,8 +381,7 @@ fn struck_through_the_map(
   let tell =
     inbound_support.struck_by(
       tell: inbound_support.strike(unit_id:),
-      from:,
-      stay_count: 1,
+      from: map_support.address(number: from),
     )
   let tell = strike_tell.Strike(..tell, key: Key(..tell.key, cast_id:))
   world_watch_support.told_creature_by(

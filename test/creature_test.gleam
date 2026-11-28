@@ -299,6 +299,61 @@ pub fn a_creature_sends_its_0x355_once_to_a_player_who_stops_seeing_it_and_nothi
     as "and no longer holds the viewer"
 }
 
+pub fn a_creature_names_a_viewer_by_its_address_and_an_unseen_of_an_earlier_address_keeps_the_later_viewer_test() -> Nil {
+  use <- owned_test.run(5000)
+  // One joiner, two joins of one run: the map names the first unit by address 5 and the
+  // second by address 6, each under its own sight.
+  let earlier = map_support.address(number: 5)
+  let later = map_support.address(number: 6)
+  let #(state, _) =
+    feed(state: creature(), at_ms: 5000, event: OwnEvent(Started))
+  let #(state, _) =
+    told(
+      state:,
+      at_ms: 6000,
+      message: creature.Seen(by: earlier, generation: generation.first()),
+    )
+  let #(state, snapshot) =
+    told(
+      state:,
+      at_ms: 6100,
+      message: creature.Seen(
+        by: later,
+        generation: generation.after(generation: generation.first()),
+      ),
+    )
+  assert list.map(snapshots(snapshot), fn(sent) { #(sent.0, sent.1) })
+    == [#(6, generation.after(generation: generation.first()))]
+    as "the second Seen is answered with a snapshot for its own address"
+  let #(state, _) =
+    told(
+      state:,
+      at_ms: 6200,
+      message: creature.Unseen(by: earlier, generation: generation.first()),
+    )
+  assert creature.viewers(state) == set.from_list([later])
+    as "the Unseen of the earlier address ends that viewer only: the later address is still a viewer"
+  let #(state, _) =
+    told(
+      state:,
+      at_ms: 6300,
+      message: creature.Unseen(by: earlier, generation: generation.first()),
+    )
+  assert creature.viewers(state) == set.from_list([later])
+    as "a second Unseen of the earlier address changes nothing"
+  let #(state, _) =
+    told(
+      state:,
+      at_ms: 6400,
+      message: creature.Unseen(
+        by: later,
+        generation: generation.after(generation: generation.first()),
+      ),
+    )
+  assert creature.viewers(state) == set.new()
+    as "the Unseen of the later address, under its own generation, ends it"
+}
+
 pub fn a_creature_stops_when_its_run_ends_and_when_the_server_stops_test() -> Nil {
   use <- owned_test.run(5000)
   let #(state, _) =

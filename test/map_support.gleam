@@ -119,10 +119,29 @@ pub fn character(number number: Int) -> Character {
 /// The address the map of `empty(incarnation: 1)` issues as its `number`th: the one
 /// every test of a creature names its players by (`unit_address.issue`).
 pub fn address(number number: Int) -> UnitAddress {
+  address_in(incarnation: 1, number:)
+}
+
+/// The address the map of the run `incarnation` issues as its `number`th.
+pub fn address_in(
+  incarnation incarnation: Int,
+  number number: Int,
+) -> UnitAddress {
+  address_for(incarnation:, number:, joiner: number)
+}
+
+/// The address the map of the run `incarnation` issues as its `number`th, to the connection
+/// numbered `joiner`.
+pub fn address_for(
+  incarnation incarnation: Int,
+  number number: Int,
+  joiner joiner: Int,
+) -> UnitAddress {
   unit_address.issue(
     map: MapId(world_id: 3460, instance: 0),
-    incarnation: 1,
+    incarnation:,
     number:,
+    joiner:,
   )
 }
 

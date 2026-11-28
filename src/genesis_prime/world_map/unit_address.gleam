@@ -24,17 +24,26 @@ import gleam/set.{type Set}
 
 /// One unit of a player in one run of a map. Made only by `issue`.
 pub opaque type UnitAddress {
-  UnitAddress(map: MapId, incarnation: Int, number: Int)
+  UnitAddress(map: MapId, incarnation: Int, number: Int, joiner: Int)
 }
 
-/// The address the map `map` in the run `incarnation` issues as its `number`th: the
-/// map counts `number` up from 1 and never issues one twice in a run.
+/// The address the map `map` in the run `incarnation` issues as its `number`th, for the
+/// connection numbered `joiner`: the map counts `number` up from 1 and never issues one
+/// twice in a run. `joiner` is the order a creature ranks players that tie by
+/// (`compare`), so a creature picks among players as it did when it named their
+/// connections; it is the connection's number and the creature reads nothing else of it.
 pub fn issue(
   map map: MapId,
   incarnation incarnation: Int,
   number number: Int,
+  joiner joiner: Int,
 ) -> UnitAddress {
-  UnitAddress(map:, incarnation:, number:)
+  UnitAddress(map:, incarnation:, number:, joiner:)
+}
+
+/// The number of the connection the address was issued for.
+pub fn joiner(address address: UnitAddress) -> Int {
+  address.joiner
 }
 
 /// The number the map issued the address as.
@@ -43,7 +52,7 @@ pub fn number(address address: UnitAddress) -> Int {
 }
 
 /// The order of two addresses issued in one run: the order of their numbers, which is
-/// the order of the joins.
+/// the order of the joins. This is the stub of the ranking `joiner` names.
 pub fn compare(
   first first: UnitAddress,
   second second: UnitAddress,

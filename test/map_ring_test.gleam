@@ -1049,8 +1049,7 @@ fn answers(
       map_spawn_support.tell_creature(
         state:,
         at_ms:,
-        from: 1,
-        stay_count: 1,
+        from: map_support.address(number: 1),
         unit_id:,
         life:,
         payload: map_message.StrikeAnswered(answered: inbound_support.answered(

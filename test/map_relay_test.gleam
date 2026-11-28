@@ -190,8 +190,11 @@ pub fn a_second_join_unsees_then_sees_each_kept_creature_under_a_new_generation_
     as "the new sight awaits the creature's snapshot"
 }
 
-pub fn a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one_whatever_the_players_sight_test() -> Nil {
+pub fn a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test() -> Nil {
   use <- owned_test.run(5000)
+  // Addresses issued in join order: 1 is connection 1 (sees the creature), 2 the first join
+  // of connection 2 (ended when it joined again), 3 connection 3 (left), 4 the second join
+  // of connection 2 (in the map, out of the creature's sight, in its stay 2).
   let state =
     spawns.started_with_spawns(spawns: [
       spawn_support.battle_beast(number: 1, x: 0.0),
@@ -199,6 +202,19 @@ pub fn a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one
   let #(state, _) = spawns.join(state:, at_ms: 6000, connection: 1, x: 0.0)
   let #(state, _) =
     spawns.join(state:, at_ms: 6100, connection: 2, x: spawns.far)
+  let #(state, _) =
+    spawns.join(state:, at_ms: 6200, connection: 3, x: spawns.far)
+  let #(state, _) = spawns.leave(state:, at_ms: 6300, connection: 3)
+  let #(state, _) =
+    spawns.join_in_stay(
+      state:,
+      at_ms: 6400,
+      connection: 2,
+      stay_count: 2,
+      x: spawns.far,
+      alive: True,
+      hidden: set.new(),
+    )
   let #(unit_id, life) = spawns.creature_of(state:, spawn: 1)
   let payloads = [
     #(
@@ -221,27 +237,61 @@ pub fn a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one
     #("Threatened", map_message.Fight(told: Threatened(unit_id:, life:))),
     #("Released", map_message.Fight(told: Released(unit_id:))),
   ]
-  // The destination: the connection and the stay the relay names, and whether it is delivered.
+  // The address the relay names, the connection and the stay its join named, and whether it
+  // is delivered.
   let destinations = [
-    #("a current stay, the player sees the creature", 1, 1, True),
-    #("a current stay, the player does not see the creature", 2, 1, True),
-    #("an earlier stay", 1, 0, False),
-    #("a player not in the map", 99, 1, False),
+    #(
+      "a unit of the run whose player sees the creature",
+      map_support.address(number: 1),
+      1,
+      1,
+      True,
+    ),
+    #(
+      "a unit of the run whose player does not see the creature",
+      map_support.address(number: 4),
+      2,
+      2,
+      True,
+    ),
+    #(
+      "the address of a unit that ended when its connection joined again",
+      map_support.address(number: 2),
+      2,
+      1,
+      False,
+    ),
+    #(
+      "the address of a unit that left",
+      map_support.address(number: 3),
+      3,
+      1,
+      False,
+    ),
+    #(
+      "an address the map never issued",
+      map_support.address(number: 99),
+      1,
+      1,
+      False,
+    ),
+    #(
+      "an address of an earlier run of the map",
+      map_support.address_in(incarnation: 0, number: 1),
+      1,
+      1,
+      False,
+    ),
   ]
   list.each(payloads, fn(row) {
     let #(name, payload) = row
     list.each(destinations, fn(destination) {
-      let #(situation, connection, stay_count, delivered) = destination
+      let #(situation, address, connection, stay_count, delivered) = destination
       let #(_, taken) =
         told_by_a_creature(
           state:,
           at_ms: 7000,
-          message: map_message.Relay(
-            unit_id:,
-            life:,
-            to: map_support.address(number: connection),
-            payload:,
-          ),
+          message: map_message.Relay(unit_id:, life:, to: address, payload:),
         )
       let expected = case delivered {
         True -> [
@@ -263,8 +313,44 @@ pub fn a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one
             False -> ": dropped"
           }
         }
+      assert result.is_ok(map.admitted(
+          state:,
+          unit_id:,
+          life:,
+          to: address,
+          payload:,
+        ))
+        == delivered
+        as "the function the step admits a relay by agrees"
     })
   })
+  // A snapshot of the sight connection 1 holds, named by each address.
+  let news = health_news(unit_id:, health: 52)
+  let generation = spawns.generation_of(state:, spawn: 1, connection: 1)
+  let snapshot = fn(by) {
+    let #(_, taken) =
+      told_by_a_creature(
+        state:,
+        at_ms: 7100,
+        message: map_message.Snapshot(unit_id:, life:, by:, generation:, burst: [
+          news,
+        ]),
+      )
+    relayed(taken)
+  }
+  assert snapshot(map_support.address(number: 1))
+    == [#(1, map_support.stay(count: 1), map_message.News(news))]
+    as "a snapshot of the address that holds the sight is relayed"
+  assert list.all(
+    [
+      map_support.address(number: 2),
+      map_support.address(number: 3),
+      map_support.address(number: 99),
+      map_support.address_in(incarnation: 0, number: 1),
+    ],
+    fn(by) { snapshot(by) == [] },
+  )
+    as "a snapshot that names an address that ended, one never issued or one of an earlier run is dropped"
 }
 
 /// A spawn of a map in one of the states a creature's spawn can be in, with the player 1 in
@@ -433,8 +519,7 @@ pub fn a_players_tell_is_delivered_to_a_running_creature_unchanged_and_dropped_f
         spawns.tell_creature(
           at_ms: 80_000,
           state: scene.state,
-          from: 1,
-          stay_count: 1,
+          from: map_support.address(number: 1),
           unit_id:,
           life:,
           payload:,
@@ -484,8 +569,7 @@ pub fn a_players_tell_is_delivered_to_a_running_creature_unchanged_and_dropped_f
       state: spawns.started_with_spawns(spawns: [
         spawn_support.battle_beast(number: 1, x: 0.0),
       ]),
-      from: 1,
-      stay_count: 1,
+      from: map_support.address(number: 1),
       unit_id: 2,
       life: 1,
       payload: map_message.Despawn(delay_ms: 0, went_at_ms: 6000),
@@ -494,9 +578,11 @@ pub fn a_players_tell_is_delivered_to_a_running_creature_unchanged_and_dropped_f
     as "a tell dropped by the map writes no line and sends nothing"
 }
 
-/// The map after the players are in it: connection 1 in its first stay at the creature, 2
-/// joined twice (its second stay is the current one), 3 joined and left, and 4 never joined.
-/// The first joiner starts the creature, which the scene returns with its life.
+/// The map after the players are in it, as the addresses it issued: 1 is connection 1 at the
+/// creature, 2 the first join of connection 2 (it ended when 2 joined again), 3 the second
+/// join of connection 2 (the current one), 4 connection 3, which joined and left, and 5 an
+/// address the map never issued. The first joiner starts the creature, which the scene
+/// returns with its life.
 fn senders_in_four_ways() -> #(State, Int, Int) {
   let state =
     spawns.started_with_spawns(spawns: [
@@ -520,18 +606,31 @@ fn senders_in_four_ways() -> #(State, Int, Int) {
   #(state, unit_id, life)
 }
 
-pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_names_and_a_strike_or_an_answer_from_any_sender_is_test() -> Nil {
+pub fn a_strike_or_an_answer_of_an_address_that_ended_still_lands_and_a_move_or_a_holding_is_taken_only_from_a_unit_of_the_run_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, unit_id, life) = senders_in_four_ways()
-  // The sender, the stay it names, and whether the map holds that player in that stay.
+  // The sender's address number, and whether the map holds that unit now.
   let senders = [
-    #("in the map in that stay", 1, 1, True),
-    #("in the map in an earlier stay (it joined again)", 2, 1, False),
-    #("that left", 3, 1, False),
-    #("that never joined", 4, 1, False),
+    #("in the map", map_support.address(number: 1), True),
+    #(
+      "whose unit ended when it joined again",
+      map_support.address(number: 2),
+      False,
+    ),
+    #(
+      "in the map, joined again",
+      map_support.address_for(incarnation: 1, number: 3, joiner: 2),
+      True,
+    ),
+    #(
+      "that left",
+      map_support.address_for(incarnation: 1, number: 4, joiner: 3),
+      False,
+    ),
+    #("never issued an address", map_support.address(number: 5), False),
   ]
   list.each(senders, fn(sender) {
-    let #(situation, from, stay_count, in_the_map_in_that_stay) = sender
+    let #(situation, from, in_the_map_in_that_stay) = sender
     list.each(inbound_support.payloads(unit_id:), fn(row) {
       let #(kind, payload) = row
       // The move and the two kinds that make a holding on the creature are checked for
@@ -544,11 +643,7 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
       }
       let payload = case payload {
         map_message.Strike(tell:) ->
-          map_message.Strike(tell: inbound_support.struck_by(
-            tell:,
-            from:,
-            stay_count:,
-          ))
+          map_message.Strike(tell: inbound_support.struck_by(tell:, from:))
         _ -> payload
       }
       let #(_, taken) =
@@ -556,7 +651,6 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
           at_ms: 80_000,
           state:,
           from:,
-          stay_count:,
           unit_id:,
           life:,
           payload:,
@@ -579,7 +673,7 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
           state:,
           unit_id:,
           life:,
-          from: map_support.address(number: from),
+          from:,
           payload:,
         ))
         == delivered
@@ -603,7 +697,7 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
       ),
     )
     == Error(map.SourceRefused)
-    as "a move from a player of another stay is refused for its source, not for its creature"
+    as "a move from the unit that ended is refused for its source, not for its creature"
   list.each(
     [
       map_message.ModifierStarts(
@@ -613,20 +707,21 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
       map_message.CastViewSet(view: inbound_support.view()),
     ],
     fn(payload) {
-      list.each([2, 3, 4], fn(from) {
-        assert map.admitted_inbound(
-            state:,
-            unit_id:,
-            life:,
-            from: map_support.address(number: from),
-            payload:,
-          )
-          == Error(map.SourceRefused)
-          as {
-            spawns.inbound_name(payload)
-            <> " from a player of another stay, one that left or one never in the map is refused for its source"
-          }
-      })
+      list.each(
+        [
+          map_support.address(number: 2),
+          map_support.address_for(incarnation: 1, number: 4, joiner: 3),
+          map_support.address(number: 5),
+        ],
+        fn(from) {
+          assert map.admitted_inbound(state:, unit_id:, life:, from:, payload:)
+            == Error(map.SourceRefused)
+            as {
+              spawns.inbound_name(payload)
+              <> " from a unit that ended, one that left or an address never issued is refused for its source"
+            }
+        },
+      )
     },
   )
 }
@@ -645,11 +740,6 @@ pub fn a_strike_that_names_another_striker_than_the_connection_that_told_it_is_d
       False,
     ),
     #(
-      "whose striker's stay is not the relay's",
-      inbound_support.struck_by(tell:, from: 1, stay_count: 2),
-      False,
-    ),
-    #(
       "whose striker is a creature",
       strike_tell.Strike(
         ..tell,
@@ -660,7 +750,7 @@ pub fn a_strike_that_names_another_striker_than_the_connection_that_told_it_is_d
       ),
       False,
     ),
-    #("that matches the connection and its stay", tell, True),
+    #("that matches the unit", tell, True),
   ]
   list.each(rows, fn(row) {
     let #(situation, tell, delivered) = row
@@ -668,8 +758,7 @@ pub fn a_strike_that_names_another_striker_than_the_connection_that_told_it_is_d
       spawns.tell_creature(
         at_ms: 80_000,
         state:,
-        from: 1,
-        stay_count: 1,
+        from: map_support.address(number: 1),
         unit_id:,
         life:,
         payload: map_message.Strike(tell:),

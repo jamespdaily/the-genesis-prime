@@ -706,14 +706,12 @@ pub fn inbound_name(payload: map_message.Inbound) -> String {
   }
 }
 
-/// The tell of the player of the unit the map issued as its `from`th address to the
-/// creature `unit_id` of `life`, taken at time `at_ms`. `stay_count` names the stay of the
-/// join the tell was made in, which the tell no longer carries.
+/// The tell of the player of the unit `from` to the creature `unit_id` of `life`, taken at
+/// time `at_ms`.
 pub fn tell_creature(
   state state: State,
   at_ms at_ms: Int,
-  from from: Int,
-  stay_count _stay_count: Int,
+  from from: UnitAddress,
   unit_id unit_id: Int,
   life life: Int,
   payload payload: map_message.Inbound,
@@ -722,12 +720,7 @@ pub fn tell_creature(
     state:,
     at_ms:,
     event: OwnEvent(
-      Told(message: map_message.TellCreature(
-        from: map_support.address(number: from),
-        unit_id:,
-        life:,
-        payload:,
-      )),
+      Told(message: map_message.TellCreature(from:, unit_id:, life:, payload:)),
     ),
   )
 }

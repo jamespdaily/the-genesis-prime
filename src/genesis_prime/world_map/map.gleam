@@ -672,7 +672,7 @@
 //// | `CasterGone` is for a creature that ended or was replaced | dropped by the registry (`a_tell_to_the_life_that_ended_is_dropped_and_the_same_tell_to_the_life_that_replaced_it_is_taken_for_every_kind_of_tell_test`) |
 //// | a `TellCreature` is for a creature that ended, or of an earlier life | dropped by `admitted_inbound`, with no line; the player's round closes by its deadline (`a_players_tell_is_delivered_to_a_running_creature_unchanged_and_dropped_for_an_ended_one_or_an_earlier_life_test`) |
 //// | a `TargetMoved`, `ModifierStarts` or `CastViewSet` is from an address that is not a unit of this run | dropped (`SourceRefused`), with no line: a start or a view told after its connection's leave holds nothing on the creature (`a_start_told_after_its_casters_leave_holds_nothing_on_the_creature_test`) |
-//// | a `Strike` or a `StrikeAnswered` is from a sender that left | delivered: the damage applies and the answer closes its round (`a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_names_and_a_strike_or_an_answer_from_any_sender_is_test`) |
+//// | a `Strike` or a `StrikeAnswered` is from a sender that left | delivered: the damage applies and the answer closes its round (`a_strike_or_an_answer_of_an_address_that_ended_still_lands_and_a_move_or_a_holding_is_taken_only_from_a_unit_of_the_run_test`) |
 //// | a `Strike` names another address or a creature as its striker | dropped (`StrikerRefused`), with one error line (`a_strike_that_names_another_striker_than_the_connection_that_told_it_is_dropped_with_an_error_line_test`) |
 //// | an answer waits in the map's queue past the strike deadline | delivered unchanged to the creature, whose round closed by its deadline and takes it as no change (the creature's side: `an_answer_that_reaches_the_creature_after_its_round_closed_changes_nothing_test`; the map's wait is the load gate's planted run, `behind`) |
 //// | a player's strike and its move out of the creature's sight reach the map | in the order the player's connection told them: a strike told first is taken while the player is a viewer (threat, then the release of `Unseen`), one told after it is taken after the `Unseen` (the damage and no threat) (`a_strike_and_the_senders_move_out_of_sight_are_taken_in_the_order_the_sender_told_them_and_each_order_has_its_own_result_test`) |
@@ -1994,6 +1994,7 @@ fn issue_address(state state: State) -> #(State, UnitAddress) {
       map: state.settings.map,
       incarnation: state.settings.incarnation,
       number: 0,
+      joiner: 0,
     ),
   )
 }

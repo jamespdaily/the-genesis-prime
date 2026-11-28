@@ -638,8 +638,7 @@ pub fn a_leave_and_a_connections_end_tell_every_running_creature_that_the_caster
     spawns.tell_creature(
       state:,
       at_ms:,
-      from: 1,
-      stay_count: 1,
+      from: map_support.address(number: 1),
       unit_id: unit.0,
       life: unit.1,
       payload: map_message.ModifierEnds(source: inbound_support.source()),

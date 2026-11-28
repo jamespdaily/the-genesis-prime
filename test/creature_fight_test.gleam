@@ -178,6 +178,27 @@ fn started_raw(
   ring ring: List(step.RingMember),
   armor armor: creature_combat.InterruptArmor,
 ) -> #(State, ServiceStep(creature.Outgoing)) {
+  started_among(
+    source:,
+    spawn:,
+    kind:,
+    viewers: list.map(viewers, fn(viewer) {
+      map_support.address(number: viewer)
+    }),
+    ring:,
+    armor:,
+  )
+}
+
+/// The same for viewers named by their addresses.
+fn started_among(
+  source source: spawn_source.SpawnSource,
+  spawn spawn: Spawn,
+  kind kind: Kind,
+  viewers viewers: List(UnitAddress),
+  ring ring: List(step.RingMember),
+  armor armor: creature_combat.InterruptArmor,
+) -> #(State, ServiceStep(creature.Outgoing)) {
   let state =
     creature.new(Settings(
       creature: CreatureStart(
@@ -187,9 +208,7 @@ fn started_raw(
         life:,
         spawn: source,
         clock_origin_ms: 5000,
-        viewers: list.map(viewers, fn(viewer) {
-          #(map_support.address(number: viewer), generation.first())
-        }),
+        viewers: list.map(viewers, fn(viewer) { #(viewer, generation.first()) }),
         ring:,
       ),
       spawn: Spawn(
@@ -1207,6 +1226,49 @@ fn started_with_ring(
     ring:,
     armor: creature_combat.NoArmor,
   )
+}
+
+pub fn a_creature_that_ranks_players_ties_by_their_connection_and_not_by_the_order_they_joined_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Three players of one run: the map issued address 1 to the first to join, which is
+  // connection 5, address 2 to connection 2 and address 3 to connection 3. A creature
+  // chose among players that tied by the lowest connection when it named connections; it
+  // still does (a server's choice, which the client holds no rule for), so what a player
+  // sees of a fight does not depend on who joined first.
+  let five = map_support.address_for(incarnation: 1, number: 1, joiner: 5)
+  let two = map_support.address_for(incarnation: 1, number: 2, joiner: 2)
+  let three = map_support.address_for(incarnation: 1, number: 3, joiner: 3)
+  let member = fn(by, unit_id) {
+    step.RingMember(
+      by:,
+      unit_id:,
+      place: map_spawn_support.at(5.0),
+      seq: 1,
+      hit_radius: place_support.player_hit_radius,
+    )
+  }
+  let spawn = spawn_support.battle_beast(number: 1, x: 0.0)
+  let #(state, taken) =
+    started_among(
+      source: spawn_source.Stored(id: SpawnId(1)),
+      spawn:,
+      kind: beast_kind(),
+      viewers: [five, two, three],
+      ring: [member(five, 50), member(two, 20), member(three, 30)],
+      armor: creature_combat.NoArmor,
+    )
+  let taken = creature_news_support.at_each_player(state:, taken:)
+  assert names_target(taken:, unit_id: 20, to: 2)
+    as "the ring's three players tie on the aggro threat: the first target is connection 2's player, not the first to join"
+  assert !names_target(taken:, unit_id: 50, to: 5)
+  let #(_, taken) =
+    tell(
+      state:,
+      at_ms: 1000,
+      message: creature_news_support.unseen_address(by: two),
+    )
+  assert names_target(taken:, unit_id: 30, to: 3)
+    as "with the target gone, the threat entries tie again: the lowest connection, 3, is the new target, not the earliest join"
 }
 
 pub fn a_creature_started_with_a_ring_answers_each_viewer_then_aggroes_the_ring_players_it_has_as_viewers_in_one_step_test() -> Nil {
@@ -8850,6 +8912,53 @@ pub fn a_target_row_strikes_while_its_cast_target_is_in_the_world_test() -> Nil 
       [_, ..] -> Nil
     }
   })
+}
+
+pub fn a_telegraph_whose_target_left_and_joined_again_during_the_charge_strikes_nobody_test() -> Nil {
+  use <- owned_test.run(5000)
+  // Player 2, the cast's target, leaves and joins again in the same run during the charge:
+  // the map tells the creature `Unseen` of its first address and `Seen` of its second, and
+  // the new unit stands where the target stood. The client drops a telegraph when the unit it
+  // is bound to is gone (`0x14054b1b0.unit_gone`) and the 0xAD of the new join removes every
+  // unit, so the row is drawn on no unit and the new unit, which was never its target, is not
+  // struck.
+  let #(state, _, go) =
+    target_cast_opened(
+      special: target_roar(
+        spell4_id: 46_353,
+        anchor: area.FollowsTarget,
+        placements: [circle(radius: 4.0)],
+      ),
+      others: [#(5, 0.0, -19.0), #(6, 2.0, -8.0)],
+    )
+  let again = map_support.address_for(incarnation: 1, number: 9, joiner: 2)
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 2000,
+      message: creature_news_support.unseen(by: ConnectionId(2)),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 2100,
+      message: creature.Seen(by: again, generation: generation.first()),
+    )
+  let #(state, _) =
+    tell(
+      state:,
+      at_ms: 2200,
+      message: creature.Approached(member: step.RingMember(
+        by: again,
+        unit_id: unit_of(2),
+        place: at_xz(x: 0.0, z: -8.0),
+        seq: 2,
+        hit_radius: place_support.player_hit_radius,
+      )),
+    )
+  let struck = strike_go_of_the_cast(state:, go:)
+  assert struck_numbers(struck) == []
+    as "the unit that joined again is not the cast's target, and the row bound to the first is gone"
 }
 
 // ---- a charged cast with several hits: Yeti Snowstalker's Ice Breath (Spell4 55635) ----

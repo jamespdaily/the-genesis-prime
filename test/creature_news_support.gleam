@@ -173,9 +173,9 @@ pub fn address_of(connection connection: ConnectionId) -> UnitAddress {
   map_support.address(number:)
 }
 
-/// The connection whose number is the address's.
+/// The connection the address was issued for.
 pub fn connection_of(address address: UnitAddress) -> ConnectionId {
-  ConnectionId(unit_address.number(address:))
+  ConnectionId(unit_address.joiner(address:))
 }
 
 /// The map's `Unseen` of the sight `seen` or a creature's start began.
@@ -184,6 +184,11 @@ pub fn unseen(by by: ConnectionId) -> creature.Message {
     by: address_of(connection: by),
     generation: generation.first(),
   )
+}
+
+/// The map's `Unseen` of the sight `seen` began, for the unit named by its address.
+pub fn unseen_address(by by: UnitAddress) -> creature.Message {
+  creature.Unseen(by:, generation: generation.first())
 }
 
 /// The step as the players it concerns would hear it, one send to each, so the tests that
