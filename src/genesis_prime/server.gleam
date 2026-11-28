@@ -538,19 +538,28 @@ pub fn tell_the_run(
 fn connection_deliver(
   settings: Settings,
 ) -> fn(step.Address, Request) -> Result(Nil, Nil) {
-  let reach =
-    connection_reach(settings, fn(_to, message: Message) { Ok(message) })
   fn(to: step.Address, request: Request) {
-    case client_connection.told_to_a_connection(to:, request:) {
-      Ok(message) -> reach.send(to, message)
-      Error(Nil) -> {
-        runtime.log(
-          LogError,
-          "a rule sent a connection something other than a move or a chat tell between characters",
-          step.no_one,
-        )
-        Error(Nil)
-      }
+    tell_a_connection(registry: settings.registry, to:, request:)
+  }
+}
+
+/// Carries out one `Tell` of a connection's rule to a connection or a unit (see
+/// `connection_deliver`) through `registry`: `Error(Nil)` for a request that is no tell to
+/// a connection (an error line, nothing sent) and for an address no process hosts.
+pub fn tell_a_connection(
+  registry registry: Registry(Message),
+  to to: step.Address,
+  request request: Request,
+) -> Result(Nil, Nil) {
+  case client_connection.told_to_a_connection(to:, request:) {
+    Ok(message) -> send_to_a_connection(registry:, to:, message:)
+    Error(Nil) -> {
+      runtime.log(
+        LogError,
+        "a rule sent a connection something other than a move or a chat tell between characters",
+        step.no_one,
+      )
+      Error(Nil)
     }
   }
 }
@@ -579,20 +588,7 @@ fn connection_reach(
           )
           Error(Nil)
         }
-        Ok(message), step.Connection(connection:) ->
-          registry.deliver(registry, connection, message)
-        Ok(message), step.ZoneChannel(..) ->
-          registry.deliver_group(registry, to, message)
-        Ok(message), step.Unit(..) ->
-          registry.deliver_unit(registry, to, message)
-        Ok(_), step.Sessions
-        | Ok(_), step.HandOff
-        | Ok(_), step.Store
-        | Ok(_), step.Maps
-        | Ok(_), step.Map(..)
-        | Ok(_), step.Creature(..)
-        | Ok(_), step.CharacterNamed(..)
-        -> Error(Nil)
+        Ok(message), _ -> send_to_a_connection(registry:, to:, message:)
       }
     },
     register: fn(group, member) {
@@ -649,6 +645,30 @@ fn connection_reach(
     },
     start_creature: fn(_creature) { Error(service.SupervisorNotRunning) },
   )
+}
+
+/// Sends the message to the process that hosts the address `to`: the connection's, every
+/// member of a zone channel, or the one process of a unit. Any other address has no process
+/// that takes a message from a service, and a send to one, like a send to an address nothing
+/// hosts, is `Error(Nil)`.
+fn send_to_a_connection(
+  registry registry: Registry(Message),
+  to to: step.Address,
+  message message: Message,
+) -> Result(Nil, Nil) {
+  case to {
+    step.Connection(connection:) ->
+      registry.deliver(registry, connection, message)
+    step.ZoneChannel(..) -> registry.deliver_group(registry, to, message)
+    step.Unit(..) -> registry.deliver_unit(registry, to, message)
+    step.Sessions
+    | step.HandOff
+    | step.Store
+    | step.Maps
+    | step.Map(..)
+    | step.Creature(..)
+    | step.CharacterNamed(..) -> Error(Nil)
+  }
 }
 
 /// The message a connection takes what a map sends to the address `to`: a notice or a

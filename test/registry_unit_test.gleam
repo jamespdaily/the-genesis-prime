@@ -6,7 +6,10 @@
 //// message to the same process arriving without it: a sender's messages arrive in order.
 
 import ask_support
+import game_connection_support
+import genesis_prime/client_connection.{ForUnit, SentByMove, TellMove}
 import genesis_prime/connection/registry.{type Registry}
+import genesis_prime/server
 import genesis_prime/step
 import genesis_prime/world_map/unit_address
 import gleam/erlang/process.{type Pid, type Subject}
@@ -15,7 +18,7 @@ import map_support
 import open_wait
 import owned_test
 
-fn started() -> Registry(Int) {
+fn started() -> Registry(message) {
   let scope = registry.new()
   let assert Ok(tree) =
     supervisor.new(supervisor.OneForOne)
@@ -28,7 +31,7 @@ fn started() -> Registry(Int) {
 }
 
 /// A process that tells `got` each message the registry delivers to it.
-fn host(scope scope: Registry(Int)) -> #(Pid, Subject(Int)) {
+fn host(scope scope: Registry(message)) -> #(Pid, Subject(message)) {
   let ready = process.new_subject()
   let got = process.new_subject()
   let pid =
@@ -45,8 +48,8 @@ fn host(scope scope: Registry(Int)) -> #(Pid, Subject(Int)) {
 }
 
 fn forward(
-  selector selector: process.Selector(Int),
-  got got: Subject(Int),
+  selector selector: process.Selector(message),
+  got got: Subject(message),
 ) -> Nil {
   process.send(got, process.selector_receive_forever(selector))
   forward(selector:, got:)
@@ -88,4 +91,48 @@ pub fn a_unit_registered_by_the_map_is_found_by_its_address_only_and_not_after_i
   registry.leave_unit(scope, step.Unit(address))
   assert registry.find_unit(scope, step.Unit(address)) == Error(Nil)
     as "and not after its leave"
+}
+
+pub fn a_move_for_an_address_that_ended_reaches_nobody_test() -> Nil {
+  use <- owned_test.run(5000)
+  let scope = started()
+  let #(viewer, viewer_got) = host(scope:)
+  let #(other, other_got) = host(scope:)
+  let ended = map_support.address(number: 1)
+  let joined_again = map_support.address(number: 2)
+  let elsewhere = map_support.address(number: 3)
+  registry.join_unit(scope, step.Unit(ended), viewer)
+  registry.join_unit(scope, step.Unit(elsewhere), other)
+  // The viewer's connection leaves its unit and joins again: the map empties the first
+  // address's group before it fills the second's.
+  registry.leave_unit(scope, step.Unit(ended))
+  registry.join_unit(scope, step.Unit(joined_again), viewer)
+  // The mover's connection tells each of the three addresses a move through the server's own
+  // delivery, in one order; each move is stamped by its time.
+  let move_at = fn(ms) {
+    TellMove(
+      move: game_connection_support.moved_for(
+        viewer: 2,
+        server_time_ms: ms,
+        commands: [],
+      ),
+    )
+  }
+  assert server.tell_a_connection(scope, step.Unit(ended), move_at(1))
+    == Error(Nil)
+    as "a move for the address the viewer left finds no process, though its host is alive"
+  assert server.tell_a_connection(scope, step.Unit(joined_again), move_at(2))
+    == Ok(Nil)
+    as "positive control: a move for the viewer's present address is delivered"
+  assert server.tell_a_connection(scope, step.Unit(elsewhere), move_at(3))
+    == Ok(Nil)
+    as "positive control: a move for the other host's address is delivered"
+  let assert ForUnit(address:, sent: SentByMove(move:)) =
+    open_wait.received(from: viewer_got, what: "the viewer's first message")
+  assert address == joined_again && move.server_time_ms == 2
+    as "the viewer's host took the move of its present address first: the one for the ended address never came"
+  let assert ForUnit(address:, sent: SentByMove(move:)) =
+    open_wait.received(from: other_got, what: "the other host's first message")
+  assert address == elsewhere && move.server_time_ms == 3
+    as "the other host took its own move"
 }
