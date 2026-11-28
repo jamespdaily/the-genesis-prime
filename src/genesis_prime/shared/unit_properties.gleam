@@ -651,14 +651,6 @@ pub fn overlay(
 /// (`CreatureLevel.101`).
 pub const high_property_creature_level = 101
 
-/// The base of each combat property a player holds beyond its gear's, from the
-/// CreatureLevel row of properties 100 and above.
-pub fn player_combat_bases(
-  tables _tables: table_store.Tables,
-) -> Result(List(#(UnitProperty2Id, Float)), Nil) {
-  Ok([])
-}
-
 /// What a property modifier or conversion does not do that the client's rows ask for.
 pub fn gaps() -> List(gap.Entry) {
   [

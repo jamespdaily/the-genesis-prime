@@ -35,8 +35,8 @@ pub const regeneration =
     ),
   )
 
-/// Rolls a level-1 player's defence never reads: deflect, crit deflect and glance are 0,
-/// and the Beast's offence has no crit chance.
+/// Rolls the defence of `defence` never reads: its properties list the gear alone, so its
+/// deflect, crit deflect and glance are 0, and the Beast's offence has no crit chance.
 pub const rolls = Rolls(crit: 0.5, deflect: 0.0, glance: 0.0)
 
 /// The player's unit in these rules: the unit the Beast's strikes name.

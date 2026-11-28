@@ -844,7 +844,7 @@ pub type SummonRefusal {
   /// level, health or defence follows from it.
   NoCreatureLevelRow(level: Int)
   /// The summon names the last CreatureLevel row, which holds the values of the
-  /// properties 100 and above for every level (`last_creature_level`) and is no
+  /// properties 100 and above for every level (`CreatureLevel.101`) and is no
   /// level of a creature.
   NotACreatureLevel(level: Int)
   /// The row the summon would make fails the client's checks of a spawn
@@ -883,7 +883,7 @@ pub fn summoned(
   )
   use row_level <- result.try(case level {
     None -> Ok(None)
-    Some(number) if number == last_creature_level ->
+    Some(number) if number == unit_properties.high_property_creature_level ->
       Error(NotACreatureLevel(level: number))
     Some(number) ->
       case creature_level.get(catalog.tables, CreatureLevelId(number)) {
@@ -1183,10 +1183,6 @@ type SharedCombats =
 /// A creature's base of each UnitProperty2 id, 0 to 199 in id order.
 type Bases =
   List(#(UnitProperty2Id, Float))
-
-/// The CreatureLevel row of properties 100 and above, one for every level
-/// (`CreatureLevel.101`).
-const last_creature_level = 101
 
 /// What the creature brings to a fight: its display's hit radius, whom it may be
 /// attacked by, and its defence. With it, the context that works its defence, offence
@@ -1802,8 +1798,14 @@ fn bases_of(
     |> result.replace_error(missing("CreatureLevel", level)),
   )
   use last <- result.try(
-    creature_level.get(catalog.tables, CreatureLevelId(last_creature_level))
-    |> result.replace_error(missing("CreatureLevel", last_creature_level)),
+    creature_level.get(
+      catalog.tables,
+      CreatureLevelId(unit_properties.high_property_creature_level),
+    )
+    |> result.replace_error(missing(
+      "CreatureLevel",
+      unit_properties.high_property_creature_level,
+    )),
   )
   use tier <- result.try(
     creature2_tier.get(catalog.tables, Creature2TierId(row.creature2_tier_id))

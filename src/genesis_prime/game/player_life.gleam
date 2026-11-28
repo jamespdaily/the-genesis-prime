@@ -114,10 +114,11 @@
 //// - **One owner rolls.** A creature keeps no random state, so the struck player's
 ////   connection draws the strike's rolls from its own seed, and a recording of the
 ////   connection replays them (genesis_prime/shared/strike_tell).
-//// - **A level-1 player's defence** has no deflect, critical deflect or glance: each
-////   is 0 from UnitProperty2's defaults (`player.level1_defence`); its physical
-////   mitigation is GameFormula 1234 from its Armor, its gear's unless a modifier
-////   changes it (`0x140464240`, `player.level1_gear_properties`), and its shield takes
+//// - **A player's defence** reads its base deflect, critical deflect, glance chance and
+////   glance amount, 5% deflect and no other at every level (`player.level1_defence`,
+////   `player.base_combat_properties`); its mitigation of each damage type is GameFormula
+////   1234 from its Armor, its gear's unless a modifier changes it, with the mitigation
+////   offsets added to the base (`0x140464240`, `player.level1_gear_properties`), and its shield takes
 ////   up to ShieldMitigationMax of each blow (genesis_prime/shared/hit). Armor,
 ////   ShieldMitigationMax, the maxima and the regeneration numbers are the player's
 ////   properties (genesis_prime/shared/unit_properties).
@@ -696,38 +697,45 @@ pub fn saved_health(life life: Life) -> Int {
   }
 }
 
-/// A level-1 player's defence from its properties: its deflect, critical deflect and
-/// glance chances and its glance amount from UnitProperty2's defaults (0) and no
-/// rating (`player.level1_defence`), each through its rating formula; the mitigation
-/// of its Armor (property 42, with ResistPhysical and the offsets at their
-/// defaults, 0) by GameFormula 1234 (`0x140464240`) for each damage type; and its
-/// ShieldMitigationMax (property 175), 0 for a player with no shield.
+/// A player's defence from its properties. Its deflect, critical deflect and glance
+/// chances and its glance amount are each a rating formula's result from the player's
+/// base (101, 105, 164, 195, CreatureLevel row 101's values, the server's guess,
+/// `player.base_combat_properties`) with no rating (`0x140463340`, `0x140463ac0`,
+/// `0x140461a30`, `0x1404615f0`, `player.level1_defence`); the mitigation of a damage
+/// type is GameFormula 1234 from its Armor (property 42, with ResistPhysical at its
+/// default, 0) and the two offsets added to its base, DamageMitigationPctOffset (103) and
+/// the offset of the type (144 to 146) (`0x140464240`); and its ShieldMitigationMax
+/// (property 175) is 0 for a player with no shield.
 pub fn defence(
   properties properties: Properties,
   level level: Int,
   formulas formulas: Formulas,
 ) -> Defence {
-  let chance = fn(formula) {
-    rating.to_fraction(formula:, level:, base: 0.0, rating: 0.0)
+  let read = fn(property: Int) {
+    unit_properties.value(properties:, property: UnitProperty2Id(property))
   }
-  let mitigation =
+  let chance = fn(formula, base_property) {
+    rating.to_fraction(formula:, level:, base: read(base_property), rating: 0.0)
+  }
+  let mitigation = fn(offset_of_type) {
     rating.mitigation_fraction(
       formulas:,
       level:,
-      base: 0.0,
+      base: read(103) +. read(offset_of_type),
       rating: unit_properties.value(
         properties:,
         property: unit_properties.armor,
       ),
     )
+  }
   hit.Defence(
-    deflect_chance: chance(formulas.deflect_chance),
-    crit_deflect_chance: chance(formulas.crit_deflect),
-    glance_chance: chance(formulas.glance_chance),
-    glance_amount: chance(formulas.glance_amount),
-    physical_mitigation: mitigation,
-    tech_mitigation: mitigation,
-    magic_mitigation: mitigation,
+    deflect_chance: chance(formulas.deflect_chance, 101),
+    crit_deflect_chance: chance(formulas.crit_deflect, 105),
+    glance_chance: chance(formulas.glance_chance, 164),
+    glance_amount: chance(formulas.glance_amount, 195),
+    physical_mitigation: mitigation(144),
+    tech_mitigation: mitigation(145),
+    magic_mitigation: mitigation(146),
     shield_mitigation_max: unit_properties.value(
       properties:,
       property: unit_properties.shield_mitigation_max,

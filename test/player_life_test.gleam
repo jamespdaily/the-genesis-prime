@@ -1,7 +1,9 @@
 //// A player's side of a creature's fight (`genesis_prime/game/player_life`), as the
 //// pure rule it is. Expected values come from these places.
-//// - A level-1 player's defence (`player.level1_defence`): deflect, critical deflect
-////   and glance are 0 from UnitProperty2's defaults, so no roll changes a hit;
+//// - A player's defence (`player.level1_defence`): the fights below use a player whose
+////   properties list the gear alone, so deflect, critical deflect and glance are 0 from
+////   UnitProperty2's defaults and no roll changes a hit; a player as its entry makes it
+////   has CreatureLevel row 101's 0.05 deflect (`player.base_combat_properties`);
 ////   physical mitigation is GameFormula 1234 of the gear's Armor (`0x140464240`):
 ////   0.5996959 at Armor 150 (an Esper, class 3), the 0.75 cap at Armor 250 (a Warrior,
 ////   class 1) (`player.level1_gear_properties`), whose shield holds 450 and takes up
