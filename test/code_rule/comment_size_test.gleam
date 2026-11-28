@@ -15,14 +15,22 @@ import unitest
 
 /// A comment line of `marker` with `columns` columns in all, the first of them
 /// numbered `number`.
-fn comment_line(marker: String, number: Int, columns: Int) -> String {
+fn comment_line(
+  marker marker: String,
+  number number: Int,
+  columns columns: Int,
+) -> String {
   let text = marker <> " line " <> int.to_string(number) <> " "
   text <> string.repeat("x", int.max(0, columns - string.length(text)))
 }
 
 /// `count` doc lines of `marker` starting with the first line "the first"; of
 /// the lines after it the first `long` are 101 columns wide and the rest 60.
-fn doc(marker: String, count: Int, long: Int) -> List(String) {
+fn doc(
+  marker marker: String,
+  count count: Int,
+  long long: Int,
+) -> List(String) {
   [
     marker <> " the first",
     ..list.repeat(Nil, count - 1)
@@ -32,7 +40,7 @@ fn doc(marker: String, count: Int, long: Int) -> List(String) {
         True -> 101
         False -> 60
       }
-      comment_line(marker, number, columns)
+      comment_line(marker:, number:, columns:)
     })
   ]
 }
@@ -66,23 +74,34 @@ pub fn a_module_doc_over_40_lines_at_100_columns_is_a_breach_unless_listed_test(
   use <- unitest.tag("code_rule")
   list.each(
     [
-      #(doc("////", 40, 0), [], "40 lines at 60 columns"),
-      #(doc("////", 41, 0), [#(source_path, 1)], "41 lines"),
+      #(doc(marker: "////", count: 40, long: 0), [], "40 lines at 60 columns"),
       #(
-        doc("////", 40, 40),
+        doc(marker: "////", count: 41, long: 0),
+        [#(source_path, 1)],
+        "41 lines",
+      ),
+      #(
+        doc(marker: "////", count: 40, long: 40),
         [#(source_path, 1)],
         "40 lines, 39 of them past 100 columns, are 79",
       ),
       #(
-        doc("////", 30, 11),
+        doc(marker: "////", count: 30, long: 11),
         [#(source_path, 1)],
         "30 lines of which 11 run past 100 columns are 41",
       ),
-      #(doc("////", 30, 10), [], "30 lines of which 10 run past 100 are 40"),
       #(
-        list.append(doc("////", 20, 0), ["", ..doc("////", 21, 0)]),
+        doc(marker: "////", count: 30, long: 10),
+        [],
+        "30 lines of which 10 run past 100 are 40",
+      ),
+      #(
+        list.append(doc(marker: "////", count: 20, long: 0), [
+          "////",
+          ..doc(marker: "////", count: 20, long: 0)
+        ]),
         [#(source_path, 1)],
-        "a blank `////` line is a line of the block",
+        "a bare `////` line is a line of the block",
       ),
     ],
     fn(row) {
@@ -104,10 +123,18 @@ pub fn a_function_or_type_doc_over_10_lines_is_a_breach_unless_listed_test() -> 
   use <- unitest.tag("code_rule")
   list.each(
     [
-      #(doc("///", 10, 0), [], "10 lines"),
-      #(doc("///", 11, 0), [#(source_path, 5)], "11 lines"),
-      #(doc("///", 6, 5), [#(source_path, 5)], "6 lines, 5 of them past 100"),
-      #(doc("///", 6, 4), [], "6 lines, 4 of them past 100 columns, are 10"),
+      #(doc(marker: "///", count: 10, long: 0), [], "10 lines"),
+      #(doc(marker: "///", count: 11, long: 0), [#(source_path, 5)], "11 lines"),
+      #(
+        doc(marker: "///", count: 6, long: 5),
+        [#(source_path, 5)],
+        "6 lines, 5 of them past 100",
+      ),
+      #(
+        doc(marker: "///", count: 6, long: 4),
+        [],
+        "6 lines, 4 of them past 100 columns, are 10",
+      ),
     ],
     fn(row) {
       let #(lines, expected, reason) = row
@@ -125,7 +152,7 @@ pub fn a_function_or_type_doc_over_10_lines_is_a_breach_unless_listed_test() -> 
     planted.file(
       source_path,
       list.flatten([
-        doc("///", 11, 0),
+        doc(marker: "///", count: 11, long: 0),
         ["pub type Shape {", "  Round", "}"],
       ]),
     )
@@ -137,7 +164,7 @@ pub fn a_function_or_type_doc_over_10_lines_is_a_breach_unless_listed_test() -> 
       source_path,
       list.flatten([
         ["pub type Shape {"],
-        doc("  ///", 11, 0),
+        doc(marker: "  ///", count: 11, long: 0),
         ["  Round", "}"],
       ]),
     )
@@ -150,8 +177,10 @@ pub fn a_listed_block_that_grew_is_a_breach_and_one_that_shrank_or_went_must_lea
   use <- owned_test.run(5000)
   use <- unitest.tag("code_rule")
   let list_place = #(comment_size.list_path, 1)
-  let big = module_with(doc: doc("////", 45, 0), item_doc: [])
-  let at_cap = module_with(doc: doc("////", 40, 0), item_doc: [])
+  let big =
+    module_with(doc: doc(marker: "////", count: 45, long: 0), item_doc: [])
+  let at_cap =
+    module_with(doc: doc(marker: "////", count: 40, long: 0), item_doc: [])
   let none = module_with(doc: ["//// A module."], item_doc: [])
   let row = fn(size) { Listed("planted", ModuleDoc, "the first", size, 1) }
   list.each(
@@ -161,6 +190,7 @@ pub fn a_listed_block_that_grew_is_a_breach_and_one_that_shrank_or_went_must_lea
       #(big, [row(50)], [list_place], "shrank below its row"),
       #(big, [], [#(source_path, 1)], "over its cap with no row"),
       #(at_cap, [row(45)], [list_place], "within its cap, the row leaves"),
+      #(at_cap, [row(40)], [list_place], "at its cap and its row, it leaves"),
       #(none, [row(45)], [list_place], "gone, the row leaves"),
       #(
         big,

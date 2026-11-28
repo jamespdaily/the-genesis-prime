@@ -379,7 +379,7 @@ fn failure_rows(file file: SourceFile) -> List(#(String, String)) {
 }
 
 /// The cells of a `//// | a | b |` doc table line.
-fn row_cells(line: String) -> List(String) {
+pub fn row_cells(line: String) -> List(String) {
   string.drop_start(line, 6)
   |> string.trim
   |> string.remove_suffix(" |")
