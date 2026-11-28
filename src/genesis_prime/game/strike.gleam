@@ -113,7 +113,7 @@
 ////   (`gaps`).
 //// - **One round for each go and for each tick.** The key of a strike is (cast,
 ////   occasion, unit): the occasion is the go's phase or the tick's row and number
-////   (genesis_prime/game/strike_tell `Occasion`). A go's round holds a place for each
+////   (genesis_prime/shared/strike_tell `Occasion`). A go's round holds a place for each
 ////   selected unit, filled in the order of the selection whatever order the answers
 ////   arrive in; the go lists them in that order. A tick's round holds its one unit.
 //// - **A periodic damage row** (genesis_prime/shared/spell_area `TickingDamage`) is told
@@ -158,10 +158,6 @@ import genesis_prime/game/heal_split
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/shown.{type Picture, type PlayerFaction}
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell.{
-  type Answered, type PlayerAnswered, type Tell,
-}
-import genesis_prime/game/unit_news.{type News}
 import genesis_prime/gap
 import genesis_prime/shared/area.{type Pose}
 import genesis_prime/shared/crowd_control
@@ -173,6 +169,10 @@ import genesis_prime/shared/prerequisite
 import genesis_prime/shared/rating.{type Formulas}
 import genesis_prime/shared/spell_area.{type Areas}
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell.{
+  type Answered, type PlayerAnswered, type Tell,
+}
+import genesis_prime/shared/unit_news.{type News}
 import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/step.{
   type ConnectionId, type LogLevel, type Now, type TimerId, TimerId,
@@ -199,7 +199,7 @@ const bytes_per_unit = hit.roll_bytes
 /// The caster as a selection and a strike take it: who it is, where it stands and
 /// faces, the place it stands at with the move sequence number of that place and
 /// the stay its strikes are told for, which their answers come back in
-/// (genesis_prime/game/strike_tell `PlayerStriker`), its hit radius, its player faction, what its
+/// (genesis_prime/shared/strike_tell `PlayerStriker`), its hit radius, its player faction, what its
 /// damage formulas read (`stats`), its health and shield as they are when the go or
 /// the tick is asked (`vitals`) and its properties, whose BaseCritChance,
 /// CriticalHitSeverityMultiplier and BaseAvoidReduceChance values, a modifier's
@@ -271,7 +271,7 @@ pub type Effect {
   /// `TellCreature`): the connection names the creature by the unit and life here.
   TellStrike(unit_id: Int, life: Int, tell: Tell)
   /// Tell the heal rows to a player's connection, for the stay its notice named
-  /// (genesis_prime/game/strike_tell `PlayerStrike`); the answer comes back to this
+  /// (genesis_prime/shared/strike_tell `PlayerStrike`); the answer comes back to this
   /// connection (`player_answered`).
   TellPlayerStrike(address: PlayerAddress, strike: strike_tell.PlayerStrike)
   StartTimer(timer: TimerId, after_ms: Int)

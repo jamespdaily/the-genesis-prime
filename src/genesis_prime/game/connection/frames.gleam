@@ -70,16 +70,16 @@ import genesis_prime/message/vendor_item.{VendorItem}
 import genesis_prime/message/vendor_items.{type VendorItems, VendorItems}
 import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/creature_turn.{type Face}
+import genesis_prime/shared/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/shared/look
+import genesis_prime/shared/player_unit
 import genesis_prime/shared/unit_fields
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type Now}
 import genesis_prime/table/id.{Item2Id}
-import genesis_prime/world_map/creature_turn.{type Face}
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/creature_unit_type.{type CreatureUnitType}
 import genesis_prime/world_map/map
-import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/static_object.{
   type Created, CreatedDoor, CreatedMailbox, CreatedPortal, CreatedWithChecklist,
 }

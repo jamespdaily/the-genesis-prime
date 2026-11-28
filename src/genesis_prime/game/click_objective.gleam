@@ -30,12 +30,12 @@
 //// The failure points are those of `objective_row`.
 
 import genesis_prime/content/refusal.{type Refusal}
-import genesis_prime/game/activate
 import genesis_prime/game/objective
 import genesis_prime/game/objective_action
 import genesis_prime/game/objective_row
 import genesis_prime/game/quest
 import genesis_prime/gap
+import genesis_prime/shared/activate
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/faction_level
 import genesis_prime/table/creature2

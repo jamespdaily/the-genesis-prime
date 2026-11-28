@@ -13,16 +13,17 @@
 //// - The render groups the entries by area in the order each area is first met, and keeps
 ////   the entries' order within an area.
 
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
+import genesis_prime/game/character_select
 import genesis_prime/game/click_objective
 import genesis_prime/game/communicator
 import genesis_prime/game/connection/landing as connection_landing
+import genesis_prime/game/dash
 import genesis_prime/game/dev_command
 import genesis_prime/game/dropped
 import genesis_prime/game/heal_split
@@ -55,8 +56,10 @@ import genesis_prime/message/spell_damage_description
 import genesis_prime/message/spell_missed
 import genesis_prime/message/spell_started
 import genesis_prime/message/vendor_items
+import genesis_prime/shared/activate
 import genesis_prime/shared/class_resource
 import genesis_prime/shared/cooldown
+import genesis_prime/shared/creature_special
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit
 import genesis_prime/shared/item_property
@@ -72,7 +75,6 @@ import genesis_prime/wire_recording/fixture as wire_recording_fixture
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight
-import genesis_prime/world_map/creature_special
 import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/objective_spawn
 import gleam/int
@@ -132,6 +134,8 @@ pub fn registry() -> List(Entry) {
     kill_objective.gaps(),
     held_objective.gaps(),
     class_resource.gaps(),
+    dash.gaps(),
+    character_select.gaps(),
     cast_press.gaps(),
     activate.gaps(),
     limited_action_set.gaps(),

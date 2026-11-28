@@ -10,13 +10,13 @@ import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/ability_points
 import genesis_prime/shared/loadout
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/map
 import gleam/list
 import gleam/option.{Some}
 
@@ -53,7 +53,7 @@ pub fn level_up_on(
     )
   // The tests' map holds the committed rows, whose loadout lacks the class's later
   // abilities; the map of a server on these tables answers with the class's loadout on them.
-  let assert map.Joined(unit:, incarnation:, clock_origin_ms:, ..) =
+  let assert map_message.Joined(unit:, incarnation:, clock_origin_ms:, ..) =
     support.map_answer(taken)
     as "the map takes the player"
   let assert Ok(loadout) =
@@ -64,7 +64,12 @@ pub fn level_up_on(
       state:,
       taken:,
       outcome: step.Answer(
-        FromMap(map.Joined(unit:, loadout:, incarnation:, clock_origin_ms:)),
+        FromMap(map_message.Joined(
+          unit:,
+          loadout:,
+          incarnation:,
+          clock_origin_ms:,
+        )),
       ),
     )
   experience_support.credited(

@@ -24,29 +24,30 @@
 import attacker_support
 import cast_support as support
 import client_tables
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/gate
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/heal_split
 import genesis_prime/game/held_changes
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/player_state.{PlayerState}
-import genesis_prime/game/proc as event_proc
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts
 import genesis_prime/message/spell_cast_confirmed
 import genesis_prime/message/spell_started
+import genesis_prime/shared/activate
 import genesis_prime/shared/area
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts
 import genesis_prime/shared/lasting
 import genesis_prime/shared/lasts
+import genesis_prime/shared/player_change
 import genesis_prime/shared/prerequisite
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/spell_plan.{type Plans, type Spell, Always, Spell}
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_properties.{type Source}
 import genesis_prime/step.{type TimerId, ConnectionId}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
@@ -288,13 +289,13 @@ fn held_effect_of_armor(
 /// type, for the spell Phantasmal Armor tier 9, Spell4 54806.
 fn pool_starts(
   cast_id cast_id: Int,
-  sight sight: held_changes.Sight,
+  sight sight: player_change.Sight,
   go_ms go_ms: Int,
 ) -> Effect {
   cast_state.OtherPlayerChangeStarts(
     address: address(),
     source: source_of(cast_id:, effect_id: absorb_id),
-    change: held_changes.Applies(held_changes.Absorb(amount: 139, mask: 7)),
+    change: player_change.Applies(player_change.Absorb(amount: 139, mask: 7)),
     sight:,
     spell4_id: Spell4Id(54_806),
     effect: held_effect_of_armor(effect_id: absorb_id, go_ms:),
@@ -304,7 +305,7 @@ fn pool_starts(
 /// The modifier of row 130474 told for the cast at the go `go_ms`: property 161 by 0.86f.
 fn armor_starts(
   cast_id cast_id: Int,
-  sight sight: held_changes.Sight,
+  sight sight: player_change.Sight,
   go_ms go_ms: Int,
 ) -> Effect {
   let assert spell_plan.StruckChange(modifier:, ..) =
@@ -316,7 +317,7 @@ fn armor_starts(
   cast_state.OtherPlayerChangeStarts(
     address: address(),
     source: source_of(cast_id:, effect_id: modifier_id),
-    change: held_changes.Applies(held_changes.Property(modifier:)),
+    change: player_change.Applies(player_change.Property(modifier:)),
     sight:,
     spell4_id: Spell4Id(54_806),
     effect: held_effect_of_armor(effect_id: modifier_id, go_ms:),
@@ -353,8 +354,8 @@ fn armor_with(
 
 pub fn a_go_tells_the_absorb_and_the_modifier_of_a_press_on_a_player_in_sight_and_lists_them_on_that_player_test() -> Nil {
   use <- owned_test.run(5000)
-  let kept = held_changes.KeptWhenUnseen
-  let ends_with_sight = held_changes.EndsWhenUnseen
+  let kept = player_change.KeptWhenUnseen
+  let ends_with_sight = player_change.EndsWhenUnseen
   let both = fn(id) {
     [
       pool_starts(cast_id: id, sight: kept, go_ms: 1000),
@@ -1038,12 +1039,12 @@ pub fn the_end_of_a_change_told_to_a_player_is_told_once_by_each_path_that_ends_
             [
               pool_starts(
                 cast_id: second,
-                sight: held_changes.KeptWhenUnseen,
+                sight: player_change.KeptWhenUnseen,
                 go_ms: 1100,
               ),
               armor_starts(
                 cast_id: second,
-                sight: held_changes.KeptWhenUnseen,
+                sight: player_change.KeptWhenUnseen,
                 go_ms: 1100,
               ),
             ],
@@ -1491,7 +1492,7 @@ pub fn a_re_press_of_the_same_caster_before_the_kept_buff_ends_replaces_the_held
   use <- owned_test.run(5000)
   let spell = support.armor_spell(rows: support.armor_rows())
   let seen = esper_seeing(players: [ally])
-  let kept = held_changes.KeptWhenUnseen
+  let kept = player_change.KeptWhenUnseen
   let #(state, pressed, _) =
     pressed_and_gone(
       spell:,
@@ -2029,7 +2030,7 @@ type Landing {
     target: Int,
     child: Int,
     listed_on_ally: List(Int),
-    told: List(#(Int, held_changes.Change, held_changes.Sight)),
+    told: List(#(Int, player_change.Change, player_change.Sight)),
     on_the_caster: List(#(Int, cast_state.CasterChange)),
     parent_told: Int,
   )
@@ -2067,8 +2068,8 @@ pub fn a_row_of_a_child_started_on_a_player_lands_on_that_player_and_none_of_it_
       told: [
         #(
           199_192,
-          held_changes.Property(modifier: interrupt_armor),
-          held_changes.EndsWhenUnseen,
+          player_change.Property(modifier: interrupt_armor),
+          player_change.EndsWhenUnseen,
         ),
       ],
       on_the_caster: [],
@@ -2084,7 +2085,9 @@ pub fn a_row_of_a_child_started_on_a_player_lands_on_that_player_and_none_of_it_
       on_the_caster: [
         #(
           199_192,
-          cast_state.HeldChange(held_changes.Property(modifier: interrupt_armor)),
+          cast_state.HeldChange(player_change.Property(
+            modifier: interrupt_armor,
+          )),
         ),
       ],
       parent_told: 0,
@@ -2108,8 +2111,8 @@ pub fn a_row_of_a_child_started_on_a_player_lands_on_that_player_and_none_of_it_
       told: [
         #(
           229_006,
-          held_changes.Absorb(amount: 1, mask: 7),
-          held_changes.EndsWhenUnseen,
+          player_change.Absorb(amount: 1, mask: 7),
+          player_change.EndsWhenUnseen,
         ),
       ],
       on_the_caster: [],
@@ -2159,7 +2162,7 @@ pub fn a_row_of_a_child_started_on_a_player_lands_on_that_player_and_none_of_it_
         }
       })
       == list.map(row.told, fn(change) {
-        #(ally, change.0, held_changes.Applies(change.1), change.2)
+        #(ally, change.0, player_change.Applies(change.1), change.2)
       })
       as { row.why <> ": the changes told to the ally" }
     assert list.filter_map(support.goes_in(effects: went), fn(go) {
@@ -2423,12 +2426,12 @@ pub fn at_a_stack_cap_of_two_a_kept_cast_and_a_cast_with_a_node_count_together_t
       [
         pool_starts(
           cast_id: third,
-          sight: held_changes.KeptWhenUnseen,
+          sight: player_change.KeptWhenUnseen,
           go_ms: 5000,
         ),
         armor_starts(
           cast_id: third,
-          sight: held_changes.KeptWhenUnseen,
+          sight: player_change.KeptWhenUnseen,
           go_ms: 5000,
         ),
       ],
@@ -2446,7 +2449,7 @@ fn ally_healed() -> cast_state.Struck {
       strike_tell.HealLanded(
         effect_id: Spell4EffectsId(123_122),
         vital: effect_kind.Health,
-        split: heal_split.Split(amount: 10, shield: 0, health: 10, overheal: 0),
+        split: heal_parts.Split(amount: 10, shield: 0, health: 10, overheal: 0),
       ),
     ]),
     descriptions: [],
@@ -2646,7 +2649,7 @@ fn pool_changed(
     cast_state.OtherPlayerChangeStarts(
       address:,
       source:,
-      change: held_changes.Applies(held_changes.Absorb(amount:, ..)),
+      change: player_change.Applies(player_change.Absorb(amount:, ..)),
       ..,
     )
       if address.unit_id == ally
@@ -3702,7 +3705,7 @@ fn barrier_shaped(outlives_caster outlives_caster: Bool) -> Spell {
 fn barrier_change_of(
   unit_id unit_id: Int,
   cast_id cast_id: Int,
-  sight sight: held_changes.Sight,
+  sight sight: player_change.Sight,
   go_ms go_ms: Int,
 ) -> Effect {
   let assert spell_plan.StruckChange(modifier:, ..) =
@@ -3711,7 +3714,7 @@ fn barrier_change_of(
   cast_state.OtherPlayerChangeStarts(
     address: PlayerAddress(..address(), unit_id:),
     source: source_of(cast_id:, effect_id: barrier_row),
-    change: held_changes.Applies(held_changes.Property(modifier:)),
+    change: player_change.Applies(player_change.Property(modifier:)),
     sight:,
     spell4_id: Spell4Id(41_369),
     effect: unit_casts.HeldEffect(
@@ -3748,7 +3751,7 @@ pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_an
   // "yourself and N allies in the targeted area") lands on each player the round hit that the
   // caster sees: the caster's connection tells each ally's, for the ally to hold for the
   // caster, in the round's order, and ends it with the cast's node on that ally.
-  let kept = held_changes.KeptWhenUnseen
+  let kept = player_change.KeptWhenUnseen
   let rows = [
     Area(
       why: "a round that hit two allies tells each its change in the round's order, kept when the caster no longer sees it (propertyFlags 0x100)",
@@ -3787,7 +3790,7 @@ pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_an
   list.each(rows, fn(row) {
     let sight = case row.outlives_caster {
       True -> kept
-      False -> held_changes.EndsWhenUnseen
+      False -> player_change.EndsWhenUnseen
     }
     let spell = barrier_shaped(outlives_caster: row.outlives_caster)
     let #(state, pressed) =
@@ -3866,7 +3869,7 @@ pub fn a_go_tells_a_row_aimed_at_the_area_to_each_ally_the_round_hit_lists_it_an
       barrier_change_of(
         unit_id: ally,
         cast_id: id,
-        sight: held_changes.EndsWhenUnseen,
+        sight: player_change.EndsWhenUnseen,
         go_ms: 1000,
       ),
     ]
@@ -4012,7 +4015,7 @@ fn auger_shaped(
 /// lists the row.
 fn auger_change_of(
   cast_id cast_id: Int,
-  sight sight: held_changes.Sight,
+  sight sight: player_change.Sight,
   go_ms go_ms: Int,
 ) -> Effect {
   let assert spell_plan.StruckChange(modifier:, ..) =
@@ -4021,7 +4024,7 @@ fn auger_change_of(
   cast_state.OtherPlayerChangeStarts(
     address: address(),
     source: source_of(cast_id:, effect_id: auger_row),
-    change: held_changes.Applies(held_changes.Property(modifier:)),
+    change: player_change.Applies(player_change.Property(modifier:)),
     sight:,
     spell4_id: Spell4Id(82_830),
     effect: unit_casts.HeldEffect(
@@ -4094,7 +4097,7 @@ pub fn a_change_that_lasts_until_removed_on_an_ally_ends_at_the_end_of_the_aura_
   // The cast starts at 1000 and goes at 1500, so its aura of 3000 ms runs out at 4000: the
   // change told at the go has 2500 ms left (`0x1407180c0`: a buff is timed from the cast's start
   // by the spell's spellDuration).
-  let kept = held_changes.KeptWhenUnseen
+  let kept = player_change.KeptWhenUnseen
   let aura = auger_shaped(outlives_caster: True, aura_ms: Some(3000))
   let #(state, id, steps) = auger_run_until(spell: aura, until_ms: 1500)
   assert auger_told_at(steps: steps)
@@ -4301,8 +4304,8 @@ fn watch_starts(
   cast_state.OtherPlayerChangeStarts(
     address: PlayerAddress(..address(), unit_id:),
     source: source_of(cast_id:, effect_id:),
-    change: held_changes.Awaits(trigger: spell_plan.TakesDamage),
-    sight: held_changes.KeptWhenUnseen,
+    change: player_change.Awaits(trigger: spell_plan.TakesDamage),
+    sight: player_change.KeptWhenUnseen,
     spell4_id: Spell4Id(spell4_id),
     effect: unit_casts.HeldEffect(
       effect_id: Spell4EffectsId(effect_id),
@@ -4498,7 +4501,7 @@ pub fn a_go_tells_a_proc_row_to_each_ally_it_holds_it_on_lists_it_and_sends_one_
       now: support.at(ms: 2000),
       blow: cast_proc.BlowLanded(
         striker: 31,
-        spell: event_proc.EventSpell(
+        spell: proc_event.EventSpell(
           spell4_id: Spell4Id(5649),
           spell4_base_id: Spell4BaseId(4947),
           groups: [],
@@ -4699,7 +4702,7 @@ pub fn the_caster_drops_the_proc_it_holds_on_an_ally_where_the_change_on_that_al
           now: support.at(ms: end_ms + 1),
           blow: cast_proc.BlowLanded(
             striker: 31,
-            spell: event_proc.EventSpell(
+            spell: proc_event.EventSpell(
               spell4_id: Spell4Id(5649),
               spell4_base_id: Spell4BaseId(4947),
               groups: [],
@@ -4837,7 +4840,7 @@ fn sentinel_firing() -> Spell {
 
 /// A creature's blow event on the ally, as the ally's connection tells it: `TakesDamage` by the
 /// creature 31 with an attack spell of the groups `groups`.
-fn creature_blow(groups groups: List(Int)) -> event_proc.Event {
+fn creature_blow(groups groups: List(Int)) -> proc_event.Event {
   creature_event(trigger: spell_plan.TakesDamage, groups:)
 }
 
@@ -4846,11 +4849,11 @@ fn creature_blow(groups groups: List(Int)) -> event_proc.Event {
 fn creature_event(
   trigger trigger: spell_plan.Trigger,
   groups groups: List(Int),
-) -> event_proc.Event {
-  event_proc.Event(
+) -> proc_event.Event {
+  proc_event.Event(
     trigger:,
     other_unit: Some(31),
-    spell: Some(event_proc.EventSpell(
+    spell: Some(proc_event.EventSpell(
       spell4_id: Spell4Id(5649),
       spell4_base_id: Spell4BaseId(4947),
       groups:,
@@ -4866,7 +4869,7 @@ fn creature_event(
 type Raised {
   Raised(
     at_ms: Int,
-    events: List(#(option.Option(Int), event_proc.Event)),
+    events: List(#(option.Option(Int), proc_event.Event)),
     shown: List(Int),
     words: List(Int),
   )

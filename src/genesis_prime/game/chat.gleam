@@ -2,7 +2,7 @@
 //// of the game connection's rule (genesis_prime/game/connection). It keeps the
 //// speaker, the zone channel and the whispers waiting for a reply, and decides
 //// what 0x1c3 and 0x1d4 are answered with and what a tell from another
-//// connection (genesis_prime/game/chat_tell) writes. Every send is a tell:
+//// connection (genesis_prime/shared/chat_tell) writes. Every send is a tell:
 //// the effects are writes, tells, watches and group joins, never an ask.
 ////
 //// ```
@@ -42,10 +42,6 @@
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/character_name
-import genesis_prime/game/chat_channel.{type ChannelType}
-import genesis_prime/game/chat_tell.{
-  type Line, type Said, type Speaker, type Tell, Line,
-}
 import genesis_prime/game/dev_command
 import genesis_prime/message/bit_stream
 import genesis_prime/message/chat_channel_joined.{ChatChannelJoined}
@@ -61,6 +57,10 @@ import genesis_prime/message/chat_zone_named.{ChatZoneNamed}
 import genesis_prime/message/send_chat_line.{type SendChatLine}
 import genesis_prime/message/send_whisper.{type SendWhisper}
 import genesis_prime/message/whisper_failed.{WhisperFailed}
+import genesis_prime/shared/chat_channel.{type ChannelType}
+import genesis_prime/shared/chat_tell.{
+  type Line, type Said, type Speaker, type Tell, Line,
+}
 import genesis_prime/shared/top_zone.{type TopZones}
 import genesis_prime/step.{type Address, type ConnectionId, type WatchId}
 import genesis_prime/table/chat_channel.{type ChatChannel} as chat_channel_table

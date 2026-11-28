@@ -463,7 +463,7 @@ pub fn finished_quest(kind: Kind) -> Result(Quest2Id, Nil) {
 }
 
 /// Whether a use counts for the objective only through the creature the server links
-/// to it (`genesis_prime/game/objective_link`): types 5 and 32 (`QuestObjective.type.5`,
+/// to it (`genesis_prime/shared/objective_link`): types 5 and 32 (`QuestObjective.type.5`,
 /// `QuestObjective.type.32`).
 pub fn is_linked_use(kind: Kind) -> Bool {
   case kind {

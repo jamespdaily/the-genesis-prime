@@ -95,8 +95,8 @@ import genesis_prime/store.{
   type AccountId, type ActiveQuest, type Answer, type Character,
   type CharacterId, type CreateAnswer, type DeleteAnswer, type FindAccountAnswer,
   type HeldItem, type ItemFill, type ItemWords, type ItemsAnswer,
-  type ItemsRequest, type MoveAnswer, type MoveRequest, type Naming,
-  type NewCharacter, type NewItem, type QuestRow, type RenameAnswer,
+  type ItemsRequest, type ListedCharacter, type MoveAnswer, type MoveRequest,
+  type Naming, type NewCharacter, type NewItem, type QuestRow, type RenameAnswer,
   type Request, type SelectAnswer, type SelectRequest, type UnsetItem,
   type UsedSpawn, type WorldAnswer, type WorldRequest, AbilityTierRow, Account,
   AccountFound, AccountId, ActionSetRefused, ActionSlotRow, ActiveQuest, AmpRow,
@@ -106,12 +106,12 @@ import genesis_prime/store.{
   Deleted, ExperienceRefused, FillCharges, FindAccount, ForItems, ForLogin,
   ForMove, ForSelect, ForWorld, HealthRefused, HeldCurrency, HeldItem, ItemMade,
   ItemWords, Items, ItemsNotSaved, ItemsSaved, ListCharacters, Listed,
-  LoadCharacter, Login, MergeItems, Move, MoveItems, NameBreaksRule, NameStands,
-  NameTaken, NeedsRename, NewNameBreaksRule, NewNameTaken, NoFreeSlot,
-  NoSuchAccount, NoSuchCharacter, NotTheAccounts, NothingSaved, PlaceRefused,
-  PlaceSaved, QuestLogRefused, RenameCharacter, Renamed, SavePlace, SaveRefused,
-  Select, SellToVendor, SetCurrency, SpendItem, SplitItem, TurnInQuest, TurnedIn,
-  Unavailable, UnsetItem, UsedSpawn, World,
+  ListedCharacter, LoadCharacter, Login, MergeItems, Move, MoveItems,
+  NameBreaksRule, NameStands, NameTaken, NeedsRename, NewNameBreaksRule,
+  NewNameTaken, NoFreeSlot, NoSuchAccount, NoSuchCharacter, NotTheAccounts,
+  NothingSaved, PlaceRefused, PlaceSaved, QuestLogRefused, RenameCharacter,
+  Renamed, SavePlace, SaveRefused, Select, SellToVendor, SetCurrency, SpendItem,
+  SplitItem, TurnInQuest, TurnedIn, Unavailable, UnsetItem, UsedSpawn, World,
 }
 import genesis_prime/store/sql
 import genesis_prime/table/id.{type Item2Id, ClassId, Item2Id, RaceId}
@@ -1253,10 +1253,17 @@ fn save_place(
 fn list_characters(
   pool: pog.Connection,
   account_id: AccountId,
-) -> Result(List(Character), Nil) {
+) -> Result(List(ListedCharacter), Nil) {
   let AccountId(account_id) = account_id
   query(fn() { sql.list_characters(pool, account_id) })
-  |> result.map(list.map(_, character))
+  |> result.map(
+    list.map(_, fn(row) {
+      ListedCharacter(
+        character: character(row),
+        worn: list.map(row.worn_item2_ids, Item2Id),
+      )
+    }),
+  )
 }
 
 /// The rows of one kind (items, quests, currencies, action slots) of the character a

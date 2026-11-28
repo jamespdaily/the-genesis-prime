@@ -30,12 +30,10 @@ import genesis_prime/game/objective.{SpawnedUnit}
 import genesis_prime/game/player_address.{PlayerAddress, Viewer}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{
-  Appeared, CastFinished, LookChanged, PeerNews, PropertiesChanged, Removed,
-}
 import genesis_prime/game/world_entry
+import genesis_prime/map/message.{
+  Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
+} as map_message
 import genesis_prime/message/crowd_control_state
 import genesis_prime/message/float32
 import genesis_prime/message/item_place
@@ -77,9 +75,17 @@ import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
 import genesis_prime/message/unit_stat_interrupt_armor.{UnitStatInterruptArmor}
 import genesis_prime/server
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/creature_unit_type.{NonPlayer}
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/faction_level
+import genesis_prime/shared/player_change
+import genesis_prime/shared/player_unit
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{
+  Appeared, CastFinished, LookChanged, PeerNews, PropertiesChanged, Removed,
+}
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   ConnectionId, LogError, LogInfo, LogWarning, Map, OwnEffect, OwnEvent, Woken,
@@ -89,12 +95,8 @@ import genesis_prime/table/id.{ClassId, Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_fight
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map.{
-  Left, ObjectsSeen, ObjectsUnseen, SeenBy, UnseenBy,
-}
-import genesis_prime/world_map/player_unit
+import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/static_object.{type Created}
 import genesis_prime/world_map/stay.{type Stay}
@@ -492,11 +494,15 @@ fn appearance_at(
     ..player,
     tail: UnitCreateTail(
       ..player.tail,
-      stats: list.filter(player.tail.stats, fn(stat) { stat.stat_id != 3 }),
+      stats: list.filter(player.tail.stats, fn(stat) {
+        stat.stat_id != 3 && stat.stat_id != 9
+      }),
       properties: list.sort(
         list.append(
           list.filter(player.tail.properties, fn(property) {
             property.property_id != 10
+            && property.property_id != 38
+            && property.property_id != 39
           }),
           [
             UnitProperty(property_id: 60, base: 0, value: 0),
@@ -923,14 +929,23 @@ pub fn a_move_is_sent_to_each_viewer_in_the_owners_copy_with_its_own_generation_
 pub fn an_owners_clock_is_the_origin_joined_carried_mod_2_to_the_32_for_its_0x638_and_its_0x262_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = game_connection_support.joining()
-  let assert map.Joined(unit:, loadout:, incarnation:, clock_origin_ms: _) =
-    game_connection_support.map_answer(taken)
+  let assert map_message.Joined(
+    unit:,
+    loadout:,
+    incarnation:,
+    clock_origin_ms: _,
+  ) = game_connection_support.map_answer(taken)
   let #(state, _) =
     game_connection_support.answer(
       state:,
       taken:,
       outcome: step.Answer(
-        FromMap(map.Joined(unit:, loadout:, incarnation:, clock_origin_ms: 600)),
+        FromMap(map_message.Joined(
+          unit:,
+          loadout:,
+          incarnation:,
+          clock_origin_ms: 600,
+        )),
       ),
     )
   let moves =
@@ -1388,7 +1403,7 @@ pub fn a_creature_and_an_object_shown_carry_their_spawn_id_to_the_picture_test()
       session:,
       now:,
       entered:,
-      notice: map.ObjectsSeen(units: [
+      notice: map_message.ObjectsSeen(units: [
         spawn_support.seen(
           object: spawn_support.holoring(number: 21, place:),
           unit_id: 20,
@@ -1744,14 +1759,23 @@ pub fn an_object_is_shown_with_its_factions_hostility_test() -> Nil {
 pub fn a_viewer_writes_the_creatures_kind_3_flight_test() -> Nil {
   use <- owned_test.run(10_000)
   let #(state, taken) = game_connection_support.joining()
-  let assert map.Joined(unit:, loadout:, incarnation:, clock_origin_ms: _) =
-    game_connection_support.map_answer(taken)
+  let assert map_message.Joined(
+    unit:,
+    loadout:,
+    incarnation:,
+    clock_origin_ms: _,
+  ) = game_connection_support.map_answer(taken)
   let #(state, _) =
     game_connection_support.answer(
       state:,
       taken:,
       outcome: step.Answer(
-        FromMap(map.Joined(unit:, loadout:, incarnation:, clock_origin_ms: 600)),
+        FromMap(map_message.Joined(
+          unit:,
+          loadout:,
+          incarnation:,
+          clock_origin_ms: 600,
+        )),
       ),
     )
   let #(state, _) =
@@ -2310,12 +2334,15 @@ fn orphaned_by_its_caster_leaving() -> List(
     game_connection_support.for_stay(
       stay: game_connection_support.own_stay(),
       sent: client_connection.SentByPlayer(
-        client_connection.Change(change: held_changes.PlayerChangeStarts(
+        client_connection.Change(change: player_change.PlayerChangeStarts(
           from: ConnectionId(3),
           from_stay: game_connection_support.viewer_stay(3),
           source: kept_source,
-          change: held_changes.Applies(held_changes.Absorb(amount: 300, mask: 7)),
-          sight: held_changes.KeptWhenUnseen,
+          change: player_change.Applies(player_change.Absorb(
+            amount: 300,
+            mask: 7,
+          )),
+          sight: player_change.KeptWhenUnseen,
           spell4_id: Spell4Id(32_823),
           effect: unit_casts.HeldEffect(
             effect_id: kept_source.effect_id,
@@ -2891,7 +2918,7 @@ pub fn a_creatures_entry_is_kept_only_for_a_cast_the_viewer_was_given_test() -> 
 
 /// The map's notice that the player of connection `viewer` sees the tests' player, as the
 /// unit `unit_id`.
-fn seen_by(viewer viewer: Int, unit_id unit_id: Int) -> map.Notice {
+fn seen_by(viewer viewer: Int, unit_id unit_id: Int) -> map_message.Notice {
   SeenBy(
     by: ConnectionId(viewer),
     stay: game_connection_support.viewer_stay(viewer),
@@ -3434,7 +3461,7 @@ fn viewer_of(scene scene: RemovedScene) -> connection_state.Session {
           cast_id:,
           effect_id: Spell4EffectsId(62_024),
         ),
-        sight: held_changes.KeptWhenUnseen,
+        sight: player_change.KeptWhenUnseen,
         spell4_id: Spell4Id(32_823),
         effect: unit_casts.HeldEffect(
           effect_id: Spell4EffectsId(62_024),
@@ -3589,7 +3616,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
               session:,
               now:,
               entered:,
-              notice: map.Gone(unit_id: unit),
+              notice: map_message.Gone(unit_id: unit),
             )
             as reason
           #(session, effects, [])
@@ -3600,7 +3627,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
               session:,
               now:,
               entered:,
-              notice: map.ObjectsUnseen(unit_ids: [unit]),
+              notice: map_message.ObjectsUnseen(unit_ids: [unit]),
             )
             as reason
           #(session, effects, [])
@@ -3611,7 +3638,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
               session:,
               now:,
               entered:,
-              notice: map.UnitUnseen(
+              notice: map_message.UnitUnseen(
                 unit_id: unit,
                 generation: generation.first(),
               ),
@@ -3663,7 +3690,7 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
         session:,
         now: step.Now(monotonic_ms: 0, filetime: 0),
         entered:,
-        notice: map.Gone(unit_id: unit),
+        notice: map_message.Gone(unit_id: unit),
       )
     let assert Some(after) = connection_state.entered_of(session.status)
       as "the player is still in the world"
@@ -3687,12 +3714,12 @@ pub fn a_unit_removal_writes_each_casts_finish_before_the_0x355_for_every_caller
       ),
       #(
         "by the map's gone",
-        game_connection_support.sent_by_the_map(map.Gone(unit_id: 40)),
+        game_connection_support.sent_by_the_map(map_message.Gone(unit_id: 40)),
       ),
       #(
         "by the map's objects unseen",
         game_connection_support.sent_by_the_map(
-          map.ObjectsUnseen(unit_ids: [40]),
+          map_message.ObjectsUnseen(unit_ids: [40]),
         ),
       ),
     ],
@@ -3765,7 +3792,7 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
       at_ms: 6200,
       event: OwnEvent(
         step.Told(
-          map.Snapshot(
+          map_message.Snapshot(
             unit_id:,
             life:,
             by: ConnectionId(1),
@@ -3946,7 +3973,10 @@ fn departed_at(
     session:,
     now: at_ms_zero,
     entered: entered_of(session:),
-    notice: map.PlayerUnseen(unit_id: 9, generation: sight(n: sight_number)),
+    notice: map_message.PlayerUnseen(
+      unit_id: 9,
+      generation: sight(n: sight_number),
+    ),
   )
   |> taken_from
 }
@@ -3957,7 +3987,7 @@ fn reported_gone(session session: connection_state.Session) -> Taken {
     session:,
     now: at_ms_zero,
     entered: entered_of(session:),
-    notice: map.Gone(unit_id: 9),
+    notice: map_message.Gone(unit_id: 9),
   )
   |> taken_from
 }

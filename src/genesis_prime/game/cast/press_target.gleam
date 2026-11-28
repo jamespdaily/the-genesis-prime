@@ -36,7 +36,6 @@
 ////   unnamed game word at `0x7258` that can waive 323 for a PvP-flagged friendly target (read
 ////   as clear).
 
-import genesis_prime/game/activate
 import genesis_prime/game/cast/state.{
   type Caster, type Verdict, NotBuilt, Refuse,
 }
@@ -45,6 +44,7 @@ import genesis_prime/game/player_state.{type PlayerState}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/shared/activate
 import genesis_prime/shared/area
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/faction_level.{Friendly, Hostile, Neutral}

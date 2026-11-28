@@ -15,11 +15,12 @@
 import exception
 import game_connection_support
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{CreatureAppeared, Removed}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_destroyed.{UnitDestroyed}
 import genesis_prime/message/unit_movement.{UnitMovement}
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news.{CreatureAppeared, Removed}
 import genesis_prime/step.{
   Asked, CallerId, Connection, ConnectionId, OwnEvent, ServiceTimerFired,
   TimerId, Told,
@@ -27,8 +28,6 @@ import genesis_prime/step.{
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/int
 import gleam/list
@@ -118,12 +117,12 @@ fn strike(damage damage: Int) -> Mail {
     from: FromCaster,
     input: ToMap(
       OwnEvent(
-        Told(map.TellCreature(
+        Told(map_message.TellCreature(
           from: ConnectionId(first_player),
           stay: map_support.stay(count: 1),
           unit_id: beast_unit,
           life: spawns.creature_of(state: standing().map, spawn: 1).1,
-          payload: relay.Strike(
+          payload: map_message.Strike(
             tell: strike_tell.Strike(
               ..tell,
               from: Connection(ConnectionId(first_player)),
@@ -146,7 +145,7 @@ fn viewer_joins() -> Mail {
     input: ToMap(
       OwnEvent(Asked(
         caller: CallerId(viewer),
-        message: map.Join(
+        message: map_message.Join(
           connection: ConnectionId(viewer),
           character: map_support.character(100 + viewer),
           place: spawns.at(0.0),
@@ -168,7 +167,7 @@ fn moves(x x: Float, seq seq: Int, name name: String) -> Mail {
     from: FromConnection,
     input: ToMap(
       OwnEvent(
-        Told(map.Moved(
+        Told(map_message.Moved(
           connection: ConnectionId(viewer),
           place: spawns.at(x),
           seq:,
@@ -603,7 +602,7 @@ fn first_player_moves_out(seq seq: Int) -> Mail {
     from: FromCaster,
     input: ToMap(
       OwnEvent(
-        Told(map.Moved(
+        Told(map_message.Moved(
           connection: ConnectionId(first_player),
           place: spawns.at(spawns.far),
           seq:,

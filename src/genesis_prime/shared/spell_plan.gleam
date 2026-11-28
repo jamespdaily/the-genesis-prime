@@ -1290,7 +1290,7 @@ pub type QuestAdvance {
 /// row's Spell4Effects id, the phases of `phase_flags` it applies in, who it aims at, the
 /// prerequisite as the load parsed it, and the `tag` that chooses it by the points the cast
 /// spent (genesis_prime/shared/spend). The strike tells each unit `aim` names the gate
-/// (genesis_prime/game/strike_tell `Gate`), and a go row with a gate applies on a unit only
+/// (genesis_prime/shared/strike_tell `Gate`), and a go row with a gate applies on a unit only
 /// when that unit's answer lists the row's id as passed (genesis_prime/game/cast `went`).
 pub type StruckGate {
   StruckGate(
@@ -2369,7 +2369,7 @@ pub type RowReading {
   /// A damage row: the area load reads it (genesis_prime/shared/spell_area `damage_row_of`),
   /// and the plan holds it in no list.
   ReadByArea
-  /// An Activate row: the activate plan lists it (genesis_prime/game/activate), and the
+  /// An Activate row: the activate plan lists it (genesis_prime/shared/activate), and the
   /// ability's plan holds it in no list.
   ReadByActivation
 }
@@ -5993,21 +5993,26 @@ fn spends_all_of(costs costs: List(Cost)) -> Bool {
   })
 }
 
+/// The Spell4 row's two innate costs as the plan of the spell reads them, in the order the
+/// client checks them, with no stage's threshold costs: what a press that is no cast (a
+/// dash) pays (genesis_prime/game/dash).
+pub fn innate_costs(row row: spell4.Spell4) -> Result(List(Cost), PlanError) {
+  costs_of(
+    row:,
+    innate: [
+      #(row.innate_cost_type0, row.innate_cost0, row.innate_cost_emm_id0),
+      #(row.innate_cost_type1, row.innate_cost1, row.innate_cost_emm_id1),
+    ],
+    threshold: [],
+  )
+}
+
 /// Whether the Spell4 row spends every point held, by its two innate costs, as the plan of
 /// the spell reads them; false when a cost or its class row is not one the plan reads, since
 /// that spell fails its own plan. A stage's threshold costs carry no EMM id, so they never
 /// make a spell spend every point.
 pub fn spends_all(row row: spell4.Spell4) -> Bool {
-  case
-    costs_of(
-      row:,
-      innate: [
-        #(row.innate_cost_type0, row.innate_cost0, row.innate_cost_emm_id0),
-        #(row.innate_cost_type1, row.innate_cost1, row.innate_cost_emm_id1),
-      ],
-      threshold: [],
-    )
-  {
+  case innate_costs(row:) {
     Ok(costs) -> spends_all_of(costs:)
     Error(..) -> False
   }
@@ -6371,7 +6376,7 @@ fn kind_reading(
 /// the caster alone (`reaches`, `effect_kind.is_row_read`) and has a durationTime: left out
 /// with `DelayOnAnotherUnit` when it is aimed at any other unit and with `DelayHasNoDuration`
 /// when it holds its caster still for nothing. Its prerequisites are not read here; the
-/// creature special load refuses a row behind one (genesis_prime/world_map/creature_attack
+/// creature special load refuses a row behind one (genesis_prime/shared/creature_attack
 /// `special_checked`), and the coverage measure counts the row read.
 fn delay_reading(
   reaches reaches: Bool,
@@ -8679,7 +8684,14 @@ fn cost_of(
           False -> FocusCost(amount:)
         }),
       )
-    16, _ -> Ok(Some(UnheldCost(result: 177)))
+    16, _ ->
+      Ok(
+        Some(SlotCost(
+          slot: class_resource.dash_slot,
+          amount:,
+          result: dash_refusal,
+        )),
+      )
     _, Ok(#(slot, result)) -> Ok(Some(SlotCost(slot:, amount:, result:)))
     _, Error(Nil) if class_vital ->
       Ok(
@@ -8702,10 +8714,15 @@ fn is_class_vital(vital vital: Int) -> Bool {
   }
 }
 
+/// The result of a refused type 16 cost, the dash energy's (`0x1403b3320` case 0xf and
+/// `VitalCostResult` `0x1403d3650` case 0x10, 0xb1).
+const dash_refusal = 177
+
 /// The resource slot a cost or requirement type reads and the result its failure
 /// gives: 5 to 11 are slots 0 to 6 (50 to 56) (`0x1403b3320`, `0x1403b1780`). The
-/// client's types 16 and 27 to 29 read slots 7 to 10, which no class resource of
-/// the server uses.
+/// client's types 16 and 27 to 29 read slots 7 to 10; a cost of type 16, on a spell or on a
+/// threshold row, is the dash energy's, slot 7 (`cost_of`, `UnitVitalValue` `0x140466520`
+/// case 0x10), and the others are no class resource of the server.
 fn slot_of(vital_type vital_type: Int) -> Result(#(Int, Int), Nil) {
   case vital_type {
     _ if vital_type >= 5 && vital_type <= 11 ->

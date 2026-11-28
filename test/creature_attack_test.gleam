@@ -1,4 +1,4 @@
-//// The shared check of a creature's spell (`genesis_prime/world_map/creature_attack`
+//// The shared check of a creature's spell (`genesis_prime/shared/creature_attack`
 //// `loadable`), on the client's committed rows. Expected values come from these places.
 //// - The creature formula reads parameter types 0, 1, 10 and 12 (`damage.creature_unread`).
 //// - Spell4 34361 (an Asura auto-attack) has damage rows 185278 (parameter types 1 and 12,
@@ -11,10 +11,8 @@
 
 import client_tables
 import fixture_tables
+import genesis_prime/shared/creature_attack.{FormulaNotRead, MultiplierNotFinite}
 import genesis_prime/table/spell4_effects
-import genesis_prime/world_map/creature_attack.{
-  FormulaNotRead, MultiplierNotFinite,
-}
 import gleam/dict
 import gleam/int
 import gleam/list

@@ -44,13 +44,14 @@ import database_support
 import envoy
 import fixture_tables
 import genesis_prime/content/refusal
-import genesis_prime/game/activate
 import genesis_prime/game/click_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/place_objective
 import genesis_prime/game/target_group
-import genesis_prime/game/vendor
 import genesis_prime/import_world_data
+import genesis_prime/shared/activate
+import genesis_prime/shared/creature_unit_type
+import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
 import genesis_prime/table/loader/server_table
@@ -60,7 +61,6 @@ import genesis_prime/table/world_location2
 import genesis_prime/terrain.{type Ground}
 import genesis_prime/world_map/checklist_index.{Candidate}
 import genesis_prime/world_map/creature_faction
-import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/objective_spawn.{type Placed}
 import genesis_prime/world_map/spawn.{type Row}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -409,7 +409,7 @@ pub fn the_dominion_turrets_are_placed_with_faction_1442_test() -> Nil {
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.turret_kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions:,
     )
   let assert Ok(started) = dict.get(selection.worlds, world)
@@ -551,7 +551,7 @@ pub fn a_refused_placed_row_is_labelled_as_a_placement_not_a_spawn_test() -> Nil
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )
   let SpawnId(placed_number) = placed_row.id
@@ -1442,7 +1442,7 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
   let kill_objectives =
     list.filter(quest_objective.all(tables), fn(objective) {
       list.contains([2, 8, 16], objective.type_)
-      && place_objective.marker_ids(objective:) != []
+      && quest_row.marker_ids(objective:) != []
     })
   // Each pair of an objective and a stored world one of its markers is in has a
   // stored spawn of every creature there or the objective's count of its own
@@ -1467,7 +1467,7 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.turret_kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions:,
     )
   assert selection.refusals == []
@@ -1521,7 +1521,7 @@ fn one_objective(
       <> "'s group lists no creature and is not reported"
     }
   let marker_worlds =
-    place_objective.marker_ids(objective:)
+    quest_row.marker_ids(objective:)
     |> list.filter_map(fn(marker_id) {
       marker_world(
         tables:,
@@ -1663,7 +1663,7 @@ pub fn the_placed_boss_takes_its_chosen_faction_and_starts_test() -> Nil {
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions:,
     )
   let assert Ok(started) = dict.get(selection.worlds, world)
@@ -2071,7 +2071,7 @@ pub fn the_start_test_the_placement_uses_is_the_one_select_applies_test() -> Nil
           tables:,
           formulas: rating_support.formulas(),
           kinds:,
-          vendors: vendor.none(),
+          vendor_creatures: set.new(),
           factions: creature_faction.none(),
         )
       let is_other =
@@ -2433,7 +2433,7 @@ pub fn a_refused_click_row_is_labelled_as_a_click_placement_test() -> Nil {
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )
   let SpawnId(click_number) = click_row.id
@@ -2599,7 +2599,7 @@ pub fn every_click_objective_with_a_marker_starts_or_has_a_spawn_test() -> Nil {
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.turret_kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions:,
     )
   assert selection.refusals == []

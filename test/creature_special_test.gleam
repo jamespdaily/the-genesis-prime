@@ -1,5 +1,5 @@
 //// The creature_special table's rows and their checks
-//// (`genesis_prime/world_map/creature_special`, `creature_kind` `select` and `taken`), on the
+//// (`genesis_prime/shared/creature_special`, `creature_kind` `select` and `taken`), on the
 //// client's committed rows. Expected values come from these places.
 //// - The retail record: the Jabbithole pages of the creatures, Abilities tab, list Earthen
 ////   Roar at tier 1 (Spell4 55317) and tier 2 (55318, which the server leaves out by its own
@@ -25,14 +25,14 @@ import database_support
 import fixture_tables
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
-import genesis_prime/game/strike_tell
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_combat
+import genesis_prime/shared/creature_kind
+import genesis_prime/shared/creature_special.{type Row, Ref, Row}
 import genesis_prime/shared/spell_area
+import genesis_prime/shared/strike_tell
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_kind
-import genesis_prime/world_map/creature_life
-import genesis_prime/world_map/creature_special.{type Row, Ref, Row}
 import gleam/int
 import gleam/list
 import gleam/option.{Some}
@@ -261,7 +261,7 @@ fn loaded_special(
   let assert [loaded] =
     spawn_support.special_creature(number: 1, creature_id: 12_212, spell4_id:).combat.specials
     as "the kind lists the one special and the spawn carries it"
-  let assert creature_life.Charged(gos:, hold_ms:, ..) = loaded.attack.cast
+  let assert creature_combat.Charged(gos:, hold_ms:, ..) = loaded.attack.cast
     as "the spell is a charge"
   #(
     list.map(gos, fn(go) {
@@ -518,7 +518,7 @@ pub fn the_order_and_target_row_lifts_load_63569_70256_and_55846_test() -> Nil {
       spawn_support.special_creature(number: 1, creature_id: 12_212, spell4_id:)
     let assert [loaded] = spawn.combat.specials
       as "the kind lists the one special"
-    let assert creature_life.Charged(area: row, anchor:, ..) =
+    let assert creature_combat.Charged(area: row, anchor:, ..) =
       loaded.attack.cast
       as "the spell is a charge"
     #(row, anchor)
@@ -604,7 +604,7 @@ fn strikes_of(
   tables tables: table_store.Tables,
   creature_id creature_id: Int,
   spell4_id spell4_id: Int,
-) -> List(option.Option(creature_life.GoStrike)) {
+) -> List(option.Option(creature_combat.GoStrike)) {
   let assert Ok(spawn) =
     spawn_support.special_creature_over(
       tables:,
@@ -620,7 +620,7 @@ fn strikes_of(
     }
   let assert [loaded] = spawn.combat.specials
     as "the kind lists the one special and the spawn carries it"
-  let assert creature_life.Charged(gos:, ..) = loaded.attack.cast
+  let assert creature_combat.Charged(gos:, ..) = loaded.attack.cast
     as "the spell is a charge"
   list.map(gos, fn(go) { go.strike })
 }
@@ -716,7 +716,7 @@ pub fn the_target_row_lift_loads_the_named_specials_and_two_of_the_three_it_held
     let shaped =
       list.filter_map(strikes, fn(strike) {
         case strike {
-          Some(creature_life.GoStrike(inside: area.InsideShapes(_), ..)) ->
+          Some(creature_combat.GoStrike(inside: area.InsideShapes(_), ..)) ->
             Ok(Nil)
           _ -> Error(Nil)
         }

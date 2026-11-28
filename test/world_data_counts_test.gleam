@@ -82,16 +82,16 @@ import genesis_prime
 import genesis_prime/content
 import genesis_prime/content/creature_faction as content_creature_faction
 import genesis_prime/content/spawn as content_spawn
-import genesis_prime/game/activate
 import genesis_prime/game/click_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest as quest_rules
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
-import genesis_prime/game/vendor
 import genesis_prime/import_world_data
 import genesis_prime/readiness
+import genesis_prime/shared/activate
+import genesis_prime/shared/creature_unit_type
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/rating
@@ -102,7 +102,6 @@ import genesis_prime/table/quest2
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world
 import genesis_prime/world_map/creature_faction
-import genesis_prime/world_map/creature_unit_type
 import genesis_prime/world_map/objective_spawn
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/static_object.{type StaticObject}
@@ -201,7 +200,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       tables:,
       formulas: rating.formulas(tables:),
       kinds: spawn_support.turret_kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: chosen,
     )
   let placed_started_in = fn(world_id) {
@@ -356,7 +355,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       tables:,
       formulas: rating.formulas(tables:),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: spawn_support.the_boss_is_given_233(tables:),
     )
   assert linked_selection.refusals == []
@@ -386,7 +385,7 @@ pub fn the_whole_world_database_starts_the_decoded_number_of_spawns_in_each_worl
       tables:,
       formulas: rating.formulas(tables:),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: spawn_support.the_boss_is_given_233(tables:),
     )
   let left_out_in_all = fn(reason) {
@@ -468,7 +467,7 @@ pub fn world_3460_visibility_index_is_19_41795_and_41803_test() -> Nil {
       tables:,
       formulas: rating.formulas(tables:),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: spawn_support.the_boss_is_given_233(tables:),
     )
   assert selection.refusals == [] as "every started spawn's prerequisite loads"

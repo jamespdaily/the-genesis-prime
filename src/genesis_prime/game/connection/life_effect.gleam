@@ -12,12 +12,12 @@ import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
 import genesis_prime/game/world_entry
+import genesis_prime/map/message as map_message
 import genesis_prime/shared/hit_radius
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, CancelTimer, OwnEffect,
   StartTimer,
 }
-import genesis_prime/world_map/relay
 import gleam/list
 import gleam/option.{None, Some}
 
@@ -48,7 +48,7 @@ pub fn life_effects(
           connection: client_connection.connection(session.link),
           unit_id:,
           life:,
-          payload: relay.StrikeAnswered(answered:),
+          payload: map_message.StrikeAnswered(answered:),
         ),
       ]
       player_life.StreamTo(unit_id:, life:) -> [

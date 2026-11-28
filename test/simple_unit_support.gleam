@@ -13,9 +13,9 @@
 import game_connection_support as connection_support
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/shown
+import genesis_prime/map/message.{ObjectsSeen}
+import genesis_prime/shared/creature_combat.{type Hostile}
 import genesis_prime/table/id.{Creature2Id}
-import genesis_prime/world_map/creature_life.{type Hostile}
-import genesis_prime/world_map/map.{ObjectsSeen}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/static_object.{type Created, StaticObject}
 import gleam/dict

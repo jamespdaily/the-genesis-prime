@@ -19,11 +19,11 @@
 
 import cast_support as support
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
-import genesis_prime/game/unit_news
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_started
 import genesis_prime/shared/class_resource.{Gain, Payment}
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_news
 import genesis_prime/table/id.{Spell4Id}
 import gleam/dict
 import gleam/list

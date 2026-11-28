@@ -17,16 +17,17 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/state.{Settings} as connection_state
 import genesis_prime/game/limited_action_set
-import genesis_prime/game/unit_casts
 import genesis_prime/game/world_entry
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{NoHolder}
+import genesis_prime/map/message.{Left} as map_message
 import genesis_prime/message/camp_countdown
 import genesis_prime/message/character_list
 import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
 }
 import genesis_prime/shared/lasting
+import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   type ConnectionEvent, type Event, type Outcome, CancelTimer, EndedBeforeAnswer,
@@ -39,8 +40,6 @@ import genesis_prime/store.{
   Select, Unavailable,
 }
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
-import genesis_prime/world_map/map.{Left}
-import genesis_prime/world_map/relay
 import gleam/bit_array
 import gleam/dict
 import gleam/list
@@ -336,9 +335,11 @@ pub fn after_0x594_a_0x07e0_is_answered_with_0x0036_and_0x0117_as_at_login_with_
       outcome: step.Answer(
         FromStore(
           ForSelect(
-            Listed([
-              game_connection_support.character(id: 5, name: "Eve", seed: 1),
-            ]),
+            Listed(
+              character_support.unequipped([
+                game_connection_support.character(id: 5, name: "Eve", seed: 1),
+              ]),
+            ),
           ),
         ),
       ),
@@ -894,15 +895,15 @@ pub fn a_camp_tells_the_creatures_the_ends_of_its_holdings_in_the_step_that_star
   let tells = game_connection_support.creature_tells(step.Effects(effects))
   assert !list.any(tells, fn(tell) {
     case tell.2 {
-      relay.ControlsEnd(..) -> True
+      map_message.ControlsEnd(..) -> True
       _ -> False
     }
   })
     as "the camp tells no end of a control: it stands until its own timer"
   assert tells
     == [
-      #(40, 3, relay.ModifierEnds(source:)),
-      #(40, 3, relay.CastViewEnds(cast_id: 5)),
+      #(40, 3, map_message.ModifierEnds(source:)),
+      #(40, 3, map_message.CastViewEnds(cast_id: 5)),
     ]
     as "the modifier's and the view's ends are effects of the step that asks for the save, which the shell carries out before the ask"
   let assert AskStore(store.Move(store.SavePlace(..))) = ask.request

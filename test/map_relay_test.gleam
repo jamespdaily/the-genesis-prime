@@ -12,11 +12,12 @@
 //// - Sight (`genesis_prime/shared/sight`): 1024 units, 3D, inclusive.
 
 import connection_rule_support as support
-import genesis_prime/game/experience.{Credit}
-import genesis_prime/game/strike_tell.{
+import genesis_prime/map/message as map_message
+import genesis_prime/shared/kill_credit.{Credit}
+import genesis_prime/shared/strike_tell.{
   Answered, Attacks, Key, Refused, Released, Threatened,
 }
-import genesis_prime/game/unit_news.{Health, PeerNews}
+import genesis_prime/shared/unit_news.{Health, PeerNews}
 import genesis_prime/step.{
   type ServiceStep, Connection, ConnectionId, Creature, LogError, OwnEvent,
   ServiceTimerFired, TimerId, Told, WatchId,
@@ -25,7 +26,6 @@ import genesis_prime/table/id.{Creature2Id, Faction2Id, PrerequisiteId}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State}
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
@@ -53,7 +53,7 @@ type Told {
 
 /// What the step tells creatures of their relations, in order: the first viewers of each
 /// creature it starts, then each `Seen` and `Unseen` it sends.
-fn told(taken: ServiceStep(map.Outgoing)) -> List(Told) {
+fn told(taken: ServiceStep(map_message.Outgoing)) -> List(Told) {
   let started =
     list.flat_map(spawns.starts(taken), fn(start) {
       list.map({ start.1 }.viewers, fn(viewer) {
@@ -66,10 +66,12 @@ fn told(taken: ServiceStep(map.Outgoing)) -> List(Told) {
       case sent {
         #(
           Creature(unit_id:, ..),
-          map.Seen(by: ConnectionId(by), generation:, ..),
+          map_message.Seen(by: ConnectionId(by), generation:, ..),
         ) -> Ok(Seen(unit_id:, by:, generation:))
-        #(Creature(unit_id:, ..), map.Unseen(by: ConnectionId(by), generation:)) ->
-          Ok(Unseen(unit_id:, by:, generation:))
+        #(
+          Creature(unit_id:, ..),
+          map_message.Unseen(by: ConnectionId(by), generation:),
+        ) -> Ok(Unseen(unit_id:, by:, generation:))
         _ -> Error(Nil)
       }
     })
@@ -80,18 +82,18 @@ fn told(taken: ServiceStep(map.Outgoing)) -> List(Told) {
 fn told_by_a_creature(
   state state: State,
   at_ms at_ms: Int,
-  message message: map.Message,
-) -> #(State, ServiceStep(map.Outgoing)) {
+  message message: map_message.Message,
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   spawns.feed(state:, at_ms:, event: OwnEvent(Told(message:)))
 }
 
 /// What the step relays, each as the connection's number, the stay and the payload.
 fn relayed(
-  taken: ServiceStep(map.Outgoing),
-) -> List(#(Int, Stay, relay.Delivered)) {
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(#(Int, Stay, map_message.Delivered)) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      map.Relayed(stay:, delivered:) -> Ok(#(sent.0, stay, delivered))
+      map_message.Relayed(stay:, delivered:) -> Ok(#(sent.0, stay, delivered))
       _ -> Error(Nil)
     }
   })
@@ -200,23 +202,23 @@ pub fn a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one
   let payloads = [
     #(
       "Struck",
-      relay.Struck(answered: Answered(
+      map_message.Struck(answered: Answered(
         key: Key(cast_id: 1, occasion: strike_tell.AtGo(phase: 0), unit_id:),
         outcome: Refused(why: strike_tell.Dead),
       )),
     ),
     #(
       "KillCredit",
-      relay.KillCredit(credit: Credit(
+      map_message.KillCredit(credit: Credit(
         unit_id:,
         creature_id: Creature2Id(73_464),
         faction_id: Faction2Id(1),
         level: 1,
       )),
     ),
-    #("Attacks", relay.Fight(told: Attacks(tell: a_strike(unit_id:)))),
-    #("Threatened", relay.Fight(told: Threatened(unit_id:, life:))),
-    #("Released", relay.Fight(told: Released(unit_id:))),
+    #("Attacks", map_message.Fight(told: Attacks(tell: a_strike(unit_id:)))),
+    #("Threatened", map_message.Fight(told: Threatened(unit_id:, life:))),
+    #("Released", map_message.Fight(told: Released(unit_id:))),
   ]
   // The destination: the connection and the stay the relay names, and whether it is delivered.
   let destinations = [
@@ -233,7 +235,7 @@ pub fn a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one
         told_by_a_creature(
           state:,
           at_ms: 7000,
-          message: map.Relay(
+          message: map_message.Relay(
             unit_id:,
             life:,
             to: ConnectionId(connection),
@@ -246,7 +248,7 @@ pub fn a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one
           #(
             connection,
             map_support.stay(count: stay_count),
-            relay.Tell(payload:),
+            map_message.Tell(payload:),
           ),
         ]
         False -> []
@@ -368,12 +370,12 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
           told_by_a_creature(
             state: scene.state,
             at_ms: 80_000,
-            message: map.Relay(
+            message: map_message.Relay(
               unit_id:,
               life: relay_life,
               to: ConnectionId(1),
               stay: map_support.stay(count: 1),
-              payload: relay.Fight(told: Released(unit_id:)),
+              payload: map_message.Fight(told: Released(unit_id:)),
             ),
           )
         assert result.is_ok(map.admitted(
@@ -382,7 +384,7 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
             life: relay_life,
             to: ConnectionId(1),
             stay: map_support.stay(count: 1),
-            payload: relay.Fight(told: Released(unit_id:)),
+            payload: map_message.Fight(told: Released(unit_id:)),
           ))
           == delivered
           as { "the function the step admits a relay by agrees: " <> which }
@@ -409,13 +411,13 @@ pub fn a_relay_from_a_live_retiring_or_releasing_creature_is_admitted_and_one_fr
 /// What the step tells creatures a player told them, as each creature's unit and life and
 /// what the map sends it: the sender, the stay and the payload.
 fn told_creatures(
-  taken: ServiceStep(map.Outgoing),
-) -> List(#(Int, Int, Int, Stay, relay.Inbound)) {
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(#(Int, Int, Int, Stay, map_message.Inbound)) {
   list.filter_map(spawns.sends(taken), fn(sent) {
     case sent {
       #(
         Creature(unit_id:, life:, ..),
-        map.ToldCreature(by: ConnectionId(by), stay:, payload:),
+        map_message.ToldCreature(by: ConnectionId(by), stay:, payload:),
       ) -> Ok(#(unit_id, life, by, stay, payload))
       _ -> Error(Nil)
     }
@@ -491,7 +493,7 @@ pub fn a_players_tell_is_delivered_to_a_running_creature_unchanged_and_dropped_f
       stay_count: 1,
       unit_id: 2,
       life: 1,
-      payload: relay.Despawn(delay_ms: 0, went_at_ms: 6000),
+      payload: map_message.Despawn(delay_ms: 0, went_at_ms: 6000),
     )
   assert support.effects_of(dropped) == []
     as "a tell dropped by the map writes no line and sends nothing"
@@ -540,14 +542,14 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
       // The move and the two kinds that make a holding on the creature are checked for
       // their sender; a strike names the sender it is told from.
       let delivered = case payload {
-        relay.TargetMoved(..)
-        | relay.ModifierStarts(..)
-        | relay.CastViewSet(..) -> in_the_map_in_that_stay
+        map_message.TargetMoved(..)
+        | map_message.ModifierStarts(..)
+        | map_message.CastViewSet(..) -> in_the_map_in_that_stay
         _ -> True
       }
       let payload = case payload {
-        relay.Strike(tell:) ->
-          relay.Strike(tell: inbound_support.struck_by(
+        map_message.Strike(tell:) ->
+          map_message.Strike(tell: inbound_support.struck_by(
             tell:,
             from:,
             stay_count:,
@@ -601,7 +603,7 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
       life:,
       from: ConnectionId(2),
       stay: map_support.stay(count: 1),
-      payload: relay.TargetMoved(
+      payload: map_message.TargetMoved(
         place: inbound_support.place(),
         seq: 1,
         hit_radius: 0.5,
@@ -611,11 +613,11 @@ pub fn a_move_is_delivered_only_from_a_player_in_the_map_in_the_stay_the_relay_n
     as "a move from a player of another stay is refused for its source, not for its creature"
   list.each(
     [
-      relay.ModifierStarts(
+      map_message.ModifierStarts(
         source: inbound_support.source(),
         modifier: inbound_support.modifier(),
       ),
-      relay.CastViewSet(view: inbound_support.view()),
+      map_message.CastViewSet(view: inbound_support.view()),
     ],
     fn(payload) {
       list.each([2, 3, 4], fn(from) {
@@ -675,7 +677,7 @@ pub fn a_strike_that_names_another_striker_than_the_connection_that_told_it_is_d
         stay_count: 1,
         unit_id:,
         life:,
-        payload: relay.Strike(tell:),
+        payload: map_message.Strike(tell:),
       )
     assert list.length(told_creatures(taken))
       == case delivered {
@@ -729,7 +731,7 @@ pub fn a_snapshot_in_the_maps_mailbox_when_its_creature_ends_is_relayed_and_gone
     told_by_a_creature(
       state:,
       at_ms: 7000,
-      message: map.Snapshot(
+      message: map_message.Snapshot(
         unit_id:,
         life:,
         by: ConnectionId(1),
@@ -745,12 +747,12 @@ pub fn a_snapshot_in_the_maps_mailbox_when_its_creature_ends_is_relayed_and_gone
       #(
         1,
         map_support.stay(count: 1),
-        relay.News(health_news(unit_id:, health: 52)),
+        map_message.News(health_news(unit_id:, health: 52)),
       ),
       #(
         1,
         map_support.stay(count: 1),
-        relay.News(health_news(unit_id:, health: 40)),
+        map_message.News(health_news(unit_id:, health: 40)),
       ),
     ]
     as "the burst in the map's mailbox is relayed, in the order the creature built it"
@@ -900,7 +902,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
       told_by_a_creature(
         state:,
         at_ms: 6400,
-        message: map.Snapshot(
+        message: map_message.Snapshot(
           unit_id:,
           life:,
           by: ConnectionId(connection),
@@ -915,12 +917,12 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
     told_by_a_creature(
       state:,
       at_ms: 6600,
-      message: map.Broadcast(unit_id:, life:, news:),
+      message: map_message.Broadcast(unit_id:, life:, news:),
     )
   assert relayed(taken)
     == [
-      #(1, map_support.stay(count: 1), relay.News(news)),
-      #(3, map_support.stay(count: 3), relay.News(news)),
+      #(1, map_support.stay(count: 1), map_message.News(news)),
+      #(3, map_support.stay(count: 3), map_message.News(news)),
     ]
     as "relayed to the viewers that relay, each for its own stay, in connection order; the viewer that awaits its snapshot and the one that left are sent none"
   // The creature is released: the relations are kept as they were, so the viewer that
@@ -930,7 +932,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
     told_by_a_creature(
       state: released,
       at_ms: 6800,
-      message: map.Snapshot(
+      message: map_message.Snapshot(
         unit_id:,
         life:,
         by: ConnectionId(2),
@@ -943,19 +945,19 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
       ),
     )
   assert relayed(snapshot)
-    == [#(2, map_support.stay(count: 2), relay.News(news))]
+    == [#(2, map_support.stay(count: 2), map_message.News(news))]
     as "a releasing creature's snapshot reaches the viewer that awaits it, for the stay of its relation"
   let #(_, broadcast_released) =
     told_by_a_creature(
       state: released_with_snapshot,
       at_ms: 6900,
-      message: map.Broadcast(unit_id:, life:, news:),
+      message: map_message.Broadcast(unit_id:, life:, news:),
     )
   assert relayed(broadcast_released)
     == [
-      #(1, map_support.stay(count: 1), relay.News(news)),
-      #(2, map_support.stay(count: 2), relay.News(news)),
-      #(3, map_support.stay(count: 3), relay.News(news)),
+      #(1, map_support.stay(count: 1), map_message.News(news)),
+      #(2, map_support.stay(count: 2), map_message.News(news)),
+      #(3, map_support.stay(count: 3), map_message.News(news)),
     ]
     as "a releasing creature's broadcast reaches each viewer that relays, as before the release"
   // Viewers 1 (relaying) and 2 (awaiting) leave and join again in new stays while the
@@ -978,7 +980,7 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
     told_by_a_creature(
       state: rejoined,
       at_ms: 7200,
-      message: map.Snapshot(
+      message: map_message.Snapshot(
         unit_id:,
         life:,
         by: ConnectionId(2),
@@ -996,10 +998,10 @@ pub fn a_broadcast_is_relayed_to_each_relaying_viewer_in_connection_order_and_to
     told_by_a_creature(
       state: rejoined,
       at_ms: 7300,
-      message: map.Broadcast(unit_id:, life:, news:),
+      message: map_message.Broadcast(unit_id:, life:, news:),
     )
   assert relayed(broadcast_rejoined)
-    == [#(3, map_support.stay(count: 3), relay.News(news))]
+    == [#(3, map_support.stay(count: 3), map_message.News(news))]
     as "a broadcast is relayed to no viewer under a stay it has left, here 1 and 2, and still to the one that stayed"
 }
 
@@ -1024,7 +1026,7 @@ pub fn a_snapshot_of_an_earlier_generation_relays_nothing_and_leaves_the_relatio
     told_by_a_creature(
       state:,
       at_ms: 6400,
-      message: map.Snapshot(
+      message: map_message.Snapshot(
         unit_id:,
         life:,
         by: ConnectionId(2),
@@ -1045,7 +1047,7 @@ pub fn a_snapshot_of_an_earlier_generation_relays_nothing_and_leaves_the_relatio
     told_by_a_creature(
       state:,
       at_ms: 6500,
-      message: map.Snapshot(
+      message: map_message.Snapshot(
         unit_id:,
         life:,
         by: ConnectionId(2),
@@ -1053,6 +1055,7 @@ pub fn a_snapshot_of_an_earlier_generation_relays_nothing_and_leaves_the_relatio
         burst: [news],
       ),
     )
-  assert relayed(own) == [#(2, map_support.stay(count: 1), relay.News(news))]
+  assert relayed(own)
+    == [#(2, map_support.stay(count: 1), map_message.News(news))]
     as "the snapshot of its own generation is relayed"
 }

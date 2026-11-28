@@ -17,13 +17,12 @@ import ask_support
 import driven_time
 import genesis_prime/client_connection.{ForStay, SentByFoe}
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell.{Threatened}
+import genesis_prime/map/message as map_message
 import genesis_prime/service
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/strike_tell.{Threatened}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import gleam/erlang/process
 import gleam/int
 import gleam/list
@@ -68,7 +67,7 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
     run:,
     unit_id: first.unit_id,
     life: first_life,
-    payload: relay.ModifierStarts(
+    payload: map_message.ModifierStarts(
       source: inbound_support.source(),
       modifier: inbound_support.modifier(),
     ),
@@ -78,7 +77,7 @@ pub fn a_creature_that_expired_is_removed_and_created_again_by_a_new_life_under_
     run:,
     unit_id: first.unit_id,
     life: first_life,
-    payload: relay.Thrown(throw: world_watch_support.throw()),
+    payload: map_message.Thrown(throw: world_watch_support.throw()),
   )
   let thrown_path =
     world_watch_support.next(
@@ -214,7 +213,7 @@ pub fn two_ring_players_are_both_aggroed_by_the_life_that_replaces_their_killed_
     list.map([1, 2], fn(connection) {
       service.tell_subject(
         run.subject,
-        map.Ready(connection: ConnectionId(connection), seq: 0),
+        map_message.Ready(connection: ConnectionId(connection), seq: 0),
       )
     })
   driven_time.wait_until_quiet(time)

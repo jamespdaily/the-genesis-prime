@@ -34,10 +34,14 @@ import database_support
 import fixture_tables
 import genesis_prime/content/class_resource as content_class_resource
 import genesis_prime/content/refusal.{type Refusal, Refusal, RowName}
+import genesis_prime/game/cast/cost
+import genesis_prime/game/cast/state as cast_state
 import genesis_prime/shared/class_resource.{
   type Effect, type Resource, type Resources, CancelTimer, Changed, Gain,
   Payment, Resource, Row, StartTimer,
 }
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/unit_fields
 import genesis_prime/step
 import genesis_prime/table/id.{ClassId}
 import genesis_prime/table/loader/store as table_store
@@ -46,6 +50,7 @@ import genesis_prime/table/spell_level
 import gleam/float
 import gleam/int
 import gleam/list
+import gleam/option.{None}
 import gleam/set
 import gleam/string
 import owned_test
@@ -768,13 +773,21 @@ pub fn the_running_timers_are_one_set_and_left_and_died_cancel_each_in_timer_id_
   assert cancelled(left) == [refill] as "a Medic's refill after combat (5)"
   let #(_, none) = class_resource.left(resources: new(5))
   assert none == [] as "no timer running: nothing to cancel"
+  let #(dasher, dash_started) = pay(resources: slinger, slot: 7, amount: 100)
+  assert started(dash_started) == [#(dash_timer, 250)]
+    as "the first dash payment below the maximum starts the dash timer (a server guess: 250 ms ticks)"
+  let #(_, left) = class_resource.left(resources: dasher)
+  assert cancelled(left) == [regen, focus_timer, dash_timer]
+    as "a Spellslinger who has dashed: the slot regeneration (4), Focus (14) and the dash energy (15), in timer-id order"
+  let #(_, died) = class_resource.died(resources: dasher)
+  assert cancelled(died) == [regen, focus_timer, dash_timer]
 }
 
 pub fn owns_names_each_timer_of_the_rule_and_no_other_connection_timer_test() -> Nil {
   use <- owned_test.run(5000)
-  list.each([4, 5, 6, 7, 14], fn(number) {
+  list.each([4, 5, 6, 7, 14, 15], fn(number) {
     assert class_resource.owns(timer: step.TimerId(number))
-      as "the rule's own timers: the regeneration, refill, drain, empty and Focus"
+      as "the rule's own timers: the regeneration, refill, drain, empty, Focus and dash energy"
   })
   list.each([1, 2, 3, 8, 9, 10, 11, 12, 13, 1000], fn(number) {
     assert !class_resource.owns(timer: step.TimerId(number))
@@ -1550,4 +1563,244 @@ pub fn one_call_with_a_class_vital_gain_and_a_focus_share_changes_the_class_slot
     ])
   assert started(with_slot) == [#(6, 1500)]
     as "a gain that lands in the class slot restarts the drain's wait, whatever else the call holds"
+}
+
+// ---- Dash energy: slot 7, stat 9 ----
+
+/// The dash energy's timer, numbered 15 in `started` and `cancelled`.
+const dash_timer = 15
+
+fn dash_of(resources: Resources) -> Float {
+  class_resource.value(resources:, slot: 7)
+}
+
+fn dash_tick(resources: Resources) -> #(Resources, List(Effect)) {
+  class_resource.timer_fired(resources:, timer: class_resource.dash_timer)
+}
+
+pub fn a_dash_pays_100_from_slot_7_and_sends_one_change_of_stat_9_test() -> Nil {
+  use <- owned_test.run(5000)
+  let stalker = new(5)
+  assert dash_of(stalker) == 200.0
+    && class_resource.max(resources: stalker, slot: 7) == 200.0
+    as "a player enters with the dash energy at its maximum, 200 (property 38, full at entry: a server choice)"
+  assert unit_fields.resource_stat_id(slot: 7) == 9
+    as "slot 7 is stat 9 (ApplyUnitStat case 9, opcode.0x935)"
+  let #(paid, effects) = pay(resources: stalker, slot: 7, amount: 100)
+  assert changes(effects) == [#(7, 100.0)]
+    as "Spell4 28770 to 28773: innate cost type 16 of 100 takes 100 from slot 7, one change of it"
+  assert started(effects) == [#(dash_timer, 250)]
+    as "below the maximum the refill starts, in 250 ms ticks (a server guess)"
+  assert class_resource.value(resources: paid, slot: 3) == 100.0
+    as "the Stalker's own slot is untouched"
+  let #(paid, second) = pay(resources: paid, slot: 7, amount: 100)
+  assert changes(second) == [#(7, 0.0)] && started(second) == []
+    as "a second dash empties it, and the timer already runs"
+  assert dash_of(paid) == 0.0
+}
+
+pub fn a_slot_7_below_100_is_refused_177_and_pays_nothing_and_99_9_counts_as_99_test() -> Nil {
+  use <- owned_test.run(5000)
+  let cost_of_dash = [spell_plan.SlotCost(slot: 7, amount: 100, result: 177)]
+  let holding = fn(points) {
+    class_resource_support.resources_with(
+      class_id: 5,
+      changes: [#(38, points)],
+      level: 1,
+    )
+  }
+  assert cost.costs_paid(costs: cost_of_dash, resources: holding(100.0))
+    == Ok(cast_state.Paid(
+      payments: [Payment(slot: 7, amount: 100)],
+      spent: None,
+    ))
+    as "exactly 100 pays"
+  assert cost.costs_paid(costs: cost_of_dash, resources: holding(99.9))
+    == Error(cast_state.Unpaid(result: 177))
+    as "CheckInnateCost 0x1403b3533 cuts the float to a whole number, 99, which is below 100; 0x1403b3552 gives 0xb1, 177"
+  assert cost.costs_paid(costs: cost_of_dash, resources: holding(0.0))
+    == Error(cast_state.Unpaid(result: 177))
+    as "an empty slot is refused the same, and nothing is paid"
+}
+
+pub fn dash_energy_refills_each_tick_to_its_maximum_and_a_full_slot_sends_nothing_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(low, _) = pay(resources: new(5), slot: 7, amount: 100)
+  let #(low, first) = dash_tick(low)
+  assert changes(first) == [#(7, 106.25)]
+    && started(first) == [#(dash_timer, 250)]
+    as "25 a second in 250 ms ticks is 6.25 a tick, and the next tick is started (a server guess)"
+  let #(low, _) = dash_tick(low)
+  let #(low, _) = dash_tick(low)
+  let #(low, fourth) = dash_tick(low)
+  assert dash_of(low) == 125.0 && changes(fourth) == [#(7, 125.0)]
+    as "four ticks, one second, are 25"
+  let low =
+    list.fold(list.repeat(Nil, 11), low, fn(low, _) { dash_tick(low).0 })
+  assert dash_of(low) == 193.75
+  let #(low, last) = dash_tick(low)
+  assert changes(last) == [#(7, 200.0)] && started(last) == []
+    as "the last tick reaches the maximum, sends it, and starts no more"
+  let #(full, late) = dash_tick(low)
+  assert late == [] && dash_of(full) == 200.0
+    as "a tick after the slot is full changes nothing and sends nothing"
+}
+
+pub fn a_change_of_property_38_or_39_changes_the_dash_maximum_and_the_refill_and_a_maximum_of_0_empties_the_slot_test() -> Nil {
+  use <- owned_test.run(5000)
+  let follow = fn(resources, changes) {
+    class_resource.properties_followed(
+      resources:,
+      properties: class_resource_support.properties_of(
+        class_id: 5,
+        changes:,
+        level: 1,
+      ),
+    )
+  }
+  let #(extra, extra_effects) = follow(new(5), [#(38, 300.0)])
+  assert dash_of(extra) == 200.0
+    && class_resource.max(resources: extra, slot: 7) == 300.0
+    && changes(extra_effects) == []
+    && started(extra_effects) == [#(dash_timer, 250)]
+    as "'Extra Dash' 78919 adds a flat 100 to property 38: 300, the value stays and the refill starts"
+  let #(disabled, disabled_effects) = follow(new(5), [#(38, 0.0)])
+  assert dash_of(disabled) == 0.0 && changes(disabled_effects) == [#(7, 0.0)]
+    as "'Disables Dodge' 48843 and 1495 take a flat 200 off: a maximum of 0 empties the slot with one change"
+  let #(lowered, lowered_effects) = follow(new(5), [#(38, 100.0)])
+  assert dash_of(lowered) == 100.0 && changes(lowered_effects) == [#(7, 100.0)]
+    as "a lowered maximum clamps the value to it"
+  let #(paid, _) = pay(resources: new(5), slot: 7, amount: 100)
+  let #(faster, _) = follow(paid, [#(39, 1.16)])
+  let #(faster, ticked) = dash_tick(faster)
+  let assert [#(7, held)] = changes(ticked) as "one change for the tick"
+  assert near(held, 107.25)
+    as "property 39 at 1.16 (Dasher 52936 +16%) multiplies the 6.25 of a tick"
+  let #(stopped, stopped_effects) = follow(faster, [#(39, 0.0)])
+  assert cancelled(stopped_effects) == [dash_timer]
+    as "a refill factor of 0 (Sprint 1316 sets the sprint's to x0) stops the timer"
+  let #(_, none) = dash_tick(stopped)
+  assert none == [] as "a tick after the cancel changes nothing"
+  let #(_, again) = follow(stopped, [#(39, 1.0)])
+  assert started(again) == [#(dash_timer, 250)]
+    as "a factor above 0 again starts it"
+}
+
+pub fn death_stops_the_dash_timer_and_coming_back_fills_the_slot_test() -> Nil {
+  use <- owned_test.run(5000)
+  let #(low, _) = pay(resources: new(5), slot: 7, amount: 100)
+  let #(dead, died) = class_resource.died(resources: low)
+  assert cancelled(died) == [dash_timer] && changes(died) == []
+    as "death cancels the timer and sends nothing"
+  let #(dead, late) = dash_tick(dead)
+  assert late == [] && dash_of(dead) == 100.0
+    as "a tick after death changes nothing"
+  let #(back, back_effects) = class_resource.came_back(resources: dead)
+  assert changes(back_effects) == [#(7, 200.0)] && dash_of(back) == 200.0
+    as "coming back fills the slot, as health and shield come back full (a server choice)"
+  assert started(back_effects) == []
+}
+
+type DashEvent {
+  PayDash(points: Int)
+  DashTicks
+  DashMaximumBecomes(points: Float)
+  DashRefillBecomes(factor: Float)
+  DashPlayerDies
+  DashPlayerComesBack
+}
+
+fn dash_event_of(drawn: #(Int, Int)) -> DashEvent {
+  let #(kind, number) = drawn
+  case kind {
+    0 -> PayDash(points: number % 150)
+    1 -> DashTicks
+    2 -> DashMaximumBecomes(points: int.to_float(number % 4 * 100))
+    3 -> DashRefillBecomes(factor: int.to_float(number % 3) *. 0.5)
+    4 -> DashPlayerDies
+    _ -> DashPlayerComesBack
+  }
+}
+
+/// The player after the event, with the maximum and the refill factor it holds and
+/// whether it lives.
+fn dash_after(
+  event event: DashEvent,
+  state state: #(Resources, Float, Float, Bool),
+) -> #(Resources, Float, Float, Bool) {
+  let #(resources, maximum, factor, alive) = state
+  let following = fn(maximum, factor) {
+    class_resource.properties_followed(
+      resources:,
+      properties: class_resource_support.properties_of(
+        class_id: 5,
+        changes: [#(38, maximum), #(39, factor)],
+        level: 1,
+      ),
+    ).0
+  }
+  case event {
+    PayDash(points:) -> #(
+      pay(resources:, slot: 7, amount: points).0,
+      maximum,
+      factor,
+      alive,
+    )
+    DashTicks -> #(dash_tick(resources).0, maximum, factor, alive)
+    DashMaximumBecomes(points:) -> #(
+      following(points, factor),
+      points,
+      factor,
+      alive,
+    )
+    DashRefillBecomes(factor: next) -> #(
+      following(maximum, next),
+      maximum,
+      next,
+      alive,
+    )
+    DashPlayerDies -> #(
+      class_resource.died(resources:).0,
+      maximum,
+      factor,
+      False,
+    )
+    DashPlayerComesBack -> #(
+      class_resource.came_back(resources:).0,
+      maximum,
+      factor,
+      True,
+    )
+  }
+}
+
+pub fn dash_energy_stays_between_0_and_the_maximum_through_any_sequence_of_payments_ticks_and_property_changes_test() -> Nil {
+  use <- owned_test.run(10_000)
+  qcheck.given(
+    qcheck.list_from(qcheck.tuple2(
+      qcheck.bounded_int(from: 0, to: 5),
+      qcheck.bounded_int(from: 0, to: 1200),
+    )),
+    fn(drawn) {
+      list.fold(
+        list.map(drawn, dash_event_of),
+        #(new(5), 200.0, 1.0, True),
+        fn(state, event) {
+          let #(resources, maximum, factor, alive) = dash_after(event:, state:)
+          let held = dash_of(resources)
+          assert held >=. 0.0 && held <=. maximum
+            as "the dash energy stays within [0, the maximum]"
+          let running =
+            list.contains(
+              cancelled(class_resource.left(resources:).1),
+              dash_timer,
+            )
+          assert running == { alive && held <. maximum && factor >. 0.0 }
+            as "the dash timer runs exactly while the player lives, is below the maximum and the refill factor is above 0"
+          #(resources, maximum, factor, alive)
+        },
+      )
+      Nil
+    },
+  )
 }

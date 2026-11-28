@@ -5,7 +5,7 @@
 ////
 //// ```
 //// content.load: vendor rows, item rows ─▶ select(…, tables) ─▶ Vendors | refusals (the load stops)
-//// a spawn is built                      ─▶ is_vendor(vendors, creature)  ─▶ create flag 4
+//// a spawn is built                      ─▶ in its vendor creature set     ─▶ create flag 4
 //// a right-click (0x7ea kind 0x31)       ─▶ get(vendors, creature)        ─▶ 0x90b with the stock
 //// ```
 ////

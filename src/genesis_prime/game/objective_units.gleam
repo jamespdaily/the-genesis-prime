@@ -28,8 +28,8 @@
 
 import genesis_prime/game/departures
 import genesis_prime/game/objective_kind
-import genesis_prime/game/objective_link
 import genesis_prime/game/target_group
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/quest_row
 import genesis_prime/table/id.{type Creature2Id}
 import genesis_prime/table/loader/store as table_store

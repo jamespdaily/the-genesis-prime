@@ -10,9 +10,9 @@ import envoy
 import genesis_prime/content/terrain as content_terrain
 import genesis_prime/game/click_objective
 import genesis_prime/game/kill_objective
-import genesis_prime/game/place_objective
 import genesis_prime/game/start_place
 import genesis_prime/import_world_data
+import genesis_prime/shared/quest_row
 import genesis_prime/table/id
 import genesis_prime/table/quest_objective
 import genesis_prime/table/world_location2
@@ -119,7 +119,7 @@ fn placed_over_the_real_ground() -> RealPlacement {
     )
   let markers =
     quest_objective.all(tables)
-    |> list.flat_map(fn(objective) { place_objective.marker_ids(objective:) })
+    |> list.flat_map(fn(objective) { quest_row.marker_ids(objective:) })
     |> list.unique
     |> list.filter_map(fn(marker_id) {
       world_location2.get(tables:, id: id.WorldLocation2Id(marker_id))

@@ -33,7 +33,6 @@ import genesis_prime/content/terrain as content_terrain
 import genesis_prime/content/tutorial_quest as content_tutorial_quest
 import genesis_prime/content/vendor as content_vendor
 import genesis_prime/content/zone_welcome as content_zone_welcome
-import genesis_prime/game/activate
 import genesis_prime/game/arrival_objective
 import genesis_prime/game/click_objective
 import genesis_prime/game/connection/state as connection_state
@@ -44,11 +43,12 @@ import genesis_prime/game/start_place
 import genesis_prime/game/zone_welcome
 import genesis_prime/migration
 import genesis_prime/readiness
+import genesis_prime/shared/activate
 import genesis_prime/shared/class_resource
+import genesis_prime/shared/creature_kind
 import genesis_prime/shared/server_proxy
 import genesis_prime/shared/spell_plan
 import genesis_prime/table/id.{ClassId, Creature2Id, Spell4Id}
-import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{Summoned}

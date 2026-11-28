@@ -4,7 +4,6 @@
 //// `coverage_gaps_test`.
 
 import genesis_prime/coverage/gaps
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/cost as cast_cost
@@ -15,6 +14,7 @@ import genesis_prime/game/connection/landing as connection_landing
 import genesis_prime/game/heal_split
 import genesis_prime/game/strike
 import genesis_prime/gap.{type Entry}
+import genesis_prime/shared/activate
 import gleam/list
 import gleam/string
 import owned_test

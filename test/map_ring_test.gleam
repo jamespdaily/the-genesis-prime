@@ -16,10 +16,10 @@
 
 import connection_rule_support as support
 import genesis_prime/game/start_place
+import genesis_prime/map/message as map_message
+import genesis_prime/shared/creature_combat.{Hostile}
 import genesis_prime/step.{ConnectionId, LogError, OwnEvent, Told}
-import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/map.{type State}
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/list
@@ -36,12 +36,15 @@ const virtual_defense_dagun = 73_465
 fn ready(
   state state: State,
   connection connection: Int,
-) -> #(State, step.ServiceStep(map.Outgoing)) {
+) -> #(State, step.ServiceStep(map_message.Outgoing)) {
   map_spawn_support.feed(
     state:,
     at_ms: map_spawn_support.started_at_ms + 10,
     event: OwnEvent(
-      Told(message: map.Ready(connection: ConnectionId(connection), seq: 0)),
+      Told(message: map_message.Ready(
+        connection: ConnectionId(connection),
+        seq: 0,
+      )),
     ),
   )
 }
@@ -70,7 +73,9 @@ fn ready_player_beside_a_dagun() -> #(State, step.CreatureStart, step.WatchId) {
 }
 
 /// The `Approached` the step sends, with its place's x and its sequence number.
-fn approaches(taken: step.ServiceStep(map.Outgoing)) -> List(#(Float, Int)) {
+fn approaches(
+  taken: step.ServiceStep(map_message.Outgoing),
+) -> List(#(Float, Int)) {
   list.map(approaches_in_full(taken), fn(approach) { #(approach.2, approach.3) })
 }
 
@@ -123,7 +128,7 @@ pub fn a_creature_friendly_or_neutral_to_the_mover_gets_no_approached_test() -> 
   let neutral =
     Spawn(
       ..spawn_support.battle_beast(number: 2, x: 120.0),
-      combat: creature_life.Combat(
+      combat: creature_combat.Combat(
         ..beast.combat,
         hostile_to: Hostile(exile: False, dominion: False),
       ),
@@ -259,7 +264,7 @@ pub fn a_player_ready_before_any_move_of_its_stay_is_approached_with_the_connect
       state:,
       at_ms: map_spawn_support.started_at_ms + 10,
       event: OwnEvent(
-        Told(message: map.Ready(connection: ConnectionId(1), seq: 5)),
+        Told(message: map_message.Ready(connection: ConnectionId(1), seq: 5)),
       ),
     )
   assert approaches(readied) == [#(95.0, 5)]
@@ -271,11 +276,11 @@ pub fn a_player_ready_before_any_move_of_its_stay_is_approached_with_the_connect
 /// What the step sends creatures as `Approached`: the player's connection, its unit,
 /// the place's x, the move's sequence number and the stay, in the order sent.
 fn approaches_in_full(
-  taken: step.ServiceStep(map.Outgoing),
+  taken: step.ServiceStep(map_message.Outgoing),
 ) -> List(#(Int, Int, Float, Int, Stay)) {
   list.filter_map(map_spawn_support.sends(taken), fn(sent) {
     case sent.1 {
-      map.Approached(member: step.RingMember(
+      map_message.Approached(member: step.RingMember(
         by: ConnectionId(by),
         unit_id:,
         place:,
@@ -283,20 +288,20 @@ fn approaches_in_full(
         stay:,
         ..,
       )) -> Ok(#(by, unit_id, start_place.x(place), seq, stay))
-      map.Withdrew(..)
-      | map.PlayerDied(..)
-      | map.CasterGone(..)
-      | map.ToldCreature(..)
-      | map.Seen(..)
-      | map.Unseen(..)
-      | map.Relayed(..)
-      | map.Noticed(..)
-      | map.Retire
-      | map.Joined(..)
-      | map.NotJoined(..)
-      | map.Summoned(..)
-      | map.NotSummoned(..)
-      | map.Left -> Error(Nil)
+      map_message.Withdrew(..)
+      | map_message.PlayerDied(..)
+      | map_message.CasterGone(..)
+      | map_message.ToldCreature(..)
+      | map_message.Seen(..)
+      | map_message.Unseen(..)
+      | map_message.Relayed(..)
+      | map_message.Noticed(..)
+      | map_message.Retire
+      | map_message.Joined(..)
+      | map_message.NotJoined(..)
+      | map_message.Summoned(..)
+      | map_message.NotSummoned(..)
+      | map_message.Left -> Error(Nil)
     }
   })
 }
@@ -305,7 +310,7 @@ fn stealth(
   state state: State,
   at_ms at_ms: Int,
   stealthed stealthed: Bool,
-) -> #(State, step.ServiceStep(map.Outgoing)) {
+) -> #(State, step.ServiceStep(map_message.Outgoing)) {
   map_spawn_support.stealth(state:, at_ms:, connection: 1, stealthed:)
 }
 
@@ -313,8 +318,8 @@ fn stealth(
 /// starts and ends, a death and a waking. The creature's ring is the same either way.
 type Hiding {
   Hiding(
-    hide: fn(State, Int) -> #(State, step.ServiceStep(map.Outgoing)),
-    show: fn(State, Int) -> #(State, step.ServiceStep(map.Outgoing)),
+    hide: fn(State, Int) -> #(State, step.ServiceStep(map_message.Outgoing)),
+    show: fn(State, Int) -> #(State, step.ServiceStep(map_message.Outgoing)),
   )
 }
 
@@ -336,7 +341,7 @@ fn life(
   state state: State,
   at_ms at_ms: Int,
   alive alive: Bool,
-) -> #(State, step.ServiceStep(map.Outgoing)) {
+) -> #(State, step.ServiceStep(map_message.Outgoing)) {
   map_spawn_support.life(state:, at_ms:, connection: 1, alive:)
 }
 
@@ -754,7 +759,7 @@ pub fn a_ready_player_that_dies_sends_player_died_to_each_live_creature_it_sees_
   let neutral =
     Spawn(
       ..beast,
-      combat: creature_life.Combat(
+      combat: creature_combat.Combat(
         ..beast.combat,
         hostile_to: Hostile(exile: False, dominion: False),
       ),
@@ -1045,7 +1050,7 @@ fn answers(
         stay_count: 1,
         unit_id:,
         life:,
-        payload: relay.StrikeAnswered(answered: inbound_support.answered(
+        payload: map_message.StrikeAnswered(answered: inbound_support.answered(
           unit_id: 1,
         )),
       )

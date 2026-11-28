@@ -18,13 +18,13 @@ import genesis_prime/game/shown.{
 import genesis_prime/game/start_place
 import genesis_prime/message/crowd_control_state
 import genesis_prime/shared/area.{Candidate, Point, Pose}
-import genesis_prime/shared/creature_path
-import genesis_prime/shared/faction_level
-import genesis_prime/table/id.{Creature2Id}
-import genesis_prime/world_map/creature_life.{
+import genesis_prime/shared/creature_combat.{
   type Attackable, Attackable, Hostile,
 }
-import genesis_prime/world_map/creature_turn
+import genesis_prime/shared/creature_path
+import genesis_prime/shared/creature_turn
+import genesis_prime/shared/faction_level
+import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/float

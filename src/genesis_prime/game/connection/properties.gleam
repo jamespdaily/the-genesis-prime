@@ -11,7 +11,8 @@
 ////                                                           ├─▶ player_life.properties_changed:
 ////                                                           │   maxima, armor, regeneration, 0x92f, 0x938
 ////                                                           └─▶ class_resource.properties_followed:
-////                                                               Focus's pool, shares and cost modifier, 0x935
+////                                                               Focus's pool, shares and cost modifier, the dash energy's maximum
+////                                                               and refill factor, 0x935
 //// ```
 ////
 //// - **The player and its viewers are told the same entries**, the base and the value
@@ -37,10 +38,11 @@
 ////   maxima, HealthRegenMultiplier and ShieldTickTime the regeneration's numbers; the
 ////   health and shield are kept and capped at a lowered maximum, which the player's
 ////   client and its viewers are told (`player_life.properties_changed`).
-//// - **Focus follows the properties**: BaseFocusPool is its maximum, the recovery
+//// - **Focus and the dash energy follow the properties**: BaseFocusPool is its maximum, the recovery
 ////   shares and rating, the cost modifier and intensity and the level are the numbers its
-////   tick and its cost read; the pool is kept and capped at a lowered maximum, which the
-////   player's client is told, and a raised maximum starts the timer that fills it
+////   tick and its cost read, and properties 38 and 39 are the dash energy's maximum and
+////   refill factor; a pool is kept and capped at a lowered maximum, which the player's
+////   client is told, and a raised maximum starts the timer that fills it
 ////   (`class_resource.properties_followed`).
 //// - **A player not held in the world** (a save, a leave) takes no change: its
 ////   properties go with its `Entered`.
@@ -51,9 +53,9 @@ import genesis_prime/game/connection/life_effect
 import genesis_prime/game/connection/resource as connection_resource
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/player_life
-import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
 import genesis_prime/shared/item_property
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
 import genesis_prime/table/id.{type UnitProperty2Id}

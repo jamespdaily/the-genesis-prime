@@ -21,6 +21,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/limited_action_set
+import genesis_prime/map/message as map_message
 import genesis_prime/message/character_list
 import genesis_prime/message/create_character.{CreateCharacter}
 import genesis_prime/message/create_character_result.{CreateCharacterResult}
@@ -46,7 +47,6 @@ import genesis_prime/store.{
   NotTheAccounts, Renamed, Select, Unavailable, World,
 }
 import genesis_prime/table/id.{CharacterCustomizationLabelId, ClassId, RaceId}
-import genesis_prime/world_map/map
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test
@@ -201,10 +201,12 @@ pub fn a_play_of_a_character_the_account_does_not_have_gets_0x0162_failed_then_0
       outcome: step.Answer(
         FromStore(
           ForSelect(
-            Listed([
-              game_connection_support.character(id: 5, name: "Eve", seed: 2),
-              new,
-            ]),
+            Listed(
+              character_support.unequipped([
+                game_connection_support.character(id: 5, name: "Eve", seed: 2),
+                new,
+              ]),
+            ),
           ),
         ),
       ),
@@ -272,7 +274,10 @@ pub fn a_join_the_map_refuses_hands_the_client_back_to_character_select_with_no_
       taken:,
       outcome: step.Answer(
         FromMap(
-          map.NotJoined(reason: map.NoLoadout(class_id: 2, faction_id: 166)),
+          map_message.NotJoined(reason: map_message.NoLoadout(
+            class_id: 2,
+            faction_id: 166,
+          )),
         ),
       ),
     )

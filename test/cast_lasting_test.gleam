@@ -22,9 +22,6 @@ import genesis_prime/game/cast/creature_view
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/heal_split
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{type News, CastFinished, CastTargetsRemoved}
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state.{AbilityRestriction}
 import genesis_prime/message/spell_effect_bit.{SpellEffectBit}
@@ -39,6 +36,7 @@ import genesis_prime/shared/area
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/damage.{Formula, Parameter}
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts
 import genesis_prime/shared/lasting.{LastingRow, LifeOnly, Listed, Stack}
 import genesis_prime/shared/lasts
 import genesis_prime/shared/spell_area
@@ -48,6 +46,10 @@ import genesis_prime/shared/spell_plan.{
 }
 import genesis_prime/shared/spend
 import genesis_prime/shared/ticking
+import genesis_prime/shared/unit_casts
+import genesis_prime/shared/unit_news.{
+  type News, CastFinished, CastTargetsRemoved,
+}
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import gleam/dict
 import gleam/int
@@ -1308,7 +1310,7 @@ pub fn a_go_keeps_each_effect_with_its_kind_and_effect_id_on_the_node_test() -> 
                 vital: effect_kind.Health,
                 delay_ms: 500,
                 amount: 40,
-                split: heal_split.Split(
+                split: heal_parts.Split(
                   amount: 40,
                   shield: 0,
                   health: 40,

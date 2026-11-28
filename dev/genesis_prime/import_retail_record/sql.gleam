@@ -363,7 +363,7 @@ pub type SpawnedCreaturesRow {
 
 /// Where each creature has spawns: one row for each creature, world, area and unit
 /// type, with how many spawn rows stand there. The import chooses the unit types the
-/// server fights with in code (genesis_prime/world_map/creature_unit_type).
+/// server fights with in code (genesis_prime/shared/creature_unit_type).
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
@@ -388,7 +388,7 @@ pub fn spawned_creatures(
 
   "-- Where each creature has spawns: one row for each creature, world, area and unit
 -- type, with how many spawn rows stand there. The import chooses the unit types the
--- server fights with in code (genesis_prime/world_map/creature_unit_type).
+-- server fights with in code (genesis_prime/shared/creature_unit_type).
 select
   entity_type,
   creature_id,

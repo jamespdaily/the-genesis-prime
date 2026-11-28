@@ -18,12 +18,13 @@
 
 import cast_support
 import genesis_prime/game/proc.{
-  type EventSpell, CannotTell, EventGateFails, EventSpell, FilteredOut, Fires,
-  HolderGateFails, MissedChance, OutOfLimit,
+  CannotTell, EventGateFails, FilteredOut, Fires, HolderGateFails, MissedChance,
+  OutOfLimit,
 }
 import genesis_prime/shared/lasting.{LastingRow}
 import genesis_prime/shared/lasts
 import genesis_prime/shared/prerequisite
+import genesis_prime/shared/proc_event.{type EventSpell, EventSpell}
 import genesis_prime/shared/spell_plan.{
   Always, AnySpell, AtHolder, AtOtherUnit, ForLife, InGroup, InWindow, LandsHit,
   OfBase, OneSpell, ProcRow,
@@ -62,8 +63,13 @@ fn row() -> spell_plan.ProcRow {
   )
 }
 
-fn event(spell spell: Option(EventSpell)) -> proc.Event {
-  proc.Event(trigger: LandsHit, other_unit: Some(struck), spell:, holder: None)
+fn event(spell spell: Option(EventSpell)) -> proc_event.Event {
+  proc_event.Event(
+    trigger: LandsHit,
+    other_unit: Some(struck),
+    spell:,
+    holder: None,
+  )
 }
 
 fn spell_of(
@@ -111,7 +117,7 @@ fn decided(
   row row: spell_plan.ProcRow,
   fires_ms fires_ms: List(Int),
   now_ms now_ms: Int,
-  event event: proc.Event,
+  event event: proc_event.Event,
   draw draw: Option(Int),
 ) -> proc.Verdict {
   proc.decide(
@@ -388,7 +394,7 @@ pub fn a_bit_4_proc_fires_at_the_other_unit_and_one_without_at_the_holder_test()
       row: ProcRow(..row(), aim: AtOtherUnit),
       fires_ms: [],
       now_ms: 0,
-      event: proc.Event(
+      event: proc_event.Event(
         trigger: LandsHit,
         other_unit: None,
         spell: None,

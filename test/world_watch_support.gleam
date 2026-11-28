@@ -11,10 +11,7 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell.{Key, Strike}
-import genesis_prime/game/unit_news.{
-  type PeerNews, CreatureAppeared, CreatureMoved, PeerNews,
-}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/service
 import genesis_prime/service/shell
@@ -22,16 +19,18 @@ import genesis_prime/shared/creature_path.{type Path}
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit.{Blow, Offence, Rolls, Worked}
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell.{Key, Strike}
+import genesis_prime/shared/unit_news.{
+  type PeerNews, CreatureAppeared, CreatureMoved, PeerNews,
+}
 import genesis_prime/shared/unit_properties.{Change}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{type Character}
 import genesis_prime/table/id.{UnitProperty2Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_registry
-import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
-import genesis_prime/world_map/relay
 import gleam/dict
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/int
@@ -191,11 +190,11 @@ pub fn left(run run: MapProcess, connection connection: Int) -> Nil {
     ask_support.ask_and_wait(send: fn(reply) {
       service.call_subject(
         run.subject,
-        map.Leave(connection: ConnectionId(connection)),
+        map_message.Leave(connection: ConnectionId(connection)),
         reply,
       )
     })
-  assert answer == map.Left as "the map answered the leave"
+  assert answer == map_message.Left as "the map answered the leave"
   Nil
 }
 
@@ -221,7 +220,7 @@ pub fn join_at(
     ask_support.ask_and_wait(send: fn(reply) {
       service.call_subject(
         run.subject,
-        map.Join(
+        map_message.Join(
           connection: ConnectionId(connection),
           character:,
           place:,
@@ -232,7 +231,8 @@ pub fn join_at(
         reply,
       )
     })
-  let assert map.Joined(unit:, ..) = answer as "the map answered the join"
+  let assert map_message.Joined(unit:, ..) = answer
+    as "the map answered the join"
   unit.unit_id
 }
 
@@ -248,7 +248,7 @@ pub fn moved_to(
   let _sent =
     service.tell_subject(
       run.subject,
-      map.Moved(
+      map_message.Moved(
         connection: ConnectionId(connection),
         place: place_support.at(
           world_id: 3460,
@@ -416,7 +416,7 @@ pub fn strike_with(
       occasion: strike_tell.AtGo(phase: 0),
     )
     as "the strike message holds a strike"
-  told_creature(run:, unit_id:, life:, payload: relay.Strike(tell:))
+  told_creature(run:, unit_id:, life:, payload: map_message.Strike(tell:))
 }
 
 /// The strike of connection 1 on the Beast `unit_id` for `occasion`, with one blow of
@@ -527,7 +527,7 @@ pub fn tally(
 pub fn is_removal(message: Message) -> Bool {
   case message {
     ForStay(sent: SentByPeer(PeerNews(news: unit_news.Removed, ..)), ..) -> True
-    ForStay(sent: SentByMap(map.UnitUnseen(..)), ..) -> True
+    ForStay(sent: SentByMap(map_message.UnitUnseen(..)), ..) -> True
     ForStay(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> False
@@ -551,7 +551,7 @@ pub fn removals_waiting(received received: Subject(Message)) -> Int {
 /// The unit the map says is gone, when the message is that.
 pub fn gone_unit(message: Message) -> Result(Int, Nil) {
   case message {
-    ForStay(sent: SentByMap(map.Gone(unit_id:)), ..) -> Ok(unit_id)
+    ForStay(sent: SentByMap(map_message.Gone(unit_id:)), ..) -> Ok(unit_id)
     ForStay(..)
     | client_connection.SentBySessions(..)
     | client_connection.SentByChat(..) -> Error(Nil)
@@ -598,7 +598,7 @@ pub fn told_creature(
   run run: MapProcess,
   unit_id unit_id: Int,
   life life: Int,
-  payload payload: relay.Inbound,
+  payload payload: map_message.Inbound,
 ) -> Nil {
   told_creature_by(run:, connection: 1, unit_id:, life:, payload:)
 }
@@ -610,12 +610,12 @@ pub fn told_creature_by(
   connection connection: Int,
   unit_id unit_id: Int,
   life life: Int,
-  payload payload: relay.Inbound,
+  payload payload: map_message.Inbound,
 ) -> Nil {
   let _sent =
     service.tell_subject(
       run.subject,
-      map.TellCreature(
+      map_message.TellCreature(
         from: ConnectionId(connection),
         stay: map_support.stay(count: 1),
         unit_id:,

@@ -15,9 +15,9 @@
 ////   item spells, and the rest, which only an ability or an objective that names them makes
 ////   a change of.
 
-import genesis_prime/game/activate
 import genesis_prime/game/item_use
 import genesis_prime/game/shortcut_spell
+import genesis_prime/shared/activate
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
 import genesis_prime/table/id.{Spell4Id}

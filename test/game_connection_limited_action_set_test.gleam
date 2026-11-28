@@ -24,7 +24,7 @@ import genesis_prime/client_connection.{AskStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/limited_action_set
-import genesis_prime/game/strike_tell
+import genesis_prime/shared/strike_tell
 import genesis_prime/step.{OwnEvent, TimerFired, TimerId, WatchEnded, WatchId}
 import genesis_prime/store.{CharacterId, Move, SavePlace}
 import genesis_prime/table/id.{ClassId}

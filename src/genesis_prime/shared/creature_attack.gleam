@@ -1,6 +1,6 @@
 //// Which damage effects of a creature's attack spell apply to a creature, by each
 //// effect's caster prerequisite: the one rule the content load (the creature kind's
-//// check, genesis_prime/world_map/creature_kind, and the spawn's attack,
+//// check, genesis_prime/shared/creature_kind, and the spawn's attack,
 //// genesis_prime/world_map/spawn) reads them by.
 ////
 //// ```

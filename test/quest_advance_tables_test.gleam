@@ -5,10 +5,10 @@
 //// Quest2, QuestObjective, Creature2, ItemSpecial and Item2 tables, which each assert names.
 
 import client_tables
-import genesis_prime/game/activate
 import genesis_prime/game/objective
 import genesis_prime/game/objective_action
 import genesis_prime/game/target_group
+import genesis_prime/shared/activate
 import genesis_prime/shared/item_property
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/spell_plan

@@ -27,14 +27,11 @@ import genesis_prime/game/limited_action_set
 import genesis_prime/game/move_stamp
 import genesis_prime/game/objective
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{
-  type News, type PeerNews, Appeared, CreatureAppeared, PeerNews,
-}
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/hand_off.{Holder, NoHolder, Taken}
 import genesis_prime/login/guid
+import genesis_prime/map/message.{Join, Leave, Left, SeenBy, Summon} as map_message
 import genesis_prime/message/bit_stream
 import genesis_prime/message/cast_result
 import genesis_prime/message/chat_line
@@ -85,10 +82,17 @@ import genesis_prime/message/vendor_buyback.{VendorBuyback}
 import genesis_prime/message/vendor_purchase.{VendorPurchase}
 import genesis_prime/message/vendor_sale.{VendorSale}
 import genesis_prime/message/world_zone_changed.{WorldZoneChanged}
+import genesis_prime/shared/creature_combat
+import genesis_prime/shared/creature_kind.{Kind, Kinds}
+import genesis_prime/shared/creature_unit_type.{NonPlayer}
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/hit.{type Offence, Blow, Offence, Worked}
 import genesis_prime/shared/loadout
 import genesis_prime/shared/server_proxy
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news.{
+  type News, type PeerNews, Appeared, CreatureAppeared, PeerNews,
+}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionId, type ConnectionStep, type Event,
   type Outcome, type TimerId, CallerId, CancelTimer, ConnectionId,
@@ -104,14 +108,10 @@ import genesis_prime/table/id.{
   ClassId, Creature2Id, RaceId, Spell4BaseId, Spell4Id,
 }
 import genesis_prime/table/loader/store as store_tables
-import genesis_prime/world_map/creature_kind.{Kind, Kinds}
-import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map.{Join, Leave, Left, SeenBy, Summon}
+import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
@@ -391,7 +391,11 @@ pub fn listed(
   answer(
     state:,
     taken:,
-    outcome: step.Answer(FromStore(ForSelect(Listed(characters:)))),
+    outcome: step.Answer(
+      FromStore(
+        ForSelect(Listed(characters: character_support.unequipped(characters))),
+      ),
+    ),
   )
 }
 
@@ -736,13 +740,13 @@ pub fn empty_map_of_world(map map_id: MapId, run run: Int) -> map.State {
 /// The map's answer to the join the connection asked, which the real map gives:
 /// the ask is stepped through a map of the tests' realm and tables with four
 /// other players (`mapped`).
-pub fn map_answer(taken: ConnectionStep(Request)) -> map.Outgoing {
+pub fn map_answer(taken: ConnectionStep(Request)) -> map_message.Outgoing {
   mapped(map_state: map_with_four_players(), taken:).1
 }
 
 /// The map's answer to a join of the tests' player, for the tests that need an
 /// answer and read nothing in it.
-pub fn a_join_answer() -> map.Outgoing {
+pub fn a_join_answer() -> map_message.Outgoing {
   map_answer(joining().1)
 }
 
@@ -1525,7 +1529,7 @@ pub fn written_ids(taken: ConnectionStep(Request)) -> List(Int) {
 pub fn mapped(
   map_state map_state: map.State,
   taken taken: ConnectionStep(Request),
-) -> #(map.State, map.Outgoing) {
+) -> #(map.State, map_message.Outgoing) {
   let #(map_state, outgoing, _) = mapped_logging(map_state:, taken:)
   #(map_state, outgoing)
 }
@@ -1534,7 +1538,7 @@ pub fn mapped(
 pub fn mapped_logging(
   map_state map_state: map.State,
   taken taken: ConnectionStep(Request),
-) -> #(map.State, map.Outgoing, List(step.LogLine)) {
+) -> #(map.State, map_message.Outgoing, List(step.LogLine)) {
   let message = case ask_request(taken) {
     AskMap(message:, ..) | AskMapRun(message:, ..) -> message
     AskStore(..)
@@ -1593,7 +1597,7 @@ pub fn in_stay(
 
 /// A notice of the map to the connection, for the tests' player's first stay.
 pub fn sent_by_the_map(
-  notice: map.Notice,
+  notice: map_message.Notice,
 ) -> Event(ConnectionEvent(Message, Answer)) {
   for_stay(stay: own_stay(), sent: SentByMap(notice))
 }
@@ -1802,11 +1806,11 @@ pub fn event_of(step: Step) -> Event(ConnectionEvent(Message, Answer)) {
         commands: moved_unit_commands(),
       ))
     Removes ->
-      sent_by_the_map(map.PlayerUnseen(
+      sent_by_the_map(map_message.PlayerUnseen(
         unit_id: 9,
         generation: generation.first(),
       ))
-    MapSaysGone -> sent_by_the_map(map.Gone(unit_id: 9))
+    MapSaysGone -> sent_by_the_map(map_message.Gone(unit_id: 9))
   }
 }
 
@@ -2400,14 +2404,14 @@ fn creature_of_beast_appears_listing(
 }
 
 /// The news `beast_appears` gives, of a Beast that takes no part in combat
-/// (`creature_life.Combat.fights`), as the process of a creature drawn lying dead sends it.
+/// (`creature_combat.Combat.fights`), as the process of a creature drawn lying dead sends it.
 pub fn beast_appears_not_fighting(
   unit_id unit_id: Int,
 ) -> Event(ConnectionEvent(Message, Answer)) {
   beast_appearing(unit_id:, yaw: 0.0, casts: [], as_spawn: fn(beast) {
     spawn.Spawn(
       ..beast,
-      combat: creature_life.Combat(..beast.combat, fights: False),
+      combat: creature_combat.Combat(..beast.combat, fights: False),
     )
   })
 }
@@ -2478,7 +2482,7 @@ pub fn creature_appears(
   outfit_info_id outfit_info_id: Int,
   hit_radius hit_radius: Float,
   place place: Place,
-  hostile_to hostile_to: creature_life.Hostile,
+  hostile_to hostile_to: creature_combat.Hostile,
 ) -> Event(ConnectionEvent(Message, Answer)) {
   let walker = spawn_support.dorian_walker(number: unit_id, place:)
   let target =
@@ -2487,10 +2491,10 @@ pub fn creature_appears(
       creature_id: id.Creature2Id(creature_id),
       display_info_id:,
       outfit_info_id:,
-      combat: creature_life.Combat(
+      combat: creature_combat.Combat(
         ..walker.combat,
         hit_radius:,
-        attackable: creature_life.Attackable(exile: False, dominion: False),
+        attackable: creature_combat.Attackable(exile: False, dominion: False),
         hostile_to:,
       ),
     )
@@ -2567,17 +2571,17 @@ pub fn strikes_of(
 ) -> List(#(Int, strike_tell.Tell)) {
   list.filter_map(creature_tells(taken), fn(told) {
     case told {
-      #(unit_id, _, relay.Strike(tell:)) -> Ok(#(unit_id, tell))
-      #(_, _, relay.TargetMoved(..))
-      | #(_, _, relay.StrikeAnswered(..))
-      | #(_, _, relay.ModifierStarts(..))
-      | #(_, _, relay.ModifierEnds(..))
-      | #(_, _, relay.Thrown(..))
-      | #(_, _, relay.Despawn(..))
-      | #(_, _, relay.UnitStates(..))
-      | #(_, _, relay.CastViewSet(..))
-      | #(_, _, relay.CastViewEnds(..))
-      | #(_, _, relay.ControlsEnd(..)) -> Error(Nil)
+      #(unit_id, _, map_message.Strike(tell:)) -> Ok(#(unit_id, tell))
+      #(_, _, map_message.TargetMoved(..))
+      | #(_, _, map_message.StrikeAnswered(..))
+      | #(_, _, map_message.ModifierStarts(..))
+      | #(_, _, map_message.ModifierEnds(..))
+      | #(_, _, map_message.Thrown(..))
+      | #(_, _, map_message.Despawn(..))
+      | #(_, _, map_message.UnitStates(..))
+      | #(_, _, map_message.CastViewSet(..))
+      | #(_, _, map_message.CastViewEnds(..))
+      | #(_, _, map_message.ControlsEnd(..)) -> Error(Nil)
     }
   })
 }
@@ -2718,7 +2722,7 @@ pub fn foe(
 /// on.
 pub fn told_creatures(
   taken: ConnectionStep(Request),
-) -> List(#(Int, relay.Inbound)) {
+) -> List(#(Int, map_message.Inbound)) {
   list.map(creature_tells(taken), fn(tell) { #(tell.0, tell.2) })
 }
 
@@ -2726,7 +2730,7 @@ pub fn told_creatures(
 /// told to pass on: each is a `TellCreature` to the run of the player's map.
 pub fn creature_tells(
   taken: ConnectionStep(Request),
-) -> List(#(Int, Int, relay.Inbound)) {
+) -> List(#(Int, Int, map_message.Inbound)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(step.Tell(
@@ -2852,7 +2856,7 @@ pub fn player_strikes(
       client_connection.TellLanding(
         to:,
         to_stay:,
-        landing: relay.HealStrike(strike:),
+        landing: map_message.HealStrike(strike:),
         ..,
       ) -> Ok(#(step.Connection(to), to_stay, strike))
       _ -> Error(Nil)
@@ -2870,7 +2874,7 @@ pub fn player_answers(
       client_connection.TellLanding(
         to: ConnectionId(caster),
         to_stay:,
-        landing: relay.HealAnswer(answered:),
+        landing: map_message.HealAnswer(answered:),
         ..,
       ) -> Ok(#(caster, to_stay, answered))
       _ -> Error(Nil)
@@ -3097,16 +3101,17 @@ pub fn spell_started_of(
 /// The map's answer to the join, with the loadout these tables give the
 /// character's class and faction in place of the planted one.
 pub fn with_the_tables_loadout(
-  joined joined: map.Outgoing,
+  joined joined: map_message.Outgoing,
   tables tables: store_tables.Tables,
   class_id class_id: Int,
-) -> map.Outgoing {
-  let assert map.Joined(unit:, incarnation:, clock_origin_ms:, ..) = joined
+) -> map_message.Outgoing {
+  let assert map_message.Joined(unit:, incarnation:, clock_origin_ms:, ..) =
+    joined
     as "the map took the player"
   let assert Ok(held) =
     loadout.of(tables:, class_id: ClassId(class_id), faction_id: 166)
     as "the tables hold a Novice set for the class"
-  map.Joined(unit:, loadout: held, incarnation:, clock_origin_ms:)
+  map_message.Joined(unit:, loadout: held, incarnation:, clock_origin_ms:)
 }
 
 /// The connection after the map took a character of the class, with its entry burst,

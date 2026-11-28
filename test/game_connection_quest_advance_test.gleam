@@ -19,13 +19,13 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/map/message.{ObjectsSeen}
 import genesis_prime/message/cast_result
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/item_use.{ItemUse}
 import genesis_prime/step.{OwnEvent}
 import genesis_prime/store.{ForItems, HeldItem, TurnedIn}
 import genesis_prime/table/id.{Creature2Id, Item2Id}
-import genesis_prime/world_map/map.{ObjectsSeen}
 import genesis_prime/world_map/static_object.{StaticObject}
 import gleam/list
 import gleam/option.{None}

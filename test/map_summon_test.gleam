@@ -22,6 +22,7 @@
 import connection_rule_support as support
 import fixture_tables
 import genesis_prime/game/start_place.{type Place, Facing}
+import genesis_prime/map/message as map_message
 import genesis_prime/step.{CallerId, ConnectionId, WatchId}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/world_map/map.{type State}
@@ -74,7 +75,7 @@ fn three_players() -> State {
 /// The summon of a Dagun by connection 1, asked by caller 50, at 6000.
 fn summoned_dagun(
   state state: State,
-) -> #(State, step.ServiceStep(map.Outgoing)) {
+) -> #(State, step.ServiceStep(map_message.Outgoing)) {
   spawns.summon(
     state:,
     at_ms: 6000,
@@ -86,7 +87,7 @@ fn summoned_dagun(
 
 /// The only creature a step starts, with its watch.
 fn the_start(
-  taken: step.ServiceStep(map.Outgoing),
+  taken: step.ServiceStep(map_message.Outgoing),
 ) -> #(step.WatchId, step.CreatureStart) {
   let assert [start] = spawns.starts(taken) as "the step starts one creature"
   start
@@ -122,7 +123,8 @@ pub fn the_summoner_is_answered_once_the_start_is_known_not_with_the_start_test(
   assert spawns.timers(taken) == [#(-1, 0)]
     as "a timer under the run-only id is the next input after a start that did not fail"
   let #(_, settled) = spawns.start_settled(state:, at_ms: 6000, spawn: -1)
-  assert support.replies(settled) == [#(CallerId(50), map.Summoned(unit_id: 4))]
+  assert support.replies(settled)
+    == [#(CallerId(50), map_message.Summoned(unit_id: 4))]
     as "the timer's firing answers the asker with the creature's unit id"
 }
 
@@ -239,8 +241,8 @@ pub fn a_level_with_no_creature_level_row_is_refused_naming_it_and_starts_nothin
     == [
       #(
         CallerId(50),
-        map.NotSummoned(
-          map.CreatureRefused(spawn.NoCreatureLevelRow(level: 102)),
+        map_message.NotSummoned(
+          map_message.CreatureRefused(spawn.NoCreatureLevelRow(level: 102)),
         ),
       ),
     ]
@@ -268,8 +270,8 @@ pub fn a_creature2_id_with_no_row_is_refused_and_starts_nothing_test() -> Nil {
     == [
       #(
         CallerId(50),
-        map.NotSummoned(
-          map.CreatureRefused(
+        map_message.NotSummoned(
+          map_message.CreatureRefused(
             spawn.FailsTheChecks(
               spawn.NoCreatureRow(Creature2Id(no_such_creature)),
             ),
@@ -330,8 +332,8 @@ pub fn a_creature_failing_a_client_check_is_refused_and_starts_nothing_test() ->
     == [
       #(
         CallerId(50),
-        map.NotSummoned(
-          map.CreatureRefused(
+        map_message.NotSummoned(
+          map_message.CreatureRefused(
             spawn.FailsTheChecks(spawn.NotLoadedByTheClient(
               creature_id: Creature2Id(beast),
               rule: spawn.ModelScaleNotAbove0,
@@ -355,7 +357,7 @@ pub fn a_connection_with_no_player_here_is_answered_no_player_here_and_nothing_s
       creature_id: dagun,
     )
   assert support.replies(taken)
-    == [#(CallerId(50), map.NotSummoned(map.NoPlayerHere))]
+    == [#(CallerId(50), map_message.NotSummoned(map_message.NoPlayerHere))]
   assert spawns.starts(taken) == [] && spawns.timers(taken) == []
 }
 
@@ -407,10 +409,12 @@ pub fn two_summons_get_two_distinct_negative_run_only_ids_never_a_stored_one_tes
     && spawns.timers(second) == [#(-2, 0)]
     as "each answer waits for its own start"
   let #(state, one) = spawns.start_settled(state:, at_ms: 6000, spawn: -2)
-  assert support.replies(one) == [#(CallerId(51), map.Summoned(unit_id: 3))]
+  assert support.replies(one)
+    == [#(CallerId(51), map_message.Summoned(unit_id: 3))]
     as "the answers are told apart by their run-only id, whichever settles first"
   let #(_, other) = spawns.start_settled(state:, at_ms: 6000, spawn: -1)
-  assert support.replies(other) == [#(CallerId(50), map.Summoned(unit_id: 2))]
+  assert support.replies(other)
+    == [#(CallerId(50), map_message.Summoned(unit_id: 2))]
 }
 
 pub fn a_summoned_creature_that_ends_is_gone_to_every_player_and_never_comes_back_test() -> Nil {
@@ -486,7 +490,7 @@ pub fn a_creature_that_does_not_start_answers_not_summoned_and_drops_the_run_spa
     == [
       #(
         CallerId(50),
-        map.NotSummoned(map.CreatureNotStarted(
+        map_message.NotSummoned(map_message.CreatureNotStarted(
           reason: "the creature supervisor is not running",
         )),
       ),
@@ -517,7 +521,8 @@ pub fn a_creature_that_ends_before_the_answer_is_still_answered_summoned_test() 
   let #(state, ended) = spawns.creature_ended(state:, at_ms: 6000, watch:)
   assert support.replies(ended) == [] as "the answer still waits"
   let #(_, settled) = spawns.start_settled(state:, at_ms: 6000, spawn: -1)
-  assert support.replies(settled) == [#(CallerId(50), map.Summoned(unit_id: 4))]
+  assert support.replies(settled)
+    == [#(CallerId(50), map_message.Summoned(unit_id: 4))]
 }
 
 pub fn a_run_only_creature_no_player_sees_is_not_retired_by_the_sweep_test() -> Nil {

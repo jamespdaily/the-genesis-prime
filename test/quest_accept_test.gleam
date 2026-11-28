@@ -37,6 +37,7 @@ import genesis_prime/game/quest.{
 import genesis_prime/game/quest_log
 import genesis_prime/game/shown.{type Picture}
 import genesis_prime/message/quest_retry.{QuestRetry}
+import genesis_prime/shared/creature_combat.{Hostile}
 import genesis_prime/shared/prerequisite.{Factions, Player}
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{
@@ -44,7 +45,6 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/id.{Item2Id, Quest2Id}
 import genesis_prime/table/quest2.{type Quest2, Quest2}
-import genesis_prime/world_map/creature_life.{Hostile}
 import gleam/dict
 import gleam/int
 import gleam/list

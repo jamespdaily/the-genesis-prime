@@ -381,14 +381,11 @@ fn visuals_of(
   tables tables: table_store.Tables,
   items items: List(Int),
 ) -> Result(List(WornVisual), LoadoutError) {
-  list.try_map(items, worn_visual.of_item(tables:, item2_id: _))
-  |> result.map_error(VisualFailed)
-  |> result.map(fn(visuals) {
-    list.filter_map(visuals, option.to_result(_, Nil))
-    |> list.sort(fn(first, second) {
-      int.compare(first.slot.value, second.slot.value)
-    })
-  })
+  let worn = worn_visual.of_items(tables:, item2_ids: list.map(items, Item2Id))
+  case worn.undrawn {
+    [] -> Ok(list.map(worn.drawn, fn(drawn) { drawn.visual }))
+    [#(_, error), ..] -> Error(VisualFailed(error))
+  }
 }
 
 /// The set's weapon and the slot it is equipped in: the item whose equipped slot

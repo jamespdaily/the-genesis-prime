@@ -44,7 +44,6 @@ import genesis_prime/game/communicator
 import genesis_prime/game/departures
 import genesis_prime/game/objective_action
 import genesis_prime/game/objective_kind
-import genesis_prime/game/objective_link
 import genesis_prime/game/place_objective
 import genesis_prime/game/quest as quest_rules
 import genesis_prime/game/quest_log.{type QuestLog}
@@ -52,6 +51,7 @@ import genesis_prime/game/shown
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
 import genesis_prime/gap
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/quest_view
 import genesis_prime/store.{type HeldItem}

@@ -14,8 +14,8 @@
 //// target conn  ── Heard | NotHeard ─────▶ the speaker's conn (Connection)
 //// ```
 
-import genesis_prime/game/chat_channel.{type ChannelType}
 import genesis_prime/message/chat_format.{type ChatFormat}
+import genesis_prime/shared/chat_channel.{type ChannelType}
 import genesis_prime/step.{type ConnectionId}
 import genesis_prime/world_map/map_id.{type MapId}
 

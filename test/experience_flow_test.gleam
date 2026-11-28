@@ -20,7 +20,6 @@ import connection_rule_support
 import experience_support as experience
 import fixture_tables
 import game_connection_support as support
-import genesis_prime/game/unit_news.{PropertiesChanged}
 import genesis_prime/message/experience_gained.{
   type ExperienceGained, ExperienceGained,
 }
@@ -29,6 +28,7 @@ import genesis_prime/message/player_character_state
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{PropertiesChanged}
 import genesis_prime/store
 import genesis_prime/table/id.{Item2Id}
 import gleam/list

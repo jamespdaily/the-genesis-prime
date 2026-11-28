@@ -41,9 +41,9 @@ import genesis_prime/client_connection.{
   type StaySent, SentByFoe, SentByKill, SentByLine, SentByMap, SentByMove,
   SentByPeer, SentByPlayer, SentByTarget,
 }
-import genesis_prime/game/strike_tell
 import genesis_prime/load_deadline.{type Deadline}
 import genesis_prime/load_sample
+import genesis_prime/shared/strike_tell
 import gleam/dict.{type Dict}
 import gleam/erlang/process.{type Pid}
 import gleam/int

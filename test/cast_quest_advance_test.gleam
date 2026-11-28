@@ -18,7 +18,6 @@
 import cast_item_use_test as items
 import cast_support as support
 import fixture_tables
-import genesis_prime/game/activate.{type Target}
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{
   type Effect, type State, WithCast, WithNothing, WithUse,
@@ -29,6 +28,7 @@ import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/spell_go
+import genesis_prime/shared/activate.{type Target}
 import genesis_prime/shared/spell_plan.{type Spell}
 import genesis_prime/shared/spend
 import genesis_prime/table/id

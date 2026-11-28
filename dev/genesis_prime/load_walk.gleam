@@ -42,17 +42,17 @@ import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
 import genesis_prime/connection/registry
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/start_place
-import genesis_prime/game/unit_news.{CreatureAppeared, PeerNews}
 import genesis_prime/load_moves
 import genesis_prime/load_queue
 import genesis_prime/load_run
+import genesis_prime/map/message as map_message
 import genesis_prime/server
 import genesis_prime/service
+import genesis_prime/shared/unit_news.{CreatureAppeared, PeerNews}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/step/runtime
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, RaceId}
-import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
@@ -220,7 +220,7 @@ fn player(
       let _sent =
         service.call_subject(
           run.subject,
-          map.Join(
+          map_message.Join(
             connection: ConnectionId(id),
             character: character(id),
             place: place(x:, y:, z:),
@@ -250,7 +250,7 @@ fn player(
       let _sent =
         service.call_subject(
           run.subject,
-          map.Leave(connection: ConnectionId(id)),
+          map_message.Leave(connection: ConnectionId(id)),
           fn(answer) { process.send(replies, answer) },
         )
       let _left = process.receive(replies, within: 60_000)
@@ -278,7 +278,7 @@ fn walk_steps(
   let _sent =
     service.tell_subject(
       run.subject,
-      map.Moved(
+      map_message.Moved(
         connection: ConnectionId(id),
         place: place(x:, y:, z:),
         seq: step,

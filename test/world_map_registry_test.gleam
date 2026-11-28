@@ -25,13 +25,13 @@ import driven_time
 import event_wait
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/group_registry
+import genesis_prime/map/message as map_message
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/service/shell.{type ServiceTime} as service_shell
 import genesis_prime/step.{type Address, Connection, ConnectionId}
 import genesis_prime/store.{type Character}
 import genesis_prime/world_map/creature_registry
-import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
 import gleam/erlang/process.{type Name, type Pid}
@@ -183,8 +183,8 @@ fn found_run(
 }
 
 /// The join of the connection as `character`, at the live character's place.
-fn join_of(id id: Int, character character: Character) -> map.Message {
-  map.Join(
+fn join_of(id id: Int, character character: Character) -> map_message.Message {
+  map_message.Join(
     connection: ConnectionId(id),
     character:,
     place: place_support.live_character_place(),
@@ -200,7 +200,7 @@ fn joined_as(
   found found: MapProcess,
   id id: Int,
   character character: Character,
-) -> map.Outgoing {
+) -> map_message.Outgoing {
   let #(_, answer) =
     ask_support.ask_and_wait(send: fn(reply) {
       service.call_subject(found.subject, join_of(id:, character:), reply)
@@ -211,7 +211,7 @@ fn joined_as(
 /// The unit id and the incarnation a join of the connection, as the character
 /// 100 more than its id, to the running map was answered with.
 fn joined(found: MapProcess, id: Int) -> #(Int, Int) {
-  let assert map.Joined(unit:, incarnation:, ..) =
+  let assert map_message.Joined(unit:, incarnation:, ..) =
     joined_as(
       found:,
       id:,
@@ -303,7 +303,7 @@ pub fn a_map_that_ended_keeps_no_player_so_the_same_connection_joins_the_new_run
   let world = start_driven_world(time:)
   let first = started(world, ship)
   let _connection = connection(world, 1)
-  let assert map.Joined(unit: before, ..) =
+  let assert map_message.Joined(unit: before, ..) =
     joined_as(
       found: first,
       id: 1,
@@ -320,7 +320,7 @@ pub fn a_map_that_ended_keeps_no_player_so_the_same_connection_joins_the_new_run
     )
   await_not_found(world:, map: ship, incarnation: first.incarnation)
   let again = started(world, ship)
-  let assert map.Joined(unit: after, incarnation:, ..) =
+  let assert map_message.Joined(unit: after, incarnation:, ..) =
     joined_as(
       found: again,
       id: 1,
@@ -453,7 +453,7 @@ pub fn a_restart_of_maps_ends_every_map_and_the_map_supervisor_restarts_with_it_
 
 /// The join of the connection as the character 100 more than its id, as
 /// `joined` sends it.
-fn join_message(id: Int) -> map.Message {
+fn join_message(id: Int) -> map_message.Message {
   join_of(id:, character: character_support.character(number: 100 + id))
 }
 
@@ -585,7 +585,7 @@ pub fn an_ask_of_the_running_run_reaches_it_and_its_answer_goes_to_the_reply_tes
     })
   assert sent == service.ToService(first.pid)
     as "the ask went to the run it names, which the asker watches"
-  let assert map.Joined(unit:, incarnation:, ..) = answer
+  let assert map_message.Joined(unit:, incarnation:, ..) = answer
   assert unit.unit_id == 1 && incarnation == first.incarnation
 }
 

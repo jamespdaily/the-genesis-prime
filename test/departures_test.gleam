@@ -19,9 +19,9 @@
 import character_tables
 import departures_support
 import fixture_tables
-import genesis_prime/game/activate.{type Link, ClosedLink, OpenLink}
 import genesis_prime/game/departures.{NotATerminal, TravelClosed}
 import genesis_prime/game/start_place
+import genesis_prime/shared/activate.{type Link, ClosedLink, OpenLink}
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/table/id.{Creature2Id}
 import genesis_prime/table/loader/store as table_store

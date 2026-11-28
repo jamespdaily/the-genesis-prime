@@ -54,12 +54,12 @@ import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/item_removed.{ItemRemoved}
 import genesis_prime/message/vendor_sale as vendor_sale_message
 import genesis_prime/message/vendor_sell_junk
+import genesis_prime/shared/creature_combat.{type Hostile, Hostile}
 import genesis_prime/step.{LogDebug, LogError, LogWarning}
 import genesis_prime/store.{type HeldItem, HeldItem}
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_life.{type Hostile, Hostile}
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}

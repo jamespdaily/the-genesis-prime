@@ -25,6 +25,7 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{AskStore, FromMap}
 import genesis_prime/game/departures
 import genesis_prime/game/start_place
+import genesis_prime/map/message.{Left} as map_message
 import genesis_prime/message/enter_world
 import genesis_prime/message/float32
 import genesis_prime/message/interaction_result
@@ -38,7 +39,6 @@ import genesis_prime/step
 import genesis_prime/store.{
   AccountId, Character, ListCharacters, SavePlace, Select,
 }
-import genesis_prime/world_map/map.{Left}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn
 import gleam/list
@@ -554,7 +554,10 @@ pub fn a_landing_map_that_refuses_the_join_returns_to_character_select_test() ->
       taken: joining,
       outcome: step.Answer(
         FromMap(
-          map.NotJoined(reason: map.NoLoadout(class_id: 1, faction_id: 166)),
+          map_message.NotJoined(reason: map_message.NoLoadout(
+            class_id: 1,
+            faction_id: 166,
+          )),
         ),
       ),
     )

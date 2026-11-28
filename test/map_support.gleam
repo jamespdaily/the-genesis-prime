@@ -3,9 +3,9 @@
 
 import character_support
 import character_tables
+import genesis_prime/shared/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{Spell4Id}
-import genesis_prime/world_map/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/spawn.{type Spawn}

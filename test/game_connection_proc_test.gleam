@@ -27,13 +27,10 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/held_changes
 import genesis_prime/game/player_address.{PlayerAddress}
-import genesis_prime/game/proc
 import genesis_prime/game/shown
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{CastStarted}
 import genesis_prime/game/world_entry
+import genesis_prime/map/message as map_message
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
@@ -43,7 +40,11 @@ import genesis_prime/random
 import genesis_prime/shared/hit
 import genesis_prime/shared/lasting
 import genesis_prime/shared/lasts
+import genesis_prime/shared/player_change
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news.{CastStarted}
 import genesis_prime/shared/unit_properties.{Source}
 import genesis_prime/step.{
   type ConnectionEvent, type ConnectionStep, type Event, ConnectionId,
@@ -51,7 +52,6 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{Spell4BaseId, Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map
 import gleam/dict
 import gleam/float
 import gleam/int
@@ -354,7 +354,7 @@ pub fn a_stalkers_last_fighter_going_gone_leaves_combat_and_casts_63366_test() -
   let #(state, first_gone) =
     connection_support.feed(
       state:,
-      event: connection_support.sent_by_the_map(map.Gone(unit_id: 7)),
+      event: connection_support.sent_by_the_map(map_message.Gone(unit_id: 7)),
     )
   assert connection_support.started_spells(frames: connection_support.written(
       taken: first_gone,
@@ -364,7 +364,7 @@ pub fn a_stalkers_last_fighter_going_gone_leaves_combat_and_casts_63366_test() -
   let #(_, last_gone) =
     connection_support.feed(
       state:,
-      event: connection_support.sent_by_the_map(map.Gone(unit_id: 9)),
+      event: connection_support.sent_by_the_map(map_message.Gone(unit_id: 9)),
     )
   let frames = connection_support.written(taken: last_gone)
   assert list.filter(cast_support.ids(frames:), fn(id) {
@@ -967,7 +967,7 @@ fn caster_holding_an_ally_proc(
           cast_state.HeldOnPlayer(
             source:,
             address:,
-            sight: held_changes.KeptWhenUnseen,
+            sight: player_change.KeptWhenUnseen,
             spell4_id: Spell4Id(39_386),
             stack: row.spell.stack,
             started_ms: 1000,
@@ -1004,10 +1004,10 @@ fn ally_blow_tell(blows blows: Int) -> strike_tell.PlayerEvent {
   strike_tell.PlayerEvent(
     unit_id: ally_unit,
     events: list.repeat(
-      proc.Event(
+      proc_event.Event(
         trigger: spell_plan.TakesDamage,
         other_unit: Some(31),
-        spell: Some(proc.EventSpell(
+        spell: Some(proc_event.EventSpell(
           spell4_id: Spell4Id(5649),
           spell4_base_id: Spell4BaseId(4947),
           groups: [6, 9, 134, 333],

@@ -10,10 +10,7 @@ import game_connection_support
 import genesis_prime/client_connection
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{
-  Appeared, CastFinished, CastStarted, CastWent, Removed,
-}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/spell_damage_description.{SpellDamageDescription}
@@ -23,12 +20,14 @@ import genesis_prime/message/spell_position.{SpellPosition}
 import genesis_prime/message/spell_stack_removed.{SpellStackRemoved}
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
+import genesis_prime/shared/unit_casts
+import genesis_prime/shared/unit_news.{
+  Appeared, CastFinished, CastStarted, CastWent, Removed,
+}
 import genesis_prime/step.{ConnectionId, OwnEvent}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import gleam/list
 import gleam/option.{Some}
 import owned_test
@@ -364,7 +363,7 @@ fn struck_lives(
 ) -> List(Int) {
   list.filter_map(game_connection_support.creature_tells(taken), fn(tell) {
     case tell {
-      #(_, life, relay.Strike(..)) -> Ok(life)
+      #(_, life, map_message.Strike(..)) -> Ok(life)
       #(_, _, _) -> Error(Nil)
     }
   })
@@ -453,7 +452,7 @@ fn views_told(
   list.filter_map(game_connection_support.creature_tells(taken), fn(tell) {
     let #(unit_id, life, payload) = tell
     case
-      creature.told_by_map(map.ToldCreature(
+      creature.told_by_map(map_message.ToldCreature(
         by: step.ConnectionId(1),
         stay: game_connection_support.own_stay(),
         payload:,
@@ -611,7 +610,9 @@ pub fn a_change_told_on_a_step_that_ends_in_an_ask_is_not_told_again_test() -> N
     game_connection_support.answer(
       state: summoning,
       taken: summon,
-      outcome: step.Answer(client_connection.FromMap(map.Summoned(unit_id: 9))),
+      outcome: step.Answer(
+        client_connection.FromMap(map_message.Summoned(unit_id: 9)),
+      ),
     )
   let assert Some(_) = support.asked(summoned)
     as "the held save timer is taken after the held news, and its save asks"

@@ -33,7 +33,7 @@ import genesis_prime/message/shared_item.{type SharedItem, SharedItem}
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/message/unit_property.{UnitProperty}
-import genesis_prime/world_map/player_unit
+import genesis_prime/shared/player_unit
 import gleam/list
 import gleam/option.{None, Some}
 import owned_test

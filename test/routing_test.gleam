@@ -134,6 +134,7 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
     "src/genesis_prime/game/connection.gleam",
     "src/genesis_prime/game/connection/casting.gleam",
     "src/genesis_prime/game/connection/chat.gleam",
+    "src/genesis_prime/game/connection/dash.gleam",
     "src/genesis_prime/game/connection/dropped.gleam",
     "src/genesis_prime/game/connection/effects.gleam",
     "src/genesis_prime/game/connection/frames.gleam",
@@ -151,7 +152,7 @@ pub fn the_connection_imports_no_message_only_a_feature_decodes_test() -> Nil {
   list.each(
     [
       "player_movement", "world_zone_changed", "world_entry_options",
-      "move_speed_setting", "terrain_loaded", "impact_severity",
+      "move_speed_setting", "dash", "terrain_loaded", "impact_severity",
       "fell_below_floor", "camp_request", "camp_finished", "camp_countdown",
       "character_select_start", "create_character_carrier", "delete_character",
       "rename_character", "play_character", "interaction_request",
@@ -356,4 +357,15 @@ pub fn the_refusal_says_the_kind_test() -> Nil {
   let assert Error(unwritten) = routing.send_kind_written(send_kind: 4)
   assert client_connection.describe_unwritten(unwritten:)
     == "0x038C holds the kind 4 (0x4), which the client never writes"
+}
+
+pub fn the_dash_request_is_a_row_taken_inside_0x038c_with_the_player_in_the_world_test() -> Nil {
+  use <- owned_test.run(5000)
+  assert routing.route(AtWorld, InsideWorldMessage, 0x015C) == Ok(routing.Dash)
+    as "0x015C is the dash row in the world (opcode.0x15c: the client sends it from inside 0x038C like every message of the world)"
+  assert routing.route(AtCharacterSelect, InsideWorldMessage, 0x015C)
+    == Error(Nil)
+    as "it is not taken in character select: the connection logs it as unhandled"
+  assert routing.route(AtWorld, OnItsOwn, 0x015C) == Error(Nil)
+    as "it is not taken outside 0x038C"
 }

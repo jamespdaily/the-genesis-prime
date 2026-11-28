@@ -19,7 +19,7 @@
 //// level host      imports data platform shared link character unit map host messages of
 //// level root      imports data platform shared link character unit map host root messages of
 ////
-//// Enforced levels: data platform shared
+//// Enforced levels: data platform shared map
 ////
 //// - data: client tables, content tables and readers of world data, and the
 ////   vocabulary a table row decodes into.
@@ -29,8 +29,11 @@
 //// - shared: pure vocabulary and rules read by more than one level. Its
 ////   modules live in `genesis_prime/shared/` and no module outside that folder
 ////   has this level (`shared_folder_breaches`).
-//// - link, character, unit, map: the game connection, one character's rows,
-////   the body in a map run, and the relations between units.
+//// - link, character, unit: the game connection, one character's rows and the
+////   body in a map run.
+//// - map: the relations between units, spawns, respawn and unit ids. It imports
+////   only data, platform, shared and its own modules, and the message modules of
+////   the levels it talks to.
 //// - host: the level of the rule that composes the levels. No module has it.
 //// - root: the modules that start the server and its tables and import every
 ////   level. No module of another level imports a root module, enforced or
@@ -80,7 +83,7 @@ pub const list_path = "test/code_rule/levels.txt"
 
 /// The levels whose imports are checked. Every other level is read from the
 /// table but its imports are not checked.
-pub const enforced: List(Level) = [Data, Platform, Shared]
+pub const enforced: List(Level) = [Data, Platform, Shared, Map]
 
 /// What one level may import: the levels whose modules it may import, and the
 /// levels whose message modules it may import.

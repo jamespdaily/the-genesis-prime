@@ -49,11 +49,11 @@ import genesis_prime/message/unit_create_static.{
   type UnitCreateStatic, UnitCreateStatic,
 }
 import genesis_prime/message/unit_create_tail.{type UnitCreateTail}
+import genesis_prime/shared/player_unit
 import genesis_prime/shared/unit_fields.{type HealthSource}
 import genesis_prime/table/id.{
   type Creature2Id, type PrerequisiteId, Creature2Id,
 }
-import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/list
 import gleam/option.{type Option}

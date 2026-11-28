@@ -200,9 +200,8 @@ import genesis_prime/game/player_state.{type PlayerState, PlayerState}
 import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
+import genesis_prime/map/message as map_message
 import genesis_prime/message/bit_stream
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
@@ -227,7 +226,10 @@ import genesis_prime/shared/class_resource
 import genesis_prime/shared/creature_path
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/hit_radius
+import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news
+import genesis_prime/shared/unit_properties
 import genesis_prime/step.{
   type ConnectionEffect, type ConnectionId, type Effect, type Now,
 }
@@ -236,7 +238,6 @@ import genesis_prime/table/id.{Creature2DisplayInfoId, Creature2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation.{type Generation}
-import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/static_object
@@ -267,10 +268,10 @@ pub fn map_sent(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
-  notice notice: map.Notice,
+  notice notice: map_message.Notice,
 ) -> client_connection.Handled(Session) {
   case notice {
-    map.SeenBy(by:, stay:, unit_id:, generation:) ->
+    map_message.SeenBy(by:, stay:, unit_id:, generation:) ->
       Continue(
         viewers_changed(session:, change: dict.insert(
           _,
@@ -307,7 +308,7 @@ pub fn map_sent(
           ),
         ],
       )
-    map.UnseenBy(by: step.ConnectionId(by_number) as by, generation:) ->
+    map_message.UnseenBy(by: step.ConnectionId(by_number) as by, generation:) ->
       case dict.get(entered.viewers, by) {
         Ok(player_address.Viewer(generation: held, ..)) ->
           case generation.compare(first: generation, second: held) {
@@ -328,14 +329,14 @@ pub fn map_sent(
           }
         Error(Nil) -> viewer_unseen(session:, now:, by:)
       }
-    map.PlayerUnseen(unit_id:, generation:) ->
+    map_message.PlayerUnseen(unit_id:, generation:) ->
       unit_departed(session:, now:, entered:, unit_id:, generation:)
-    map.UnitUnseen(unit_id:, generation: _) -> {
+    map_message.UnitUnseen(unit_id:, generation: _) -> {
       let #(session, removal) =
         unit_removed(session:, now:, entered:, unit_id:, keeping: [])
       Continue(session, list.append(removal.written, removal.ended))
     }
-    map.Gone(unit_id:) -> {
+    map_message.Gone(unit_id:) -> {
       let #(life, by_life) = player_life.released(life: entered.life, unit_id:)
       let #(viewing, dropped) =
         move_stamp.gone(viewing: entered.viewing, unit_id:)
@@ -363,7 +364,7 @@ pub fn map_sent(
         ]),
       )
     }
-    map.ObjectsSeen(units:) -> {
+    map_message.ObjectsSeen(units:) -> {
       let #(refused, named) =
         units
         |> list.map(fn(seen) { #(static_object.unit_id(created: seen.1), seen) })
@@ -402,7 +403,7 @@ pub fn map_sent(
         ),
       )
     }
-    map.ObjectsUnseen(unit_ids:) -> {
+    map_message.ObjectsUnseen(unit_ids:) -> {
       let #(refused, named) =
         list.partition(unit_ids, fn(unit_id) {
           names_own_unit(entered:, unit_id:)
@@ -1793,9 +1794,10 @@ fn creature_casts_kept(
 /// (`opcode.0x938`) and its Interrupt Armor as stat 21 while it is above 0
 /// (`opcode.0x938.interrupt_armor`: the create's stat list sets it) and its absorption as
 /// stat 22 while it is above 0 (`opcode.0x938`, `0x14064fb40`: the create's stat list sets
-/// it), without its class resource and its Focus: the stat and the ResourceMax
-/// property of the player's own 0x262, and stat 1, are left out, since a 0x935 goes to the
-/// player alone (`opcode.0x262.resource_stats`); property 5, the Focus maximum, stays, a gear
+/// it), without its class resource, its Focus and its dash energy: the stat and the ResourceMax
+/// property of the player's own 0x262, stat 1 and stat 9 with properties 38 and 39, are left
+/// out, since a 0x935 goes to the player alone (`opcode.0x262.resource_stats`); property 5,
+/// the Focus maximum, stays, a gear
 /// property like the rest that 0x93a keeps current; stamped from the map's clock,
 /// from the origin `Joined` carried (`map.server_time`). Its list holds the player's own
 /// casts and the casts other players' casts hold on it (`held_changes.cast_views`), in cast
@@ -1818,6 +1820,11 @@ fn appearance(
   let resource_stat = unit_fields.resource_stat_id(slot:)
   let focus_stat = unit_fields.resource_stat_id(slot: class_resource.focus_slot)
   let resource_max = unit_fields.resource_max_property(slot:)
+  let dash_stat = unit_fields.resource_stat_id(slot: class_resource.dash_slot)
+  let dash_properties = [
+    unit_properties.dash_maximum.value,
+    unit_properties.dash_refill_multiplier.value,
+  ]
   UnitCreatePlayer(
     ..unit,
     tail: UnitCreateTail(
@@ -1841,7 +1848,8 @@ fn appearance(
               Ok(unit_fields.integer_stat(stat_id: id, value: health))
             id if id == unit_fields.shield_stat ->
               Ok(unit_fields.integer_stat(stat_id: id, value: shield))
-            id if id == resource_stat || id == focus_stat -> Error(Nil)
+            id if id == resource_stat || id == focus_stat || id == dash_stat ->
+              Error(Nil)
             _ -> Ok(stat)
           }
         }),
@@ -1858,6 +1866,7 @@ fn appearance(
       ),
       properties: list.filter(unit.tail.properties, fn(property) {
         property.property_id != resource_max
+        && !list.contains(dash_properties, property.property_id)
       }),
     ),
   )

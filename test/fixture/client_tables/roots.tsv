@@ -1627,3 +1627,7 @@ Prerequisite	24737	type 227 on AMP 939: the player holds it, so the AMP unlocks 
 Prerequisite	24739	type 227 on AMP 940: the player holds it, so the AMP unlocks a class ability	amp_standing_test
 Prerequisite	24740	type 227 on AMP 941: the player holds it, so the AMP unlocks a class ability	amp_standing_test
 Prerequisite	24741	type 227 on AMP 942: the player holds it, so the AMP unlocks a class ability	amp_standing_test
+Spell4	28770	Dash Left (Knockdown)	dash_test
+Spell4	28771	Dash Right (Knockdown)	dash_test
+Spell4	28772	Dash Forward (Knockdown)	dash_test
+Spell4	28773	Dash Backward (Knockdown)	dash_test

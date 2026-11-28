@@ -38,11 +38,11 @@ import genesis_prime/message/unit_position_command.{UnitPositionCommand}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/creature_turn
 import genesis_prime/shared/look
 import genesis_prime/step.{Now}
 import genesis_prime/table/item_slot
 import genesis_prime/table/unit_property2
-import genesis_prime/world_map/creature_turn
 import gleam/bit_array
 import gleam/int
 import gleam/list

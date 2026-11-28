@@ -20,11 +20,11 @@ import cast_support as support
 import genesis_prime/game/cast
 import genesis_prime/game/cast/state.{type Effect} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/held_changes
 import genesis_prime/message/spell_go
 import genesis_prime/shared/lasting.{LastingRow}
 import genesis_prime/shared/lasts
 import genesis_prime/shared/look.{type Disguise}
+import genesis_prime/shared/player_change
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/spell_plan.{type Spell, Always}
 import genesis_prime/shared/spend
@@ -112,9 +112,9 @@ fn starts(effects effects: List(Effect)) -> List(#(Source, Disguise)) {
   list.filter_map(support.caster_change_starts(effects:), fn(start) {
     case start.1 {
       cast_state.Look(disguise:) -> Ok(#(start.0, disguise))
-      cast_state.HeldChange(held_changes.Property(..))
+      cast_state.HeldChange(player_change.Property(..))
       | cast_state.Heal(..)
-      | cast_state.HeldChange(held_changes.Absorb(..)) -> Error(Nil)
+      | cast_state.HeldChange(player_change.Absorb(..)) -> Error(Nil)
     }
   })
 }

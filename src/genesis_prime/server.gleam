@@ -121,10 +121,12 @@ import genesis_prime/group_registry.{type Scope}
 import genesis_prime/hand_off
 import genesis_prime/login/auth_connection
 import genesis_prime/login/sts_connection
+import genesis_prime/map/message as map_message
 import genesis_prime/service.{
   type Call, type Locate, type Reach, type Sent, TellCall,
 }
 import genesis_prime/service/shell as service_shell
+import genesis_prime/shared/creature_kind
 import genesis_prime/step.{type ConnectionRule, LogError}
 import genesis_prime/step/runtime
 import genesis_prime/step/watch
@@ -132,13 +134,11 @@ import genesis_prime/store/worker.{type Job}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/wire_recording/recorder.{type WireRecorder}
 import genesis_prime/world_map/creature
-import genesis_prime/world_map/creature_kind
 import genesis_prime/world_map/creature_registry.{type CreatureRegistry}
 import genesis_prime/world_map/creature_supervisor
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
 import genesis_prime/world_map/registry as world_map_registry
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
@@ -215,12 +215,12 @@ pub type World {
     /// map's shell uses. The identity in a running server; a test of what a viewer is
     /// written under a late map puts in a reach that holds a connection's sends back, in the
     /// order the map sent them.
-    maps_reach: fn(Reach(map.Outgoing)) -> Reach(map.Outgoing),
+    maps_reach: fn(Reach(map_message.Outgoing)) -> Reach(map_message.Outgoing),
     /// The scope that types what a creature tells its map: the creature holds its
     /// map's run and tells it with `group_registry.deliver_to`, and the map's shell
     /// takes what the scope's type names (`service_shell.ToldThrough`). Made once
     /// with `group_registry.new`; nothing joins it.
-    map_tells: Scope(Call(map.Message, map.Outgoing)),
+    map_tells: Scope(Call(map_message.Message, map_message.Outgoing)),
     /// The creature supervisor, whose children are the creatures.
     creature_supervisor: Name(creature_supervisor.CreatureSupervisor),
     /// How long a creature has to stop.
@@ -508,7 +508,7 @@ fn tell_the_connection(pid pid: process.Pid, request request: Request) -> Nil {
 /// ready, entered or left stealth, or died or woke. Any other request is an ask, which a tell never carries: a rule that
 /// tells one has a bug, logged as an error, and nothing is sent.
 pub fn tell_the_run(
-  subject subject: Subject(Call(map.Message, map.Outgoing)),
+  subject subject: Subject(Call(map_message.Message, map_message.Outgoing)),
   request request: Request,
 ) -> Nil {
   case client_connection.told_to_the_map(request:) {
@@ -596,23 +596,27 @@ fn connection_reach(
 /// The message a connection takes what a map sends it as: a notice for the
 /// player's stay. Any other outgoing of a map is an answer or a creature's, never
 /// sent to a connection, and has none.
-pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
+pub fn map_message(
+  outgoing outgoing: map_message.Outgoing,
+) -> Result(Message, Nil) {
   case outgoing {
-    map.Noticed(stay:, notice:) -> Ok(ForStay(stay:, sent: SentByMap(notice:)))
-    map.Relayed(stay:, delivered:) -> Ok(relayed_message(delivered:, stay:))
-    map.Joined(..)
-    | map.Summoned(..)
-    | map.NotSummoned(..)
-    | map.NotJoined(..)
-    | map.Left
-    | map.Seen(..)
-    | map.Unseen(..)
-    | map.Retire
-    | map.Approached(..)
-    | map.Withdrew(..)
-    | map.PlayerDied(..)
-    | map.CasterGone(..)
-    | map.ToldCreature(..) -> Error(Nil)
+    map_message.Noticed(stay:, notice:) ->
+      Ok(ForStay(stay:, sent: SentByMap(notice:)))
+    map_message.Relayed(stay:, delivered:) ->
+      Ok(relayed_message(delivered:, stay:))
+    map_message.Joined(..)
+    | map_message.Summoned(..)
+    | map_message.NotSummoned(..)
+    | map_message.NotJoined(..)
+    | map_message.Left
+    | map_message.Seen(..)
+    | map_message.Unseen(..)
+    | map_message.Retire
+    | map_message.Approached(..)
+    | map_message.Withdrew(..)
+    | map_message.PlayerDied(..)
+    | map_message.CasterGone(..)
+    | map_message.ToldCreature(..) -> Error(Nil)
   }
 }
 
@@ -622,22 +626,22 @@ pub fn map_message(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
 /// `SentByFoe`, the answer to its strike as `SentByTarget`, and the credit for its
 /// death as `SentByKill`, each for the stay the relay names.
 pub fn relayed_message(
-  delivered delivered: relay.Delivered,
+  delivered delivered: map_message.Delivered,
   stay stay: Stay,
 ) -> Message {
   case delivered {
-    relay.News(news:) -> ForStay(stay:, sent: SentByPeer(news:))
-    relay.Landed(landing:) ->
+    map_message.News(news:) -> ForStay(stay:, sent: SentByPeer(news:))
+    map_message.Landed(landing:) ->
       ForStay(
         stay:,
         sent: SentByPlayer(tell: client_connection.player_tell_of(landing:)),
       )
-    relay.Said(said:) -> ForStay(stay:, sent: SentByLine(said:))
-    relay.Tell(payload: relay.Struck(answered:)) ->
+    map_message.Said(said:) -> ForStay(stay:, sent: SentByLine(said:))
+    map_message.Tell(payload: map_message.Struck(answered:)) ->
       ForStay(stay:, sent: SentByTarget(answered))
-    relay.Tell(payload: relay.KillCredit(credit:)) ->
+    map_message.Tell(payload: map_message.KillCredit(credit:)) ->
       ForStay(stay:, sent: SentByKill(credit))
-    relay.Tell(payload: relay.Fight(told:)) ->
+    map_message.Tell(payload: map_message.Fight(told:)) ->
       ForStay(stay:, sent: SentByFoe(told))
   }
 }
@@ -678,7 +682,7 @@ pub fn add_world(
   time time: service_shell.ServiceTime,
   realm_id realm_id: Int,
   tables tables: table_store.Tables,
-  reach reach: Reach(map.Outgoing),
+  reach reach: Reach(map_message.Outgoing),
 ) -> supervisor.Builder {
   tree
   |> supervisor.add(creature_registry.supervised(world.creatures))
@@ -730,8 +734,8 @@ pub fn add_world(
 /// player from its map alone.
 fn map_reach(
   world world: World,
-  reach reach: Reach(map.Outgoing),
-) -> Reach(map.Outgoing) {
+  reach reach: Reach(map_message.Outgoing),
+) -> Reach(map_message.Outgoing) {
   let reach = world.maps_reach(reach)
   service.Reach(
     locate: fn(address) {
@@ -792,7 +796,7 @@ fn map_reach(
 fn start_creature_process(
   world world: World,
   time time: service_shell.ServiceTime,
-  reach reach: Reach(map.Outgoing),
+  reach reach: Reach(map_message.Outgoing),
   start start: creature_supervisor.CreatureProcessStart,
 ) -> actor.StartResult(Subject(Call(creature.Message, creature.Outgoing))) {
   let wanted = start.creature
@@ -860,7 +864,7 @@ fn spawn_of_start(
 /// no connection.
 fn creature_reach(
   world world: World,
-  reach reach: Reach(map.Outgoing),
+  reach reach: Reach(map_message.Outgoing),
   start start: creature_supervisor.CreatureProcessStart,
 ) -> Reach(creature.Outgoing) {
   let own = start.creature

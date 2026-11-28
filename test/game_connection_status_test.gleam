@@ -5,7 +5,6 @@
 
 import cast_support
 import game_connection_support as support
-import genesis_prime/game/activate
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/character_select
 import genesis_prime/game/connection/state.{
@@ -20,12 +19,13 @@ import genesis_prime/game/experience
 import genesis_prime/game/inventory
 import genesis_prime/game/item_charge
 import genesis_prime/game/quest_turn_in
-import genesis_prime/game/unit_casts
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_sale
 import genesis_prime/game/world_entry
 import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/play_character.{PlayCharacter}
+import genesis_prime/shared/activate
+import genesis_prime/shared/unit_casts
 import genesis_prime/store.{AccountId, HeldItem}
 import genesis_prime/table/id.{Item2Id}
 import gleam/dict

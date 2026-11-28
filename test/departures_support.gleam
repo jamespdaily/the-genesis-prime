@@ -8,19 +8,20 @@ import character_tables
 import connection_rule_support as support
 import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request, AskMap, FromMap}
-import genesis_prime/game/activate.{type Link}
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/departures
-import genesis_prime/game/objective_link
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/map/message.{Join, ObjectsSeen}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/client_side_interaction_result.{
   ClientSideInteractionResult,
 }
 import genesis_prime/message/interaction_result.{type InteractionResult}
 import genesis_prime/message/spell_cast_confirmed
+import genesis_prime/shared/activate.{type Link}
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/step.{
   type ConnectionStep, type TimerId, OwnEffect, OwnEvent, StartTimer, TimerFired,
@@ -28,7 +29,6 @@ import genesis_prime/step.{
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
-import genesis_prime/world_map/map.{Join, ObjectsSeen}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/static_object.{type Created, StaticObject}

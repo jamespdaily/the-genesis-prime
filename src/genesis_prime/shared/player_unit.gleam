@@ -27,6 +27,9 @@
 ////   ResourceMax property at its maximum (`with_resource`,
 ////   `opcode.0x262.resource_stats`, `UnitProperty2.ResourceMax_0`): the client
 ////   holds 0 of each, with a maximum of 0, until the server sends them.
+//// - **Dash energy:** every class's own record also gains slot 7 at its maximum, stat 9 in the
+////   float form, with properties 38 and 39 (`with_dash`, `opcode.0x15c`): with no stat 9 the
+////   client holds 0 and refuses every dash.
 //// - **Place:** the unit's own place, which the map is given with the join
 ////   (the saved place, bounded to the box the client bounds a unit's position
 ////   to): a kind 2 movement command at its position, with its bit clear, which
@@ -63,6 +66,7 @@ import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/class_resource.{type Resource}
 import genesis_prime/shared/loadout.{type Loadout}
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_properties
 import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/id.{type RaceId, type UnitProperty2Id}
 import gleam/int
@@ -324,17 +328,65 @@ pub fn with_resource(
   record record: UnitCreatePlayer,
   resource resource: Resource,
 ) -> UnitCreatePlayer {
-  let bits = float32.to_bits(resource.max)
+  with_slot(
+    record:,
+    slot: resource.slot,
+    value: resource.start,
+    maximum: resource.max,
+  )
+}
+
+/// The player's 0x262 record with the dash energy, resource slot 7, which every class holds:
+/// stat 9 in the float form at its maximum, property 38 (ResourceMax_7) at the maximum and
+/// property 39 (ResourceRegenMultiplier_7) at the factor the refill is multiplied by, base
+/// and value alike (`opcode.0x15c`, `UnitProperty2.ResourceMax_7.dash`).
+pub fn with_dash(record record: UnitCreatePlayer) -> UnitCreatePlayer {
+  let record =
+    with_slot(
+      record:,
+      slot: class_resource.dash_slot,
+      value: class_resource.dash_maximum,
+      maximum: class_resource.dash_maximum,
+    )
+  let bits = float32.to_bits(class_resource.dash_refill_factor)
+  UnitCreatePlayer(
+    ..record,
+    tail: UnitCreateTail(
+      ..record.tail,
+      properties: [
+          UnitProperty(
+            property_id: unit_properties.dash_refill_multiplier.value,
+            base: bits,
+            value: bits,
+          ),
+          ..record.tail.properties
+        ]
+        |> list.sort(fn(first, second) {
+          int.compare(first.property_id, second.property_id)
+        }),
+    ),
+  )
+}
+
+/// The record with the stat of resource slot `slot` at `value` in the float form and the
+/// slot's ResourceMax property at `maximum`, base and value alike.
+fn with_slot(
+  record record: UnitCreatePlayer,
+  slot slot: Int,
+  value value: Float,
+  maximum maximum: Float,
+) -> UnitCreatePlayer {
+  let bits = float32.to_bits(maximum)
   UnitCreatePlayer(
     ..record,
     tail: UnitCreateTail(
       ..record.tail,
       stats: list.append(record.tail.stats, [
-        unit_fields.resource_stat(slot: resource.slot, value: resource.start),
+        unit_fields.resource_stat(slot:, value:),
       ]),
       properties: [
           UnitProperty(
-            property_id: unit_fields.resource_max_property(slot: resource.slot),
+            property_id: unit_fields.resource_max_property(slot:),
             base: bits,
             value: bits,
           ),
