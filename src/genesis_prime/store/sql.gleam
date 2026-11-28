@@ -694,11 +694,13 @@ pub type ListCharactersRow {
     look_values: List(Int),
     bones: List(Int),
     needs_rename: Bool,
+    worn_item2_ids: List(Int),
   )
 }
 
 /// The account's characters as the character list needs them, in the order they
-/// were created.
+/// were created, each with the Item2 ids of the items it holds at location 0
+/// (worn), in bag order.
 ///
 /// > 🐿️ This function was generated automatically using v4.7.0 of
 /// > the [squirrel package](https://github.com/giacomocavalieri/squirrel).
@@ -728,6 +730,7 @@ pub fn list_characters(
     use look_values <- decode.field(17, decode.list(decode.int))
     use bones <- decode.field(18, decode.list(decode.int))
     use needs_rename <- decode.field(19, decode.bool)
+    use worn_item2_ids <- decode.field(20, decode.list(decode.int))
     decode.success(ListCharactersRow(
       character_id:,
       name:,
@@ -749,11 +752,13 @@ pub fn list_characters(
       look_values:,
       bones:,
       needs_rename:,
+      worn_item2_ids:,
     ))
   }
 
   "-- The account's characters as the character list needs them, in the order they
--- were created.
+-- were created, each with the Item2 ids of the items it holds at location 0
+-- (worn), in bag order.
 select
   character_id,
   name,
@@ -774,7 +779,14 @@ select
   look_labels,
   look_values,
   bones,
-  needs_rename
+  needs_rename,
+  array(
+    select item2_id
+    from character_item
+    where character_item.character_id = character.character_id
+      and location = 0
+    order by bag_index
+  ) as worn_item2_ids
 from character
 where account_id = $1
 order by character_id;

@@ -23,6 +23,17 @@ pub type Set {
   )
 }
 
+/// The first set of a class and faction, or `Error(Nil)` for a pair the client
+/// holds no Novice set for.
+pub fn set_of(
+  class_id class_id: Int,
+  faction_id faction_id: Int,
+) -> Result(Set, Nil) {
+  list.find(sets(), fn(set) {
+    set.class_id == class_id && set.faction_id == faction_id
+  })
+}
+
 /// The twelve sets, with the items in the order of the row's item columns
 /// (itemId0, itemId01, itemId02, itemId03, itemId04, itemId05, itemId06).
 pub fn sets() -> List(Set) {

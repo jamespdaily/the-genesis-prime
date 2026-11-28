@@ -19,6 +19,7 @@ import genesis_prime/game/cast/cost as cast_cost
 import genesis_prime/game/cast/heal as cast_heal
 import genesis_prime/game/cast/press as cast_press
 import genesis_prime/game/cast/proc as cast_proc
+import genesis_prime/game/character_select
 import genesis_prime/game/click_objective
 import genesis_prime/game/communicator
 import genesis_prime/game/connection/landing as connection_landing
@@ -134,6 +135,7 @@ pub fn registry() -> List(Entry) {
     held_objective.gaps(),
     class_resource.gaps(),
     dash.gaps(),
+    character_select.gaps(),
     cast_press.gaps(),
     activate.gaps(),
     limited_action_set.gaps(),

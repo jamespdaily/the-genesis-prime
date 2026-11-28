@@ -335,9 +335,11 @@ pub fn after_0x594_a_0x07e0_is_answered_with_0x0036_and_0x0117_as_at_login_with_
       outcome: step.Answer(
         FromStore(
           ForSelect(
-            Listed([
-              game_connection_support.character(id: 5, name: "Eve", seed: 1),
-            ]),
+            Listed(
+              character_support.unequipped([
+                game_connection_support.character(id: 5, name: "Eve", seed: 1),
+              ]),
+            ),
           ),
         ),
       ),

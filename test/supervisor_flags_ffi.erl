@@ -6,7 +6,7 @@
 %% strategy as the atom of the Gleam variant (one_for_one, one_for_all or
 %% rest_for_one). `supervisor` keeps its flags in the record
 %% #state{name, strategy, children, dynamics, intensity, period, ...}
-%% (lib/stdlib/src/supervisor.erl of OTP 29.1.2), so they are elements 3, 6
+%% (lib/stdlib/src/supervisor.erl of OTP 29.1.3), so they are elements 3, 6
 %% and 7 of the state; a state of any other shape is an error, not a guess.
 -spec read(pid()) ->
     {flags, one_for_one | one_for_all | rest_for_one, non_neg_integer(),

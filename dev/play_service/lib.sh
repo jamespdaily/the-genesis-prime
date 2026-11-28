@@ -35,6 +35,20 @@
 #   remote_head                    prints the commit the remote's branch is at; fails when it
 #                                  cannot be read
 #   live_lock_held                 whether a live session holds ~/.genesis-prime/live.lock
+#   image_inputs COMMIT            prints one hash of what the commit's release/Containerfile copies
+#                                  into the image (its COPY sources, the Containerfile itself and
+#                                  priv/migrations), made from the commit's git blobs in
+#                                  $state/repository.git; fails, logging why, when the commit or its
+#                                  Containerfile is not there, a COPY or ADD line is in a form it
+#                                  does not read, or a source matches no file
+#   game_connection_open COMMIT    whether the newest sitting folder of that commit's server holds
+#                                  a game connection recording whose last line is not a closed line
+#                                  and whose file was written in the last 5 minutes
+#   forget_closed_wait             removes the wait's clock when no connection of the commit it
+#                                  was kept for is open
+#   deploy_waits COMMIT            whether a deploy of COMMIT waits for a game connection to close
+#                                  (the server runs and a connection is open); see update.sh for
+#                                  the limit, the log lines and the alert
 #   alert_stale_stands             posts one alert line, once per lock or hold, when the live lock
 #                                  or the hold has stood over an hour while the remote's branch is
 #                                  at a commit the server container does not run; never takes the
@@ -170,6 +184,120 @@ remote_head() {
 
 live_lock_held() { [ -d "$home/live.lock" ]; }
 
+image_inputs() {
+  local commit=$1 containerfile sources problems tree inputs missing
+  containerfile=$(git -C "$state/repository.git" show "$commit:release/Containerfile" 2>/dev/null) || return 1
+  # A COPY or ADD form this reader does not read (ADD, a continued line, the JSON form,
+  # a variable or a here-document) is printed as a line starting with "!".
+  sources=$(printf '%s\n' "$containerfile" | awk '
+    { instruction = toupper($1) }
+    instruction == "ADD" || (instruction == "COPY" && ($NF ~ /\\$/ || $2 ~ /^\[/ || $0 ~ /[$]|<</)) { print "!" $0; next }
+    instruction == "COPY" && $2 !~ /^--from/ {
+      for (i = 2; i < NF; i++) if ($i !~ /^--/) { source = $i; sub("^[.]/", "", source); print source }
+    }')
+  problems=$(printf '%s\n' "$sources" | sed -n 's/^!//p')
+  if [ -n "$problems" ]; then
+    log "image inputs of ${commit:0:8}: a Containerfile line this reader does not read ($(printf '%s\n' "$problems" | head -n 1)); the commit is taken as changed"
+    return 1
+  fi
+  [ -n "$sources" ] || return 1
+  sources=$(printf '%s\npriv/migrations\nrelease/Containerfile\n' "$sources")
+  tree=$(git -C "$state/repository.git" ls-tree -r "$commit" 2>/dev/null) || return 1
+  # Prints each tree line a source names, then "!SOURCE" for a source that names none.
+  inputs=$(printf '%s\n' "$tree" | sources="$sources" awk '
+    BEGIN {
+      count = split(ENVIRON["sources"], list, "\n")
+      for (i = 1; i <= count; i++) {
+        pattern = list[i]
+        sub("/$", "", pattern)
+        gsub("[.]", "\\.", pattern)
+        gsub("[*]", "[^/]*", pattern)
+        expression[i] = "^" pattern "(/|$)"
+      }
+    }
+    {
+      path = substr($0, index($0, "\t") + 1)
+      hit = 0
+      for (i = 1; i <= count; i++) if (path ~ expression[i]) { found[i] = 1; hit = 1 }
+      if (hit) print
+    }
+    END { for (i = 1; i <= count; i++) if (!found[i]) print "!" list[i] }')
+  missing=$(printf '%s\n' "$inputs" | sed -n 's/^!//p')
+  if [ -n "$missing" ]; then
+    log "image inputs of ${commit:0:8}: no file matches the Containerfile's source $(printf '%s\n' "$missing" | head -n 1); the commit is taken as changed"
+    return 1
+  fi
+  printf '%s\n' "$inputs" | git hash-object --stdin
+}
+
+# A server's recordings are the folders $home/sittings/<date>-play-<commit>; each game
+# connection of it is a genesis_prime.game.connection-*.jsonl whose last line says closed
+# once the connection ended. The newest folder of the commit is the running server's: an
+# older one of the same commit belongs to a container that crashed or was replaced. A
+# recording is a connection only while its file is being written: a live connection writes
+# a line at each read, and the client pings every 30 seconds (the longest gap between two
+# read lines in the recorded sessions is 10 seconds), so a file untouched for
+# connection_silent_minutes belongs to a connection that crashed.
+connection_silent_minutes=5
+
+game_connection_open() {
+  local folder recording
+  folder=$(find "$home/sittings" -maxdepth 1 -type d -name "*-play-$1" 2>/dev/null | sort | tail -n 1)
+  [ -n "$folder" ] || return 1
+  for recording in "$folder"/genesis_prime.game.connection-*.jsonl; do
+    [ -e "$recording" ] || continue
+    [ -n "$(find "$recording" -maxdepth 0 -mmin "-$connection_silent_minutes" 2>/dev/null)" ] || continue
+    tail -n 1 "$recording" | grep -q '"closed"' || return 0
+  done
+  return 1
+}
+
+deploy_wait_seconds=${GENESIS_PLAY_WAIT_SECONDS:-10800}
+
+# The wait's clock is $state/waiting_since: "DEPLOYED SINCE", the commit the server runs and
+# the epoch second of the first run that waited for a connection of it.
+
+# forget_closed_wait: removes the wait's clock when no game connection of the commit it was
+# kept for is open, whatever else the run ends with, so the next wait counts afresh.
+forget_closed_wait() {
+  local waited_for since
+  [ -e "$state/waiting_since" ] || return 0
+  { read -r waited_for since <"$state/waiting_since"; } 2>/dev/null || true
+  if [ -z "${waited_for:-}" ] || ! game_connection_open "$waited_for"; then
+    rm -f "$state/waiting_since"
+  fi
+}
+
+# deploy_waits COMMIT: whether the deploy of COMMIT waits (status 0): the server runs
+# ($running is true) and a game connection of it is open, for less than deploy_wait_seconds
+# since the first run that waited. A server that is not running has no connection, so its
+# deploy goes on.
+deploy_waits() {
+  local commit=$1 waited_for since now waited
+  { read -r waited_for since <"$state/waiting_since"; } 2>/dev/null || true
+  now=$(date +%s)
+  if [ "${waited_for:-}" != "${deployed_commit:-}" ] || [ -z "${since:-}" ]; then
+    since=$now
+  fi
+  waited=$((now - since))
+  if [ "${running:-}" != true ] || ! game_connection_open "${deployed_commit:-}"; then
+    if [ "$waited" -gt 0 ]; then
+      log "no game connection is open now; deploying ${commit:0:8} after waiting ${waited} s"
+    fi
+    rm -f "$state/waiting_since"
+    return 1
+  fi
+  echo "${deployed_commit:-} $since" >"$state/waiting_since"
+  if [ "$waited" -ge "$deploy_wait_seconds" ]; then
+    log "a game connection is still open after ${waited} s; deploying ${commit:0:8} anyway"
+    alert "genesis play: ${commit:0:8} is being deployed with a game connection open, after waiting ${waited} s" || true
+    rm -f "$state/waiting_since"
+    return 1
+  fi
+  log_once "a game connection is open; ${commit:0:8} is not deployed until it closes (up to ${deploy_wait_seconds} s from the first run that waited)"
+  return 0
+}
+
 # The time a live lock or a hold may stand, with the remote's branch ahead of the server,
 # before alert_stale_stands posts it.
 stale_stand_seconds=3600
@@ -240,7 +368,7 @@ stale_stand_description() {
 # alert_stale_stands: for the live lock and for the hold, once it has stood over
 # stale_stand_seconds (by the mtime of the lock's owner record, or of the lock folder when
 # it has none, and of the held file) while the remote's branch is at a commit that is not
-# skipped and not the one the server container runs, posts one alert line naming the
+# skipped, not recorded over the one the server container runs and not that one, posts one alert line naming the
 # holder, whether its process runs and the command that releases it. The marker
 # $state/stale_<lock|hold>_alerted holds the lock's token (or the stand file's mtime), so
 # a stand is announced once; it is removed when the stand is gone. Nothing is taken over,
@@ -250,7 +378,7 @@ stale_stand_description() {
 # disappears while it is read is skipped. The line it logs does not replace the last line
 # log_once compares.
 alert_stale_stands() {
-  local kind file key mtime age branch_commit deployed previous_line
+  local kind file key mtime age branch_commit deployed previous_line recorded_commit recorded_over
   for kind in lock hold; do
     if [ "$kind" = lock ]; then
       file=$home/live.lock/owner
@@ -276,6 +404,8 @@ alert_stale_stands() {
     deployed=${deployed:-}
     [ -n "$deployed" ] || continue
     [ "$deployed" != "$branch_commit" ] || continue
+    { read -r recorded_commit recorded_over <"$state/recorded"; } 2>/dev/null || true
+    [ "${recorded_commit:-} ${recorded_over:-}" != "$branch_commit $deployed" ] || continue
     read_environment_file
     previous_line=$(cat "$state/last_line" 2>/dev/null || true)
     if alert "genesis play: ${branch_commit:0:8} is the remote branch's head but the server runs ${deployed:0:8}, and the updater has done nothing for $((age / 3600)) h: $(stale_stand_description "$kind")"; then

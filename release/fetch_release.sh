@@ -1,11 +1,10 @@
 #!/usr/bin/env bash
 # Downloads one asset of a public GitHub release and refuses it unless its
 # SHA-256 is the digest GitHub publishes for that asset. Used by
-# setup_check/build_patched_otp.sh for the OTP source and by release/Containerfile
-# for the gleam and rebar3 programs, so the build holds no GitHub login: the
+# release/Containerfile for the gleam and rebar3 programs, so the build holds no GitHub login: the
 # download is plain HTTPS and the digest comes from the unauthenticated API. A
-# GH_TOKEN in the environment (CI sets one, for the runners' shared rate limit)
-# is sent as a bearer token to api.github.com only.
+# GH_TOKEN in the environment, if one is set, is sent as a bearer token to
+# api.github.com only.
 #
 # Usage: release/fetch_release.sh REPOSITORY TAG ASSET DIRECTORY
 #

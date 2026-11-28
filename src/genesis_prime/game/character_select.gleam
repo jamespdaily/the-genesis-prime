@@ -32,9 +32,15 @@
 ////   client then offers the CharacterCreation rows its own `enabled` column
 ////   sets (0x140021bb0). An entry holds each field of the character's row,
 ////   its body visuals from its look (genesis_prime/shared/appearance) and its
-////   bone values as sent. Its worn visuals and costume are empty or 0: the
-////   client never builds worn visuals from a creation row, and gear is the
-////   inventory's (0x14004adb0, 0x140027380).
+////   bone values as sent.
+//// - **The worn gear.** The entry's worn visuals are those of the items the
+////   character holds at location 0 (genesis_prime/shared/worn_visual), which
+////   the 0x0262 of world entry draws too, and its slot mask, item ids and dyes
+////   give each drawn armour and weapon slot its bit, because the select screen
+////   draws those slots from the mask and takes the display from the worn
+////   visual (opcode.0x117.costume_slots, 0x140027380). An item the tables
+////   cannot dress is warned about and the entry is still sent. The dye is 0 as in the 0x0262; the costumes and
+////   colour sets left out are listed in `gaps`.
 //// - **The slots.** The client counts its own slots: 2 from its reward
 ////   property, plus the count of the account's BaseCharacterSlots
 ////   entitlement (12) when it holds one
@@ -102,6 +108,7 @@ import genesis_prime/game/character_creation
 import genesis_prime/game/reward_property
 import genesis_prime/game/start_place
 import genesis_prime/game_settings
+import genesis_prime/gap
 import genesis_prime/message/account_entitlements.{AccountEntitlements}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/character_list.{CharacterList}
@@ -126,9 +133,10 @@ import genesis_prime/message/rename_character.{type RenameCharacter}
 import genesis_prime/message/rename_character_result.{RenameCharacterResult}
 import genesis_prime/message/rename_result.{type RenameResult}
 import genesis_prime/shared/appearance
+import genesis_prime/shared/worn_visual
 import genesis_prime/store.{
-  type AccountId, type Character, type CharacterId, CharacterId, NameStands,
-  NeedsRename,
+  type AccountId, type CharacterId, type ListedCharacter, CharacterId,
+  NameStands, NeedsRename,
 }
 import genesis_prime/table/loader/store as table_store
 import gleam/bool
@@ -382,7 +390,7 @@ pub fn rename_requested(
 /// server's time the client keeps the difference from.
 pub fn listed(
   state state: State,
-  characters characters: List(Character),
+  characters characters: List(ListedCharacter),
   filetime filetime: Int,
   realm_id realm_id: Int,
   max_characters max_characters: Int,
@@ -589,7 +597,7 @@ fn slot_effects(character_slots character_slots: Int) -> List(Effect) {
 
 /// 0x0036 with the highest level and 0x0117 with the list.
 fn list_effects(
-  characters characters: List(Character),
+  characters characters: List(ListedCharacter),
   selected selected: Option(CharacterId),
   filetime filetime: Int,
   realm_id realm_id: Int,
@@ -599,19 +607,23 @@ fn list_effects(
   let level =
     bit_stream.must(
       MaxCharacterLevel(
-        highest_level: list.fold(characters, 0, fn(highest, character) {
-          int.max(highest, character.level)
+        highest_level: list.fold(characters, 0, fn(highest, listed) {
+          int.max(highest, listed.character.level)
         }),
       ),
       max_character_level.encode,
     )
   let index = appearance.index(tables:)
+  let worns =
+    list.map(characters, fn(listed) {
+      #(listed, worn_visual.of_items(tables:, item2_ids: listed.worn))
+    })
   let body =
     bit_stream.must(
       CharacterList(
         server_time: filetime,
-        characters: list.map(characters, fn(character) {
-          entry(character:, selected:, index:)
+        characters: list.map(worns, fn(pair) {
+          entry(listed: pair.0, worn: pair.1, selected:, index:)
         }),
         enabled_creation_ids: [],
         disabled_creation_ids: [],
@@ -627,22 +639,36 @@ fn list_effects(
       ),
       character_list.encode,
     )
-  [
+  let warnings =
+    list.flat_map(worns, fn(pair) {
+      let CharacterId(character_id) = { pair.0 }.character.character_id
+      list.map(pair.1.undrawn, fn(undrawn) {
+        Warn(
+          text: "character "
+          <> int.to_string(character_id)
+          <> ": "
+          <> worn_visual.describe_undrawn(item2_id: undrawn.0, error: undrawn.1),
+        )
+      })
+    })
+  list.append(warnings, [
     Send(frame: Frame(message_id: max_character_level.message_id, body: level)),
     Send(frame: Frame(message_id: character_list.message_id, body:)),
-  ]
+  ])
 }
 
 /// One character as its entry in the list: each field of the row, the body
 /// visuals of its look, no disabled flag, its rename bit from its naming, 0 in the three fields the
-/// client never reads, no worn visuals and no costume slot (a mask of 0 and no
-/// items or dyes), and its bone values; a last logout only for the selected
-/// character.
+/// client never reads, the worn visuals and slot mask of its worn items, and its bone values; a
+/// last logout only for the selected character.
 fn entry(
-  character character: Character,
+  listed listed: ListedCharacter,
   selected selected: Option(CharacterId),
+  worn worn: worn_visual.Worn,
   index index: appearance.Index,
 ) -> CharacterListEntry {
+  let character = listed.character
+  let slots = worn_visual.slot_mask(drawn: worn.drawn)
   let CharacterId(character_id) = character.character_id
   let #(world_id, world_zone_id, position_x, position_y, position_z) = case
     character.place
@@ -665,7 +691,9 @@ fn entry(
     faction_id: character.faction_id,
     level: character.level,
     body_visuals: appearance.character_body_visuals(index:, character:),
-    worn_visuals: [],
+    worn_visuals: list.map(worn.drawn, fn(drawn) {
+      worn_visual.item_visual(drawn.visual)
+    }),
     world_id:,
     world_zone_id:,
     unread_12: 0,
@@ -680,13 +708,27 @@ fn entry(
       NeedsRename -> 1
       NameStands -> 0
     },
-    costume_slot_mask: 0,
-    costume_item_ids: [],
-    costume_dyes: [],
+    costume_slot_mask: slots.mask,
+    costume_item_ids: list.map(slots.item2_ids, fn(item2_id) { item2_id.value }),
+    costume_dyes: slots.dyes,
     bone_values: character.bones,
     last_logged_out_days: case selected == Some(character.character_id) {
       True -> float32.to_bits(just_now_days)
       False -> 0
     },
   )
+}
+
+/// What the character list leaves undone, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Character select",
+      missing: "real costumes are not sent in the character list (0x117): its costume fields hold the worn gear's slot mask alone, so no costume is drawn at select",
+    ),
+    gap.Entry(
+      area: "Character select",
+      missing: "an item's itemColorSetId is not sent: at select an item with its own display is coloured from its colour set (0x140027380 passes Item2 +0xa8 to 0x140445140), while the list's dyes and the world's 0x262 give colour 0",
+    ),
+  ]
 }

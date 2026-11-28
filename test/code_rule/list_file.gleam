@@ -21,6 +21,30 @@ pub fn bad_row(line line: Int, what what: String) -> String {
   "line " <> int.to_string(line) <> " of the list " <> what
 }
 
+/// The rows of a list of two words each, with their line of the file. A row
+/// that is not two words split by one space panics with `bad_row` and `what`.
+pub fn pairs(
+  text text: String,
+  what what: String,
+) -> List(#(String, String, Int)) {
+  rows(text:)
+  |> list.map(fn(entry) {
+    let #(row, line) = entry
+    let assert [first, second] = string.split(row, " ") as bad_row(line:, what:)
+    #(first, second, line)
+  })
+}
+
+/// A breach at a row's line of its list file: the row's `name`, then `what`.
+pub fn breach(
+  path path: String,
+  line line: Int,
+  name name: String,
+  what what: String,
+) -> Breach {
+  Breach(path:, line:, rule: name <> " " <> what)
+}
+
 /// A breach, at the row's line of the list file, for each row that is not
 /// after the row before it by `compare`: out of order or repeated. `name`
 /// writes the row for the breach's text, and `what` ends it.
@@ -38,7 +62,7 @@ pub fn disordered(
     case compare(before, row) {
       order.Lt -> Error(Nil)
       order.Eq | order.Gt ->
-        Ok(Breach(path:, line: line(row), rule: name(row) <> " " <> what))
+        Ok(breach(path:, line: line(row), name: name(row), what:))
     }
   })
 }

@@ -5,7 +5,7 @@ and a `run` function that answers commands from a table, so no test touches the
 real install.
 
 Expected values and their sources:
-- Gleam 1.19.2, OTP 29.1.2 and rebar3 3.28.0: the repository's .tool-versions
+- Gleam 1.19.2, OTP 29.1.3 and rebar3 3.28.0: the repository's .tool-versions
   (read from it here); the Gleam range ">= 1.19.2 and < 2.0.0" is gleam.toml's
   `gleam` field.
 - Ghidra 12.2, JDK 25, Python 3.13, PyGhidra 3.2.0 and the client's SHA-256:
@@ -28,7 +28,7 @@ Expected values and their sources:
 What a planted command answers (the contract the checks run against):
 - a missing tool answers (127, "command not found: NAME");
 - `gleam ...` answers "gleam X.Y.Z"; `erl ...` answers the full OTP version
-  alone ("29.1.2"); `rebar3 ...` answers "rebar 3.28.0 on Erlang/OTP 29 Erts 17.1.1";
+  alone ("29.1.3"); `rebar3 ...` answers "rebar 3.28.0 on Erlang/OTP 29 Erts 17.1.1";
 - `git ... ls-files ...` answers the file's name when it is tracked; when it is
   not, `--error-unmatch` fails with exit 1 and without it the output is empty;
 - `psql ...` answers each of the words server_version_num, server_version,
@@ -47,13 +47,8 @@ What a planted command answers (the contract the checks run against):
 - any other command stops the test with an AssertionError, so a check that
   runs something the table does not know is seen at once.
 
-The patched OTP is checked unless GENESIS_NO_CLIENT=1 and GENESIS_OTP_DIR is
-unset (CI sets GENESIS_OTP_DIR, so it runs on the patched build it caches), and
-setup_check/environment.sh puts its bin first on PATH on the same condition.
-The patched OTP's marker is the file `GENESIS_PATCHES` in $GENESIS_OTP_DIR: one
-line per patch, "NAME SHA-256", the name and the hash of that file in the
-repository's setup_check/ folder. The check requires a line, with the matching
-hash, for every setup_check/*.patch, so a changed patch asks for a rebuild.
+The erl on PATH is the OTP: its version must be .tool-versions' (the setup check
+starts no OTP of its own and looks in no folder).
 
 Run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
 """
@@ -99,19 +94,13 @@ def pinned_tool_versions() -> dict[str, str]:
 
 PINS = pinned_tool_versions()
 GLEAM = PINS["gleam"]  # 1.19.2
-OTP = PINS["erlang"]  # 29.1.2
+OTP = PINS["erlang"]  # 29.1.3
 REBAR = PINS["rebar"]  # 3.28.0
 TARGET_BUILD = 16042  # client_archive.target_build: GetVersionInfo 0x1406f8360 returns 0x3eaa
 POSTGRES_MAJOR = "18"  # Jim's choice
-PATCH_FILE = "otp-1b4ac11-clear-live-hf-end.patch"
-MARKER = "GENESIS_PATCHES"
-
-PATCH_SHA256 = hashlib.sha256((HERE / PATCH_FILE).read_bytes()).hexdigest()
-
 SPAWN_TSV = b"id\tentity_type\n1\t0\n"
 PATH_TSV = b"id\tspawn_id\n1\t1\n"
 IMPORT_COMMAND = "gleam run -m genesis_prime/import_world_data"
-STALE_SHA256 = hashlib.sha256(b"an older patch").hexdigest()
 
 PLANTED_CLIENT = b"planted WildStar64.exe"
 OTHER_CLIENT = b"another WildStar64.exe"
@@ -161,15 +150,11 @@ class Plan:
     postgres_version: str = "18.6"
     postgres_icu: bool = True
     postgres_clock_offset: float = 0.0  # seconds the server's clock is ahead
-    with_client: bool = True  # False: nothing of the client, the query process or the patched OTP
-    otp_without_client: bool = False  # with_client False, and still GENESIS_OTP_DIR and the build there (CI)
+    with_client: bool = True  # False: nothing of the client, or the query process
     no_client_flag: bool = False  # GENESIS_NO_CLIENT=1
     no_query_process_flag: bool = False  # GENESIS_NO_QUERY_PROCESS=1
     client: str = "good"  # good, other (another SHA-256) or missing
     index_builds: tuple = (TARGET_BUILD,) * 4  # per name in INDEX_NAMES: a build, "garbage" or "signature"
-    otp_dir: str = "patched"  # patched, unmarked, stale, unlisted_patch or absent
-    erl_on_path: str = "patched"  # which erl PATH finds first: patched, elsewhere (a stock OTP) or linked (a link to the patched erl)
-    otp_dir_linked: bool = False  # GENESIS_OTP_DIR names a symbolic link to the patched OTP's folder
     ghidra_version: str = "12.2"
     decompiler: bool = True
     jdk: str = "25.0.1"
@@ -198,18 +183,14 @@ class PlantedTestCase(unittest.TestCase):
 
     def plant(self, plan: Plan | None = None, **changes) -> Machine:
         plan = plan or Plan(**changes)
-        for leftover in ("repository", "WildStar", "ghidra", "jdk", "otp", "stock"):  # a test may plant twice
+        for leftover in ("repository", "WildStar", "ghidra", "jdk"):  # a test may plant twice
             shutil.rmtree(self.root / leftover, ignore_errors=True)
-        (self.root / "otp-link").unlink(missing_ok=True)
         repository = self.root / "repository"
         repository.mkdir()
         for name in (".tool-versions", "gleam.toml"):
             shutil.copyfile(REPOSITORY / name, repository / name)
         (repository / "manifest.toml").write_text("# planted\n")
         (repository / "setup_check").mkdir()
-        shutil.copyfile(HERE / PATCH_FILE, repository / "setup_check" / PATCH_FILE)
-        if plan.otp_dir == "unlisted_patch":
-            (repository / "setup_check" / "second.patch").write_text("a second patch\n")
         env = {
             "HOME": str(self.root / "home"),
             "GENESIS_HOME": str(self.root / "home" / ".genesis-prime"),
@@ -223,8 +204,6 @@ class PlantedTestCase(unittest.TestCase):
             env["GENESIS_NO_QUERY_PROCESS"] = "1"
         if plan.with_client:
             env.update(self.plant_client(plan))
-        elif plan.otp_without_client:
-            env.update(self.plant_otp(plan))
         if plan.world_data != "absent":
             folder = self.root / "world-data"
             folder.mkdir(exist_ok=True)
@@ -232,7 +211,6 @@ class PlantedTestCase(unittest.TestCase):
             if plan.world_data != "missing_file":
                 (folder / "spawn_path.tsv").write_bytes(PATH_TSV)
             env["GENESIS_WORLD_DATA"] = str(folder)
-        env["PATH"] = self.plant_path(plan, env)
         for name in plan.without_variables:
             env.pop(name, None)
         self.apply_pins(plan)
@@ -265,7 +243,6 @@ class PlantedTestCase(unittest.TestCase):
             "GENESIS_GHIDRA_PROJECT_DIR": str(self.root / plan.project_path),
             "JAVA_HOME": str(jdk),
         }
-        env.update(self.plant_otp(plan))
         if plan.pyghidra_python != "unset":
             interpreter = self.root / "pyghidra-venv" / "bin" / "python"
             interpreter.parent.mkdir(parents=True, exist_ok=True)
@@ -301,45 +278,6 @@ class PlantedTestCase(unittest.TestCase):
                 if name not in plan.tables_missing:
                     (folder / (name + ".tbl")).write_bytes(test_extract_tables.table_content(name))
         return folder
-
-    def plant_otp(self, plan: Plan) -> dict[str, str]:
-        """The patched OTP's folder as plan.otp_dir says, and GENESIS_OTP_DIR for it."""
-        otp_dir = self.root / "otp"
-        if plan.otp_dir != "absent":
-            (otp_dir / "bin").mkdir(parents=True, exist_ok=True)
-            (otp_dir / "bin" / "erl").write_text("#!/bin/sh\n")
-            (otp_dir / "bin" / "erl").chmod(0o755)
-        lines = {
-            "patched": ["%s %s" % (PATCH_FILE, PATCH_SHA256)],
-            "unlisted_patch": ["%s %s" % (PATCH_FILE, PATCH_SHA256)],
-            "stale": ["%s %s" % (PATCH_FILE, STALE_SHA256)],
-        }
-        if plan.otp_dir in lines:
-            (otp_dir / MARKER).write_text("\n".join(lines[plan.otp_dir]) + "\n")
-        if plan.otp_dir_linked:
-            link = self.root / "otp-link"
-            if not link.exists():
-                link.symlink_to(otp_dir)
-            return {"GENESIS_OTP_DIR": str(link)}
-        return {"GENESIS_OTP_DIR": str(otp_dir)}
-
-    def plant_path(self, plan: Plan, env: dict[str, str]) -> str:
-        """PATH as the plan says: the patched OTP's bin and, ahead of it or in
-        place of its erl, another folder with an erl that is a stock OTP's or a
-        link to the patched one."""
-        folders = []
-        if plan.erl_on_path != "patched":
-            stock = self.root / "stock" / "bin"
-            stock.mkdir(parents=True, exist_ok=True)
-            if plan.erl_on_path == "elsewhere":
-                (stock / "erl").write_text("#!/bin/sh\n")
-                (stock / "erl").chmod(0o755)
-            else:
-                (stock / "erl").symlink_to(self.root / "otp" / "bin" / "erl")
-            folders.append(str(stock))
-        if "GENESIS_OTP_DIR" in env:
-            folders.append(str(self.root / "otp" / "bin"))
-        return ":".join(folders)
 
     def apply_pins(self, plan: Plan):
         """The client's pin is the hash of the planted client."""
@@ -513,26 +451,18 @@ class GleamTest(PlantedTestCase):
 
 
 class ErlangTest(PlantedTestCase):
-    def test_an_otp_other_than_the_pinned_version_is_named_with_what_was_found(self):
-        for found in ("28.3.1", "29.1.1"):
+    def test_an_erl_of_another_version_than_tool_versions_is_refused_with_the_fix_command_and_the_pinned_one_passes(self):
+        self.assertEqual(setup_check.check_erlang(self.plant()), [])
+        for found in ("28.3.1", "29.1.2", "29.1.4"):
             with self.subTest(found=found):
                 missing = self.only(setup_check.check_erlang(self.plant(otp=found)))
                 self.assert_part(missing, "erlang", "otp")
                 self.assert_found(missing, found)
                 self.assertIn(OTP, missing.part + missing.fix)
-                self.assert_fix(missing, *INSTALL_WORDS)
-
-    def test_a_patched_otp_missing_at_genesis_otp_dir_is_named_where_the_client_is(self):
-        missing = self.only(setup_check.check_erlang(self.plant(otp_dir="absent")))
-        self.assert_part(missing, "patch")
-        self.assert_fix(missing, "GENESIS_OTP_DIR", PATCH_FILE)
-
-    def test_a_patched_otp_built_from_an_older_patch_asks_for_a_rebuild(self):
-        # the line for the patch holds another SHA-256 than the file in setup_check/
-        missing = self.only(setup_check.check_erlang(self.plant(otp_dir="stale")))
-        self.assert_part(missing, "patch")
-        self.assertIn(PATCH_FILE, missing.part + missing.found)
-        self.assert_fix(missing, "rebuild")
+                self.assert_fix(missing, "brew upgrade erlang")
+                self.assert_fix(missing, "brew pin erlang")
+                self.assert_fix(missing, "move the erlang pin in .tool-versions")
+                self.assert_fix(missing, "asdf install erlang " + OTP)
 
 
 class PostgresTest(PlantedTestCase):
