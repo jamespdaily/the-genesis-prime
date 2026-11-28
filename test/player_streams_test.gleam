@@ -856,11 +856,8 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
     as "H told E nothing itself"
   // E presses its heal at H: the strike names H's new stay, which E's own copy took from
   // the map's SeenBy of the new sight, and H, in that stay, takes it and answers.
-  let healing = heal_pressed(
-      world: done,
-      bag_index:,
-      target_unit_id: unit_of_h_again,
-    )
+  let healing =
+    heal_pressed(world: done, bag_index:, target_unit_id: unit_of_h_again)
   assert heal_strikes_in_flight(scene: healing)
     == [#(1, map_support.stay(count: 2))]
     as "the strike names H's second stay, not the stay of the sight E held before"
@@ -869,8 +866,7 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
     taken.name == "tell of 1 to the map: TellLanding"
   })
     as "H took the heal in its new stay and answered it through the map"
-  assert scene.go_targets(scene: healed, connection: 2)
-    == [unit_of_h_again]
+  assert scene.go_targets(scene: healed, connection: 2) == [unit_of_h_again]
     as "the answer closed E's round: its go names H's new unit"
 }
 
@@ -1312,7 +1308,8 @@ pub fn a_heal_the_map_accepted_before_its_caster_left_sight_is_applied_and_one_f
   // The healer E (connection 2, an Esper) has pressed Mind Over Body at the healed player H
   // (connection 1) and its go has told the map the strike for H's stay 1.
   let #(world, bag_index) = heal_world(tables:)
-  let healing = heal_pressed(world:, bag_index:, target_unit_id: unit_of(connection: 1))
+  let healing =
+    heal_pressed(world:, bag_index:, target_unit_id: unit_of(connection: 1))
   assert heal_strikes_in_flight(scene: healing)
     == [#(1, map_support.stay(count: 1))]
     as "the strike in flight names H's stay"
