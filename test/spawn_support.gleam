@@ -305,7 +305,7 @@ pub fn summon_checks() -> spawn.SummonChecks {
     formulas: rating_support.formulas(),
     kinds: kinds(),
     factions: creature_faction.none(),
-    vendors: vendor.none(),
+    vendor_creatures: set.new(),
   )
 }
 
@@ -320,7 +320,7 @@ pub fn summon_checks_over(
     formulas: rating_support.formulas(),
     kinds: kinds(),
     factions: creature_faction.none(),
-    vendors: vendor.none(),
+    vendor_creatures: set.new(),
   )
 }
 
@@ -427,7 +427,7 @@ fn summoned_over(
       formulas: rating_support.formulas(),
       kinds:,
       factions: creature_faction.none(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
     ),
     summoned: Summoned(
       id: SpawnId(number),
@@ -612,7 +612,7 @@ pub fn sim_turret_over(
       tables:,
       formulas: rating_support.formulas(),
       kinds: turret_kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: the_turrets_are_given_their_factions(tables:),
     )
   let assert Ok(world) = dict.get(selection.worlds, 3460)
@@ -777,7 +777,7 @@ pub fn started_over(
       tables:,
       formulas: rating_support.formulas(),
       kinds: kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )
   let assert Ok(world) = dict.get(selection.worlds, 3460)

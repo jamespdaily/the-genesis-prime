@@ -83,7 +83,6 @@ import genesis_prime/coverage/starting_ability
 import genesis_prime/dev_database
 import genesis_prime/dev_exit
 import genesis_prime/game/held_tier
-import genesis_prime/game/vendor
 import genesis_prime/shared/rating
 import genesis_prime/shared/server_proxy
 import genesis_prime/shared/spell_area
@@ -107,6 +106,7 @@ import gleam/list
 import gleam/option.{type Option, Some}
 import gleam/order
 import gleam/result
+import gleam/set
 import gleam/string
 import pog
 import simplifile
@@ -622,7 +622,7 @@ fn spawn_coverage(tables tables: store.Tables) -> String {
                       formulas:,
                       kinds:,
                       factions:,
-                      vendors: vendor.none(),
+                      vendor_creatures: set.new(),
                     ).coverage,
                     fn(coverage) { "- " <> spawn.describe_coverage(coverage:) },
                   )

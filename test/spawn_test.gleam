@@ -62,6 +62,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/set
 import gleam/string
 import owned_test
 import place_support
@@ -86,7 +87,7 @@ fn selected_selling(
     tables: character_tables.content_tables(),
     formulas: rating_support.formulas(),
     kinds: spawn_support.kinds(),
-    vendors:,
+    vendor_creatures: set.from_list(vendor.creatures(vendors:)),
     factions: creature_faction.none(),
   )
 }
@@ -102,7 +103,7 @@ fn selected_over(
     tables: character_tables.content_over(tables:),
     formulas: rating_support.formulas(),
     kinds: spawn_support.kinds(),
-    vendors: vendor.none(),
+    vendor_creatures: set.new(),
     factions: creature_faction.none(),
   )
 }
@@ -1509,7 +1510,7 @@ fn selected_choosing(
     tables: character_tables.content_tables(),
     formulas: rating_support.formulas(),
     kinds: spawn_support.kinds(),
-    vendors: vendor.none(),
+    vendor_creatures: set.new(),
     factions:,
   )
 }
@@ -1590,7 +1591,7 @@ fn selected_with_the_turrets_kinds(rows rows: List(Row)) -> Selection {
     tables: character_tables.content_tables(),
     formulas: rating_support.formulas(),
     kinds: spawn_support.turret_kinds(),
-    vendors: vendor.none(),
+    vendor_creatures: set.new(),
     factions: spawn_support.the_turrets_are_given_their_factions(
       tables: character_tables.content_tables(),
     ),
@@ -1710,7 +1711,7 @@ pub fn a_summoned_creature_takes_its_chosen_faction_test() -> Nil {
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
       factions:,
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
     )
   }
   let summon = fn(factions) {
@@ -1872,7 +1873,7 @@ fn special_beast(spell4_ids spell4_ids: List(Int)) -> spawn.Spawn {
       tables: character_tables.content_tables(),
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds_with_beast_specials(spell4_ids:),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "the Beast's row is taken"
@@ -2031,7 +2032,7 @@ pub fn an_auto_attack_with_a_cast_time_has_one_go_though_another_kind_lists_its_
         ..autos,
         by_creature: dict.merge(autos.by_creature, specials.by_creature),
       ),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "the Beast's row is taken"
@@ -2313,7 +2314,7 @@ fn autos_selection(spell4_ids spell4_ids: List(Int)) -> spawn.Selection {
     tables: character_tables.content_tables(),
     formulas: rating_support.formulas(),
     kinds: spawn_support.kinds_with_beast_autos(spell4_ids:),
-    vendors: vendor.none(),
+    vendor_creatures: set.new(),
     factions: creature_faction.none(),
   )
 }

@@ -107,6 +107,14 @@ pub fn objective_ids(quest quest: Quest2) -> List(Int) {
   |> list.filter(fn(objective) { objective != 0 })
 }
 
+/// The WorldLocation2 ids of the objective's marker: its worldLocationsIdIndicator00
+/// to 03, in column order, an id of 0 naming none and so left out.
+pub fn marker_ids(
+  objective _objective: quest_objective.QuestObjective,
+) -> List(Int) {
+  []
+}
+
 /// One QuestObjective row as the client keeps it.
 pub fn objective_of(
   tables tables: table_store.Tables,

@@ -82,7 +82,6 @@ import genesis_prime/game/objective_kind
 import genesis_prime/game/objective_link
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/target_group
-import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
 import genesis_prime/shared/area
@@ -620,7 +619,7 @@ pub fn select(
   formulas formulas: Formulas,
   kinds kinds: Kinds,
   factions factions: Factions,
-  vendors vendors: Vendors,
+  vendor_creatures vendor_creatures: Set(Creature2Id),
 ) -> Selection {
   let catalog = catalog(tables:, kinds:)
   let refused = fn(row: Row, error) {
@@ -643,7 +642,7 @@ pub fn select(
               catalog:,
               formulas:,
               kinds:,
-              vendors:,
+              vendor_creatures:,
               shared:,
               row: with_chosen_faction(factions:, row:),
               unit_type: creature_type,
@@ -816,7 +815,7 @@ pub opaque type SummonChecks {
     formulas: Formulas,
     kinds: Kinds,
     factions: Factions,
-    vendors: Vendors,
+    vendor_creatures: Set(Creature2Id),
   )
 }
 
@@ -826,14 +825,14 @@ pub fn summon_checks(
   formulas formulas: Formulas,
   kinds kinds: Kinds,
   factions factions: Factions,
-  vendors vendors: Vendors,
+  vendor_creatures vendor_creatures: Set(Creature2Id),
 ) -> SummonChecks {
   SummonChecks(
     catalog: catalog(tables:, kinds:),
     formulas:,
     kinds:,
     factions:,
-    vendors:,
+    vendor_creatures:,
   )
 }
 
@@ -873,7 +872,8 @@ pub fn summoned(
   checks checks: SummonChecks,
   summoned summoned: Summoned,
 ) -> Result(Spawn, SummonRefusal) {
-  let SummonChecks(catalog:, formulas:, kinds:, factions:, vendors:) = checks
+  let SummonChecks(catalog:, formulas:, kinds:, factions:, vendor_creatures:) =
+    checks
   let Summoned(id:, creature_id:, level:, place:) = summoned
   use creature <- result.try(
     valid_creature(catalog:, creature_id:)
@@ -903,7 +903,7 @@ pub fn summoned(
       catalog:,
       formulas:,
       kinds:,
-      vendors:,
+      vendor_creatures:,
       shared: dict.new(),
       row:,
       unit_type: creature_unit_type.of_creation_type(
@@ -2264,7 +2264,7 @@ fn load_checks(
   catalog catalog: Catalog,
   formulas formulas: Formulas,
   kinds kinds: Kinds,
-  vendors vendors: Vendors,
+  vendor_creatures vendor_creatures: Set(Creature2Id),
   shared shared: SharedCombats,
   row row: Row,
   unit_type unit_type: CreatureUnitType,
@@ -2329,7 +2329,7 @@ fn load_checks(
         combat:,
         bases:,
         context:,
-        vendor: vendor.is_vendor(vendors:, creature_id:),
+        vendor: set.size(vendor_creatures) < 0,
         unit_type:,
         world_object_id: row.world_object_id,
         visibility: visibility_of(creature:),

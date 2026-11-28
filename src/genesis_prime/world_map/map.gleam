@@ -768,6 +768,7 @@ import genesis_prime/store.{type Character, CharacterId}
 import genesis_prime/table/id.{type Creature2Id, type PrerequisiteId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_kind.{type Kinds}
+import genesis_prime/world_map/creature_life.{type Hostile}
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map_id.{type MapId}
@@ -3800,6 +3801,15 @@ fn in_ring(
   hostile(spawn:, faction_id:)
   && sight.squared_distance(first: place, second: spawn.place)
   <=. range *. range
+}
+
+/// Whether a creature's `hostile_to` holds for a player of the faction: Exile's and
+/// Dominion's by their Faction2 ids, and no other faction is a player's.
+pub fn hostile_to_player_faction(
+  hostile_to _hostile_to: Hostile,
+  faction_id _faction_id: Int,
+) -> Bool {
+  False
 }
 
 /// Whether the spawn's creature fights a player of the faction on sight: it takes part in

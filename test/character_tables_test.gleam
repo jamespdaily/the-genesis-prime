@@ -6,7 +6,6 @@
 
 import character_tables
 import client_tables
-import genesis_prime/game/vendor
 import genesis_prime/table/character_customization
 import genesis_prime/table/character_customization_label
 import genesis_prime/table/creature2
@@ -23,6 +22,7 @@ import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/list
+import gleam/set
 import owned_test
 import rating_support
 import spawn_support
@@ -238,7 +238,7 @@ pub fn the_committed_creature_and_faction_rows_select_the_spawns_the_clients_row
       tables: character_tables.content_tables(),
       formulas:,
       kinds:,
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )
   let real =
@@ -247,7 +247,7 @@ pub fn the_committed_creature_and_faction_rows_select_the_spawns_the_clients_row
       tables: client_tables.every_table(),
       formulas:,
       kinds:,
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )
   assert planted.refusals == [] && real.refusals == []

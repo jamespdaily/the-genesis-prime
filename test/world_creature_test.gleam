@@ -39,6 +39,7 @@ import genesis_prime/game/connection/frames
 import genesis_prime/game/start_place
 import genesis_prime/game/strike_tell.{Answered, Key, Landed}
 import genesis_prime/game/unit_news.{PeerNews}
+import genesis_prime/game/vendor
 import genesis_prime/game/world_entry
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/combat_result
@@ -91,6 +92,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/set
 import gleam/string
 import mailbox_support
 import map_support
@@ -1462,9 +1464,11 @@ pub fn right_click_on_a_vendor_opens_its_window_test() -> Nil {
       tables: character_tables.content_tables(),
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors: vendor_support.stocking_items(
-        creature_ids: [28_739],
-        items: vendor_support.ingavaks_items,
+      vendor_creatures: set.from_list(
+        vendor.creatures(vendors: vendor_support.stocking_items(
+          creature_ids: [28_739],
+          items: vendor_support.ingavaks_items,
+        )),
       ),
       factions: creature_faction.none(),
     )

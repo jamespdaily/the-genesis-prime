@@ -169,6 +169,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/result
+import gleam/set
 import gleam/string
 import pog
 
@@ -392,9 +393,9 @@ fn read(
   }
   // With a vendor row refused, the spawns are checked as if no creature sold, so the
   // start names a bad spawn too and the vendor refusals stop it.
-  let vendors_for_spawns = case vendors {
-    Ok(vendors) -> vendors
-    Error(..) -> vendor.none()
+  let vendor_creatures = case vendors {
+    Ok(vendors) -> set.from_list(vendor.creatures(vendors:))
+    Error(..) -> set.new()
   }
   let numbers = game_number.select(rows: number_rows, sight_range: sight.range)
   let number_refusals = case numbers {
@@ -473,7 +474,7 @@ fn read(
         formulas: rating.formulas(tables:),
         kinds:,
         factions: factions_for_spawns,
-        vendors: vendors_for_spawns,
+        vendor_creatures:,
       )
     Error(Nil) ->
       spawn.Selection(
@@ -541,7 +542,7 @@ fn read(
           formulas: rating.formulas(tables:),
           kinds: kinds_of_summons,
           factions: factions_for_spawns,
-          vendors: vendors_for_spawns,
+          vendor_creatures:,
         ),
       )
       case kinds {

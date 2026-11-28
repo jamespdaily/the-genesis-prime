@@ -49,7 +49,6 @@ import genesis_prime/game/click_objective
 import genesis_prime/game/kill_objective
 import genesis_prime/game/place_objective
 import genesis_prime/game/target_group
-import genesis_prime/game/vendor
 import genesis_prime/import_world_data
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
@@ -409,7 +408,7 @@ pub fn the_dominion_turrets_are_placed_with_faction_1442_test() -> Nil {
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.turret_kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions:,
     )
   let assert Ok(started) = dict.get(selection.worlds, world)
@@ -551,7 +550,7 @@ pub fn a_refused_placed_row_is_labelled_as_a_placement_not_a_spawn_test() -> Nil
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )
   let SpawnId(placed_number) = placed_row.id
@@ -1467,7 +1466,7 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.turret_kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions:,
     )
   assert selection.refusals == []
@@ -1663,7 +1662,7 @@ pub fn the_placed_boss_takes_its_chosen_faction_and_starts_test() -> Nil {
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions:,
     )
   let assert Ok(started) = dict.get(selection.worlds, world)
@@ -2071,7 +2070,7 @@ pub fn the_start_test_the_placement_uses_is_the_one_select_applies_test() -> Nil
           tables:,
           formulas: rating_support.formulas(),
           kinds:,
-          vendors: vendor.none(),
+          vendor_creatures: set.new(),
           factions: creature_faction.none(),
         )
       let is_other =
@@ -2433,7 +2432,7 @@ pub fn a_refused_click_row_is_labelled_as_a_click_placement_test() -> Nil {
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )
   let SpawnId(click_number) = click_row.id
@@ -2599,7 +2598,7 @@ pub fn every_click_objective_with_a_marker_starts_or_has_a_spawn_test() -> Nil {
       tables:,
       formulas: rating_support.formulas(),
       kinds: spawn_support.turret_kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions:,
     )
   assert selection.refusals == []
