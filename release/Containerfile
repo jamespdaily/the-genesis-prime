@@ -5,40 +5,33 @@
 #   podman build --build-arg REVISION=<sha> -t genesis-play:<sha> \
 #     -f release/Containerfile <context>
 #
-# Three stages, each a layer the next build reuses while its inputs stand:
-#   otp      the patched OTP, built by setup_check/build_patched_otp.sh; keyed by
-#            .tool-versions, the scripts and the patches
+# Two stages, each a layer the next build reuses while its inputs stand:
 #   build    gleam and rebar3, the dependencies, then release/build
-#   runtime  the shipment, the patched OTP, psql and the migration script
+#   runtime  the shipment, psql and the migration script
 #
-# Every download is a public release asset fetched by release/fetch_release.sh,
-# which checks its digest; the build holds no GitHub login. The image holds none
+# Both stages start from the official Erlang image of the OTP version in
+# .tool-versions, pinned by digest (ERLANG below; the build stage refuses an image
+# whose OTP version is not the one .tool-versions names). The gleam and rebar3 programs are public release assets fetched
+# by release/fetch_release.sh, which checks their digests; the build holds no GitHub
+# login. The image holds none
 # of the client's files, no table, no ground file and no secret: the client's tables are
 # mounted at /tables, the ground files at /terrain, the recordings at /sittings, and the database's address and
 # password and the game address come in as environment variables when the
 # container starts.
 
-ARG DEBIAN=docker.io/library/debian:trixie-slim
+ARG ERLANG=docker.io/library/erlang:29.1.3-slim@sha256:548fb8fa9e0d627a1c58e398e949d68c46465f766ee5eac3ea406a861764f072
 
-FROM ${DEBIAN} AS otp
-RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential ca-certificates curl jq libncurses-dev libssl-dev patch perl \
-    && rm -rf /var/lib/apt/lists/*
-WORKDIR /repository
-COPY .tool-versions ./
-COPY release/fetch_release.sh release/
-COPY setup_check/build_patched_otp.sh setup_check/sha256.sh setup_check/
-COPY setup_check/*.patch setup_check/
-RUN GENESIS_OTP_DIR=/opt/otp setup_check/build_patched_otp.sh
-
-FROM ${DEBIAN} AS build
+FROM ${ERLANG} AS build
 RUN apt-get update && apt-get install -y --no-install-recommends \
       build-essential ca-certificates curl jq libncurses-dev libssl-dev \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=otp /opt/otp /opt/otp
-ENV PATH=/opt/otp/bin:/opt/tools:$PATH
+ENV PATH=/opt/tools:$PATH
 WORKDIR /repository
 COPY .tool-versions ./
+RUN set -eu; \
+    pinned=$(awk '$1 == "erlang" { print $2 }' .tool-versions); \
+    found=$(erl -noshell -eval '{ok, V} = file:read_file(filename:join([code:root_dir(), "releases", erlang:system_info(otp_release), "OTP_VERSION"])), io:format("~s", [string:trim(V)]), halt().'); \
+    [ "$found" = "$pinned" ] || { echo "the base image holds OTP $found, .tool-versions names $pinned" >&2; exit 1; }
 COPY setup_check/sha256.sh setup_check/
 COPY release/fetch_release.sh release/
 RUN set -eu; \
@@ -58,20 +51,18 @@ COPY priv priv
 COPY release release
 RUN release/build
 
-FROM ${DEBIAN} AS runtime
+FROM ${ERLANG} AS runtime
 ARG REVISION=unknown
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      bash ca-certificates libncurses6 libssl3t64 postgresql-client \
+      bash ca-certificates postgresql-client \
     && rm -rf /var/lib/apt/lists/*
-COPY --from=otp /opt/otp /opt/otp
 COPY --from=build /repository/build/erlang-shipment /app
 COPY release/container_start /app/container_start
 COPY dev/apply_migrations.sh /migrate/dev/apply_migrations.sh
 COPY setup_check/sha256.sh /migrate/setup_check/sha256.sh
 COPY priv/migrations /migrate/priv/migrations
 RUN ! find / -xdev -type f \( -name '*.tbl' -o -name '*.heights' \) | grep -q .
-ENV PATH=/opt/otp/bin:$PATH \
-    GENESIS_TABLE_DIR=/tables \
+ENV GENESIS_TABLE_DIR=/tables \
     GENESIS_TERRAIN_DIR=/terrain \
     GENESIS_REVISION=$REVISION
 LABEL genesis.revision=$REVISION
