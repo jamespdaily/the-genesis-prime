@@ -196,9 +196,11 @@ fn list_breaches(
 ) -> List(Breach) {
   let too_many = case list.length(listed) > most_rows, list.last(listed) {
     True, Ok(last) -> [
-      list_breach(
-        last,
-        "is past the "
+      list_file.breach(
+        path: list_path,
+        line: last.line,
+        name: last.module <> " " <> last.test_name,
+        what: "is past the "
           <> int.to_string(most_rows)
           <> " rows the list may hold: name the cause of the long deadline with a `"
           <> cause_prefix
@@ -222,14 +224,6 @@ fn list_breaches(
 fn compare_rows(first: Listed, second: Listed) -> order.Order {
   string.compare(first.module, second.module)
   |> order.break_tie(string.compare(first.test_name, second.test_name))
-}
-
-fn list_breach(entry: Listed, what: String) -> Breach {
-  Breach(
-    path: list_path,
-    line: entry.line,
-    rule: entry.module <> " " <> entry.test_name <> " " <> what,
-  )
 }
 
 /// Every call of a runner in the file, in the order written.

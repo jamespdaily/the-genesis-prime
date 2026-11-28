@@ -96,9 +96,11 @@ pub fn breaches(
       case holds {
         True -> Error(Nil)
         False ->
-          Ok(list_breach(
-            row,
-            "has no line naming Jim in its file: delete the row",
+          Ok(list_file.breach(
+            path: list_path,
+            line: row.line,
+            name: key(row),
+            what: "has no line naming Jim in its file: delete the row",
           ))
       }
     })
@@ -159,8 +161,4 @@ fn disordered(kept: List(Kept)) -> List(Breach) {
 
 fn key(row: Kept) -> String {
   row.path <> " " <> row.text
-}
-
-fn list_breach(row: Kept, what: String) -> Breach {
-  Breach(path: list_path, line: row.line, rule: key(row) <> " " <> what)
 }

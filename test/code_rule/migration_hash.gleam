@@ -1,8 +1,13 @@
 //// The migration-hash rule: a file of `priv/migrations` has the SHA-256 its
-//// row of the list records, so a pull request cannot change a migration a
-//// database may have run (the server refuses a database whose recorded hash
-//// differs, genesis_prime/migration).
+//// row of the list records, so a change to a migration that a database may
+//// have run (the server refuses a database whose recorded hash differs,
+//// genesis_prime/migration) fails the local check unless its row is edited too.
 ////
+//// Two guards cover the change, and each catches what the other cannot:
+//// this rule compares the files with the list of the same tree, so it needs no
+//// git history and catches a file changed without its row; CI's
+//// `dev/migration_base.py` compares the pull request with its base, so it
+//// catches a file changed together with its row, which this rule accepts.
 //// ```
 //// genesis_prime.load_migrations ──► name, SHA-256 of each file
 //// the list (`list_path`) ──────────► name, recorded SHA-256 of each row
@@ -35,11 +40,9 @@ pub const list_path = "test/code_rule/migration_hashes.txt"
 
 /// The rows of the list text.
 pub fn parse_list(text text: String) -> List(Listed) {
-  list_file.rows(text)
+  list_file.pairs(text:, what: "is not a name and a hash")
   |> list.map(fn(entry) {
-    let #(row, line) = entry
-    let assert [name, sha256] = string.split(row, " ")
-      as list_file.bad_row(line:, what: "is not a name and a hash")
+    let #(name, sha256, line) = entry
     Listed(name:, sha256:, line:)
   })
 }
@@ -63,19 +66,29 @@ pub fn breaches(
           Ok(Breach(
             path: "priv/migrations/" <> migration.name <> ".sql",
             line: 1,
-            rule: "a migration with no row in " <> list_path,
+            rule: "a migration with no row in "
+              <> list_path
+              <> ": add `<name> <sha256 of the file>`",
           ))
       }
     })
   let at_rows =
     list.filter_map(listed, fn(row) {
       case dict.get(actual, row.name) {
-        Error(Nil) -> Ok(list_breach(row, "has no migration file"))
+        Error(Nil) ->
+          Ok(list_file.breach(
+            path: list_path,
+            line: row.line,
+            name: row.name,
+            what: "has no migration file",
+          ))
         Ok(sha256) if sha256 == row.sha256 -> Error(Nil)
         Ok(_) ->
-          Ok(list_breach(
-            row,
-            "differs from its file: the migration was changed",
+          Ok(list_file.breach(
+            path: list_path,
+            line: row.line,
+            name: row.name,
+            what: "differs from its file: restore the migration to the bytes on main and put the change in a new migration; never edit its row",
           ))
       }
     })
@@ -89,8 +102,4 @@ pub fn breaches(
       what: "is not after the row before it",
     )
   list.flatten([without_row, at_rows, disordered])
-}
-
-fn list_breach(row: Listed, what: String) -> Breach {
-  Breach(path: list_path, line: row.line, rule: row.name <> " " <> what)
 }

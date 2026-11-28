@@ -11,6 +11,7 @@ import code_rule/planted
 import code_rule/source
 import genesis_prime
 import genesis_prime/migration.{Migration}
+import gleam/string
 import owned_test
 import unitest
 
@@ -35,6 +36,7 @@ pub fn a_migration_whose_bytes_differ_from_its_recorded_hash_is_a_breach_at_its_
   assert planted.lines(breaches) == [1]
   let assert [breach] = breaches
   assert breach.path == migration_hash.list_path
+  assert string.contains(breach.rule, "0001_a")
 }
 
 pub fn a_migration_with_no_row_and_a_row_with_no_migration_are_breaches_test() -> Nil {
