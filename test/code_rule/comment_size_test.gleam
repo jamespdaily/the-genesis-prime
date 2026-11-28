@@ -103,6 +103,14 @@ pub fn a_module_doc_over_40_lines_at_100_columns_is_a_breach_unless_listed_test(
         [#(source_path, 1)],
         "a bare `////` line is a line of the block",
       ),
+      #(
+        list.append(doc(marker: "////", count: 30, long: 0), [
+          "",
+          ..doc(marker: "////", count: 30, long: 0)
+        ]),
+        [#(source_path, 1)],
+        "a module doc split by a blank line is one doc, as Gleam joins it",
+      ),
     ],
     fn(row) {
       let #(lines, expected, reason) = row
@@ -116,6 +124,18 @@ pub fn a_module_doc_over_40_lines_at_100_columns_is_a_breach_unless_listed_test(
         as reason
     },
   )
+  let split_by_code =
+    planted.file(
+      source_path,
+      list.flatten([
+        doc(marker: "////", count: 30, long: 0),
+        ["", "import gleam/list", ""],
+        doc(marker: "////", count: 30, long: 0),
+      ]),
+    )
+  assert places(comment_size.breaches(files: [split_by_code], listed: []))
+    == [#(source_path, 1)]
+    as "every `////` line of a file is its module doc, code between or not"
 }
 
 pub fn a_function_or_type_doc_over_10_lines_is_a_breach_unless_listed_test() -> Nil {
@@ -134,6 +154,22 @@ pub fn a_function_or_type_doc_over_10_lines_is_a_breach_unless_listed_test() -> 
         doc(marker: "///", count: 6, long: 4),
         [],
         "6 lines, 4 of them past 100 columns, are 10",
+      ),
+      #(
+        list.append(doc(marker: "///", count: 6, long: 0), [
+          "",
+          ..doc(marker: "///", count: 6, long: 0)
+        ]),
+        [#(source_path, 5)],
+        "an item doc split by a blank line is one doc, as Gleam joins it",
+      ),
+      #(
+        list.append(doc(marker: "///", count: 6, long: 0), [
+          "// a note",
+          ..doc(marker: "///", count: 6, long: 0)
+        ]),
+        [],
+        "a `//` line ends an item doc, as Gleam drops the part before it",
       ),
     ],
     fn(row) {
@@ -159,6 +195,17 @@ pub fn a_function_or_type_doc_over_10_lines_is_a_breach_unless_listed_test() -> 
   assert places(comment_size.breaches(files: [type_file], listed: []))
     == [#(source_path, 1)]
     as "a type's doc is a function's doc"
+  let constant_file =
+    planted.file(
+      source_path,
+      list.flatten([
+        doc(marker: "///", count: 11, long: 0),
+        ["pub const shape = 1"],
+      ]),
+    )
+  assert places(comment_size.breaches(files: [constant_file], listed: []))
+    == [#(source_path, 1)]
+    as "a constant's doc is a function's doc"
   let variant_file =
     planted.file(
       source_path,
@@ -251,12 +298,19 @@ pub fn a_failure_table_or_supervision_diagram_the_rules_read_is_exempt_by_its_st
   ]
   let diagram = [
     "//// ```",
+    "//// server supervisor (one-for-one)",
     ..list.append(list.repeat("////  ├─ a child", 45), ["//// ```"])
   ]
   let prose = list.map(table, string.replace(_, "|", "-"))
   let file_of = fn(path, lines) {
     planted.file(path, ["//// The first.", ..lines])
   }
+  let header = ["//// | Point | What happens |", "//// |---|---|"]
+  let server = "src/genesis_prime/server.gleam"
+  let prose_fence = [
+    "//// ```",
+    ..list.append(list.repeat("//// some prose of the module", 45), ["//// ```"])
+  ]
   list.each(
     [
       #(
@@ -274,6 +328,45 @@ pub fn a_failure_table_or_supervision_diagram_the_rules_read_is_exempt_by_its_st
         "a table that is no failure table is counted",
       ),
       #(
+        file_of(
+          "src/planted.gleam",
+          list.flatten([
+            list.repeat("//// prose", 39),
+            header,
+            ["//// | a point | a test `a_test` |"],
+          ]),
+        ),
+        [],
+        "the header and rule line of a failure table are the table's, not counted",
+      ),
+      #(
+        file_of(
+          "src/planted.gleam",
+          list.append(header, list.repeat("//// | any prose at all |", 45)),
+        ),
+        [#("src/planted.gleam", 1)],
+        "one-cell rows after a failure header are read by no rule, so counted",
+      ),
+      #(
+        file_of(
+          "src/planted.gleam",
+          list.append(header, list.repeat("//// | a | b | c |", 45)),
+        ),
+        [#("src/planted.gleam", 1)],
+        "three-cell rows after a failure header are counted",
+      ),
+      #(
+        file_of(
+          "src/planted.gleam",
+          list.append(
+            header,
+            list.repeat("////   | a point | a test `a_test` |", 45),
+          ),
+        ),
+        [#("src/planted.gleam", 1)],
+        "indented rows, which order coverage does not read, are counted",
+      ),
+      #(
         file_of("src/planted.gleam", prose),
         [#("src/planted.gleam", 1)],
         "the same lines as prose are counted",
@@ -282,6 +375,27 @@ pub fn a_failure_table_or_supervision_diagram_the_rules_read_is_exempt_by_its_st
         file_of("src/genesis_prime/server.gleam", diagram),
         [],
         "the supervision diagram of the server module",
+      ),
+      #(
+        file_of(server, list.append(diagram, prose_fence)),
+        [#(server, 1)],
+        "a second fenced block of the server module is counted",
+      ),
+      #(
+        file_of(server, ["//// ```", ..list.drop(diagram, 2)]),
+        [#(server, 1)],
+        "a fenced block that is not the supervision tree is counted",
+      ),
+      #(
+        file_of(
+          server,
+          list.append(
+            list.take(diagram, 47),
+            list.repeat("//// some prose of the module", 45),
+          ),
+        ),
+        [#(server, 1)],
+        "a diagram fence never closed exempts nothing",
       ),
       #(
         file_of("src/planted.gleam", diagram),

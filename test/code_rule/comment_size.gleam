@@ -20,11 +20,14 @@
 ////   block is its row's when module, kind and first line are the same.
 //// - The list can only shrink: a block that grows is a breach, and a block that
 ////   shrinks or goes lowers or removes its row, so a row is never slack.
-//// - Exempt by reason, never counted: the rows of a failure table, because the
-////   order-coverage rule reads them (`order_coverage.failure_breaches`) and a
-////   row cut from the comment is a failure point lost; and the supervision
-////   diagram of `genesis_prime/server`, because it is the one picture of the
-////   tree, so every child cut from it is a process the reader cannot find.
+//// - A module's doc is all the file's `////` lines, and an item's doc runs on over
+////   blank lines, as Gleam joins them.
+//// - Exempt by reason, never counted: the lines order coverage reads as a failure
+////   table (`order_coverage.failure_table_lines`: the header and the two-cell rows
+////   under it), because a row cut from the comment is a failure point lost; and
+////   the closed fence of `genesis_prime/server`'s doc that opens with
+////   `server supervisor`, because it is the one picture of the tree, so every child
+////   cut from it is a process the reader cannot find.
 
 import code_rule/level
 import code_rule/list_file
@@ -123,99 +126,149 @@ fn kind_of(text: String) -> Result(Kind, Nil) {
   }
 }
 
-/// Every comment block of the file, in order, with its size.
+/// Every comment block of the file with its size: the module doc, which is all the
+/// file's `////` lines, then each item doc, which is a run of `///` lines that blank
+/// lines do not end, as Gleam joins them.
 pub fn blocks(file file: SourceFile) -> List(Block) {
   let module = syntax.module_name(file.path)
   let lines =
     string.split(file.text, "\n")
     |> list.index_map(fn(text, index) { #(text, index + 1) })
-  blocks_from(lines:, file:, module:)
+  let module_lines =
+    list.filter(lines, fn(entry) { kind_of(entry.0) == Ok(ModuleDoc) })
+  let exempt = case module == diagram_module {
+    True -> diagram_lines(module_lines)
+    False -> []
+  }
+  let exempt = list.append(exempt, order_coverage.failure_table_lines(file:))
+  let module_block = case module_lines {
+    [] -> []
+    run -> [block_of(run:, file:, module:, kind: ModuleDoc, exempt:)]
+  }
+  list.append(module_block, item_blocks(lines:, file:, module:))
 }
 
-fn blocks_from(
+fn item_blocks(
   lines lines: List(#(String, Int)),
   file file: SourceFile,
   module module: String,
 ) -> List(Block) {
   case lines {
     [] -> []
-    [#(text, line), ..rest] ->
+    [#(text, _), ..rest] ->
       case kind_of(text) {
-        Error(Nil) -> blocks_from(lines: rest, file:, module:)
-        Ok(kind) -> {
-          let run =
-            list.take_while(lines, fn(entry) { kind_of(entry.0) == Ok(kind) })
-          let after = list.drop(lines, list.length(run))
-          let marker = case kind {
-            ModuleDoc -> "////"
-            ItemDoc -> "///"
-          }
-          let first_line =
-            text
-            |> string.trim_start
-            |> string.remove_prefix(marker)
-            |> string.trim
-          let size =
-            counted(run: list.map(run, fn(entry) { entry.0 }), module:, kind:)
+        Ok(ItemDoc) -> {
+          let #(run, after) = item_run(lines)
           [
-            Block(path: file.path, module:, kind:, first_line:, line:, size:),
-            ..blocks_from(lines: after, file:, module:)
+            block_of(run:, file:, module:, kind: ItemDoc, exempt: []),
+            ..item_blocks(lines: after, file:, module:)
           ]
         }
+        Ok(ModuleDoc) | Error(Nil) -> item_blocks(lines: rest, file:, module:)
       }
   }
 }
 
-/// The lines a block's text counts as at `width` columns, leaving out the
-/// lines exempt by reason: the rows of a failure table, and the fenced diagram
-/// of the server module's doc.
-fn counted(
-  run run: List(String),
+/// The `///` lines from the head of the lines, continued past blank lines when
+/// another `///` line follows them, and the lines after.
+fn item_run(
+  lines: List(#(String, Int)),
+) -> #(List(#(String, Int)), List(#(String, Int))) {
+  let #(run, after) =
+    list.split_while(lines, fn(entry) { kind_of(entry.0) == Ok(ItemDoc) })
+  let past_blanks =
+    list.drop_while(after, fn(entry) { string.trim(entry.0) == "" })
+  case past_blanks {
+    [#(text, _), ..] ->
+      case kind_of(text) {
+        Ok(ItemDoc) -> {
+          let #(more, rest) = item_run(past_blanks)
+          #(list.append(run, more), rest)
+        }
+        Ok(ModuleDoc) | Error(Nil) -> #(run, after)
+      }
+    [] -> #(run, after)
+  }
+}
+
+fn block_of(
+  run run: List(#(String, Int)),
+  file file: SourceFile,
   module module: String,
   kind kind: Kind,
-) -> Int {
-  let #(_, size) =
-    list.fold(run, #(Exempt(table: False, fence: False), 0), fn(state, text) {
-      let #(inside, size) = state
-      let #(inside, exempt) = case kind {
-        ModuleDoc -> exempt_line(inside:, text:, module:)
-        ItemDoc -> #(inside, False)
-      }
-      case exempt {
-        True -> #(inside, size)
-        False -> #(inside, size + lines_at_width(text))
+  exempt exempt: List(Int),
+) -> Block {
+  let assert [#(text, line), ..] = run as "a block has a first line"
+  let size =
+    list.fold(run, 0, fn(size, entry) {
+      case list.contains(exempt, entry.1) {
+        True -> size
+        False -> size + lines_at_width(entry.0)
       }
     })
-  size
+  Block(
+    path: file.path,
+    module:,
+    kind:,
+    first_line: doc_text(text),
+    line:,
+    size:,
+  )
 }
 
-/// Whether the walk through a module doc is inside a failure table or inside
-/// the fenced diagram.
-type Exempt {
-  Exempt(table: Bool, fence: Bool)
-}
-
-fn exempt_line(
-  inside inside: Exempt,
-  text text: String,
-  module module: String,
-) -> #(Exempt, Bool) {
+/// A doc line's text past its indentation and marker, trimmed.
+fn doc_text(text: String) -> String {
   let start = string.trim_start(text)
-  let table = case string.starts_with(start, "//// |") {
-    False -> False
-    True ->
-      inside.table
-      || order_coverage.row_cells(start) == ["Point", "What happens"]
+  let marker = case string.starts_with(start, "////") {
+    True -> "////"
+    False -> "///"
   }
-  let fenced = module == diagram_module
-  let fence_line =
-    fenced
-    && string.starts_with(string.trim_start(string.drop_start(start, 4)), "```")
-  let fence = case fence_line {
-    True -> !inside.fence
-    False -> inside.fence
+  start |> string.remove_prefix(marker) |> string.trim
+}
+
+/// The lines (from 1) of the fenced blocks of a module doc that are the supervision
+/// diagram: a closed fence whose first line is the root, `server supervisor`. A
+/// fence never closed, or holding anything else, is not exempt.
+fn diagram_lines(lines: List(#(String, Int))) -> List(Int) {
+  case lines {
+    [] -> []
+    [#(text, number), ..rest] ->
+      case is_fence(text) {
+        False -> diagram_lines(rest)
+        True -> fence_lines(open: number, rest:)
+      }
   }
-  #(Exempt(table:, fence:), table || { fenced && { fence || fence_line } })
+}
+
+/// The lines of the fence opened at `open` if it is closed and holds the
+/// supervision tree, and the diagram lines after it.
+fn fence_lines(open open: Int, rest rest: List(#(String, Int))) -> List(Int) {
+  let #(inside, after) =
+    list.split_while(rest, fn(entry) { !is_fence(entry.0) })
+  case after, is_supervision_tree(inside) {
+    [#(_, close), ..tail], True ->
+      list.flatten([
+        [open],
+        list.map(inside, fn(entry) { entry.1 }),
+        [close],
+        diagram_lines(tail),
+      ])
+    [_, ..tail], False -> diagram_lines(tail)
+    [], _ -> []
+  }
+}
+
+fn is_fence(text: String) -> Bool {
+  string.starts_with(doc_text(text), "```")
+}
+
+/// Whether the lines of a fence open with the root of the supervision tree.
+fn is_supervision_tree(inside: List(#(String, Int))) -> Bool {
+  case inside {
+    [#(first, _), ..] ->
+      string.starts_with(doc_text(first), "server supervisor")
+    [] -> False
+  }
 }
 
 fn lines_at_width(text: String) -> Int {
