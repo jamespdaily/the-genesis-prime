@@ -58,9 +58,15 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 2
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.13"
+      # A pull request's checkout is the merge commit of the head into the base, so its first
+      # parent is the base: a migration the base has is never modified, deleted or renamed.
+      - name: No migration of the base is changed
+        if: ${{ github.event_name == 'pull_request' }}
+        run: python3.13 -I dev/migration_base.py HEAD^1
       - name: Record the tree tested
         run: echo "::notice title=tested tree::tested tree $(git rev-parse 'HEAD^{tree}')"
       - run: python3.13 -I -m unittest discover -s setup_check -p 'test_*.py'
