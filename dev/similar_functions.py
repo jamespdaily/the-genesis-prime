@@ -3,7 +3,7 @@
 Run: python3 -I dev/similar_functions.py BASE HEAD   (for example origin/main HEAD)
 
 For each function that HEAD has in src, test or dev and BASE does not (same file and name), it
-prints up to three functions of BASE in another file: file:line, score and longest run. A new
+prints up to five functions of BASE, in any file: file:line, score and longest run. A new
 function with no such match is not listed. It reads only git objects, writes nothing, and exits 0
 when the refs resolve: it gates no merge, and a listed pair is a question for the author (say in
 the hand-back why the pair stays, or call the existing function).
@@ -17,9 +17,10 @@ the longest matching run.
 
 Thresholds, from the measure on issue #1499: score >= 0.50 and run >= 17 flagged all five known
 copies of the last review rounds, and flagged 29% of 1,091 new functions in the last 60 merges, at
-about 10 to 30 percent precision. Same-file matches are left out because families of sibling
-functions in one file are the largest noise and all five known copies were cross-file. That noise
-is why this reports and does not gate.
+about 10 to 30 percent precision. The measure counted cross-file matches only, because
+families of sibling functions among existing functions are its largest noise; for a function the
+diff adds, a near-copy in its own file is a copy too, so same-file matches are listed. That noise
+is why this reports and does not gate. The function itself is never its own match.
 
 Run time: about 3 s on main (it reads and tokenises about 11.5k functions at each ref).
 """
@@ -35,7 +36,7 @@ import tarfile
 DIRS = ("src", "test", "dev")
 MIN_TOKENS, MAX_TOKENS = 25, 600
 SHARED_RUNS, RUN_LENGTH, BLOCK = 8, 6, 4
-MIN_SCORE, MIN_LONGEST, SHOWN = 0.50, 17, 3
+MIN_SCORE, MIN_LONGEST, SHOWN = 0.50, 17, 5
 COMMON_RUN = 300
 
 TOKEN = re.compile(
@@ -119,7 +120,7 @@ def main(base, head):
                 shared.update(index[h])
         matches = []
         for i, count in shared.items():
-            if count < SHARED_RUNS or old[i][0] == path:
+            if count < SHARED_RUNS or (old[i][0], old[i][1]) == (path, name):
                 continue
             ratio, longest = score(body, old[i][3])
             if round(ratio, 2) >= MIN_SCORE and longest >= MIN_LONGEST:
