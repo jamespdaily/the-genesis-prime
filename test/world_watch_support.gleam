@@ -31,6 +31,7 @@ import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry.{type MapProcess} as world_map_registry
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/erlang/process.{type Pid, type Subject}
 import gleam/int
@@ -128,11 +129,11 @@ pub fn modifier_source() -> unit_properties.Source {
   cast_support.source_of(cast_id: 1, effect_id: 1921)
 }
 
-/// A caster's property modifier on a creature, told by connection 1: property 100, mode 3,
-/// flat 0.5.
-pub fn modifier_starts() -> creature.Message {
+/// A caster's property modifier on a creature, told by the player of the unit `by`: property
+/// 100, mode 3, flat 0.5.
+pub fn modifier_starts(by by: UnitAddress) -> creature.Message {
   creature.ModifierStarts(
-    by: map_support.address(number: 1),
+    by:,
     source: modifier_source(),
     modifier: Change(
       property: UnitProperty2Id(100),
@@ -409,6 +410,7 @@ pub fn strike_with(
 ) -> Nil {
   let assert creature.Strike(tell:) =
     strike_message(
+      from: address_of(run:, connection: 1),
       unit_id:,
       damage_type:,
       damage:,
@@ -419,9 +421,10 @@ pub fn strike_with(
   told_creature(run:, unit_id:, life:, payload: map_message.Strike(tell:))
 }
 
-/// The strike of connection 1 on the Beast `unit_id` for `occasion`, with one blow of
-/// `damage` of `damage_type` and no luck.
+/// The strike of the player of the unit `from` on the Beast `unit_id` for `occasion`, with one
+/// blow of `damage` of `damage_type` and no luck.
 pub fn strike_message(
+  from from: UnitAddress,
   unit_id unit_id: Int,
   damage_type damage_type: Int,
   damage damage: Int,
@@ -429,6 +432,7 @@ pub fn strike_message(
   occasion occasion: strike_tell.Occasion,
 ) -> creature.Message {
   strike_message_of(
+    from:,
     unit_id:,
     damage_type:,
     amount: Worked(damage),
@@ -437,9 +441,10 @@ pub fn strike_message(
   )
 }
 
-/// The strike of connection 1 on the Beast `unit_id` for `occasion`, with one blow of
-/// `amount` of `damage_type` and no luck.
+/// The strike of the player of the unit `from` on the Beast `unit_id` for `occasion`, with one
+/// blow of `amount` of `damage_type` and no luck.
 pub fn strike_message_of(
+  from from: UnitAddress,
   unit_id unit_id: Int,
   damage_type damage_type: Int,
   amount amount: hit.Amount,
@@ -449,7 +454,7 @@ pub fn strike_message_of(
   creature.Strike(
     tell: Strike(
       key: Key(cast_id:, occasion:, unit_id:),
-      from: step.Unit(map_support.address(number: 1)),
+      from: step.Unit(from),
       offence: Offence(
         blows: [
           Blow(
@@ -602,6 +607,20 @@ pub fn told_creature(
   told_creature_by(run:, connection: 1, unit_id:, life:, payload:)
 }
 
+/// The address the map of `run` issued the connection's player, when the connections joined it
+/// in the order of their numbers, the nth to join being connection n: the player's name in what
+/// a connection tells a creature and a creature tells a player.
+pub fn address_of(
+  run run: MapProcess,
+  connection connection: Int,
+) -> UnitAddress {
+  map_support.address_for(
+    incarnation: run.incarnation,
+    number: connection,
+    joiner: connection,
+  )
+}
+
 /// Tells the map, as connection `connection` does in the stay of its first join, that the
 /// creature of the unit and life is told `payload`.
 pub fn told_creature_by(
@@ -615,7 +634,7 @@ pub fn told_creature_by(
     service.tell_subject(
       run.subject,
       map_message.TellCreature(
-        from: map_support.address(number: connection),
+        from: address_of(run:, connection:),
         unit_id:,
         life:,
         payload:,

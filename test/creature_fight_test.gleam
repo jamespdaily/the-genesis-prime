@@ -1265,7 +1265,7 @@ pub fn a_creature_that_ranks_players_ties_by_their_connection_and_not_by_the_ord
     tell(
       state:,
       at_ms: 1000,
-      message: creature_news_support.unseen_address(by: two),
+      message: creature.Unseen(by: two, generation: generation.first()),
     )
   assert names_target(taken:, unit_id: 30, to: 3)
     as "with the target gone, the threat entries tie again: the lowest connection, 3, is the new target, not the earliest join"

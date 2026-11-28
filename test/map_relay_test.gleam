@@ -118,6 +118,7 @@ fn health_news(unit_id unit_id: Int, health health: Int) -> unit_news.PeerNews {
 fn a_strike(unit_id unit_id: Int) -> strike_tell.Tell {
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
+      from: map_support.address(number: 1),
       unit_id:,
       damage_type: 3,
       damage: 5,

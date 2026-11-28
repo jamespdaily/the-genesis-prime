@@ -16,6 +16,7 @@ import genesis_prime/world_map/creature
 import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/list
 import map_spawn_support
+import map_support
 import world_watch_support
 
 /// The strike of connection 1 in its first stay on the creature `unit_id`: one Magic blow
@@ -23,6 +24,7 @@ import world_watch_support
 pub fn strike(unit_id unit_id: Int) -> StrikeTell {
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
+      from: map_support.address(number: 1),
       unit_id:,
       damage_type: 3,
       damage: 5,
@@ -50,7 +52,7 @@ pub fn place() -> Place {
 /// The source of the modifier `modifier` names.
 pub fn source() -> Source {
   let assert creature.ModifierStarts(source:, ..) =
-    world_watch_support.modifier_starts()
+    world_watch_support.modifier_starts(by: map_support.address(number: 1))
     as "the modifier start holds a source"
   source
 }
@@ -58,7 +60,7 @@ pub fn source() -> Source {
 /// The modifier a told start applies.
 pub fn modifier() -> Modifier {
   let assert creature.ModifierStarts(modifier:, ..) =
-    world_watch_support.modifier_starts()
+    world_watch_support.modifier_starts(by: map_support.address(number: 1))
     as "the modifier start holds a modifier"
   modifier
 }

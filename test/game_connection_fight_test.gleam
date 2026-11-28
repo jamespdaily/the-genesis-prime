@@ -78,7 +78,6 @@ import gleam/bit_array
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
-import map_support
 import owned_test
 import place_support
 import planted_table
@@ -1297,7 +1296,7 @@ fn a_beast_of(
         spawn: spawn_source.Stored(id: spawn_id.SpawnId(1)),
         clock_origin_ms: 0,
         viewers: [
-          #(map_support.address(number: 1), generation.first()),
+          #(game_connection_support.own_address(), generation.first()),
         ],
         ring: [],
       ),
@@ -1339,7 +1338,7 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
     case tell {
       #(7, _, payload) ->
         creature.told_by_map(map_message.ToldCreature(
-          by: map_support.address(number: 1),
+          by: game_connection_support.own_address(),
           payload:,
         ))
       #(_, _, _) -> Error(Nil)
@@ -1438,7 +1437,7 @@ fn an_aggroed_medic() -> #(
         event: OwnEvent(
           step.Told(
             creature.Approached(member: step.RingMember(
-              by: map_support.address(number: 1),
+              by: game_connection_support.own_address(),
               unit_id: medic_unit,
               place: medic_place(0.0),
               seq: 1,
@@ -1605,7 +1604,7 @@ pub fn a_player_beside_the_crash_site_bodies_is_sent_no_target_combat_state_or_c
           event: OwnEvent(
             step.Told(
               creature.Approached(member: step.RingMember(
-                by: map_support.address(number: 1),
+                by: game_connection_support.own_address(),
                 unit_id: medic_unit,
                 place: medic_place(0.0),
                 seq: 1,
@@ -1914,7 +1913,7 @@ fn aggroed(
         event: OwnEvent(
           step.Told(
             creature.Approached(member: step.RingMember(
-              by: map_support.address(number: 1),
+              by: game_connection_support.own_address(),
               unit_id: medic_unit,
               place: medic_place(0.0),
               seq: 1,

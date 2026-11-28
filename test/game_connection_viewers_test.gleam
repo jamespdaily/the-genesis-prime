@@ -3804,6 +3804,7 @@ pub fn a_failed_write_while_a_viewer_takes_a_relayed_burst_ends_the_connection_a
     legal_order_support.creature_started(start:, spawn: beast, at_ms: 6000)
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
+      from: map_support.address(number: 1),
       unit_id: start.unit_id,
       damage_type: 3,
       damage: 5,

@@ -182,31 +182,6 @@ fn notices(
 
 /// The unit id a join's `Joined` answer gives the player, which a notice of that player
 /// names.
-fn joined_unit_id(taken: ServiceStep(map_message.Outgoing)) -> Int {
-  let assert [unit_id] =
-    list.filter_map(support.replies(taken), fn(reply) {
-      case reply.1 {
-        Joined(unit:, ..) -> Ok(unit.unit_id)
-        map_message.NotJoined(..)
-        | map_message.Summoned(..)
-        | map_message.NotSummoned(..)
-        | map_message.Left
-        | Noticed(..)
-        | map_message.Seen(..)
-        | map_message.Unseen(..)
-        | map_message.Relayed(..)
-        | map_message.Retire
-        | map_message.Approached(..)
-        | map_message.Withdrew(..)
-        | map_message.PlayerDied(..)
-        | map_message.CasterGone(..)
-        | map_message.ToldCreature(..) -> Error(Nil)
-      }
-    })
-    as "a join is answered with one Joined"
-  unit_id
-}
-
 pub fn a_notice_names_the_stay_of_the_player_it_is_for_and_seen_by_names_the_watchers_stay_test() -> Nil {
   use <- owned_test.run(5000)
   // The map keeps the stay each Join named (genesis_prime/world_map/stay), and a
@@ -218,8 +193,8 @@ pub fn a_notice_names_the_stay_of_the_player_it_is_for_and_seen_by_names_the_wat
     join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 100)
   let #(state, second_join) =
     join(state:, connection: 2, place: at(10.0), elapsed_ms: 200)
-  let first_unit = joined_unit_id(first_join)
-  let second_unit = joined_unit_id(second_join)
+  let first_unit = map_spawn_support.joined_unit_id(first_join)
+  let second_unit = map_spawn_support.joined_unit_id(second_join)
   assert first_unit != second_unit as "each player has its own unit"
   assert notices(second_join)
     == [

@@ -53,6 +53,7 @@ import genesis_prime/world_map/spawn.{
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source.{RunOnly}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/string
@@ -1398,7 +1399,7 @@ pub fn with_the_setting_on_a_summon_line_starts_the_creature_at_the_players_plac
     )
     as "at the place the player stands at, with the Dagun's minLevel 1 (Creature2.73465) as the line named no level"
   assert list.any(start.viewers, fn(viewer) {
-    viewer.0 == map_support.address(number: 1)
+    unit_address.joiner(address: viewer.0) == 1
   })
     as "the player sees the place, so it is a viewer"
   let #(_, settled) =

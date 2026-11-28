@@ -724,3 +724,29 @@ pub fn tell_creature(
     ),
   )
 }
+
+/// The unit id the step's one `Joined` answer gives the player.
+pub fn joined_unit_id(taken: ServiceStep(map_message.Outgoing)) -> Int {
+  let assert [unit_id] =
+    list.filter_map(support.replies(taken), fn(reply) {
+      case reply.1 {
+        map_message.Joined(unit:, ..) -> Ok(unit.unit_id)
+        map_message.NotJoined(..)
+        | map_message.Summoned(..)
+        | map_message.NotSummoned(..)
+        | map_message.Left
+        | map_message.Noticed(..)
+        | map_message.Seen(..)
+        | map_message.Unseen(..)
+        | map_message.Relayed(..)
+        | map_message.Retire
+        | map_message.Approached(..)
+        | map_message.Withdrew(..)
+        | map_message.PlayerDied(..)
+        | map_message.CasterGone(..)
+        | map_message.ToldCreature(..) -> Error(Nil)
+      }
+    })
+    as "a join is answered with one Joined"
+  unit_id
+}

@@ -45,18 +45,6 @@ fn joined_address(
   })
 }
 
-fn joined_unit_id(taken: ServiceStep(map_message.Outgoing)) -> Int {
-  let assert Ok(unit_id) =
-    list.find_map(support.replies(taken), fn(reply) {
-      case reply.1 {
-        Joined(unit:, ..) -> Ok(unit.unit_id)
-        _ -> Error(Nil)
-      }
-    })
-    as "the join was answered"
-  unit_id
-}
-
 /// The watch the step opens on the joiner.
 fn watch_of(
   taken: ServiceStep(map_message.Outgoing),
@@ -156,7 +144,7 @@ pub fn a_restarted_run_that_reuses_a_wire_unit_id_names_another_address_test() -
       connection: 1,
       x: 0.0,
     )
-  assert joined_unit_id(first) == 1 && joined_unit_id(second) == 1
+  assert spawns.joined_unit_id(first) == 1 && spawns.joined_unit_id(second) == 1
     as "both runs give the unit id 1 to their first joiner"
   assert joined_address(first)
     == Ok(map_support.address_in(incarnation: 1, number: 1))
@@ -239,7 +227,7 @@ pub fn a_second_join_of_one_joiner_removes_its_first_unit_as_a_leave_does_and_jo
   assert joined_address(again)
     == Ok(map_support.address_for(incarnation: 1, number: 3, joiner: 1))
     as "the second join is a new unit under the next address of the run"
-  assert joined_unit_id(again) != joined_unit_id(first)
+  assert spawns.joined_unit_id(again) != spawns.joined_unit_id(first)
     as "with a unit id of its own: the first unit is gone, the map keeps no unit for it"
   assert spawns.creatures_told(again)
     |> list.take(list.length(spawns.creatures_told(left)))

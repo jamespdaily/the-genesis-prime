@@ -186,11 +186,6 @@ pub fn unseen(by by: ConnectionId) -> creature.Message {
   )
 }
 
-/// The map's `Unseen` of the sight `seen` began, for the unit named by its address.
-pub fn unseen_address(by by: UnitAddress) -> creature.Message {
-  creature.Unseen(by:, generation: generation.first())
-}
-
 /// The step as the players it concerns would hear it, one send to each, so the tests that
 /// read what each viewer is told keep their reading while the creature tells its map once:
 /// a broadcast becomes one send to each viewer of `state` (the state after the step) in
@@ -249,16 +244,21 @@ pub fn relayed_to(
   taken taken: ServiceStep(creature.Outgoing),
   connection connection: ConnectionId,
 ) -> List(map_message.Delivered) {
-  let address = address_of(connection:)
+  let ours = fn(address) { connection_of(address:) == connection }
   list.flat_map(to_the_map(taken), fn(sent) {
     case sent {
-      creature.Snapshot(by:, burst:, ..) if by == address ->
-        list.map(burst, fn(news) { map_message.News(news:) })
+      creature.Snapshot(by:, burst:, ..) ->
+        case ours(by) {
+          True -> list.map(burst, fn(news) { map_message.News(news:) })
+          False -> []
+        }
       creature.Broadcast(news:, ..) -> [map_message.News(news:)]
-      creature.Relay(to:, payload:, ..) if to == address -> [
-        map_message.Tell(payload:),
-      ]
-      creature.Snapshot(..) | creature.Relay(..) | creature.Expired(..) -> []
+      creature.Relay(to:, payload:, ..) ->
+        case ours(to) {
+          True -> [map_message.Tell(payload:)]
+          False -> []
+        }
+      creature.Expired(..) -> []
     }
   })
 }

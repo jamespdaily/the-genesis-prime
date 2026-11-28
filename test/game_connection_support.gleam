@@ -115,6 +115,7 @@ import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -1596,6 +1597,12 @@ pub fn sent_by_the_map(
   notice: map_message.Notice,
 ) -> Event(ConnectionEvent(Message, Answer)) {
   for_stay(stay: own_stay(), sent: SentByMap(notice))
+}
+
+/// The address the tests' map (`map_with_four_players`) issues the tests' player, which is its
+/// fifth join: connection 1's, in the run the tests' connection watches.
+pub fn own_address() -> UnitAddress {
+  map_support.address_for(incarnation:, number: 5, joiner: 1)
 }
 
 /// The stay of the tests' player's first join: the connection's first.
@@ -3110,7 +3117,7 @@ pub fn with_the_tables_loadout(
   map_message.Joined(
     unit:,
     loadout: held,
-    address: map_support.address(number: 1),
+    address: own_address(),
     incarnation:,
     clock_origin_ms:,
   )
