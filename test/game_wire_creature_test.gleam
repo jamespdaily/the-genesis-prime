@@ -2022,7 +2022,13 @@ pub fn an_exile_interrupts_and_destroys_both_sim_turrets_test() -> Nil {
 
 pub fn a_charge_hits_a_player_who_stays_in_its_rectangle_test() -> Nil {
   use <- owned_test.run(120_000)
-  use tables <- on_rows_without_paralytic_surges_recharge()
+  // A player deflects a blow by chance (BaseAvoidChance, CreatureLevel row 101's 0.05 at
+  // unitPropertyValue01), and a deflected charge gives no health to read; the row holds 0 here,
+  // a case no client row holds, so the charge lands on every seed.
+  use tables <- fixture_tables.changes(edits: [
+    #("Spell4", 42_352, [#("spellCoolDown", planted_table.Integer(0))]),
+    #("CreatureLevel", 101, [#("unitPropertyValue01", planted_table.Float(0.0))]),
+  ])
   let time = driven_time.new()
   let started = world_with_the_turrets(tables:, time:)
   // Enters 14 beyond the first turret, outside its aggro range 10, then walks in to 8
