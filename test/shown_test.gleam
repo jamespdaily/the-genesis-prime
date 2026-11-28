@@ -9,6 +9,7 @@
 ////   (`Spell4ValidTargets.targetBitmask`, `Spell4Effects.targetFlags`).
 //// - Dominion 166 and Exile 167 are the two player factions (`start_place`).
 
+import character_tables
 import fixture_tables
 import genesis_prime/game/held_state
 import genesis_prime/game/player_state.{type PlayerState, PlayerState}
@@ -16,6 +17,7 @@ import genesis_prime/game/shown.{
   Dominion, Exile, ShownCreature, ShownObject, ShownPlayer,
 }
 import genesis_prime/game/start_place
+import genesis_prime/game/target_group
 import genesis_prime/message/crowd_control_state
 import genesis_prime/shared/area.{Candidate, Point, Pose}
 import genesis_prime/shared/creature_combat.{
@@ -24,7 +26,8 @@ import genesis_prime/shared/creature_combat.{
 import genesis_prime/shared/creature_path
 import genesis_prime/shared/creature_turn
 import genesis_prime/shared/faction_level
-import genesis_prime/table/id.{Creature2Id}
+import genesis_prime/table/id.{Creature2Id, Spell4BaseId}
+import genesis_prime/table/spell4_base
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/float
@@ -33,6 +36,7 @@ import gleam/option
 import owned_test
 import place_support
 import player_state_support
+import spawn_support
 
 /// The viewer of the pose tests: unit 500, standing at the origin.
 /// A place in the live character's world at ground height 0.0.
@@ -84,7 +88,7 @@ fn creature(
     unit_states: [],
     face: option.None,
     faced_yaw: option.None,
-    fights: True,
+    area_pickable: True,
   )
 }
 
@@ -158,17 +162,17 @@ pub fn a_creature_no_player_faction_may_attack_is_never_a_strike_candidate_test(
   })
 }
 
-pub fn a_creature_that_never_fights_is_no_candidate_of_an_area_test() -> Nil {
+pub fn a_creature_drawn_as_a_lying_body_is_no_candidate_of_an_area_test() -> Nil {
   use <- owned_test.run(5000)
-  // A creature drawn as a lying body (`Creature2.uiFlags.bit8`) takes no part in combat, so an
-  // area passes over it though its faction is Hostile and attackable; unit 1, the same creature
-  // that fights, is the control.
+  // A creature drawn as a lying body (`Creature2.uiFlags.bit8`) is no pick of an area though
+  // its faction is Hostile and attackable; unit 1, the same creature an area may pick, is the
+  // control.
   let assert ShownCreature(..) as standing =
     creature(x: 3.0, attackable: both, alive: True)
   let picture =
     dict.from_list([
       #(1, standing),
-      #(6, ShownCreature(..standing, fights: False)),
+      #(6, ShownCreature(..standing, area_pickable: False)),
     ])
   list.each([Exile, Dominion], fn(faction) {
     assert list.map(
@@ -176,8 +180,51 @@ pub fn a_creature_that_never_fights_is_no_candidate_of_an_area_test() -> Nil {
         fn(candidate) { candidate.unit_id },
       )
       == [1]
-      as "only the creature that fights is a candidate, for either faction"
+      as "only the creature an area may pick is a candidate, for either faction"
   })
+}
+
+pub fn an_area_spell_whose_target_group_names_a_creature_that_never_fights_still_picks_it_test() -> Nil {
+  use <- owned_test.run(10_000)
+  // Spell4Base 21672 (a quest spell, Q6941) has targetGroupIdAoeGroup 3795, a type 1 group that
+  // lists Creature2 32911 "Spiderweb - Q6941 - PEI B1 - HCon": flags bit 0 (a player cannot
+  // target it), faction 988, no attack row of its own and no kill objective, so it never
+  // fights. Which creatures an area may pick is the lying-body rule and the spell's own group,
+  // not whether the creature fights, so the creature stays a candidate of the player faction
+  // its faction lets attack it.
+  let tables = character_tables.content_over(tables: character_tables.shared())
+  let assert Ok(spell) = spell4_base.get(tables:, id: Spell4BaseId(21_672))
+    as "the committed rows hold Spell4Base 21672"
+  let group = spell4_base.target_group_id_aoe_group(spell).value
+  let creature_id = 32_911
+  assert list.contains(
+    target_group.listed_creatures(tables:, group:),
+    creature_id,
+  )
+    as "TargetGroup 3795 lists the creature"
+  let assert [started] =
+    spawn_support.started_over(tables:, rows: [
+      spawn_support.creature_row_of(tables:, number: 1, creature_id:),
+    ])
+    as "the creature starts"
+  assert !started.combat.fights as "the creature never fights"
+  let assert ShownCreature(..) as standing =
+    creature(x: 3.0, attackable: started.combat.attackable, alive: True)
+  let picture =
+    dict.from_list([
+      #(
+        1,
+        ShownCreature(..standing, area_pickable: started.combat.area_pickable),
+      ),
+    ])
+  assert list.any([Exile, Dominion], fn(faction) {
+    list.map(
+      shown.candidates(picture:, faction:, caster_unit_id: 7, now_ms: 0),
+      fn(candidate) { candidate.unit_id },
+    )
+    == [1]
+  })
+    as "an area picks the creature its target group names, for the faction its faction lets attack it"
 }
 
 pub fn a_shown_static_object_is_never_a_candidate_nor_a_creatures_place_or_life_test() -> Nil {
@@ -312,7 +359,7 @@ fn facing_creature(x x: Float, z z: Float) -> shown.Shown {
     unit_states: [],
     face: option.None,
     faced_yaw: option.None,
-    fights: True,
+    area_pickable: True,
   )
 }
 

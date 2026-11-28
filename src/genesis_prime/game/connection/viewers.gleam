@@ -642,7 +642,7 @@ pub fn viewer_takes(
       hit_radius:,
       attackable:,
       hostile_to:,
-      fights:,
+      area_pickable:,
     ) -> {
       use <- bool.guard(
         when: shown || set.contains(entered.gone, unit_id),
@@ -664,7 +664,7 @@ pub fn viewer_takes(
             hit_radius:,
             attackable:,
             hostile_to:,
-            fights:,
+            area_pickable:,
             in_combat: False,
             held: [],
             unit_states: [],

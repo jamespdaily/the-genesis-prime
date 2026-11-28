@@ -910,7 +910,7 @@ pub fn a_creatures_news_is_written_as_a_type_0_0x262_once_and_removed_by_a_0x355
         hit_radius: beast.combat.hit_radius,
         attackable: beast.combat.attackable,
         hostile_to: beast.combat.hostile_to,
-        fights: beast.combat.fights,
+        area_pickable: beast.combat.area_pickable,
       ),
     ))
   let #(state, taken) =
