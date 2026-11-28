@@ -1,155 +1,41 @@
-//// What the client's tables say a spell strikes, for each spell of each class's
-//// level-1 ability trees: the area row, the hit shapes of its telegraphs and the
-//// damage effects of each phase with who each aims at. Built once when the tables
-//// load, beside the ability trees (genesis_prime/shared/spell_plan); the strike rule
+//// What the client's tables say a spell strikes, for each spell of each class's level-1
+//// ability trees and their tiers (`spell_plan.tier_plans`): the area row, the hit shapes of
+//// its telegraphs and the damage effects of each phase with who each aims at. Built once when
+//// the tables load, beside the ability trees (genesis_prime/shared/spell_plan); the strike rule
 //// (genesis_prime/game/strike) reads it and decides nothing from the tables itself.
 ////
 //// ```
 //// plans (genesis_prime/shared/spell_plan) ─▶ every Spell4 of every tree
 ////   Spell4 ─▶ spell4AoeTargetConstraintsId ─▶ Spell4AoeTargetConstraints (the area row)
-////                                              Spell4Base ─▶ spell4ValidTargetsId ─▶ Spell4ValidTargets
+////        Spell4Base ─▶ spell4ValidTargetsId ─▶ Spell4ValidTargets
 ////   Spell4Telegraph rows of the spell ─▶ TelegraphDamage ─▶ the hit shapes
-////   Spell4Effects of type Damage ─▶ each effect's formula and the units it aims at (targetFlags)
+////   Spell4Effects of type Damage ─▶ each effect's formula and who it aims at (targetFlags)
 //// all of them, once, when the tables load ─▶ Areas ─▶ of_spell(spell4 id)
 //// ```
 ////
-//// - **Who an effect aims at** is its `targetFlags`: 1 the caster, 2 the cast's own
-////   target, 4 the area, 6 both (`Spell4Effects.targetFlags`, a reading of the rows).
-////   A phase with a damage effect, a crowd-control state, a property change of struck
-////   units (a type 11 row aimed only at other units) or a Proxy with no tickTime aimed at
-////   the area selects units; a Proxy with a tickTime aimed at the area selects none at the go
-////   and finds its units at each tick (`PhaseStrike.ticks_on_area`); one aimed at the cast's
-////   target strikes the primary target; with
-////   neither it strikes nobody and its go is written at once. A stun with no damage
-////   still selects and strikes (Gate's 30436, Stagger's 38780), and so does a spell
-////   holding only a property row aimed at the target (Fissure's child 41886, row 94370)
-////   or the area (Defense Grid Aura 54475, rows 129039, 183223, 183224). An absorb, an
-////   armor or a look row aimed at others names no creature to change and selects nobody
-////   (`spell_plan.StruckChange`).
-////   A damage row aimed at its caster alone (targetFlags 1) loads and strikes
-////   nobody, since the phase keeps only the rows aimed past the caster; the coverage
-////   measure does not count it as handled (`strikes_past_caster`).
-////   No plan holds a spell with a type 11 row aimed at other units, since
-////   `spell_plan.build` plans each class's level-1 tier-1 trees only, which hold none.
-//// - **Who is inside** is the telegraph's shape capped by the area row: the never-drawn
-////   twin rows (flag 0x40) are the hit shapes, or the drawn rows where a spell has no
-////   twin, less the drawn rows with bit 0x20 (the picture of a child spell's beam,
-////   `TelegraphDamage.telegraphDamageFlags.0x20.rows`) unless every drawn row has it,
-////   and a unit must also be within the area row's range. A spell with no
-////   telegraph row (42297) is read by its area row's range and arc alone. Kick is a
-////   cone from 1 to 7 m over 100 degrees (`Spell4.58591.area`).
-//// - **The points a cast spent.** A damage effect keeps its row's tag
-////   (`Spell4Effects.emmComparison`, genesis_prime/shared/spend), and `phase` keeps
-////   only the effects and Proxies whose tag holds for the points the cast spent above
-////   its base cost, then works out `selects_area`, `strikes_primary_target` and
-////   `ticks_on_area` from what is left. A cast with no spend keeps every effect.
-//// - **An instant heal row aimed at the primary target** (`PhaseStrike.heals`, from
-////   `Spell4Effects.targetFlags` bit 2 with no delay and no tickTime) is a row a go tells the
-////   player that is the primary target; a row with a delay or a tickTime, and one aimed at the
-////   caster alone, is not in it.
-//// - **An instant heal row aimed at the area of a spell whose area finds the caster's allies**
-////   (`SpellArea.finds_allies`, `spell_plan.spell_finds_allies`: a beneficial mechanic, no foe
-////   row, an area ordered Closest, Furthest, Random or by missing health) is in `heals` too,
-////   and makes the phase select the area: the strike selects the other Friendly players inside
-////   it (`shown.ally_candidates`) and tells each the row.
-//// - **A periodic damage row** (a tickTime) strikes the units of its go once for each
-////   tick of its schedule (genesis_prime/shared/ticking), each tick its own 0x7f8 from the
-////   server: the go selects with it as with any row, and `PhaseStrike.ticking` holds it
-////   apart from the rows that strike once. A row that lasts until removed (flags bit 2)
-////   is left out by the load (`TickingUntilRemoved`), and `checker` refuses a spell that holds
-////   one, so no planned ability's press waits on a damage row that is never played.
-//// - **A periodic Proxy aimed at the area** (`Spell4Effects.effectType.26.periodic`: the texts
-////   574032 and 306769 say it casts "on foes inside the field every Ns") ticks on the units
-////   inside the spell's area at each tick: its phase has `ticks_on_area`, so the load asks the
-////   same of the area row as of a phase that selects (a row, in an order the server builds),
-////   and the go strikes nobody for it. A Proxy that names a beneficial spell is refused by the
-////   plan (`spell_plan.PeriodicProxyAtAlliesNotRead`), since the allies in the area are not
-////   found. A Proxy with no tickTime aimed at the area of a spell that finds the caster's
-////   allies, and a property change aimed at that area (`PhaseStrike.acts_on_each_unit`), make the
-////   phase select the area: each ally selected is a hit of the go that no row need reach, and the
-////   go starts the child on it or changes it. Such a change strikes no foe (`strikes_area`), so
-////   an area ordered by missing health stays built for it.
-//// - **Order.** An area row's `targetSelection` is read for a player and a creature alike:
-////   Closest (1), Furthest (2) and Random (3) are the orders `area.select_ordered` takes, and
-////   no strike selects a dead unit (`Spell4AoeTargetConstraints.targetSelection`,
-////   `Spell4ValidTargets.targetBitmask`). Orders 4 and 5 (by health) need a unit's health,
-////   which the units a strike chooses from do not hold: a creature's row is refused
-////   (`SelectionNeedsHealth`). A player's order 4 is read as no area (`SpellArea.row` `None`),
-////   refused (`SelectionNeedsHealth`) only for a phase that selects units from it. A player's
-////   order 5 (MissingMostHealth) is built for an area that finds the caster's allies when its
-////   phases select units by the instant heals alone, the units that hold a health being the
-////   allies' copies the caster's connection keeps (`shown.ally_candidates`), or through a Proxy
-////   with no tickTime aimed at the area, which starts a child on each of those allies; a phase
-////   that also strikes the area with a row, ticks on it, or, where the area finds no allies,
-////   selects through a Proxy is refused (`SelectionNeedsHealth`), and a phase that selects
-////   nothing leaves it as no area.
-//// - **Valid targets** (`Spell4ValidTargets.targetBitmask`, `FillSpellRecord` 0x140568540,
-////   `FillSpellAoeConstraints` 0x1405698c0): bits 1, 2 and 256 act at a press, not in an area,
-////   and 256 (no pet) excludes no unit of the strike; bits 4 (players only) and 16 (party
-////   members only) select no creature (`strikes_creatures`, `strike.select`); bit 128, which
-////   no client code reads, is read as clear, a guess; bits 8, 32 and 64 are refused
-////   (`ValidTargetsNotBuilt`).
-//// - **Two readings** read a spell's rows: a player's ability (`PlayerReading`: the shapes of
-////   the level-1 trees) and a creature's special (`CreatureReading`: also rings, crosses,
-////   pies and unhalved boxes), so a player's strike refuses shapes 1, 3, 5 and 6.
-//// - **Where a hit is centred** is its anchor, one for the spell (`anchor_of`): a hit row is
-////   placed on the caster (`targetTypeFlags` 1) or on the cast's target (0 or 2), and drawn where
-////   the cast's 0x7ff puts it and stays there (TelegraphDamage flag 0x4000 or 0x1000:
-////   `FixedAtCaster`, `FixedAtTarget`) or follows its unit (`FollowsCaster`, `FollowsTarget`).
-////   A creature special whose rows, or whose hit twin and drawn row, are not placed alike is
-////   refused (`PlacedApart`), so the hit is always where the picture is
-////   (`0x140546e60.placement_branches`, `0x14054b1b0.fixed_placement`,
-////   `0x14054b1b0.follows_caster`). A player's row placed at the position the cast holds
-////   (`targetTypeFlags` 8) is `FixedAtCaster` whatever its flags: the client stores that
-////   position and yaw once, when the cast starts (`0x14053a210.held_position`). A player's hit
-////   rows alone decide the anchor, and a spell with none is `FollowsTarget`, struck around
-////   its primary target. Nullifier 58868 (row 2789, flags 1 with 0x1000) is `FixedAtCaster`;
-////   its phase holds no damage row and selects no area, so its anchor moves no strike.
-//// - **Who the primary target is** follows from how the spell is started
-////   (genesis_prime/shared/spell_plan `Start`): the caster for a press, a Proxy on the caster and
-////   a proc aimed at its holder (`AtHolder`), the struck unit for a Proxy on each struck unit,
-////   the ally for a Proxy on each ally,
-////   and another unit for a proc aimed at one (`AtOtherUnit`, which falls back to the holder
-////   when the event has none, so its spell is still built only as for another unit). A row on
-////   the target of a spell started on a struck unit, on an ally or by a proc aimed at another
-////   unit is built only as a circle with no offset, which reads no yaw (`start_placed`; a spell that draws no hit shape selects by its area row, built only at 360 degrees), and a pressed
-////   spell's row on the target only when the spell is cast at the caster, since the press names
-////   the caster and reads no other target (`targeting_given`, `target_mechanic.takes_caster`).
-//// - **Which spells** are read: the spells of each ability's tree and of each of its tiers
-////   (genesis_prime/shared/spell_plan `tier_plans`), its threshold stages (Spell4Thresholds) included,
-////   a Proxy behind a target prerequisite excepted, since it is never started. A spell
-////   with no area row selects nobody.
-//// - **What fails the load:** a row the tree names that the tables lack; a
-////   `targetSelection` other than 1 to 5 (4 and 5 are refused by `SelectionNeedsHealth` for a
-////   creature, 4 for a player's phase that selects units from the area, and 5 for a player's
-////   phase that selects other than by an instant heal or a Proxy that reach the caster's
-////   allies); a valid-targets
-////   bitmask holding bit 8, 32 or 64 on a spell with an area row; a hit row placed on anything but the
-////   caster, the cast's target and the
-////   held position (`targetTypeFlags` other than 0, 1, 2 and 8; for a creature other than 0 to
-////   2: `TelegraphOnStruckUnits` for bit 4, else `TelegraphNotOnCaster`); a spell's hit rows
-////   placed apart (`PlacedApart`); a pressed spell whose hit row is on the target and whose
-////   target mechanic is not cast at the caster (`TargetingNotBuilt`); a spell started on
-////   another unit, or on an ally, whose hit row on the target is not a circle with no offset
-////   (`HitRowOffTheStrikeCentre`); a shape
-////   the rule does not build (for a player 1, 3, 5, 6, or 8 with
-////   a box that has a width or a length: the box's height, p4, is never tested; for a
-////   creature 8 with such a box alone); a damage effect
-////   (type 8) aimed by a flag value not read; a formula that reads a parameter the
-////   player's value does not (genesis_prime/shared/damage `unread`: the weapon kinds 6
-////   and 9, the passed-in value 18, and any kind above 26; the vital kinds are read,
-////   the target's finished when the blow lands); and a phase that
-////   selects units from a spell with no area row; a creature's drawn hit row timed from a go
-////   (flag 0x2000: `TelegraphTimedFromAGo`).
-//// - **Each go of a creature's cast** is struck with the hit rows its phase names that the client
-////   is drawing at the go's time (`hit_shapes_by_go`, genesis_prime/shared/telegraph_window).
-//// - **Each go of a player's cast** is struck with the hit rows its phase names, for a cast whose
-////   phase the client compares with a row's (`spell_plan.compares_telegraph_phase`), and with
-////   every hit row otherwise (`SpellArea.inside_by_go`). This is a server guess: the client
-////   compares a row's phase with a go only to launch client missiles from a telegraph position
-////   (`opcode.0x7f4.phase`) and ties no row to the damage of a go; the row's time window is not
-////   read, since it would strike nobody at the later gos of a spell that is not phased, such as
-////   Discharge 58832 at its second and third pulse.
+//// - Aim is targetFlags: 1 caster, 2 target, 4 area, 6 both (Spell4Effects.targetFlags).
+//// - Who is inside is the hit shapes capped by the area row: never-drawn twins (flag 0x40),
+////   else drawn rows less bit 0x20 (TelegraphDamage.telegraphDamageFlags.0x20.rows).
+//// - A phase keeps only the effects whose spend tag holds (genesis_prime/shared/spend `applies`).
+//// - An instant heal (no delay, no tickTime) is in `PhaseStrike.heals`: aimed at the target,
+////   or, in an area that finds the caster's allies (`SpellArea.finds_allies`), at the area.
+//// - A periodic damage row strikes once per tick (genesis_prime/shared/ticking); one lasting
+////   until removed (flags bit 2) is left out and `checker` refuses it (`TickingUntilRemoved`).
+//// - A periodic Proxy aimed at the area (`Spell4Effects.effectType.26.periodic`, texts 574032
+////   and 306769) ticks on the units inside at each tick (`PhaseStrike.ticks_on_area`).
+//// - An area row's targetSelection (Spell4AoeTargetConstraints): 1 Closest, 2 Furthest,
+////   3 Random (`area.select_ordered`); 4 and 5 order by a unit's health and are built only
+////   for an ally-finding area's instant heals, else refused (`SelectionNeedsHealth`).
+//// - Valid-target bits 8, 32 and 64 are refused (`ValidTargetsNotBuilt`)
+////   (Spell4ValidTargets.targetBitmask, `FillSpellAoeConstraints` 0x1405698c0).
+//// - One anchor for the spell (`anchor_of`): the caster (`targetTypeFlags` 1), the cast's
+////   target (0 or 2, `0x140546e60.placement_branches`) or the held position (8,
+////   `0x14053a210.held_position`); rows placed apart are refused (`PlacedApart`).
+//// - The primary target follows from how the spell is started (`spell_plan.Start`).
+//// - A creature's go strikes with the hit rows the client is drawing at the go's time
+////   (`hit_shapes_by_go`, genesis_prime/shared/telegraph_window).
+//// - A player's go strikes with hit rows of its phase (`spell_plan.compares_telegraph_phase`),
+////   else every hit row (`SpellArea.inside_by_go`), a server guess (`opcode.0x7f4.phase`).
 
 import genesis_prime/gap
 import genesis_prime/shared/area.{

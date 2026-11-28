@@ -1,95 +1,43 @@
 //// The ability builder's save: the client's 0xB1 holds the twelve Spell4Base ids of the
-//// action set's slots, the tier edits of the tier pips and the AMPs of the set, which the client
-//// sends without checking that a slot is open, that the player holds the ability, that an id
-//// appears once, that a tier exists, that the points cover it or that the AMPs pass its own
-//// check. The rule judges it and answers with the bar, the tiers and the AMPs the player has,
-//// which is the only way the client's bar, book tiers and AMP list change.
-//// The client's name for the builder's set is "limited action set" (`ActionSetLib`); a feature
-//// of the game connection's rule (genesis_prime/game/connection) taken from inside 0x038C
-//// with the player in the world.
+//// action set's slots, the tier edits and the AMPs. The rule judges it and answers with the
+//// bar, tiers and AMPs the player has, the only way the client's bar, book tiers and AMP
+//// list change. The client's name is "limited action set" (`ActionSetLib`); a feature of the
+//// connection's rule (genesis_prime/game/connection) taken from inside 0x038C in the world.
 ////
 //// ```
-//// load: ActionSlotPrereq rows + their Prerequisite rows ─▶ Unlocks (slot ─▶ the levels it opens at)
+//// load: ActionSlotPrereq + Prerequisite rows ─▶ Unlocks (slot ─▶ the levels it opens at)
 //// load: Spell4 + Spell4TierRequirements ─▶ SpellTiers (genesis_prime/shared/spell_tier)
-//// load: the AMP rows, categories and power ─▶ amp_spec.Specs (genesis_prime/shared/amp_spec)
-//// 0xB1 {12 ids, set, tier changes, AMP ids} ─▶ take(unlocks, tiers, amps, player, saved, class_bar, body)
-////      a body the client's reader refuses ─▶ Refusal: the connection ends
-////      every check passes  ─▶ Saved' and 0x019D (the 12 shortcuts, result 1), 0x01A0 (the book's tiers
-////                             in set 0), 0x0169 (the points left), 0x01A3 (the set's AMPs), 0x00B2 (bit 1)
-////      a check fails       ─▶ Saved as it was, 0x019D (the held bar, the result), 0x01A3 (the held AMPs),
-////                             0x00B2 (bit 0), a warning
-//// place save ─▶ rows(saved) ─▶ the store's slot rows, 12 for each saved set, tier rows and AMP rows
-//// entry      ─▶ entering(unlocks, tiers, amps, class_id, points_total, level, book, rows) ─▶ Saved, or a RowError
-////               that ends the entry
+//// load: AMP rows, categories and power ─▶ amp_spec.Specs (genesis_prime/shared/amp_spec)
+//// 0xB1 {12 ids, set, tier changes, AMP ids}
+////      ─▶ take(unlocks, tiers, amps, player, saved, class_bar, body)
+////      body the client's reader refuses ─▶ Refusal: the connection ends
+////      every check passes ─▶ Saved' and 0x019D (12 shortcuts, result 1), 0x01A0 (book's
+////         tiers, set 0), 0x0169 (points left), 0x01A3 (set's AMPs), 0x00B2 (bit 1)
+////      a check fails ─▶ Saved unchanged, 0x019D (held bar, result), 0x01A3 (held AMPs),
+////         0x00B2 (bit 0), a warning
+//// place save ─▶ rows(saved) ─▶ the store's slot, tier and AMP rows, 12 slot rows a set
+//// entry ─▶ entering(unlocks, tiers, amps, class_id, points_total, level, book, rows)
+////      ─▶ Saved, or a RowError that ends the entry
 //// ```
 ////
-//// - **The client checks little before it sends** (`0x1407580e0`): the player exists, the
-////   list holds 12 numbers, no Update Action Set cast runs, the player is not dead or in
-////   combat or in a PvP restriction, and each large slot's tier 1 spell is a Class -
-////   Ability one (`0x1404aacb0`). It never checks that a slot is open, that an ability is
-////   held or active, of the player's class, or that an id appears once: the rule refuses those.
-//// - **The checks, in order**, each with the result the client names it by
-////   (`lua.ActionSetLib.CodeEnumLimitedActionSetResult`): not 12 ids 25, a dead player 27, a
-////   player in combat 30, a set other than the active one 40, then slot by slot: an id in
-////   slot 8 or later 18, an id in a slot not open at the player's level 2, an id the book
-////   does not hold 18, and last an id twice 13. The client makes 25, 27 and 30 itself and never
-////   sends them, in that order (`0x1407580e0`); 2, 13, 18 and 40 are the server's mapping,
-////   since the client names the checks and does not make them, and the order of 40, 18, 2 and
-////   13 is the server's own choice too. The code the server picks is invisible to the
-////   player: the client shows a text only for result 39.
-//// - **The tier checks** come after the bar's, one tier change at a time in the save's order,
-////   then the points: an ability the book does not hold 18, an ability twice 13, a tier the
-////   ability has no row for or the player's level does not reach 41, and tiers costing more
-////   than the level's points 42 (`lua.ActionSetLib.CodeEnumLimitedActionSetResult`; the order and
-////   the mapping are the server's, since the stock client stops below a tier it cannot take,
-////   `0x140748390`). A fall is allowed to any tier that has a row (the client takes a lower
-////   tier whatever its row, and no real base lacks a row below its highest), a change to the
-////   held tier changes nothing, and the points are judged on the tiers the save leaves. Any refusal refuses the whole save, bar
-////   included. A tier belongs to the ability in the set, so a save that takes an ability off the
-////   bar keeps its tier. What a tier costs and needs is genesis_prime/shared/spell_tier.
-//// - **The AMP checks** come after the tiers': an id twice 13, a held AMP the list leaves out 43
-////   (removing an AMP is the paid reset, which the stock client cannot send, `opcode.0x151`; both are
-////   the server's mapping, since the client never refuses a repeat), then the client's own check of
-////   the held AMPs and the picks (genesis_prime/shared/amp_spec). A pick is an id of the list the set
-////   does not hold; a list that adds none passes whatever the level.
-//// - **The tiers and the AMPs are saved** with the place, as the bars are: `rows` carries a row for
-////   each ability held above tier 1 and each AMP held in each set, whole, so a tier returned to 1 is
-////   no row and the store deletes the stored one. A map change, a Holocrypt rejoin and a login take
-////   them back through `entering`, which refuses the rows the table's checks cannot hold and drops
-////   the whole stored AMP list of a set that the client's check refuses (the server's choice, as for
-////   tiers over the points; the entry warns once for the set).
-//// - **A saved tier is kept at entry** only while the book holds its ability, the Spell4 rows
-////   hold that tier and the level reaches it; a set whose kept tiers cost more than the level's
-////   points has every tier reset to tier 1 and its points refunded (the server's choice, since the
-////   client never reads a stored tier), so a table change or a lower level cannot show a tier the
-////   player cannot hold or spend below 0 points. A row outside the table's checks (a
-////   set above 3, an ability of 0 or beyond 18 bits, a tier outside 2 to 15, a second row for
-////   one ability of one set) is a `RowError`.
-//// - **A slot opens** by the client's own reading of its ActionSlotPrereq row's Prerequisite
-////   row (`ActionSlotPrereq.prerequisiteIdUnlock`): the conditions the client keeps are all
-////   of type 177 (the unit's level) and each holds at the player's level
-////   (`Prerequisite.prerequisiteTypeId.177`).
-//// - **The book** is what the player holds: the bag and the alternates the plans add
-////   (genesis_prime/game/ability_book `book`). The gadget and path slots (8 and 9) hold none, so an id there is refused with 18 although the
-////   client calls it InvalidSlot 24 (`0x1404aacb0`).
-//// - **The answer** is the active set (0) and the held bar of twelve shortcuts, an empty slot
-////   as type 0 so the client clears it; for an accepted save then 0x01A0 with every ability of
-////   the book in set 0 at its held tier, and 0x0169 with the points left (the client keeps both
-////   and clears its own edits with the 0xB2 after them, `opcode.0x169`, `opcode.0xb2`); then 0x01A3
-////   with the set's AMPs in id order, which replaces the client's list and forgets its picks
-////   (`opcode.0x1a3`); last 0xB2, whose bit is 1 for an accepted save and 0 for a refused one.
-////   The bit is a guess: the client only adds a combat log line for it. A refused save is answered
-////   with the held bar, the held AMPs and the 0xB2, since the client forgot its picks at the send
-////   and then reads the book's tiers and the last 0x0169 again.
-//// - **A saved bar is kept at entry** only for the slots still open at the player's level
-////   and the abilities the book still holds, the same two tests a save passes, so a table
-////   change or a lower level cannot show an ability the player does not hold; a slot it drops
-////   is empty and the next save writes it so. A set with rows is saved, even when all twelve
-////   are empty, and a set with none shows the class's bar. A row outside the table's checks
-////   (set 0 to 3, slot 0 to 11, ability of 18 bits, one row for a slot) is a `RowError`.
-//// - **The load fails** for an ActionSlotPrereq row with a slot index outside 0 to 11, a slot with
-////   no row or two, and a row whose Prerequisite row is missing, which includes the prerequisite
-////   id 0 that the client reads as "always open" (`0x140758020`): no row holds it.
+//// - The client checks little (`0x1407580e0`): never that a slot is open, ability held or id once.
+//// - The client names each check's result (`lua.ActionSetLib.CodeEnumLimitedActionSetResult`).
+//// - The order 25, 27, 30 is the client's (`0x1407580e0`); 2, 13, 18, 40 are the server's mapping.
+//// - Tiers after the bar: 18, 13, 41, 42; order and mapping are the server's (`0x140748390`).
+//// - AMPs after the tiers: 13, 43 (the paid reset the stock client cannot send, `opcode.0x151`).
+//// - Tiers and AMPs save with the bar, whole; every entry rejudges them (`rows`, `entering`).
+//// - A stored tier stays only while the book, the Spell4 rows and the level allow.
+//// - Stored tiers over the level's points reset to 1 with a refund (the server's choice).
+//// - A slot opens by its Prerequisite row (`ActionSlotPrereq.prerequisiteIdUnlock`).
+//// - The kept conditions are all type 177 (`Prerequisite.prerequisiteTypeId.177`).
+//// - The book holds the bag and the plans' alternates (genesis_prime/game/ability_book `book`).
+//// - Slots 8 and 9 (gadget, path) hold none: an id there is 18, the client's 24 (`0x1404aacb0`).
+//// - The answer is the active set (0) and the held bar of twelve, an empty slot as type 0.
+//// - 0x00B2's bit (1 accepted, 0 refused) is a guess: the client only adds a combat log line.
+//// - A stored bar stays only in slots still open and for abilities the book holds.
+//// - A stored row outside the table's checks or repeated for one key is a `RowError`.
+//// - Load fails for a slot outside 0 to 11, no row or two rows, or a missing Prerequisite.
+//// - Prerequisite id 0, which the client reads as "always open", has no row (`0x140758020`).
 
 import genesis_prime/client_connection.{type Undecoded}
 import genesis_prime/connection/frame.{type Frame}

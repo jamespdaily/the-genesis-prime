@@ -1,96 +1,43 @@
-//// What a talk to a creature, a use of one or a kill does to the open objectives of the
-//// player's quest log, and what the client is told. A type 3 objective is a talk and a
-//// type 12 objective a use, and the data of both is a Creature2 id
-//// (`QuestObjective.type.3`, `0x1404dd4c0.objective_creature`). A checklist objective
-//// counts each unit once, by the unit's checklist index: type 14 is a use and type 18 a
-//// talk of a unit in the TargetGroup of its data, types 27 and 28 a use of the creature of
-//// the PathSoldierActivate row of its data (when that row makes it a checklist,
-//// `objective_kind.is_checklist`); the use or talk sets the bit of the unit's index in the
-//// objective's mask, and a unit whose bit is set counts for nothing
-//// (`opcode.0x361`, `0x140611680`). A kill counts for the
-//// objectives of `0x140550c50`: type 2 for a unit of the Creature2 id in its data,
-//// types 8 and 16 for a unit in the TargetGroup of its data, and, for a kill objective
-//// of any of these types or of types 15 and 46, a unit in the objective's reward pane
-//// TargetGroup (the pane counts whatever the type, but only a kill is wanted here:
-//// the other types' own tests are not kills). Types 15 and 46 count by a cluster value
-//// and a rank the server has no unit data for, so they take a kill only by the pane.
-//// A type 15 objective whose pane is a list of creatures (TargetGroup type 1) is
-//// a named group: its progress stays 0, and is not sent, until the player's blow has
-//// killed every creature of the list, each recorded once as a bit of the objective's
-//// kill mask in the log (`group_member`, `quest_log.kill_marked`; the mask is never sent:
-//// `opcode.0x361` carries only the progress), and the last one's kill makes it 1 of its
-//// count 1 (the client's needed value is 1 for count 1, `0x140551840`). A type 5
-//// objective (`QuestObjective.type.5`, a scripted objective) that no creature links takes
-//// a kill only when it is a row of the kill table (`ScriptRows.kills`, a visible one whose
-//// text asks only to kill), and a use of a unit only when it is a row of the click table
-//// (`ScriptRows.clicks`, a visible one whose text asks only to click a creature the client
-//// offers a click on), each by the reward pane alone (`counts`). Nothing else the client
-//// sends completes one, so the server completes it by what `script_of` says, and a timed one
-//// the server does not complete runs out (`quest_log.expire`):
-//// - a hidden one (`QuestObjective.flags.8`) and a visible, required one with no marker
-////   are done once the quest's other required objectives are (`stand_in_scripts`, a
-////   server choice);
-//// - a visible, required one with a marker is done when the quest is accepted, or when it
-////   is open if flags 1 and 2 keep it closed until then, whatever else the quest holds
-////   (`stand_in_scripts`, a server choice that stands in for the real trigger each
-////   objective asks for);
-//// - one of the `arrival_objectives` is done when the player stands at one of its markers
-////   (`arrivals`), because its text asks only to go there;
-//// - one of the kill table's objectives (`ScriptRows.kills`) stays open until the player
-////   kills a creature of its reward pane, as many times as it counts (`KillScript`);
-//// - one of the click table's objectives (`ScriptRows.clicks`) stays open until the player
-////   activates a creature of its reward pane with the creature's own activate spell, as
-////   many times as it counts, each creature once (`ClickScript`);
-//// - one a spell effect or an item names (`objective_action`) stays open until a cast
-////   counts for it: a QuestAdvanceObjective row of the cast's spell advances it
-////   (genesis_prime/game/quest_advance);
-//// - one of the `held_objectives` stays open whichever of these it is, because only an
-////   instance run or a PvP match completes it.
-//// An objective takes the event only while it is open (`0x1405510d0`, `0x140553790`): its
-//// quest is in the active list, Accepted or Achieved (`0x1405510d0` tests only for state
-//// 3), it is not done and it is reachable. Every objective that is open and counts the
-//// event counts once for it, so a later objective that the event unlocks waits for the
-//// next one.
+//// What a talk to a creature, a use of one, a kill or a spell cast counts for the open
+//// objectives of the player's quest log, and what the client is told of it. A rule: the
+//// log and the event in, the log and the effects out.
 ////
-//// An objective that counts a use of a unit (types 5, 12, 23 and 32, and a cast at a
-//// unit, type 11) counts each unit once (`quest_log.used`), except an objective in
-//// `reused`, whose world holds fewer units than its count
-//// (`objective_units.reused`) and which counts the same unit again; a checklist objective
-//// counts each unit by its bit. The client keeps no per-unit record for any of them
-//// (`0x1405517a0`, `QuestObjective.type.32.repeat_use`), so the once is the server's
-//// choice. A use that counts a unit new to an objective also releases the unit
-//// (`ReleaseUnit`): a used quest object vanishes for everyone for the release time, once
-//// for the use however many objectives and quests counted it. A talk, a kill and a cast
-//// at a unit release nothing, and nor does a use of a departures terminal, which every
-//// player uses (`departures.is_terminal`), or of a creature that gives or receives a quest
-//// none of whose objectives counts it (`stays_for_another_quest`). The used sets are saved
-//// with the quest by the object's spawn, so a relog does not let an object count again,
-//// and an abandoned quest that is retaken starts them empty. Each player's log is its own,
-//// so two players who use an object before it vanishes for them both each count it, and
-//// once it returns the player whose set holds it counts nothing while another counts it.
+//// ```
+//// the log, the tables, an Event ─▶ advance ─▶ the log and the effects
+//// the log, the tables ─▶ talk_targets, use_targets ─▶ whether a talk or a use counts
+//// the log, the items, the zones, the place, the clock ─▶ settle ─▶ the log and the effects
+//// the buttons held, the open cast objectives ─▶ button_changes ─▶ the removes and adds
+//// the effects ─▶ frames ─▶ a 0x361 per progress, a 0x35c per state
+//// ```
 ////
-//// A type 11 objective (`QuestObjective.type.11`) is a cast of the spell in its data. The
-//// client counts nothing for it: it shows the spell as a button (a 0x176 shortcut of kind
-//// 2, keyed by the objective's id) while the objective is open and takes the button away
-//// when the objective closes (`buttons`, `button_changes`), and the server counts one
-//// for each cast of the spell at its go (`Cast`), for every open objective that names it.
-//// A cast at a unit counts only for a unit of the objective's reward pane (`0x140550c50`),
-//// and any unit when it names none (the server's choice: `0x140550c50` says nothing of an
-//// objective with no pane), and each unit once, as a type
-//// 23 objective does (`quest_log.used`; the client keeps no per-unit record, so the once is
-//// the server's choice, and an objective in `reused` counts the same unit again); a cast of a spell aimed at the caster names no unit and counts
-//// at each go. The
-//// go is the moment a cast counts by a guess, until a retail recording of quest 3915, 4832
-//// or 7618 shows it; the place an objective names is not tested; a spell aimed at the
-//// caster whose objective sets a reward pane (rows 14187 and 14203) counts at the go, not
-//// on a unit of the pane; and the objectives with no Spell4 row (7378, 8042, 9882, 16525,
-//// 16577 and 15816) hold no button and stay uncompletable.
-////
-//// A quest that no creature receives (`communicator.completed_by_server`) is completed by
-//// the server once it is Achieved: the effect `CompleteByServer` follows the 0x35c that makes
-//// it Achieved, and `server_completions` lists the quests a log already holds Achieved.
-////
-//// A rule: the log and the event in, the log and the effects out.
+//// - An objective takes an event only while it is open (quest active, not done, reachable:
+////   `0x1405510d0`, `0x140553790`), and every open objective that counts the event counts
+////   once for it. Which objectives count an event is `counts` (`0x140550c50`).
+//// - A checklist objective counts each unit once, by the bit of the unit's checklist index
+////   (`0x140611680`). A use or a cast at a unit counts each unit once (`quest_log.used`;
+////   the client keeps no per-unit record, `0x1405517a0`, so the once is the server's
+////   choice), except an objective in `reused` (`objective_units.reused`).
+//// - A use that counts a unit new to an objective also releases it (`ReleaseUnit`); a
+////   departures terminal (`departures.is_terminal`) and a creature that gives or receives a
+////   quest none of whose objectives counts it (`stays_for_another_quest`) stay.
+//// - A type 15 objective whose reward pane lists creatures (TargetGroup type 1) counts a
+////   kill only once every one is dead, each recorded once (`group_member`,
+////   `quest_log.kill_marked`); the client's needed value is 1 for count 1 (`0x140551840`).
+//// - A type 5 objective (`QuestObjective.type.5`) that no creature links follows its
+////   `Script` (`script_of`): a row of the kill table takes a kill and a row of the click
+////   table a use, each by the reward pane alone (`ScriptRows.kills`, `ScriptRows.clicks`,
+////   `counts`); an arrival one is done at its marker (`arrivals`), a named-action one by a
+////   cast that counts for it (`objective_action`), and a stand-in on accept or with the
+////   quest (`stand_in_scripts`, a server choice); a held one stays open.
+//// - A type 11 objective (`QuestObjective.type.11`) is a cast of the spell in its data: the
+////   client holds a button for it while it is open (a 0x176 shortcut of kind 2), and the
+////   server counts one for each cast of the spell at its go (`buttons`, `button_changes`).
+////   A cast at a unit counts only for a unit of the reward pane, and for any unit when the
+////   objective names none (`0x140550c50`). The go is the moment a cast counts by a guess,
+////   until a retail recording of quest 3915, 4832 or 7618 shows it.
+//// - A quest no creature receives (`communicator.completed_by_server`) is completed by the
+////   server once it is Achieved: `CompleteByServer` follows the 0x35c that makes it
+////   Achieved, and `server_completions` lists the quests a log already holds Achieved.
 
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/communicator

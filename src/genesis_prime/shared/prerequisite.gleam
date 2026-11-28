@@ -1,229 +1,43 @@
 //// A Prerequisite row as the client reads it, and its check against a unit: the
-//// gate of an effect such as a resource gain, or of a Proxy
-//// (genesis_prime/shared/spell_plan `Gain`, `Condition`). The rule is pure: the
-//// cast rule (genesis_prime/game/cast) supplies what the unit is, and the
-//// connection supplies the rolls from its seed.
+//// gate of an effect or of a Proxy (genesis_prime/shared/spell_plan `Gain`,
+//// `Condition`). The rule is pure: the cast rule supplies the subject, the connection the rolls.
 ////
 //// ```
-//// Prerequisite row ─▶ load: the conditions kept up to the first type 0, AND or OR,
-////                          each nested row (type 11) loaded in place, each type 108
-////                          condition finding its PositionalRequirement row, each quest
-////                          condition its quest; a cycle fails
-//// a Subject: the casts it is under, in combat, its vitals, its resource slots,
-////            its difficulty, its rolls, where its two units stand, its quest log
-////                  ─▶ check ─▶ Passes | Fails | NotRead(type)
+//// Prerequisite row ─▶ load: conditions to the first type 0, nested rows in place; a cycle fails
+//// a Subject: casts, vitals, units, quest log ─▶ check ─▶ Passes | Fails | NotRead(type)
 //// ```
 ////
-//// - **The conditions** are read in order and cut at the first whose type is 0:
-////   that one and every later one are dropped (`0x1404a5190`, `Prerequisite.flags`).
-//// - **AND or OR:** the row passes when every kept condition passes, or with flags
-////   bit 0 when any does; a row with no kept condition passes under AND and fails
-////   under OR (`0x1404a1ca0`).
-//// - **Comparisons** 1 to 6 are equal, not equal, greater, at least, less and at
-////   most, on unsigned 32-bit numbers; any other fails (`0x1404a2090`).
-//// - **Type 15** passes, by comparison 1, when a live cast of the Spell4 in its value
-////   has the unit as a target, and by comparison 2 when none has; any other
-////   comparison fails, and its objectId is not read
-////   (`Prerequisite.prerequisiteTypeId.15`, `0x1404a4ec0`).
-//// - **Type 50** passes, by comparison 1, when a live cast of the Spell4 in its value,
-////   whose caster is the check's second unit, holds a node on the unit, and by
-////   comparison 2 when none does; any other comparison fails. With no second unit,
-////   comparison 2 passes and any other fails, and a second unit 0 or a value 0 matches
-////   no cast. Its objectId is not read (`Prerequisite.prerequisiteTypeId.50`).
-//// - **Type 59** compares the stack count on the unit of the Spell4 in its objectId
-////   with the value: the sum of the instance counts of the casts that hold a node on
-////   the unit, 0 when none does (`Prerequisite.prerequisiteTypeId.59`).
-//// - **Type 60** is type 59's count over the casts whose caster is the check's second unit
-////   alone; with no second unit comparison 2 passes and every other fails, and a second
-////   unit 0 counts 0 (`Prerequisite.prerequisiteTypeId.60`, `0x14046a110`).
-//// - **Type 28** passes, by comparison 1, when the unit is in combat and by
-////   comparison 2 when it is not; any other comparison fails
-////   (`Prerequisite.prerequisiteTypeId.28`).
-//// - **Type 11** evaluates the Prerequisite its objectId names, whole, with its own
-////   flags and the same two units and rolls; comparison 2 passes when it fails and
-////   any other comparison gives its result, `NotRead` staying `NotRead`; its value is
-////   not read, and an id with no row fails (`Prerequisite.prerequisiteTypeId.11`,
-////   `0x1404a1ca0`). The rows are loaded in place, so a check needs no table, and a
-////   row that nests itself through the rows on its way fails the load: the server's
-////   choice, since the client's evaluator has no guard and its table has no cycle.
-//// - **Type 64** compares the subject's resource slot the objectId names (0 to 10; 11 or
-////   more reads 0.0, and so does a slot the class does not hold) as a 32-bit float with
-////   the value read as a signed 32-bit number, by comparisons 1 to 6; any other fails.
-////   A subject that holds no resource slots gives `NotRead`
-////   (`Prerequisite.prerequisiteTypeId.64`, `0x1404a24ad`).
-//// - **Type 129** passes, by comparison 1, when the unit is under a cast whose spell is in
-////   the spell group the objectId names and by comparison 2 when it is under none; any
-////   other comparison fails, group 0 matches no spell and the value is not read
-////   (`Prerequisite.prerequisiteTypeId.129`, `0x1404a2b5a`).
-//// - **Type 37** compares a roll from 1 to 100 with the value, a new roll for each
-////   such condition tested; the roll is the server's, 1 + floor(100 r) of a draw r
-////   in [0, 1) as the client makes it (`Prerequisite.prerequisiteTypeId.37`).
-//// - **Type 40** compares the unit's health as a percentage of its maximum health with the
-////   value, as type 71 does for the Health vital; the objectId is not read
-////   (`Prerequisite.prerequisiteTypeId.40`, `0x1404a4d90`). A creature holds no health the
-////   caster's check can read, so a row that strikes creatures behind it is refused, and a heal
-////   row of a friendly area is read for the players the caster's picture holds the health of
-////   (`with_health`, `PlaceAndHealth`).
-//// - **Type 71** compares the vital the objectId names, as a percentage of its
-////   maximum, with the value, in 32-bit floats; a zero maximum with nothing held
-////   is not a number, which counts as equal and fails every other comparison, and
-////   a zero maximum with something held is infinite, which passes comparisons 2, 3
-////   and 4 only; a maximum below zero (Interrupt Armor's -1.0) gives a negative
-////   percent (`Prerequisite.prerequisiteTypeId.71`, `0x1404a4e30`).
-//// - **Type 73** compares the vital the objectId names, cut to a whole number
-////   toward zero, with the value (`Prerequisite.prerequisiteTypeId.73`).
-//// - **Type 116** passes, by comparison 1, when the unit is stealthed and by comparison
-////   2 when it is not; any other comparison fails, and its objectId and value are not
-////   read. A subject that holds no stealth gives `NotRead`
-////   (`Prerequisite.prerequisiteTypeId.116`, `0x1404a2609`).
-//// - **Type 4** passes, by comparison 1, when the unit's current faction equals the
-////   value and by comparison 2 when it does not; any other comparison fails, a unit
-////   with no faction counts as faction 0 and its objectId is not read. **Type 250**
-////   is the same on the unit's base faction (`Prerequisite.prerequisiteTypeId.4`,
-////   `.250`, `0x14049c620`, `0x14049c6a0`). A player's side and a creature's side
-////   (`of_creature`) hold factions, so a subject with none gives `NotRead`.
-//// - **Type 10** passes, by comparison 1, when the player's gender equals the value
-////   and by comparison 2 when it does not; any other comparison fails, and its
-////   objectId is not read. The gender is the one the unit-create message 0x262
-////   carries (0 male, 1 female). Only a subject that holds the player (`Player`)
-////   decides it, so another gives `NotRead`
-////   (`Prerequisite.prerequisiteTypeId.10`, `0x14049c5e0`).
-//// - **Type 109** passes, by comparison 1, when the player's World is the World the
-////   objectId names and by comparison 2 when it is another; any other comparison
-////   fails, and its value is not read. A subject that holds no player gives
-////   `NotRead` (`Prerequisite.prerequisiteTypeId.109`, `0x14049e780`).
-//// - **Type 1** compares the first unit's level for formulas (`Player.level`) with
-////   the value by comparisons 1 to 6, unsigned, any other fails, and its objectId
-////   is not read (`Prerequisite.prerequisiteTypeId.1`, `0x1403b5030`). **Types 2, 3
-////   and 52** pass, by comparison 1, when the player's race, class or path equals
-////   the value and by comparison 2 when it does not; any other comparison fails,
-////   and the objectId is not read (`Prerequisite.prerequisiteTypeId.2`, `.3`,
-////   `.52`).
-//// - **Type 26** passes, by comparison 1, when the value is a zone the player is in
-////   or one above it (`Player.zones`: the zone, then each parent through the
-////   WorldZone table's parentZoneId), by comparison 2 when it is none; any other
-////   comparison fails, and the objectId is not read
-////   (`Prerequisite.prerequisiteTypeId.26`, `0x14049e680`).
-//// - **Type 39** passes, by comparison 1, when the first unit is a player and by
-////   comparison 2 when it is another; any other comparison fails, and the objectId
-////   and the value are not read (`Prerequisite.prerequisiteTypeId.39`). The first
-////   unit is read from the subject's `first_unit`: a player is `TheChecker` or
-////   `OtherPlayer`, a creature `NonPlayer`, and a unit the check cannot name
-////   (`UnknownUnit`) gives `NotRead`.
-//// - **A subject known by its place alone** (`Seen`, `of_struck`) holds the player's facts but
-////   not the first unit's, so types 1 and 3, which read that unit, give `NotRead` for
-////   it; a subject that holds no player gives `NotRead` for all of these types. A
-////   creature's own subject (`of_creature`) holds the whole unit: its level (type 1),
-////   its class, which is always 23 (type 3: no Class row has that id, so comparison 1
-////   fails for every Class id and comparison 2 passes), its factions (4 and 250), its
-////   combat state (28), its health, shield, breath and Interrupt Armor (71 and 73), its
-////   difficulty (179) and its Creature2 row (38).
-//// - **Type 243** always fails: the client's check reads nothing from the unit
-////   (`Prerequisite.prerequisiteTypeId.243`, `0x140001ba0`).
-//// - **Type 47** never passes on the client, whatever the comparison (its slot is the same
-////   `0x140001ba0` as type 243's), so a cast, an effect or a gossip entry behind it fails
-////   (`Prerequisite.prerequisiteTypeId.47`). The visibility check leaves it `NotRead`
-////   instead (`check_for_visibility`): the creature stays shown. The 1,788 conditions
-////   of the type name server-only ids the client never reads, so which creatures it hides
-////   is open (Creature2 30305 and 34586 are the spawns of the world database that
-////   carry it).
-//// - **Type 38** compares the first unit's Creature2 id, 0 for a player, with the value:
-////   comparison 1 equal, 2 different, any other fails, and its objectId is not read
-////   (`Prerequisite.prerequisiteTypeId.38`, `0x14049ecc0`). A first unit the check cannot
-////   name (`UnknownUnit`) gives `NotRead`.
-//// - **Type 214** fails when the first unit is a creature; else, by comparison 1, the
-////   checker's ability book holds the Spell4Base the objectId names and by comparison 2 it
-////   does not, any other fails (`Prerequisite.prerequisiteTypeId.214`, `0x14049d680`,
-////   `0x1403bb170`). A subject with no checker gives `NotRead`.
-//// - **Types 13, 14 and 246** pass, by comparison 1, when the checker holds the Item2 the
-////   value names in the inventory locations of a mask (1, 0x303 and 0x707), and by comparison
-////   2 when it does not; any other fails (`Prerequisite.prerequisiteTypeId.13`, `.14`,
-////   `.246`, `0x1403ac590`). Bit n of the mask selects the client's location n, whose list
-////   the constructor `0x1403faa60` tags with that location; the store saves items only in
-////   locations 0, 1 and 2, so bits 5, 8, 9 and 10 read as holding nothing. The
-////   checker's satchel is not held, so an item there reads as not held.
-//// - **Type 143** compares the checker's world difficulty with the value: comparison 1
-////   equal, 2 different, any other fails (`Prerequisite.prerequisiteTypeId.143`,
-////   `0x14049ef70`).
-//// - **Type 118** compares the status of the public event objective the objectId names with
-////   the value: comparison 1 equal, 2 different, any other fails. The server holds no
-////   public event, so every objective has status 0 (inactive)
-////   (`Prerequisite.prerequisiteTypeId.118`, `0x1404a0590`).
-//// - **Type 130** passes, by comparison 1, when the first unit carries a cast of a spell
-////   in the spell group the objectId names whose caster is the check's second unit, and by
-////   comparison 2 when it does not; any other fails, group 0 matches no spell and the value
-////   is not read. With no second unit, comparison 2 passes and any other fails
-////   (`Prerequisite.prerequisiteTypeId.130`, `0x140469a70`).
-//// - **Type 179** compares the unit's difficulty with the condition's objectId, not
-////   its value, by comparisons 1 to 6; only a creature's side holds a difficulty,
-////   so a subject with none gives `NotRead` (`0x14049eeb0`, `of_difficulty`).
-//// - **Type 6** compares the state of the quest the objectId names, in the quest log of
-////   the player whose client runs the check, with the value: the state the client
-////   derives (`quest_view.state`, `0x1405fbc40`), states 4 to 7 counted as 0, comparison
-////   1 equal and 2 not equal, any other fails. **Type 68** passes, by comparison 1, when
-////   objective `value` of that quest is done and by comparison 2 when it is not
-////   (`quest_view.objective_done`, `0x1405510d0`). **Type 43** passes, by comparison 1,
-////   when that objective is open: the quest is in the active list, the objective is not
-////   done and it is reachable, and by comparison 2 when it is not
-////   (`quest_view.objective_open`, `0x14049f3d0`). **Types 22, 23, 33, 34, 35 and 36**
-////   compare the progress of objective 0, 1, 2, 3, 4 and 5 of that quest with the value
-////   by comparisons 1 to 6, progress on the left (`quest_view.objective_progress`,
-////   `0x14049f4d0`). A quest with no Quest2 row is the client's unknown quest: state 0,
-////   not done, not open, progress 0. Each condition holds its quest, read once at the
-////   load, so a check needs no table; a QuestObjective row a quest names and the table
-////   lacks fails the load. A subject with no quest log gives `NotRead`
-////   (`Prerequisite.prerequisiteTypeId.6`, `.68`, `.43`, `.22`).
-//// - **Types 125, 69 and 74** read a flag of the player's challenge objectId: in
-////   cooldown (125), active (69), unlocked (74, a guess at the flag's meaning: the
-////   client's name for it is not read). Comparison 1 passes when the flag is
-////   set, comparison 2 when it is clear, any other fails: a challenge the server has sent
-////   no record for has every flag clear, and the server sends none, so comparison 2
-////   always passes and comparison 1 never; the objectId and the value are not read
-////   (`Prerequisite.prerequisiteTypeId.125`, `.69`, `.74`, `0x14049fac0`,
-////   `0x14049f990`, `0x14049fa80`).
-//// - **Type 288** passes, by comparison 1, when the client's own set of owned titles holds
-////   the title the objectId names, and by comparison 2 when it does not, for a first unit
-////   that is a player; any other comparison fails, and so does a creature, and the value is
-////   not read (`Prerequisite.prerequisiteTypeId.288`, `0x1404a1830`). The set is the
-////   client's single one, filled only by messages 0x018A and 0x018B (`opcode.0x18a`,
-////   `opcode.0x18b`); the server sends neither and owns no title, so it is empty and the
-////   condition reads it so.
-//// - **Type 94** (the target is counted by a checklist objective) reads the check's
-////   creature, the first unit unless it is a player and then the second, and the objective
-////   `value` of the quest `objectId` (`Prerequisite.prerequisiteTypeId.94`,
-////   `0x14049f5b0`). With no creature, or a quest the table lacks, comparison 2 passes and
-////   any other fails. Else the creature is counted when the quest is in the log and the
-////   objective's mask holds the creature's checklist index (`0x140611680`), which
-////   comparison 1 passes and comparison 2 fails; a quest not in the log counts nothing.
-////   Only a struck unit carries a creature (`counting`).
-//// - **A vital the server does not hold** is `NotRead`, as is a type the client
-////   decides and the server does not read. A player's subject holds its Focus as vital 15,
-////   0 of 0 for a class with none, and a creature's holds it as 0 of 0, since its 0x262
-////   sends no stat 1 (`UnitStat.1.Focus`).
-//// - **Type 108** passes, by comparison 1, when the check's second unit stands in the arc
-////   of the PositionalRequirement row in its objectId around the first unit's facing, and
-////   by comparison 2 when it does not; any other comparison fails, and its value is not
-////   read. The arc runs from angleCenter - angleRange / 2 to angleCenter + angleRange / 2
-////   degrees off the facing, the direction runs from the first unit to the second as
-////   atan2(-(x2 - x1), -(z2 - z1)), flags bit 0 swaps the units, each arc end is wrapped
-////   into -pi..pi, and an arc whose end is below its start crosses the wrap; both ends are
-////   inside. With no second unit, objectId 0 or no row, comparison 2 passes and any other
-////   fails. The arithmetic is in 32-bit floats in the client's order, with `atan2` taken
-////   in 64 bits and rounded to 32 (the BEAM has no atan2f), so a direction within one
-////   32-bit step of an arc end may fall on the other side than the client's
-////   (`Prerequisite.prerequisiteTypeId.108`, `0x14049d940`). The client reads an objectId
-////   with no row as no arc; no row of the game names one, so the load refuses it
-////   (`load`), as it refuses any table row that is missing.
-//// - **A type with no case** in the client, 0 or one above 295, fails
-////   (`0x1404a2100`).
-//// - **The units:** a check's first unit is its subject. A caster-side check has the
-////   caster for both units (`Spell4Effects.prerequisiteIdTargetApply` gives the target
-////   first and the caster second for a target-side one): the subject's `second_unit` and
-////   `positions`. A struck unit the caster only sees is known by its place alone
-////   (`of_struck`), so every condition that reads what else it holds is `NotRead`; a struck
-////   creature that checks its own gate holds its own facts and the caster as its second
-////   unit (`of_creature`), and only types 15, 59 and 129, which read every caster's casts
-////   on it, stay unread (`struck_unread_types`).
+//// - Conditions are kept up to the first type 0 (`0x1404a5190`, `Prerequisite.flags`).
+//// - The row passes when all kept conditions pass, or any with flags bit 0 (`0x1404a1ca0`).
+//// - Comparisons 1 to 6: equal, not equal, greater, at least, less, at most (`0x1404a2090`).
+//// - Types 15 and 50: under a cast of the Spell4 (`Prerequisite.prerequisiteTypeId.15`, `.50`).
+//// - Types 59 and 60: the Spell4's stack count (`Prerequisite.prerequisiteTypeId.59`, `.60`).
+//// - Types 28 and 116: in combat, stealthed (`Prerequisite.prerequisiteTypeId.28`, `.116`).
+//// - Type 11: the nested Prerequisite evaluated whole (`Prerequisite.prerequisiteTypeId.11`).
+//// - Type 64: the unit's resource slot as a float (`Prerequisite.prerequisiteTypeId.64`).
+//// - Type 129: under a cast of the spell group (`Prerequisite.prerequisiteTypeId.129`).
+//// - Type 130: a cast by the second unit of the group (`Prerequisite.prerequisiteTypeId.130`).
+//// - Type 37: a roll from 1 to 100 against the value (`Prerequisite.prerequisiteTypeId.37`).
+//// - Types 40, 71, 73: vital percent or current (`Prerequisite.prerequisiteTypeId.71`).
+//// - Types 4 and 250: current and base faction (`Prerequisite.prerequisiteTypeId.4`, `.250`).
+//// - Type 10: gender, type 109: World (`Prerequisite.prerequisiteTypeId.10`, `.109`).
+//// - Types 1, 2, 3 and 52: level, race, class and path (`Prerequisite.prerequisiteTypeId.1`).
+//// - Type 26: the player is in the zone or one above it (`Prerequisite.prerequisiteTypeId.26`).
+//// - Types 38 and 39: who the first unit is (`Prerequisite.prerequisiteTypeId.38`, `.39`).
+//// - Types 243 and 47 never pass (`Prerequisite.prerequisiteTypeId.243`, `.47`, `0x140001ba0`).
+//// - Type 214: the ability book holds the Spell4Base (`Prerequisite.prerequisiteTypeId.214`).
+//// - Types 13, 14 and 246: the checker holds the Item2 (`Prerequisite.prerequisiteTypeId.13`).
+//// - Type 143: the checker's world difficulty (`Prerequisite.prerequisiteTypeId.143`).
+//// - Type 118: an event objective's status, always 0 (`Prerequisite.prerequisiteTypeId.118`).
+//// - Types 125, 69 and 74: a challenge flag, always clear (`Prerequisite.prerequisiteTypeId.125`).
+//// - Type 288: in the owned-title set, which is empty (`Prerequisite.prerequisiteTypeId.288`).
+//// - Type 94: the checklist objective counts the creature (`Prerequisite.prerequisiteTypeId.94`).
+//// - Type 108: the second unit stands in the arc (`Prerequisite.prerequisiteTypeId.108`).
+//// - Type 179: the unit's difficulty against the objectId (`0x14049eeb0`).
+//// - Type 6: the quest's state (`Prerequisite.prerequisiteTypeId.6`, `quest_view.state`).
+//// - Quest objectives: done, open, progress (`Prerequisite.prerequisiteTypeId.68`, `.43`, `.22`).
+//// - A type with no case fails (`0x1404a2100`); unread types or missing state are `NotRead`.
+//// - The first unit is the subject, the second the caster (`of_struck`, `of_creature`).
 
 import genesis_prime/gap
 import genesis_prime/message/float32
