@@ -46,7 +46,9 @@ import genesis_prime/shared/proc_event
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
-import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
+import genesis_prime/step.{
+  type ConnectionEffect, type ConnectionId, type Effect, type Now,
+}
 import gleam/bool
 import gleam/dict
 import gleam/list
@@ -309,8 +311,8 @@ pub fn ended_at_death(
 fn released_ended(
   session session: Session,
   now now: Now,
-  release release: fn(held_changes.Held) ->
-    #(held_changes.Held, List(unit_properties.Source)),
+  release release: fn(held_changes.Held(ConnectionId)) ->
+    #(held_changes.Held(ConnectionId), List(unit_properties.Source)),
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case connection_state.entered_of(session.status) {
     None -> #(session, [])

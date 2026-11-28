@@ -753,6 +753,7 @@ pub fn a_players_max_health_spell_takes_its_share_of_a_real_creatures_health_tes
     )
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message_of(
+      from: world_watch_support.address_of(run:, connection: 1),
       unit_id: first.unit_id,
       damage_type: 2,
       amount: max_health_row_blow(),
@@ -985,6 +986,7 @@ pub fn a_restarted_creature_refuses_the_old_lifes_tick_test() -> Nil {
       unit_id: first.unit_id,
       life: 2,
       message: world_watch_support.strike_message(
+        from: world_watch_support.address_of(run:, connection: 1),
         unit_id: first.unit_id,
         damage_type: 3,
         damage: 18,
@@ -2290,6 +2292,7 @@ fn struck_with_states(
 ) -> Nil {
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
+      from: world_watch_support.address_of(run:, connection:),
       unit_id:,
       damage_type: 3,
       damage:,
@@ -2300,7 +2303,7 @@ fn struck_with_states(
     map_message.Strike(
       tell: strike_tell.Strike(
         ..tell,
-        from: step.Connection(ConnectionId(connection)),
+        from: step.Unit(world_watch_support.address_of(run:, connection:)),
         striker: strike_tell.PlayerStriker(
           unit_id: connection * 10,
           place: place_support.at(
@@ -2311,7 +2314,6 @@ fn struck_with_states(
             z: 0.0,
           ),
           seq: 1,
-          stay: map_support.stay(count: 1),
           hit_radius: place_support.player_hit_radius,
           rolls: hit.Rolls(crit: 0.5, deflect: 0.5, glance: 0.5),
         ),
@@ -2746,6 +2748,7 @@ pub fn a_stun_between_the_gos_ends_the_cast_and_the_creature_returns_to_its_auto
   driven_time.advance(time: roaring.time, ms: 200)
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
+      from: world_watch_support.address_of(run: roaring.run, connection: 1),
       unit_id: roaring.unit_id,
       damage_type: 3,
       damage: 1,

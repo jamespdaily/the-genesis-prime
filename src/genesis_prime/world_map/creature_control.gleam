@@ -56,7 +56,7 @@ import gleam/result
 
 /// One state a creature holds: the state, the cast it came from (the strike's cast id,
 /// which its 0x880 names), the instance id the caster's go gave it, the address of the
-/// caster's connection, the monotonic time it ends at, and its number for the
+/// caster's unit, the monotonic time it ends at, and its number for the
 /// creature's life, which its timer is made from.
 pub type Control {
   Control(

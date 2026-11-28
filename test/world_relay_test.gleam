@@ -25,7 +25,7 @@ import genesis_prime/shared/strike_tell.{
   type Answered, Answered, Key, Landed, Refused,
 }
 import genesis_prime/shared/unit_news.{PeerNews}
-import genesis_prime/step.{ConnectionId, Woken}
+import genesis_prime/step.{Woken}
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/registry
 import gleam/list
@@ -112,6 +112,7 @@ pub fn a_viewer_writes_the_creatures_snapshot_and_then_its_news_in_the_order_the
   let unit_id = 2
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
+      from: world_watch_support.address_of(run:, connection: 1),
       unit_id:,
       damage_type: 3,
       damage: 14,
@@ -124,7 +125,10 @@ pub fn a_viewer_writes_the_creatures_snapshot_and_then_its_news_in_the_order_the
     unit_id:,
     life: 2,
     payload: map_message.Strike(
-      tell: strike_tell.Strike(..tell, from: step.Connection(ConnectionId(2))),
+      tell: strike_tell.Strike(
+        ..tell,
+        from: step.Unit(world_watch_support.address_of(run:, connection: 2)),
+      ),
     ),
   )
   held_at_least(time:, world:, count: 2)
@@ -267,8 +271,7 @@ pub fn a_dead_creature_that_is_released_still_answers_its_striker_through_the_ma
       map_message.Relay(
         unit_id: beast.unit_id,
         life: 2,
-        to: ConnectionId(1),
-        stay: map_support.stay(count: 1),
+        to: world_watch_support.address_of(run:, connection: 1),
         payload: map_message.Struck(answered: Answered(
           key: strike_tell.Key(
             cast_id: 3,
@@ -312,6 +315,7 @@ pub fn the_map_delivers_a_relay_held_past_the_strike_deadline_unchanged_and_the_
   send_gate.close(gate: world_support.gate(world:))
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
+      from: world_watch_support.address_of(run:, connection: 1),
       unit_id: beast.unit_id,
       damage_type: 3,
       damage: 5,
@@ -379,8 +383,7 @@ fn struck_through_the_map(
   let tell =
     inbound_support.struck_by(
       tell: inbound_support.strike(unit_id:),
-      from:,
-      stay_count: 1,
+      from: world_watch_support.address_of(run:, connection: from),
     )
   let tell = strike_tell.Strike(..tell, key: Key(..tell.key, cast_id:))
   world_watch_support.told_creature_by(

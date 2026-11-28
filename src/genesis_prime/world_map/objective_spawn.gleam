@@ -1,88 +1,34 @@
-//// The creatures a kill objective needs and the stored spawn table does not
-//// hold: for each kill objective with a marker (QuestObjective types 2, 8 and
-//// 16, and the type 5 rows of the kill table, whose reward pane is the group;
-//// worldLocationsIdIndicator00 to 03 name WorldLocation2 circles) in a
-//// world the server holds spawns for (a world one stored row is in), a creature
-//// with no stored spawn in the marker's world stands in the circle, as many as
-//// the objective counts, so the player sees it, kills it and the objective
-//// counts. The rows are placed once at the start, beside the stored
-//// ones, and the map starts them as it starts a stored row (`spawn.select`).
+//// The creatures an objective needs that no stored spawn of the marker's world
+//// holds: one row per creature at each of the objective's markers, placed once
+//// at the start beside the stored rows and started as a stored row is
+//// (`spawn.select`), so the player sees it, kills or clicks it and the
+//// objective counts.
 ////
-//// - The client's tables set what is needed: type 2's data is a Creature2 id,
-////   types 8 and 16's a TargetGroup whose creatures count (`target_group`), and
-////   the marker is the circle the quest pane shows (`WorldLocation2.position0`
-////   to 2, `radius`, facing0 to 3 a quaternion read as `start_place` does).
-//// - The tutorial's markers show where the client wants the creatures
-////   (`WorldLocation2.npe_battle_markers`). The client lifts a unit onto the
-////   ground when it is at most 2 units below it and draws it at the height sent
-////   above it, and it gives the server no ground height
-////   (`unit.ground_lift`, `terrain_height.server_view`), so the server sends
-////   the height: the marker's own at its centre (the ground there, where the
-////   marker is on the ground), and on its ring the ground the server reads
-////   (`terrain.height_at`) at the slot when the marker's centre stands on the
-////   ground (its height within the client's lift of 2 of the ground read at the
-////   centre) and that read is within the ring's radius plus 2 of the marker's
-////   height, the server's choice for the ground of a slope no steeper than 45
-////   degrees from the centre. A marker below or above the ground at its centre
-////   (an interior, a cave, a prop) keeps its own height at every slot, and so does
-////   a slot the ground has no read at or whose read is outside that band (a pit, a
-////   cliff, terrain under props).
-//// - Where a creature stands in the circle, and which creature of a group takes
-////   which place, are the server's choice. The objective's count is dealt to
-////   its markers one at a time in column order; a marker that gets one stands
-////   it at its centre with its facing, and one that gets k stands them on the
-////   circle of half its radius at the angles 2 pi s / k from the +x axis
-////   towards +z, each facing the centre. The creatures of a group are dealt to
-////   the places in that order and in the group's order, cycling. An objective
-////   whose markers lie in different worlds is placed in each world with its
-////   whole count; objectives of the same creatures and markers are placed once
-////   with the largest count.
-//// - Objectives that share a marker place one set of creatures there (a server
-////   choice: the client's tables name no place for a creature). A marker stands
-////   the creatures the first objective deals it, then of each later objective
-////   those it deals more of than the marker holds, so each objective keeps what
-////   it asked of the marker, a creature two objectives ask of it stands once (the
-////   larger number), and the creatures of one marker, the click targets of the
-////   marker after them, fill one ring, no two on one place.
-//// - A creature stands with what `spawn.creature_row` gives its Creature2 row:
-////   the unit type (entity type 13 for a turret creature), the faction, the first
-////   display and outfit of its groups, no stored health and its minLevel.
-//// - A placed row's id is `first_placed_id` plus the rank of its kind (kill or click),
-////   marker, creature and nth row of that creature at that marker (`rank_space`), fixed by
-////   the client's tables alone, so no stored row added or deleted moves it and a quest's
-////   used objects of it (genesis_prime/game/quest_log) are kept across a login and a
-////   re-import. The load refuses a stored row whose id is at or above `first_placed_id`
-////   (`refusals`). The other saved table that keys on a spawn id is `spawn_stat` (its own
-////   `spawn_id` column, content that only a stored row has). Its creature respawns at its
-////   place as a stored row's does.
+////   client's tables + stored rows
+////     -> `place` -> rows (kill), click_rows (click), skipped, click_skipped, unread_links
 ////
-//// A pair that is not placed is reported once at the start (`Skipped`): a
-//// creature with no Creature2 row, a group that lists no creature, a marker with
-//// no WorldLocation2 row, a marker in a world with no stored spawn and a turret
-//// creature with no creature_kind row. Kill
-//// types 15 and 46 and the tutorial's other objective types name no creature to
-//// place here.
-////
-//// The creatures of a click objective (QuestObjective types 5 and 32, whose
-//// creature `objective_link.links` ties to the objective, and the type 5 rows of the
-//// click table, whose reward pane's creatures the client offers a click on,
-//// `activate.offers_click`) are placed the same
-//// way (`Placed.click_rows`), where no stored row serves the marker: every
-//// stored row of the creature, whatever its unit type, serves the one marker of
-//// the creature's objectives that it stands nearest to in its own world (a tie
-//// goes to the lower marker id), and each marker no row serves gets the creature
-//// at its centre, height and facing, as the unit type its CreationTypeEnum pairs
-//// with (the same number, but 19 for 18 and 32 for 20, as the world database
-//// stores them).
-//// Several creatures at one marker stand on its half-radius ring in creature id
-//// order, after the kill creatures of the marker. The click rows are numbered after the kill rows. A pair is skipped and
-//// reported (`click_skipped`) for a marker with no WorldLocation2 row, a marker
-//// in a world with no stored spawn, and a creature whose unit type
-//// `spawn.select` does not start (`spawn.starts_entity_type`). A link of a creature
-//// that names no objective is reported too (`unread_links`): a quest with no
-//// Quest2 row, an index the quest has no objective at, or a quest slot with no
-//// QuestObjective row; a link to an objective of another type names none to place
-//// and is not. A placed creature stays after it is used.
+//// - Kill objectives: QuestObjective types 2, 8 and 16, and the kill table's type 5 rows.
+//// - Type 2's data is a Creature2 id; types 8 and 16's a TargetGroup (`target_group`).
+//// - An objective's markers are its worldLocationsIdIndicator00 to 03, WorldLocation2 circles.
+//// - A circle: `WorldLocation2.position0` to 2, `radius`, facing0 to 3 as `start_place` reads.
+//// - The client draws a unit at the height sent (`terrain_height.server_view`).
+//// - The client lifts onto the ground a unit at most 2 below it (`unit.ground_lift`).
+//// - A ring slot's height: `terrain.height_at` there when it can be, else the marker's own.
+//// - Place in the circle is the server's choice: the count dealt to the markers one at a time.
+//// - One at the centre; k on the half-radius ring at angles 2 pi s / k, facing the centre.
+//// - A shared marker stands one set: each creature as many as the largest count asked of it.
+//// - A creature stands with what `spawn.creature_row` gives its Creature2 row.
+//// - A placed id: `first_placed_id` + rank of (kind, marker, creature, nth) (`rank_space`).
+//// - The load refuses a stored row whose id is at or above `first_placed_id` (`refusals`).
+//// - A pair that is not placed is reported once at the start (`Skipped`).
+//// - Kill types 15 and 46 name no creature to place.
+//// - Click objectives: QuestObjective types 5 and 32, whose creature `objective_link.links` ties.
+//// - The click table's rows place the pane's clickable creatures (`activate.offers_click`).
+//// - A stored row serves its creature's nearest marker in its world (tie: lower marker id).
+//// - An unserved marker gets the creature at its centre, as its CreationTypeEnum's unit type.
+//// - Click skips and unread links are reported (`click_skipped`, `unread_links`).
+//// - A placed creature respawns at its place as a stored row's does.
+//// - A placed click target stays after it is used.
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/objective_kind

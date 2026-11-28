@@ -45,7 +45,6 @@ pub fn life_effects(
       player_life.Answer(unit_id:, life:, answered:) -> [
         connection_state.tells_the_creature(
           entered:,
-          connection: client_connection.connection(session.link),
           unit_id:,
           life:,
           payload: map_message.StrikeAnswered(answered:),
@@ -53,7 +52,6 @@ pub fn life_effects(
       ]
       player_life.StreamTo(unit_id:, life:) -> [
         connection_movement.tells_a_fighter_the_place(
-          connection: client_connection.connection(session.link),
           entered:,
           fighter: #(unit_id, life),
           place: movement.place(entered.movement),

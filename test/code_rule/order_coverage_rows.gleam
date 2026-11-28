@@ -129,7 +129,7 @@ fn stay_sent() -> List(Row) {
       type_name: "StaySent",
       variants: ["SentByFoe", "SentByTarget"],
       cover: Owner(
-        "map_relay_test.a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one_whatever_the_players_sight_test",
+        "map_relay_test.a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test",
       ),
     ),
   ]
@@ -346,7 +346,7 @@ fn delivered_rows() -> List(Row) {
       type_name: "Delivered",
       variants: ["Tell"],
       cover: Owner(
-        "map_relay_test.a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one_whatever_the_players_sight_test",
+        "map_relay_test.a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test",
       ),
     ),
     Row(
@@ -383,7 +383,7 @@ fn payload_rows() -> List(Row) {
       type_name: "Payload",
       variants: ["Fight"],
       cover: Owner(
-        "map_relay_test.a_creature_relay_is_delivered_to_a_current_stay_and_dropped_to_an_old_one_whatever_the_players_sight_test",
+        "map_relay_test.a_relay_from_an_address_that_ended_is_not_admitted_by_the_map_test",
       ),
     ),
   ]

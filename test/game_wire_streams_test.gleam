@@ -189,12 +189,19 @@ pub fn a_viewer_is_written_every_move_a_walking_player_makes_after_its_0x262_wit
       )
       == 2
     })
-  // The walker's connection took every move before its pong and told the viewer what it
-  // told it before the pong: the viewer's pong holds all of it, held moves released.
+  // The walker's connection took every move before its pong, but it tells the viewer through
+  // the map, a second hop that the viewer's own pong does not follow: the viewer's connection
+  // is read until the walker stands at its last place, held moves released.
   let #(_, _) =
     game_client.read_until_pong(game: first, have: first_have, number: 3)
   let #(after_the_pong, _) =
-    game_client.read_until_pong(game: second, have: second_have, number: 1)
+    game_client.read_until(game: second, have: second_have, found: fn(frames) {
+      place_at_the_viewer(
+        frames: list.flatten([second_burst, left, back, frames]),
+        unit_id: walker,
+      )
+      == Some(last_step)
+    })
   let back = list.append(back, after_the_pong)
   let at_the_viewer =
     of_the_unit(

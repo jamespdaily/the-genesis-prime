@@ -438,6 +438,7 @@ fn start_signalling(
         | step.Store
         | step.Maps
         | step.Map(..)
+        | step.Unit(..)
         | step.Creature(..)
         | step.CharacterNamed(..)
         | step.ZoneChannel(..)

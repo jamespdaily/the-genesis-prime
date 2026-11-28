@@ -142,8 +142,8 @@ import genesis_prime/shared/strike_tell.{
 import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_state
 import genesis_prime/step.{
-  type ConnectionEffect, type ConnectionId, type Effect, type Now, type TimerId,
-  CancelTimer, LogWarning, OwnEffect, StartTimer,
+  type ConnectionEffect, type Effect, type Now, type TimerId, CancelTimer,
+  LogWarning, OwnEffect, StartTimer,
 }
 import genesis_prime/table/creature2
 import genesis_prime/table/eldan_augmentation
@@ -886,7 +886,7 @@ pub fn creatures_told(
     Continue(session:, effects:) ->
       case connection_state.entered_of(session.status) {
         Some(entered) -> {
-          let #(compared, told) = creatures_settled(session:, entered:)
+          let #(compared, told) = creatures_settled(entered:)
           Continue(
             connection_state.with_entered_in_any_status(
               session:,
@@ -906,12 +906,10 @@ pub fn creatures_told(
 /// The player's cast state compared against what the creatures were told
 /// (`creature_view.compared`), and the tell of each change.
 pub fn creatures_settled(
-  session session: Session,
   entered entered: world_entry.Entered,
 ) -> #(cast_state.State, List(Effect(ConnectionEffect(Request)))) {
   let #(compared, changes) =
     creature_view.compared(cast: entered.cast, caster_unit_id: entered.unit_id)
-  let connection = client_connection.connection(session.link)
   #(
     compared,
     list.map(changes, fn(change) {
@@ -919,7 +917,6 @@ pub fn creatures_settled(
         creature_view.ViewSet(unit_id:, life:, view:) ->
           connection_state.tells_the_creature(
             entered:,
-            connection:,
             unit_id:,
             life:,
             payload: map_message.CastViewSet(view:),
@@ -927,7 +924,6 @@ pub fn creatures_settled(
         creature_view.ViewEnds(unit_id:, life:, cast_id:) ->
           connection_state.tells_the_creature(
             entered:,
-            connection:,
             unit_id:,
             life:,
             payload: map_message.CastViewEnds(cast_id:),
@@ -1675,7 +1671,6 @@ fn carried_out(
       -> #(session, [
         connection_state.tells_the_creature(
           entered:,
-          connection: client_connection.connection(session.link),
           unit_id:,
           life:,
           payload: map_message.ModifierStarts(source:, modifier:),
@@ -1687,7 +1682,6 @@ fn carried_out(
         [
           connection_state.tells_the_creature(
             entered:,
-            connection: client_connection.connection(session.link),
             unit_id:,
             life:,
             payload: map_message.ModifierEnds(source:),
@@ -1704,14 +1698,7 @@ fn carried_out(
       cast_state.CreatureDespawns(unit_id:, life:, went_at_ms:, delay_ms:),
         Some(entered)
       -> #(session, [
-        creature_despawned(
-          entered:,
-          connection: client_connection.connection(session.link),
-          unit_id:,
-          life:,
-          went_at_ms:,
-          delay_ms:,
-        ),
+        creature_despawned(entered:, unit_id:, life:, went_at_ms:, delay_ms:),
       ])
       cast_state.CreatureDespawns(..), None -> #(session, [])
       cast_state.CreatureHoldsUnitStates(unit_id:, life:, went_at_ms:, rows:),
@@ -1719,7 +1706,6 @@ fn carried_out(
       -> #(session, [
         creature_holds_unit_states(
           entered:,
-          connection: client_connection.connection(session.link),
           unit_id:,
           life:,
           went_at_ms:,
@@ -1731,7 +1717,6 @@ fn carried_out(
       -> #(session, [
         connection_state.tells_the_creature(
           entered:,
-          connection: client_connection.connection(session.link),
           unit_id:,
           life:,
           payload: map_message.ControlsEnd(cast_id:),
@@ -1843,7 +1828,6 @@ fn creature_thrown(
     Session(..session, link:),
     connection_state.tells_the_creature(
       entered:,
-      connection: client_connection.connection(session.link),
       unit_id:,
       life:,
       payload: map_message.Thrown(throw: forced_move.Throw(
@@ -1860,7 +1844,6 @@ fn creature_thrown(
 /// `went_at_ms`, and draws nothing.
 fn creature_despawned(
   entered entered: world_entry.Entered,
-  connection connection: ConnectionId,
   unit_id unit_id: Int,
   life life: Int,
   went_at_ms went_at_ms: Int,
@@ -1868,7 +1851,6 @@ fn creature_despawned(
 ) -> Effect(ConnectionEffect(Request)) {
   connection_state.tells_the_creature(
     entered:,
-    connection:,
     unit_id:,
     life:,
     payload: map_message.Despawn(delay_ms:, went_at_ms:),
@@ -1880,7 +1862,6 @@ fn creature_despawned(
 /// go's `rows` and its time, and draws nothing.
 fn creature_holds_unit_states(
   entered entered: world_entry.Entered,
-  connection connection: ConnectionId,
   unit_id unit_id: Int,
   life life: Int,
   went_at_ms went_at_ms: Int,
@@ -1888,7 +1869,6 @@ fn creature_holds_unit_states(
 ) -> Effect(ConnectionEffect(Request)) {
   connection_state.tells_the_creature(
     entered:,
-    connection:,
     unit_id:,
     life:,
     payload: map_message.UnitStates(rows:, went_at_ms:),
@@ -2038,6 +2018,7 @@ fn attacker_of(
   strike.Attacker(
     unit_id: entered.unit_id,
     connection: client_connection.connection(session.link),
+    address: entered.address,
     pose: area.pose_of(place:),
     place:,
     move_seq: session.move_seq,
@@ -2097,7 +2078,6 @@ fn strike_carried_out(
       strike.TellStrike(unit_id:, life:, tell:), Some(entered) -> #(session, [
         connection_state.tells_the_creature(
           entered:,
-          connection: client_connection.connection(session.link),
           unit_id:,
           life:,
           payload: map_message.Strike(tell:),

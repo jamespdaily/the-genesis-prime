@@ -45,6 +45,7 @@ import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
+import genesis_prime/world_map/unit_address
 import gleam/bool
 import gleam/dict
 import gleam/int
@@ -644,8 +645,8 @@ fn creature_message_name(message: creature.Message) -> String {
 
 fn map_message_name(message: map_message.Message) -> String {
   case message {
-    map_message.Snapshot(by: ConnectionId(number), ..) ->
-      "Snapshot for " <> int.to_string(number)
+    map_message.Snapshot(by:, ..) ->
+      "Snapshot for " <> int.to_string(unit_address.joiner(address: by))
     map_message.Broadcast(..) -> "Broadcast"
     map_message.Relay(
       payload: map_message.Fight(told: strike_tell.Threatened(..)),

@@ -214,25 +214,25 @@ pub fn a_go_that_strikes_several_creatures_tells_each_in_selection_order_with_it
         10,
         3,
         Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 10),
-        step.Connection(ConnectionId(2)),
+        step.Unit(map_support.address(number: 2)),
         Rolls(crit: 0.0, deflect: 0.5, glance: 0.0),
       ),
       #(
         11,
         3,
         Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 11),
-        step.Connection(ConnectionId(2)),
+        step.Unit(map_support.address(number: 2)),
         Rolls(crit: 0.25, deflect: 0.75, glance: 0.5),
       ),
       #(
         12,
         3,
         Key(cast_id: 5, occasion: strike_tell.AtGo(phase: 0), unit_id: 12),
-        step.Connection(ConnectionId(2)),
+        step.Unit(map_support.address(number: 2)),
         Rolls(crit: 0.0, deflect: 0.0, glance: 0.0),
       ),
     ]
-    as "one strike for each selected unit in selection order, each with its own 12 bytes of the caster's seed as three fractions of 2^32, answered to the caster's connection"
+    as "one strike for each selected unit in selection order, each with its own 12 bytes of the caster's seed as three fractions of 2^32, named as from the caster's unit address, which the answer is relayed to"
   assert timers(effects:)
     == [strike.StartTimer(timer: strike.strike_timer, after_ms: 1000)]
     as "one strike timer for the round's deadline, 1 s after the go"

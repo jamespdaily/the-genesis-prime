@@ -452,19 +452,18 @@ pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_f
       }
     })
     == [
-      "UnseenBy " <> int.to_string(generation.number(generation: two_sees_one)),
       "SeenBy "
-        <> int.to_string(generation.number(generation: new_two_sees_one)),
+      <> int.to_string(generation.number(generation: new_two_sees_one)),
     ]
-    as "owner 1 is told viewer 2's sight ended, then the new one"
+    as "the joiner's first unit is removed as a leave removes it, with nothing told to the connection that leaves: owner 1 is told only viewer 2's new sight"
   assert list.any(owner_two, fn(notice) {
     notice.1 == map_message.PlayerUnseen(unit_id: 1, generation: two_sees_one)
   })
     as "viewer 2 is told unit 1 is unseen from the sight that ended"
-  assert list.any(owner_one, fn(notice) {
+  assert !list.any(owner_one, fn(notice) {
     notice.1 == map_message.PlayerUnseen(unit_id: 2, generation: one_sees_two)
   })
-    as "viewer 1 is told unit 2 is unseen from the sight that ended, for the stay it had"
+    as "viewer 1 is told no unit unseen: its connection leaves the map and joins again, and the 0xAD of the new join removes every unit"
   assert players.notices_to(taken: again, connection: 3)
     |> list.filter(fn(notice) {
       case notice.1 {

@@ -10,9 +10,10 @@ import genesis_prime/shared/strike_tell.{
 import genesis_prime/shared/unit_casts.{type CastView, CastView}
 import genesis_prime/shared/unit_properties.{type Modifier, type Source}
 import genesis_prime/shared/unit_state
-import genesis_prime/step.{Connection, ConnectionId}
+import genesis_prime/step
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/list
 import map_spawn_support
 import map_support
@@ -23,6 +24,7 @@ import world_watch_support
 pub fn strike(unit_id unit_id: Int) -> StrikeTell {
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
+      from: map_support.address(number: 1),
       unit_id:,
       damage_type: 3,
       damage: 5,
@@ -50,7 +52,7 @@ pub fn place() -> Place {
 /// The source of the modifier `modifier` names.
 pub fn source() -> Source {
   let assert creature.ModifierStarts(source:, ..) =
-    world_watch_support.modifier_starts()
+    world_watch_support.modifier_starts(by: map_support.address(number: 1))
     as "the modifier start holds a source"
   source
 }
@@ -58,7 +60,7 @@ pub fn source() -> Source {
 /// The modifier a told start applies.
 pub fn modifier() -> Modifier {
   let assert creature.ModifierStarts(modifier:, ..) =
-    world_watch_support.modifier_starts()
+    world_watch_support.modifier_starts(by: map_support.address(number: 1))
     as "the modifier start holds a modifier"
   modifier
 }
@@ -102,23 +104,7 @@ pub fn payloads(unit_id unit_id: Int) -> List(#(String, map_message.Inbound)) {
   })
 }
 
-/// The strike `tell` as the connection `from` tells it in its stay `stay_count`: its own
-/// sender and stay named as its striker.
-pub fn struck_by(
-  tell tell: StrikeTell,
-  from from: Int,
-  stay_count stay_count: Int,
-) -> StrikeTell {
-  strike_tell.Strike(
-    ..tell,
-    from: Connection(ConnectionId(from)),
-    striker: case tell.striker {
-      strike_tell.PlayerStriker(..) as striker ->
-        strike_tell.PlayerStriker(
-          ..striker,
-          stay: map_support.stay(count: stay_count),
-        )
-      strike_tell.CreatureStriker(..) as striker -> striker
-    },
-  )
+/// The strike `tell` as the player of the unit `from` tells it.
+pub fn struck_by(tell tell: StrikeTell, from from: UnitAddress) -> StrikeTell {
+  strike_tell.Strike(..tell, from: step.Unit(from))
 }

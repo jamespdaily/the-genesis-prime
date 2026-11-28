@@ -757,12 +757,12 @@ fn heal_world(tables tables: table_store.Tables) -> #(scene.Scene, Int) {
   )
 }
 
-/// The Esper's press of Mind Over Body at the unit of connection `target`, and the go that
+/// The Esper's press of Mind Over Body at the unit `target_unit_id`, and the go that
 /// follows its cast time: what the steps sent is in flight, none of it taken.
 fn heal_pressed(
   world world: scene.Scene,
   bag_index bag_index: Int,
-  target target: Int,
+  target_unit_id target_unit_id: Int,
 ) -> scene.Scene {
   let with_the_press =
     scene.client_presses(
@@ -770,7 +770,7 @@ fn heal_pressed(
       connection: 2,
       bag_index:,
       client_cast_id: 1,
-      target: unit_of(connection: target),
+      target: target_unit_id,
     )
   let assert [press] = scene.deliverable(scene: with_the_press)
     as "the press is the one message in flight"
@@ -803,6 +803,12 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
   let written_for_h = fn(scene) {
     scene.written_for(scene:, connection: 2, unit_id: unit_of(connection: 1))
   }
+  // The map takes the second join as a Leave and a join: H's new unit is the next unit id
+  // the map issues after E's, not the unit E saw.
+  let unit_of_h_again = 3
+  let written_for_h_again = fn(scene) {
+    scene.written_for(scene:, connection: 2, unit_id: unit_of_h_again)
+  }
   let assert Some(map.Relation(generation: first, ..)) =
     map.player_relation(
       state: settled.map,
@@ -833,8 +839,10 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
     as "E is in the stay it was in"
   // H's own new connection answers the new sight's SeenBy with its snapshot.
   let done = scene.settle(scene: again)
-  assert list.drop(written_for_h(done), 1) == ["0x355(1)", "0x262(1)"]
-    as "E is written H's 0x355 and then its new 0x262: the shown unit is removed and created again, not kept under the earlier address"
+  assert list.drop(written_for_h(done), 1) == ["0x355(1)"]
+    as "E is written H's 0x355: the shown unit is removed"
+  assert written_for_h_again(done) == ["0x262(3)"]
+    as "E is then written the 0x262 of H's new unit, which the map issued a new unit id: the shown unit is removed and created again, not kept under the earlier address"
   assert !list.contains(
     scene.written_for(
       scene: done,
@@ -848,7 +856,8 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
     as "H told E nothing itself"
   // E presses its heal at H: the strike names H's new stay, which E's own copy took from
   // the map's SeenBy of the new sight, and H, in that stay, takes it and answers.
-  let healing = heal_pressed(world: done, bag_index:, target: 1)
+  let healing =
+    heal_pressed(world: done, bag_index:, target_unit_id: unit_of_h_again)
   assert heal_strikes_in_flight(scene: healing)
     == [#(1, map_support.stay(count: 2))]
     as "the strike names H's second stay, not the stay of the sight E held before"
@@ -857,9 +866,8 @@ pub fn the_other_player_that_shows_a_player_who_joins_again_is_written_its_0x355
     taken.name == "tell of 1 to the map: TellLanding"
   })
     as "H took the heal in its new stay and answered it through the map"
-  assert scene.go_targets(scene: healed, connection: 2)
-    == [unit_of(connection: 1)]
-    as "the answer closed E's round: its go names H"
+  assert scene.go_targets(scene: healed, connection: 2) == [unit_of_h_again]
+    as "the answer closed E's round: its go names H's new unit"
 }
 
 /// C's connection tells T's a move, as mail of C's queue to T, to be taken in any order
@@ -1300,7 +1308,8 @@ pub fn a_heal_the_map_accepted_before_its_caster_left_sight_is_applied_and_one_f
   // The healer E (connection 2, an Esper) has pressed Mind Over Body at the healed player H
   // (connection 1) and its go has told the map the strike for H's stay 1.
   let #(world, bag_index) = heal_world(tables:)
-  let healing = heal_pressed(world:, bag_index:, target: 1)
+  let healing =
+    heal_pressed(world:, bag_index:, target_unit_id: unit_of(connection: 1))
   assert heal_strikes_in_flight(scene: healing)
     == [#(1, map_support.stay(count: 1))]
     as "the strike in flight names H's stay"
@@ -1486,7 +1495,7 @@ pub fn the_walk_by_commuting_ends_in_the_same_states_as_the_walk_by_receiver_alo
     scene: h_camps_and_enters_again(healing: heal_pressed(
       world:,
       bag_index:,
-      target: 1,
+      target_unit_id: unit_of(connection: 1),
     )),
   )
     as "H camps and enters again while the heal is on its way: each state the walk by receiver alone ends in is one the walk by commuting ends in, and the other way round"

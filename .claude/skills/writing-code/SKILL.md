@@ -37,6 +37,7 @@ A comment describes the code as it stands, for a person reading it, and reads tr
 - A public function or type has a doc comment saying what it does and why. An inline comment is for a line whose reason the doc comment cannot carry.
 - A module's doc comment holds its purpose, one diagram of its flow, and one line per rule with its evidence. How each case behaves is a test named for that case, not a paragraph.
 - Client evidence is cited after the plain sentence, as a pointer: a table, a row or a code address. The fact file holds the fact and its proof; the fact checker fails a cited address with no record.
+- A module's doc comment is at most 40 lines and a function's or type's at most 10, a line past 100 columns counting as several; `test/code_rule/comment_size.gleam` enforces it, and its list (`comment_sizes.txt`) holds the longer blocks and can only shrink.
 - A gap is stated as what the code does, and its module lists it for the coverage measure.
 - Never: change-log words ("now", "no longer", "used to", "not yet", "for now", "so far"), plans, links to issues or pull requests, dates, comparisons with another codebase, or counts of this code (counts of the client's fixed data are fine).
 - A script's docstring or header is its contract: what an operator runs, when, and what it refuses. Guidance points to it rather than repeating it.

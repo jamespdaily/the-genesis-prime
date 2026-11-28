@@ -22,13 +22,13 @@ import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news.{CreatureAppeared, Removed}
 import genesis_prime/step.{
-  Asked, CallerId, Connection, ConnectionId, OwnEvent, ServiceTimerFired,
-  TimerId, Told,
+  Asked, CallerId, ConnectionId, OwnEvent, ServiceTimerFired, TimerId, Told,
 }
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/spawn.{type Spawn}
+import genesis_prime/world_map/unit_address.{type UnitAddress}
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -55,6 +55,11 @@ const first_player = 2
 
 /// The viewer's connection, the one `game_connection_support.in_world` holds.
 const viewer = 1
+
+/// The address the map issues the first player: the first join of its run.
+fn first_players_address() -> UnitAddress {
+  map_support.address_for(incarnation: 1, number: 1, joiner: first_player)
+}
 
 fn beast() -> Spawn {
   legal_order_support.the_beast()
@@ -106,6 +111,7 @@ fn joined(scene scene: Scene) -> Scene {
 fn strike(damage damage: Int) -> Mail {
   let assert creature.Strike(tell:) =
     world_watch_support.strike_message(
+      from: first_players_address(),
       unit_id: beast_unit,
       damage_type: 3,
       damage:,
@@ -118,14 +124,13 @@ fn strike(damage damage: Int) -> Mail {
     input: ToMap(
       OwnEvent(
         Told(map_message.TellCreature(
-          from: ConnectionId(first_player),
-          stay: map_support.stay(count: 1),
+          from: first_players_address(),
           unit_id: beast_unit,
           life: spawns.creature_of(state: standing().map, spawn: 1).1,
           payload: map_message.Strike(
             tell: strike_tell.Strike(
               ..tell,
-              from: Connection(ConnectionId(first_player)),
+              from: step.Unit(first_players_address()),
             ),
           ),
         )),

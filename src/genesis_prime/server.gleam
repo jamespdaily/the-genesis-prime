@@ -402,7 +402,7 @@ fn locate(settings: Settings) -> Locate {
       step.Connection(connection:) -> registry.find(registry, connection)
       step.CharacterNamed(folded_name:) ->
         registry.find_named(registry, folded_name)
-      step.ZoneChannel(..) -> Error(Nil)
+      step.ZoneChannel(..) | step.Unit(..) -> Error(Nil)
       step.Creature(map:, incarnation:, unit_id:, life:) ->
         creature_registry.find(
           settings.world.creatures,
@@ -467,6 +467,7 @@ fn connection_locate(
       | step.Maps
       | step.ZoneChannel(..)
       | step.Creature(..)
+      | step.Unit(..)
       | step.Connection(..) -> pids(address) |> result.map(watch.Watched)
     }
   }
@@ -585,6 +586,7 @@ fn connection_reach(
         | Ok(_), step.Maps
         | Ok(_), step.Map(..)
         | Ok(_), step.Creature(..)
+        | Ok(_), step.Unit(..)
         | Ok(_), step.CharacterNamed(..)
         -> Error(Nil)
       }
@@ -754,6 +756,7 @@ fn map_reach(
         | step.Maps
         | step.Map(..)
         | step.Connection(..)
+        | step.Unit(..)
         | step.CharacterNamed(..)
         | step.ZoneChannel(..) -> reach.locate(address)
       }
@@ -778,6 +781,7 @@ fn map_reach(
         | step.Maps
         | step.Map(..)
         | step.Connection(..)
+        | step.Unit(..)
         | step.CharacterNamed(..)
         | step.ZoneChannel(..) -> reach.send(to, outgoing)
       }
@@ -888,6 +892,7 @@ fn creature_reach(
         | step.Maps
         | step.Map(..)
         | step.Connection(..)
+        | step.Unit(..)
         | step.CharacterNamed(..)
         | step.ZoneChannel(..) -> reach.locate(address)
       }
@@ -907,6 +912,7 @@ fn creature_reach(
         | step.Maps
         | step.Map(..)
         | step.Connection(..)
+        | step.Unit(..)
         | step.Creature(..)
         | step.CharacterNamed(..)
         | step.ZoneChannel(..) -> Error(Nil)

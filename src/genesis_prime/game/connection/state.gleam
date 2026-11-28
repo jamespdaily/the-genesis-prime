@@ -776,7 +776,6 @@ pub fn tells_the_map(
 /// through its map, so a creature hears about a player from one sender in one order.
 pub fn tells_the_creature(
   entered entered: world_entry.Entered,
-  connection connection: ConnectionId,
   unit_id unit_id: Int,
   life life: Int,
   payload payload: Inbound,
@@ -784,8 +783,7 @@ pub fn tells_the_creature(
   tells_the_map(
     entered:,
     request: client_connection.TellCreature(
-      connection:,
-      stay: entered.stay,
+      from: entered.address,
       unit_id:,
       life:,
       payload:,
