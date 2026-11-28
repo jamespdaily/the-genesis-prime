@@ -1,13 +1,9 @@
-//// The shell of a service: a process with no socket that other processes
-//// ask, running one rule. A singleton (the hand-off, Sessions) registers a
-//// name; a map is one of many and registers none: Maps holds the subject
-//// its start returns (genesis_prime/world_map/registry), since a name is an atom
-//// and maps come and go. Like a connection's shell
-//// (genesis_prime/connection/shell), it turns everything that reaches the
-//// process into the rule's inputs, carries out the rule's effects in order
-//// and decides nothing. It is a gleam_otp actor under a supervisor. How an
-//// asker reaches a service, the `Call` a service takes, is in
-//// genesis_prime/service.
+//// The shell of a service: a gleam_otp actor under a supervisor, running one
+//// rule with no socket: it turns everything that reaches the process into the
+//// rule's inputs, carries out the rule's effects in order and decides nothing.
+//// A named service registers its name; an unnamed one's subject is held by its
+//// starter (maps: genesis_prime/world_map/registry). Its `Call` and the ask path
+//// are in genesis_prime/service; the connection's shell: genesis_prime/connection/shell.
 ////
 //// One service, from start to end:
 ////
@@ -16,108 +12,32 @@
 ////                          its address (one found at an address), traps exits
 ////   OwnEvent(Started)                               ─▶ step ─▶ effects
 ////   after each step's effects, before the mailbox is read:
-////     a creature that did not start ─▶ OwnEvent(CreatureNotStarted(id, reason)) ─▶ step ─▶ effects
+////     a creature not started ─▶ OwnEvent(CreatureNotStarted(id, reason)) ─▶ step ─▶ effects
 ////     a watch of a target no process holds ─▶ WatchEnded(id) ─▶ step ─▶ effects
 ////   loop:
 ////     Call(message, reply)  ─▶ OwnEvent(Asked(CallerId(n), message)) ─▶ step ─▶ effects
 ////     TellCall(message)     ─▶ OwnEvent(Told(message))                 ─▶ step ─▶ effects
-////       (sent to the subject, or through the settings' scope: `group_registry`)
 ////     a timer's firing      ─▶ OwnEvent(ServiceTimerFired(id))        ─▶ step ─▶ effects
 ////     a watched process's DOWN ─▶ WatchEnded(id)           ─▶ step ─▶ effects
 ////     the parent's exit     ─▶ Stopping(now + shutdown_ms) ─▶ step ─▶ effects
-////   Reply(CallerId(n), answer): the shell calls that call's reply with the
-////     answer and forgets the caller
+////   Reply(CallerId(n), answer) ─▶ that call's reply(answer); the caller is forgotten
 //// ```
 ////
-//// An ask, from the asker's side (the connection shell carries it out):
-////
-//// ```
-//// asker                         directory                 service
-////   EffectsThenAsk(.., ask) ─▶ service.call(name, message, reply)
-////                                 name not registered ─▶ Error(Nil): NotRunning
-////                                 else monitor, send ──▶ Call(message, reply)
-////   waits until the ask's deadline                          Asked ─▶ step
-////   ◀── {ask answer, tag, answer} ◀─────────────────────────── Reply
-////   Answered(ask, Answer(answer))
-//// ```
-////
-//// - **CallerId.** The shell numbers the calls it takes from 1, in the order
-////   they arrive, so a recording names each caller with no process id.
-//// - **A tell** has no caller and no reply: the shell numbers none for it. It
-////   comes from a connection's `Tell` effect (genesis_prime/step), which the
-////   connection's shell sends as a `TellCall`.
-//// - **A reply nobody waits for.** An answer after the asker's deadline
-////   reaches the asker's shell, which drops it with no input to the asker's
-////   rule (genesis_prime/connection/shell); one to an asker that has ended is
-////   lost. The service never knows either way.
-//// - **A crash.** The rule's crash ends the process; the supervisor restarts
-////   it from the rule's `new`, so the service's state is lost. An asker
-////   waiting on it gets `EndedBeforeAnswer`; one asking while it restarts gets
-////   `NotRunning`.
-//// - **The server stopping.** The shell traps exits, so the supervisor's stop
-////   arrives as `Stopping`, with a deadline of the child's shutdown time from
-////   when the shell takes the exit, which is after it arrived when a step is
-////   running. A rule that has not stopped by whichever deadline comes first,
-////   this or the supervisor's own, is killed.
-//// - **A message no selector takes.** The shell drops it and logs a warning
-////   that names the message's kind (its tag or its shape) and never its
-////   contents, which could hold a secret.
-//// - **Stop.** The shell carries out the step's other effects, then the
-////   process exits with the reason `shutdown`, never `normal`:
-////   a supervisor reports a permanent child that exits `normal` while it
-////   shuts down as a failure, and restarts one that exits `shutdown` at any
-////   other time. A watch's end held by a step that stops the process is
-////   not taken, since the process has ended.
-//// - **Send.** `Send(to, message)` looks `to` up with the settings' `reach` and
-////   hands the message to the process found, in the form its shell takes (a
-////   connection takes it as `Woken`). An address with no process running
-////   drops the message, with no input and no log line: a rule that must know
-////   watches the receiver.
-//// - **Watch.** `Watch(id, target)` finds `target` with the settings' `locate`
-////   and monitors it, keeping the monitor under `id` in the shell. The target's
-////   end comes back once as `WatchEnded(id)` and the shell forgets the watch. A
-////   target no process holds when the watch begins is monitored by nothing:
-////   the shell holds the id, and takes `WatchEnded(id)` as its next input
-////   once the step's effects are carried out, before it reads its mailbox,
-////   with the ends of the step's other such watches in the order opened (a
-////   rule's step that those inputs start takes its own the same way); one
-////   that ends between the lookup and the monitor fires the monitor at once. A
-////   rule's id that is already open, monitored or held, ends the process with
-////   an error log: an id is unique among the open watches (genesis_prime/step/watch).
-//// - **Unwatch.** `Unwatch(id)` drops the monitor of `id` and flushes its DOWN
-////   from the mailbox, or drops an id held for a target no process holds, so
-////   no `WatchEnded` follows; an id with no open watch does nothing.
-//// - **A watch's end and a restart.** A watch lives in the process: a restarted
-////   service has no watches, and a rule that needs one opens it again from
-////   what it learns of its processes (Sessions has none to open: the
-////   connections claim again).
-//// - **StartCreature.** `StartCreature(watch, creature)` has the settings'
-////   `reach` start the creature, which returns once the creature runs and is found
-////   at its address (genesis_prime/world_map/creature_supervisor); the shell then
-////   opens the watch on that address as `Watch` does. A creature that did not
-////   start opens no watch: the shell keeps its watch and the supervisor's reason,
-////   and takes `CreatureNotStarted(watch, reason)` as the next input once the
-////   step's effects are carried out, in the order named, before any
-////   `WatchEnded` the step's watches held to end give.
-//// - **Timers.** `StartServiceTimer(id, ms)` starts a timer on the service's
-////   scheduler (`Settings.time`; the operating system's timer, `script.operating_system_timer`,
-////   for a server), kept under `id` with the reference its
-////   firing carries (genesis_prime/step/timer); the firing comes back once as
-////   `ServiceTimerFired(id)`, and the shell forgets the timer. `CancelServiceTimer(id)`
-////   cancels it, so no firing follows: a firing whose reference is not the
-////   current timer's of that id, such as a cancelled timer's, is dropped. An id
-////   already running ends the process with an error log. A timer lives in the
-////   process: a restarted service has none, and a rule that needs one starts it
-////   again.
-//// - **Effects and inputs of the other kind.** A service's own effects are
-////   `Reply`, `Send`, `StartCreature` and the timers, and its own inputs are
-////   `Started`, `Asked`, `Told`, `ServiceTimerFired` and `CreatureNotStarted`
-////   (`ServiceEffect` and `ServiceEvent`). It has no `Write`, `StartTimer` or
-////   `CancelTimer`, and takes no `Woken`, `TimerFired` or `Answered`, which are a
-////   connection's, so a rule that writes to a socket or takes those inputs does
-////   not compile against this shell. It makes no ask: its request type, `NoAsk`,
-////   has no values, so no rule can build a step that ends in one; the shell's
-////   case for such a step is unreachable.
+//// - **CallerId.** Calls are numbered from 1 as they arrive, so a recording names each caller.
+//// - **A tell** has no caller and no reply: a connection's `Tell` effect sent as `TellCall`.
+//// - **A late reply** the asker's shell drops with no rule input; the service never knows.
+//// - **A crash** restarts the service from `new`: askers get `EndedBeforeAnswer` or `NotRunning`.
+//// - **Stopping** gives the rule now + `shutdown_ms` to stop; past the deadline it is killed.
+//// - **A stray message** is dropped and logged by its kind, never contents (a possible secret).
+//// - **Stop** runs the other effects, then exits `shutdown`; `normal` is a supervisor failure.
+//// - **Send** finds `to` through the settings' `reach`; no process there drops it silently.
+//// - **Watch** monitors what `locate` finds, ending once as `WatchEnded(id)`; repeated ids crash.
+//// - **Unwatch** drops the monitor and flushes its DOWN; an id with no open watch does nothing.
+//// - **A restart** drops the process's watches and timers; a rule opens what it needs again.
+//// - **StartCreature** has `reach` start it and watches it; failure is `CreatureNotStarted`.
+//// - **A timer** fires once as `ServiceTimerFired(id)` on `Settings.time`; repeated ids crash.
+//// - **`CancelServiceTimer`** cancels it: no firing follows, and a stale firing is dropped.
+//// - **Kinds.** Effects `ServiceEffect`, inputs `ServiceEvent`; no ask: `NoAsk` has no values.
 
 import genesis_prime/connection/script.{type Elapsed, type Scheduler}
 import genesis_prime/group_registry.{type Scope}

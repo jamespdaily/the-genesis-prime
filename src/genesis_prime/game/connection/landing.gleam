@@ -1,91 +1,29 @@
 //// What another player's cast lands on this connection's player: the heal rows a
-//// caster's connection told it (genesis_prime/game/strike_tell `PlayerStrike`), applied to
-//// its own life and answered, and the changes a caster's cast holds on it
-//// (genesis_prime/game/held_changes), applied as the player's own cast's change of that
-//// kind is and held per caster until one of the ends below.
+//// caster's connection told it (genesis_prime/game/strike_tell `PlayerStrike`), applied
+//// to its life and answered, and the changes a caster's cast holds on it
+//// (genesis_prime/game/held_changes), applied as its own cast's change of that kind and
+//// held per caster until one of the ends below.
 ////
 //// ```
-//// caster's connection C                        this connection T (the healed player)
-////   Tell(map, TellLanding(C, stay_C, T, stay_T, HealStrike(PlayerStrike(key, C, stay_C, outgoing, heals))))
-////                      ─▶ the map: Relayed(stay_T, Landed(..)) ─▶ ForStay(stay_T, SentByPlayer(Strike(strike)))   (the stay fence; held through an ask)
-////                      ─▶ player_life.heals_taken: each row in order on the life the one before left
-////   ForStay(stay_C, SentByPlayer(Answer(PlayerAnswered(key, HealsLanded(splits) | PlayerDead))))
-////                      ◀─ Tell(map, TellLanding(T, stay_T, C, stay_C, HealAnswer(answered))), then T's own news
+//// C (the caster's connection)    T (this connection, the healed or changed player)
+////   HealStrike  ─▶ the heal rows on T's life in order ─▶ HealAnswer to C, then T's own news
+////   ChangeStart ─▶ the change applied as T's own cast's and held for C
+////   ChangeEnd   ─▶ the source taken off
+////   CastWent    ─▶ the cast started for T's viewers
+////   UnseenBy(C), Gone(C's unit), T's death ─▶ the sources each ends
 //// ```
 ////
-//// - **The answer is told before T's own news**, in the order a creature answers a strike
-////   (genesis_prime/game/strike). C holds the healed unit's news while its place in a
-////   round waits, so the order decides nothing C's client sees.
-//// - **A heal reads the healer's outgoing multiplier from the tell** and T's own incoming
-////   multiplier and heal-to-shield conversion (genesis_prime/game/heal_split).
-//// - **Nothing here reads the caster**, its sight or the time: a strike arrives for T's
-////   stay or is dropped by the stay fence, and is applied when it is taken.
-////
-//// ```
-//// caster's connection C                        this connection T (the ally)
-////   Tell(map, TellLanding(C, stay_C, T, stay_T, ChangeStart(PlayerChangeStarts(C, stay_C, source, change, sight, spell4_id, effect))))
-////                      ─▶ the map (T in stay_T and C in stay_C): Relayed(stay_T, Landed(..))
-////                      ─▶ ForStay(stay_T, SentByPlayer(Change(..)))   (the stay fence; held through an ask)
-////                      ─▶ changed: the change through the function the player's own cast uses
-////                         (properties.started, absorption.started), held for C
-////   Tell(map, TellLanding(C, stay_C, T, stay_T, ChangeEnd(PlayerChangeEnds(C, source))))
-////                      ─▶ changed: the source taken off, when C holds it
-////   Tell(map, TellLanding(C, stay_C, T, stay_T, CastWent(PlayerCastWent(C, cast_id))))
-////                      ─▶ cast_went: Tell(map, TellBroadcast(PeerNews(T, HeldCastStarted(0x7ff, 0x7f4)))), after the rows
-////   the map's UnseenBy(C) ─▶ caster_unseen: C's sources with `EndsWhenUnseen` taken off
-////   the map's Gone(C's unit) ─▶ caster_removed: every source of that unit taken off
-////   T dies                ─▶ ended_at_death: every source T holds taken off
-////   each of the three, once a cast has no source left
-////                         ─▶ Tell(map, TellBroadcast(PeerNews(T, HeldCastEnded(cast_id)))), after T's own writes
-//// ```
-////
-//// ```
-//// a creature's blow lands on T, T alive, C among T's viewers and waiting for an event it raises
-////   Tell(map, TellLanding(T, stay_T, C, stay_C, AllyEvent(PlayerEvent(T's unit, the events C waits for))))
-////                      ◀─ events_told: after T's own procs are raised, one tell per waiting caster
-//// ```
-////
-//// - **An ally tells its caster the events of a creature's blow** (`events_told`): the events
-////   `cast_proc.blow_events` gives, those the caster's Proc sources on T wait for
-////   (`held_changes.events_awaited`), to each such caster among T's viewers with the stay the
-////   viewer holds. The tell is never asked and nothing waits for it. The life is checked, not
-////   the ledger: a lethal blow is carried while the life is already dead and before the
-////   death clears the ledger, and a dying ally is not healed.
-//// - **A change is taken only from a caster T sees**: C is among T's viewers with the stay
-////   the tell names, and T is alive. The caster addresses a tell from the players in its
-////   own sight, and sight is symmetric. An end is taken from the caster that holds the source
-////   whether or not T still sees it: a change of a spell with propertyFlags 0x100 stays
-////   after T lost sight of C, and C's end tell addressed from the go's address ends it.
-//// - **A source of a spell with propertyFlags 0x100 survives `UnseenBy`** and ends by the
-////   caster's end tell or the caster's unit gone: the client's removal of the caster's unit
-////   keeps the casts that flag marks, with their buffs on other units (fact
-////   `cast.target_node_end`). The viewers' `Removed` therefore does not finish such a cast
-////   (genesis_prime/game/connection/viewers), and this module writes its 0x7fe, once, when
-////   the last source of it ends, by any of the ends above (`orphans_finished`): the caster's
-////   own frames no longer reach the client.
-//// - **A cast is started for a viewer only from the ledger**: the went is taken when T
-////   holds a source of the cast that the connection it came from started, not when that
-////   connection is still among T's viewers, since a source of a spell with propertyFlags
-////   0x100 stays after its caster left T's sight. T's death clears the ledger
-////   (`ended_at_death`), so a dead T holds none and takes no went. The start lists each effect
-////   the ledger holds of the cast (`held_changes.cast_views`), at the clock the went is
-////   taken, and goes to the map, which relays it to each viewer; a viewer writes it only when its
-////   own ledger holds the cast in no state and the cast's caster is not its own unit, whose client
-////   holds the cast from its own go (`opcode.0x7ff`).
-//// - **The tell carries what a create lists**: the cast's Spell4 id and the change's
-////   effect with the go's own monotonic time as its start, which the ledger keeps
-////   (`held_changes.started`) so that the player's create lists the cast
-////   (`held_changes.cast_views`).
-//// - **The viewers are told when a cast's last source ends** (`viewers_told_ended`,
-////   `held_changes.casts_left`): a viewer that was listed the cast by T's create and not told
-////   it by its caster writes a 0x811 naming T, and any other viewer drops the news
-////   (genesis_prime/game/client_casts). T keeps no per-viewer record, so every viewer is told.
-//// - **A source told again goes to the player's own function again**: an absorb pool is
-////   refilled, a property modifier already held changes nothing
-////   (genesis_prime/shared/unit_properties `apply`).
-//// - **A held change ends at its holder's death**, as the player's own casts' changes do
-////   (`cast.died`); the client has no path that ends a buff on a unit's death, so the
-////   death is the server's choice.
+//// - A heal's answer goes before T's own news, as a creature's does (genesis_prime/game/strike).
+//// - A heal reads the healer's outgoing multiplier from the tell (genesis_prime/game/heal_split).
+//// - A start needs its caster among T's viewers with the tell's stay, T alive; an end its holder.
+//// - A spell with propertyFlags 0x100 survives UnseenBy (fact `cast.target_node_end`).
+//// - With the caster's unit gone, T writes the cast's 0x7fe once its last source ends.
+//// - A cast's went starts it for the viewers from the ledger (`held_changes.cast_views`).
+//// - A viewer drops a start its ledger holds or one of its own unit's casts (fact `opcode.0x7ff`).
+//// - A cast's last source ended: a viewer T's create listed writes a 0x811 (`client_casts`).
+//// - Awaiting casters get blow events (`cast_proc.blow_events`, `held_changes.events_awaited`).
+//// - A source told again is applied again (genesis_prime/shared/unit_properties `apply`).
+//// - A held change ends at its holder's death (`cast.died`); the client ends no buff on death.
 ////
 //// Gaps for the coverage measure: `gaps()`.
 

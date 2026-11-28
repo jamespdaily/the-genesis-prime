@@ -1,97 +1,43 @@
-//// A creature's crowd-control states and its Interrupt Armor: the feature of the
-//// creature's rule (genesis_prime/world_map/creature) that takes the states a caster's
-//// strike carries, holds each for its time, tells the creature's viewers when it takes
-//// hold and when it ends, wears the armor down and refills it, and tells the fight
-//// (genesis_prime/world_map/creature_fight) whether the creature may act. The creature's process owns its unit, its viewers and its timers,
-//// so every 0x87f and 0x880 of the unit comes from its one owner, in the order the
-//// states landed and ended.
+//// A creature's crowd-control states and its Interrupt Armor: the feature of the creature's
+//// rule (genesis_prime/world_map/creature) that takes the states a caster's strike carries,
+//// holds each for its time, wears the armor down and refills it, tells the unit's viewers
+//// when one takes hold and ends, and tells the fight (genesis_prime/world_map/creature_fight)
+//// whether the creature may act.
 ////
 //// ```
-//// caster's connection        creature (this feature)                                   viewers
-//// go phase: Strike(.., controls) ─▶ struck: the hit rule on health, then `land`
-////                                   armor already 0: a Control for each state, a timer at its end
-////                                   armor above 0: nothing lands, the row's armor is destroyed,
-////                                     0x938 stat 21 ─────────────────────────────────────▶ armor shown
-////                                     the refill timer starts again
-////                                   Answered(Landed(.., controls landed)) ─▶ caster's go lists them
-////                                   0x87f (unit, state, instance id) ──────────────────────▶ state on
-////                                   the fight: no strike, chase or walk; a running path stops
-////                                     (0x638 of kind 2)
-//// ... a control's timer fires ─▶ `ended`
-////                                   0x880 (unit, state, cast id, instance id, 0) ──────────▶ state off
-////                                   the last one ended: the fight acts again from where it stands
-//// ... the refill timer fires ─▶ `refilled`
-////                                   0x938 stat 21 at the maximum ──────────────────────────▶ armor full
+//// caster's connection   creature (this feature)                                   viewers
+//// Strike(.., controls) ─▶ `land`: at armor 0 a Control per state, with a timer;
+////                         above 0 nothing lands, the rows' armor is destroyed,
+////                         0x938 stat 21 ─────────────────────────────────────────▶ armor shown
+////                         Answered(Landed(..)) ─▶ the caster's go lists the landed
+////                         0x87f (unit, state, instance id) ──────────────────────▶ state on;
+////                           the fight is held; a running path stops (0x638 of kind 2)
+//// ... a control's timer ─▶ `ended`: 0x880 (unit, state, cast id, instance id, 0) ─▶ state off
+//// ... the refill timer ─▶ `refilled`: 0x938 stat 21 at the maximum ───────────────▶ armor full
 //// ```
 ////
-//// - **Whether a state lands** is the server's rule: the client reads no Interrupt Armor
-////   in any CC handler (`UnitProperty2.InterruptArmor_Threshold`). A living creature takes
-////   the strike's states only when its current armor is already 0 when the strike
-////   arrives (a maximum of 0 is always so). With armor above 0 the strike lands no state
-////   and destroys the armor its rows name (dataBits03, never below 0), and the creature's
-////   viewers get 0x938 stat 21 with the new value. Infinite armor (-1) takes no state
-////   and loses nothing. Which of these the client shows is the stat and the maximum
-////   (`opcode.0x938.interrupt_armor`).
-//// - **Armor refills** to its maximum `interrupt_armor_refill_ms` after the strike that
-////   last destroyed a point of it, with 0x938 stat 21 at the maximum: a strike that
-////   destroys more starts the wait again, and one that lands a state at armor 0, or whose
-////   rows destroy nothing, leaves it as it is. The time is a server choice
-////   (genesis_prime/world_map/game_number): no client value says when armor returns. A
-////   death resets it with the creature.
-//// - **A change of the maximum** (a modifier on property 44) keeps the armor the controls
-////   use and the stat 21 the viewers see one value: armor at full follows the new
-////   maximum, armor worn down stays and is clamped to a lowered maximum, and a changed
-////   value is sent as 0x938 (`maximum_changed`, `opcode.0x938.interrupt_armor`).
-//// - **How long** a creature holds a state is the row's delay plus durationTime from the
-////   tell's arrival: a creature's CC resilience is 0 and its duration modifier 1
-////   (`cc_state.duration_on_creature`). Counting from the arrival is the server's choice:
-////   the creature does not know when the go is written, which is later by the time the
-////   round waited for answers, and the caster's node takes the creature's end time.
-//// - **A state ends only by the server's 0x880**, which the creature sends when its timer
-////   fires, naming the state, the cast and the instance id the go gave (`cc_state.end`,
-////   `cc_state.instance_id`). A creature that dies sends none: the client clears every
-////   state at a death (`SetUnitDead`).
-//// - **A cast pushed off the creature takes its states with it**: the caster's connection
-////   tells the creature when a later cast of the same stack group takes the cast's node off
-////   it (`ended_by`), and each state of that caster's cast ends at once with its own 0x880 and
-////   its timer cancelled. The client's node destruction (0x811) ends no state
-////   (`cc_state.end`), and the server's stacking rule keeps one cast of a group of the
-////   caster's on a unit, so the older cast's state would otherwise overlap the new one's.
-//// - **Knockdown is a stun for a creature**: the same flags, and its only difference is
-////   a player's dash (`GameFormula.614`, `CCStates.flags`).
-//// - **What a held state stops** is the fight's to carry out (genesis_prime/world_map/creature_fight
-////   `Fighter`), by three queries here:
-////   - `stops_moving`: a state whose CCStates flags hold the value 2 stops the creature's run,
-////     the value the client's `UnitHasCCStateFlag02` (`0x14045e630`) drops a unit's own movement
-////     for; the others let it run on.
-////   - `refuses`: a state the attack spell's caster conditions mask (Spell4CCConditions
-////     ccStateMask, read when the content loads) refuses the attack, as the client refuses
-////     that spell to a caster holding it.
-////   - `hard_held`: a Stun, Knockdown or Knockback refuses every cast. The client's rows hold
-////     no such rule; it is a retail record (WildStar wiki, Combat, "Moment of Opportunity").
-////   A charge starts only while no state at all is held (`holds`), although the
-////   client's conditions for the charge spells mask nothing.
-//// - **Each landed state is its own control**, with its own timer and its own 0x880: two
-////   players' states, or one caster's two states of a kind, are held side by side, and
-////   the creature runs again when no state that stops its run is held (`cc_state.instance_id`).
-//// - **A control's timer** is the creature's rule's to number (genesis_prime/world_map/creature
-////   `control_timer`): one for each control's number, which is never used twice in a
-////   creature's life. A timer that fires for a control already gone finds none and writes
-////   nothing.
-////
-//// What happens at each failure point of a state:
-////
-//// | Step | Creature killed there | Twice at once | Late |
-//// |---|---|---|---|
-//// | A strike with states reaches the creature | the creature restarts from its spawn with no state; the client keeps the visual until the unit is removed and made again (`0x355` and `0x262` clear states) | two players stun it: two controls, two 0x87f, each its own 0x880; it acts when both ended | a strike after its death is refused as always; no state |
-//// | A control is held, its timer armed | as above | one caster's two states of a kind are held separately | n/a |
-//// | A control's timer fires | as above | two ending in one millisecond: two 0x880 | fires after the death: no frame |
-//// | A caster's cast is pushed off | the tell finds no state: nothing is sent | the same cast told twice: the second finds none; two casters' casts of one id end separately | a timer that fires after the end finds no control: no frame |
-//// | The creature dies holding a state | no 0x880: death clears the client's states, and the timers are cancelled | | |
-//// | A viewer arrives while a state is held | not told: the 0x262 does not carry it | | |
-//// | The maximum is raised or lowered by a modifier | the creature restarts at full armor of its own maximum | n/a | the refill timer fires after the change: the armor is back at the maximum then in force |
-//// | Armor is worn down or refills | the creature restarts at full armor; the refill timer is cancelled at the death | two strikes in a row: each wears down what is left, the second restarts the refill | the refill timer fires after the death or at full armor: nothing |
-//// | The caster's cast lingers past the state's end | the node's life is the effect's, and the cast rule's timer ends it (genesis_prime/shared/lasting) | | |
+//// - **Whether a state lands** is the server's rule (the client reads no Interrupt Armor in
+////   any CC handler, `UnitProperty2.InterruptArmor_Threshold`): only at armor 0; above 0 the
+////   rows' armor is destroyed (dataBits03, never below 0) with 0x938 stat 21 to the viewers.
+//// - **Armor refills** to its maximum `interrupt_armor_refill_ms` after the strike that last
+////   destroyed a point; the wait is a server choice (genesis_prime/world_map/game_number).
+//// - **A change of the maximum** (a modifier on property 44) keeps armor and stat 21 one value:
+////   full follows it, worn is clamped; a change is sent as 0x938 (`maximum_changed`).
+//// - **How long** a state is held is the row's delay plus durationTime from the tell's
+////   arrival, the server's choice (`cc_state.duration_on_creature`).
+//// - **A state ends only by the server's 0x880** when its timer fires (`cc_state.end`,
+////   `cc_state.instance_id`); a death sends none, the client clearing all states (`SetUnitDead`).
+//// - **A cast pushed off the creature takes its states with it** (`ended_by`): each ends with
+////   its own 0x880, timer cancelled, the client's node destruction (0x811) ending no state.
+//// - **Knockdown is a stun for a creature**: the same flags; its only difference is a
+////   player's dash (`GameFormula.614`, `CCStates.flags`).
+//// - **What a held state stops** is the fight's to carry out (`Fighter`): `stops_moving` for
+////   CCStates flags holding the value 2 (`UnitHasCCStateFlag02`, `0x14045e630`); `refuses` for
+////   a state the attack spell's caster conditions mask (Spell4CCConditions ccStateMask);
+////   `hard_held` for a Stun, Knockdown or Knockback (a retail record, WildStar wiki, Combat,
+////   "Moment of Opportunity"); a charge starts only while no state is held (`holds`).
+//// - **Each landed state is its own control**, with its own timer and its own 0x880, its
+////   number from the creature's rule (`control_timer`), never used twice in a creature's life.
 
 import genesis_prime/game/strike_tell.{
   type ControlLanded, type Tell, ControlLanded,
