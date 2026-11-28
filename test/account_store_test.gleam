@@ -410,7 +410,18 @@ pub fn the_list_gives_the_accounts_characters_in_creation_order_and_no_other_acc
 
 pub fn the_character_list_answers_each_characters_items_worn_at_location_0_in_bag_order_test() -> Nil {
   use <- owned_test.run(10_000)
-  let store = account_store_support.start_store(pool_size: 2)
+  // One connection, told to read a table in its heap order: the index on
+  // (character_id, location, bag_index) would give bag order by itself, so only
+  // the query's own `order by` does here.
+  let store = account_store_support.start_store(pool_size: 1)
+  let assert Ok(_) =
+    pog.query("set enable_indexscan = off")
+    |> pog.execute(store.pool)
+    as "the index scan is switched off"
+  let assert Ok(_) =
+    pog.query("set enable_bitmapscan = off")
+    |> pog.execute(store.pool)
+    as "the bitmap scan is switched off"
   let account =
     account_store_support.insert_account(store:, login_name: "login-1")
   let other =
@@ -424,7 +435,7 @@ pub fn the_character_list_answers_each_characters_items_worn_at_location_0_in_ba
       class_id: 4,
       path: 2,
     )
-  let _second =
+  let second =
     character_support.insert(
       pool: store.pool,
       account:,
@@ -461,12 +472,36 @@ pub fn the_character_list_answers_each_characters_items_worn_at_location_0_in_ba
       stack_count: 1,
     )
     as "a bank item is stored"
+  // The second character holds no set: two items at location 0 are stored out of bag order.
+  let assert Ok(_) =
+    put_item(
+      store:,
+      character_id: CharacterId(second),
+      item2_id: 8534,
+      location: 0,
+      bag_index: 5,
+      stack_count: 1,
+    )
+    as "the item of the later bag index is stored first"
+  let assert Ok(_) =
+    put_item(
+      store:,
+      character_id: CharacterId(second),
+      item2_id: 81_346,
+      location: 0,
+      bag_index: 0,
+      stack_count: 1,
+    )
+    as "the item of the earlier bag index is stored second"
   let assert ForSelect(Listed(characters)) =
     account_store_support.ask(store:, request: Select(ListCharacters(account)))
     as "one ask answers the list"
   assert list.map(characters, fn(listed) { listed.worn })
-    == [character_support.novice_worn(class_id: 4), []]
-    as "opcode.0x262.worn_visuals: only location 0 is worn, so the set of the first character is listed in bag order and not its bag or bank item; the character with none gets an empty list; the other account's set is not listed"
+    == [
+      character_support.novice_worn(class_id: 4),
+      [Item2Id(81_346), Item2Id(8534)],
+    ]
+    as "opcode.0x262.worn_visuals: only location 0 is worn, so the set of the first character is listed in bag order and not its bag or bank item; the second's two items stored out of bag order are listed in bag order; the other account's set is not listed"
   account_store_support.stop(store)
 }
 

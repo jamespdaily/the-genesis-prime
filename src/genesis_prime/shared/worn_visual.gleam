@@ -226,9 +226,8 @@ fn mask_bit(slot slot: Int) -> Result(Int, Nil) {
 
 /// The slot mask of drawn visuals: a bit for each armour or weapon slot with a
 /// visual, and the id of the item that gave it in the bit's place, 0 elsewhere,
-/// with a dye of 0 beside each (the dye of a visual is 0 as in `item_visual`). Of
-/// two items in one slot the later is kept, as the client keeps the later visual.
-/// The client draws these slots from the item the bit names, which for an item
+/// with a dye of 0 beside each (the dye of a visual is 0 as in `item_visual`). The
+/// client draws these slots from the item the bit names, which for an item
 /// with no display of its own (`itemDisplayId` 0) falls back to the list's
 /// visual (`opcode.0x117.costume_slots`).
 pub fn slot_mask(drawn drawn: List(Drawn)) -> SlotMask {

@@ -9,13 +9,9 @@
 ////   client's own movement messages (0x0637, 0x063A, 0x00D5, 0x063B and
 ////   0x00F2) are in it, and its close at the end is answered by the save of the
 ////   player's place. Its verdict, beside it, checked the client's own report of
-////   that character against its saved row. The sitting began from the
-////   development database as it stood, so this folder differs from the earlier
-////   recording's in the character list (0x0117: each entry lists the worn visuals
-////   and the slot mask of the items its character holds at location 0) and, in
-////   fixture.sql, in the character's level (6), zone (651), place,
-////   health and experience, in the other characters' levels, zones and places,
-////   and in its 24 character_action_slot rows.
+////   that character against its saved row. The character list (0x0117) lists, for
+////   each entry, the worn visuals and the slot mask of the items its character
+////   holds at location 0.
 //// - The log lines the rules write when the session is replayed: one warning
 ////   for each message the game rule took and did not handle (opcode.0x38c: the
 ////   world messages inside 0x038C are logged under their own id), and one for

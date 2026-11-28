@@ -39,8 +39,8 @@
 ////   give each drawn armour and weapon slot its bit, because the select screen
 ////   draws those slots from the mask and takes the display from the worn
 ////   visual (opcode.0x117.costume_slots, 0x140027380). An item the tables
-////   cannot dress is warned about and the entry is still sent. Real costumes
-////   and item colour sets are not sent: the dye is 0 as in the 0x0262.
+////   cannot dress is warned about and the entry is still sent. The dye is 0 as in the 0x0262; the costumes and
+////   colour sets left out are listed in `gaps`.
 //// - **The slots.** The client counts its own slots: 2 from its reward
 ////   property, plus the count of the account's BaseCharacterSlots
 ////   entitlement (12) when it holds one
@@ -108,6 +108,7 @@ import genesis_prime/game/character_creation
 import genesis_prime/game/reward_property
 import genesis_prime/game/start_place
 import genesis_prime/game_settings
+import genesis_prime/gap
 import genesis_prime/message/account_entitlements.{AccountEntitlements}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/character_list.{CharacterList}
@@ -716,4 +717,18 @@ fn entry(
       False -> 0
     },
   )
+}
+
+/// What the character list leaves undone, for the coverage measure.
+pub fn gaps() -> List(gap.Entry) {
+  [
+    gap.Entry(
+      area: "Character select",
+      missing: "real costumes are not sent in the character list (0x117): its costume fields hold the worn gear's slot mask alone, so no costume is drawn at select",
+    ),
+    gap.Entry(
+      area: "Character select",
+      missing: "an item's itemColorSetId is not sent: at select an item with its own display is coloured from its colour set (0x140027380 passes Item2 +0xa8 to 0x140445140), while the list's dyes and the world's 0x262 give colour 0",
+    ),
+  ]
 }
