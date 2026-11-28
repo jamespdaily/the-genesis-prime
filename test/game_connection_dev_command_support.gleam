@@ -12,6 +12,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/map/message as map_message
 import genesis_prime/step.{
   type ConnectionStep, type Outcome, ConnectionId, OwnEvent,
 }
@@ -157,7 +158,7 @@ fn joined_among_watchers(
   let state =
     list.fold(rule_support.sends(joined), state, fn(state, sent) {
       case sent {
-        #(1, map.Noticed(stay:, notice:)) ->
+        #(1, map_message.Noticed(stay:, notice:)) ->
           support.feed(
             state:,
             event: support.for_stay(stay:, sent: SentByMap(notice)),
@@ -170,8 +171,12 @@ fn joined_among_watchers(
       case sent {
         #(
           1,
-          map.Noticed(
-            notice: map.SeenBy(by: ConnectionId(viewer), generation:, ..),
+          map_message.Noticed(
+            notice: map_message.SeenBy(
+              by: ConnectionId(viewer),
+              generation:,
+              ..,
+            ),
             ..,
           ),
         ) -> Ok(#(viewer, generation))
@@ -253,7 +258,7 @@ pub fn left_the_map(
   support.answer(
     state:,
     taken: leaving,
-    outcome: step.Answer(FromMap(map.Left)),
+    outcome: step.Answer(FromMap(map_message.Left)),
   )
 }
 

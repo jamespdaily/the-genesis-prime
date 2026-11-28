@@ -85,14 +85,15 @@
 //// and is not. A placed creature stays after it is used.
 
 import genesis_prime/content/refusal.{type Refusal}
-import genesis_prime/game/activate
 import genesis_prime/game/objective_kind
-import genesis_prime/game/objective_link
-import genesis_prime/game/place_objective
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/target_group
 import genesis_prime/gap
 import genesis_prime/message/float32
+import genesis_prime/shared/activate
+import genesis_prime/shared/creature_kind.{type Kinds}
+import genesis_prime/shared/creature_unit_type.{NonPlayer, Turret}
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2.{type Creature2}
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId, WorldLocation2Id}
@@ -102,8 +103,6 @@ import genesis_prime/table/world_location2.{type WorldLocation2}
 import genesis_prime/terrain.{type Ground}
 import genesis_prime/world_map/creation_type
 import genesis_prime/world_map/creature_faction.{type Factions}
-import genesis_prime/world_map/creature_kind.{type Kinds}
-import genesis_prime/world_map/creature_unit_type.{NonPlayer, Turret}
 import genesis_prime/world_map/spawn.{type Row}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import gleam/bool
@@ -633,7 +632,7 @@ fn pane_pairs(
       })
     })
     |> list.flat_map(fn(creature) {
-      place_objective.marker_ids(objective:)
+      quest_row.marker_ids(objective:)
       |> list.map(fn(marker_id) { #(objective.id, creature, marker_id) })
     })
   })
@@ -663,7 +662,7 @@ fn click_pairs(
         })
         |> list.unique
         |> list.flat_map(fn(objective) {
-          place_objective.marker_ids(objective:)
+          quest_row.marker_ids(objective:)
           |> list.map(fn(marker_id) { #(objective.id, creature, marker_id) })
         })
       let unread =
@@ -788,7 +787,7 @@ fn plan(
   objective objective: QuestObjective,
   named named: objective_kind.PlacedTarget,
 ) -> #(option.Option(Job), List(Skipped)) {
-  let marker_ids = place_objective.marker_ids(objective:)
+  let marker_ids = quest_row.marker_ids(objective:)
   case marker_ids {
     [] -> #(None, [])
     _ -> {

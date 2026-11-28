@@ -25,6 +25,7 @@ import game_wire_support.{
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection/state as connection_state
 import genesis_prime/game/movement
+import genesis_prime/game/vendor
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result.{TargetIsNotUseable}
@@ -58,6 +59,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None}
 import gleam/result
+import gleam/set
 import login_support
 import message_support
 import owned_test
@@ -95,7 +97,9 @@ pub fn objective_progress_survives_a_relog_test() -> Nil {
       tables: character_tables.content_tables(),
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors: vendor_support.stocking(creature_ids: []),
+      vendor_creatures: set.from_list(
+        vendor.creatures(vendors: vendor_support.stocking(creature_ids: [])),
+      ),
       factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "the row passes the spawn checks"
@@ -1137,7 +1141,9 @@ pub fn a_bot_accepts_uses_and_turns_in_a_northern_wilds_quest_takes_up_another_a
       tables: character_tables.content_tables(),
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors: vendor_support.stocking(creature_ids: []),
+      vendor_creatures: set.from_list(
+        vendor.creatures(vendors: vendor_support.stocking(creature_ids: [])),
+      ),
       factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "the rows pass the spawn checks"

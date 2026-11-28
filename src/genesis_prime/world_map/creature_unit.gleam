@@ -14,7 +14,7 @@
 ////   level (`0x140458140`).
 //// - **Place:** a kind 2 movement command at the spawn's position and a kind 14
 ////   at its facing, each with its bit clear, which places the unit at once
-////   (`genesis_prime/world_map/player_unit.standing`).
+////   (`genesis_prime/shared/player_unit.standing`).
 //// - **Factions:** the spawn's faction and base faction, which the client keeps
 ////   in place of the row's (opcode.0x262.creature).
 //// - **Display and outfit:** the spawn's display info, since with 0 the creature
@@ -43,13 +43,13 @@ import genesis_prime/message/unit_create_creature.{
 }
 import genesis_prime/message/unit_create_static.{UnitCreateStatic}
 import genesis_prime/message/unit_create_tail.{UnitCreateTail}
+import genesis_prime/shared/creature_unit_type.{
+  type CreatureUnitType, NonPlayer, Turret,
+}
+import genesis_prime/shared/player_unit
 import genesis_prime/shared/unit_fields
 import genesis_prime/shared/unit_properties.{type Properties}
 import genesis_prime/table/id.{Creature2Id}
-import genesis_prime/world_map/creature_unit_type.{
-  type CreatureUnitType, NonPlayer, Turret,
-}
-import genesis_prime/world_map/player_unit
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/option.{type Option, Some}
 import gleam/result

@@ -1,4 +1,4 @@
-//// The creatures whose rows link a quest objective (`genesis_prime/game/objective_link`),
+//// The creatures whose rows link a quest objective (`genesis_prime/shared/objective_link`),
 //// as the tables' load derives them. Expected values come from these places.
 //// - `Creature2.objective_link`: `questAnimStateId` and `questAnimObjectiveIndex` name a
 ////   quest and the objective's index in it, and `prerequisiteIdAnimState` names a
@@ -14,7 +14,7 @@
 ////   (`fixture_tables.change`), each change named where it is made.
 
 import fixture_tables
-import genesis_prime/game/objective_link
+import genesis_prime/shared/objective_link
 import genesis_prime/table/loader/store as table_store
 import gleam/list
 import owned_test

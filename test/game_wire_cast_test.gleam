@@ -45,11 +45,11 @@ import genesis_prime/message/unit_float_stat_changed
 import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/shared/creature_combat.{Attack, Combat}
 import genesis_prime/shared/unit_fields
 import genesis_prime/table/game_formula
 import genesis_prime/table/id.{GameFormulaId}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_life.{Attack, Combat}
 import genesis_prime/world_map/spawn
 import gleam/bool
 import gleam/float

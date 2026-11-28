@@ -1,5 +1,5 @@
 //// The creature_auto_attack table's rows and their checks
-//// (`genesis_prime/world_map/creature_auto_attack`, `creature_kind` `select` and `taken`), on
+//// (`genesis_prime/shared/creature_auto_attack`, `creature_kind` `select` and `taken`), on
 //// the client's committed rows. Expected values come from these places.
 //// - The retail record: the Jabbithole pages of the creatures, Abilities tab, list Maul (33251)
 ////   and Slam (33252) for Yeti Snowstalker (Creature2 51126 and 11945, page `yeti-snowstalker-1`),
@@ -27,10 +27,10 @@ import database_support
 import fixture_tables
 import genesis_prime/content/creature_kind as content_creature_kind
 import genesis_prime/content/refusal.{Refusal, RowId}
+import genesis_prime/shared/creature_auto_attack.{type Row, Row}
+import genesis_prime/shared/creature_kind
+import genesis_prime/shared/creature_special
 import genesis_prime/table/id.{Spell4Id}
-import genesis_prime/world_map/creature_auto_attack.{type Row, Row}
-import genesis_prime/world_map/creature_kind
-import genesis_prime/world_map/creature_special
 import gleam/list
 import gleam/option
 import gleam/string

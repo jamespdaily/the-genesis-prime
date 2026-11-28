@@ -27,12 +27,9 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/state.{Settings}
-import genesis_prime/game/heal_split
-import genesis_prime/game/held_changes
 import genesis_prime/game/start_place
 import genesis_prime/game/strike
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news
+import genesis_prime/map/message as map_message
 import genesis_prime/message/cast_result
 import genesis_prime/message/damage_type
 import genesis_prime/message/float32
@@ -50,13 +47,16 @@ import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts
+import genesis_prime/shared/player_change
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{
   type ConnectionStep, ConnectionId, OwnEvent, TimerFired,
 }
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map
 import gleam/list
 import gleam/option.{None, Some}
 import map_support
@@ -418,8 +418,8 @@ pub fn an_esper_pressing_mental_boon_is_healed_every_500_ms_by_the_tier_its_psi_
             76_784, cast_state.Heal(vital: effect_kind.Health, amount:) ->
               Ok(amount)
             _, cast_state.Heal(..)
-            | _, cast_state.HeldChange(held_changes.Property(..))
-            | _, cast_state.HeldChange(held_changes.Absorb(..))
+            | _, cast_state.HeldChange(player_change.Property(..))
+            | _, cast_state.HeldChange(player_change.Absorb(..))
             | _, cast_state.Look(..)
             -> Error(Nil)
           }
@@ -587,7 +587,7 @@ fn esper_with_the_notice_of_the_ally() -> #(game_connection.State, Int) {
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: connection_support.sent_by_the_map(map.SeenBy(
+      event: connection_support.sent_by_the_map(map_message.SeenBy(
         by: ConnectionId(3),
         stay: connection_support.viewer_stay(3),
         unit_id: 9,
@@ -658,7 +658,7 @@ pub fn a_press_at_a_player_the_map_showed_starts_the_cast_on_that_player_test() 
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: connection_support.sent_by_the_map(map.UnseenBy(
+      event: connection_support.sent_by_the_map(map_message.UnseenBy(
         by: ConnectionId(3),
         generation: connection_support.viewer_sight(3),
       )),
@@ -709,7 +709,7 @@ fn heals_landed() -> strike_tell.PlayerOutcome {
     strike_tell.HealLanded(
       effect_id: Spell4EffectsId(62_019),
       vital: effect_kind.Health,
-      split: heal_split.Split(amount: 121, shield: 0, health: 100, overheal: 21),
+      split: heal_parts.Split(amount: 121, shield: 0, health: 100, overheal: 21),
     ),
   ])
 }
@@ -799,7 +799,7 @@ pub fn a_go_at_a_player_in_sight_tells_that_players_connection_once_and_its_answ
   let #(unseen, _) =
     connection_support.feed(
       state: unseen,
-      event: connection_support.sent_by_the_map(map.UnseenBy(
+      event: connection_support.sent_by_the_map(map_message.UnseenBy(
         by: ConnectionId(3),
         generation: connection_support.viewer_sight(3),
       )),
@@ -927,7 +927,7 @@ pub fn a_press_at_a_player_the_connection_saw_die_walk_off_or_change_faction_is_
   let #(state, _) =
     connection_support.feed(
       state:,
-      event: connection_support.sent_by_the_map(map.SeenBy(
+      event: connection_support.sent_by_the_map(map_message.SeenBy(
         by: ConnectionId(4),
         stay: connection_support.viewer_stay(4),
         unit_id: 10,

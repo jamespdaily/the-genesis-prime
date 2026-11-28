@@ -34,11 +34,11 @@ import client_tables
 import fixture_tables
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/effect_row_read
-import genesis_prime/game/proc as event_proc
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/lasting.{LastingRow}
 import genesis_prime/shared/lasts
 import genesis_prime/shared/prerequisite
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/spell_plan.{
   type ProcReading, type Spell, Always, AtHolder, AtOtherUnit, Died,
   EnteredStealth, ForLife, InGroup, InWindow, Kills, LandsCritical,
@@ -1596,7 +1596,7 @@ pub fn each_ally_proc_row_the_plan_reads_waits_for_a_trigger_a_creatures_blow_ra
   use <- unitest.tag("real_tables")
   use <- unitest.guard(client_tables.present())
   let spell =
-    event_proc.EventSpell(
+    proc_event.EventSpell(
       spell4_id: Spell4Id(5649),
       spell4_base_id: Spell4BaseId(4947),
       groups: [],

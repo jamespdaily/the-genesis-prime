@@ -35,7 +35,7 @@
 ////
 //// - **The guard takes no damage.** The client reads no immunity: nothing reads Spell4Effects type
 ////   79, so the guard is the server's alone (`Spell4Effects.effectType.79`). A strike whose
-////   offence is damage answers `Immune` (genesis_prime/game/strike_tell), and the striker's
+////   offence is damage answers `Immune` (genesis_prime/shared/strike_tell), and the striker's
 ////   connection writes the 0x247 of type 18, the one immunity the client shows
 ////   (`opcode.0x247.immunity`); a strike with no damage answers `Landed` with none. A state a strike carries still lands (creature_control).
 //// - **The guard is shown by its cast.** The 85474 cast, 0x7ff and a 0x7f4 holding a target info
@@ -58,7 +58,7 @@
 ////   the guard's (`live_casts`), so neither holds an id the other still has. The interrupted
 ////   charge's id still counts as live when the opening takes its own, so the opening's id differs
 ////   from the id of the 0x7f9 that was just sent.
-//// - **Which creature.** A kind with a guard and an opening (genesis_prime/world_map/creature_kind)
+//// - **Which creature.** A kind with a guard and an opening (genesis_prime/shared/creature_kind)
 ////   gives its creature one; the load refuses a spell whose effects are not the ones the creature
 ////   applies (`creature_guard_spells.guard_of`). A creature with none has no guard: `Bare`, takes damage, opens nothing.
 //// - **A dead creature has no guard up.** `Dormant` is a creature with a guard that is dead: nothing
@@ -82,12 +82,12 @@
 import genesis_prime/game/cast/frame as cast_frame
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/unit_news.{type News}
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/spell_targets_removed.{SpellTargetsRemoved}
+import genesis_prime/shared/creature_guard_spells.{type Guard}
 import genesis_prime/shared/lasting
 import genesis_prime/shared/telegraph_entries
-import genesis_prime/world_map/creature_guard_spells.{type Guard}
+import genesis_prime/shared/unit_news.{type News}
 import gleam/list
 import gleam/option.{type Option, None, Some}
 

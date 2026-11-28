@@ -39,9 +39,9 @@ import genesis_prime/message/relayed_movement.{
 }
 import genesis_prime/message/unit_movement.{UnitMovement}
 import genesis_prime/message/world_loading_screen_shown
+import genesis_prime/shared/player_unit
 import genesis_prime/step.{type Now}
 import genesis_prime/world_map/map
-import genesis_prime/world_map/player_unit
 
 /// The movement commands that place the player's unit at `place` at once: the kind 2 at
 /// its position and the kind 14 at its facing, which the 0x638 carries and the players

@@ -34,7 +34,6 @@ import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/gear
-import genesis_prime/game/unit_news.{LookChanged, PropertiesChanged}
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/message/item_action_failed.{ItemActionFailed}
@@ -52,6 +51,7 @@ import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_shield
+import genesis_prime/shared/unit_news.{LookChanged, PropertiesChanged}
 import genesis_prime/step.{
   type ConnectionStep, EndedBeforeAnswer, LogError, NoAnswerInTime, NotRunning,
   OwnEffect, OwnEvent, StartTimer, TimerId, Unwatch, Watch,

@@ -4,7 +4,7 @@
 //// no move. A reference to `TellMove` in a file of `src` or `dev` other than the mover's
 //// (`genesis_prime/game/connection/movement`), an import of `move_stamp` or
 //// `relayed_movement` in a file of the world map, and an import of either, or a field of a move's type, in the news
-//// type (`genesis_prime/game/unit_news`) are breaches. The rule is shown on planted
+//// type (`genesis_prime/shared/unit_news`) are breaches. The rule is shown on planted
 //// files, then read over the real ones.
 
 import code_rule/planted
@@ -22,9 +22,11 @@ const request_module = "genesis_prime/client_connection"
 
 const mover = "src/genesis_prime/game/connection/movement.gleam"
 
-const unit_news = "src/genesis_prime/game/unit_news.gleam"
+const unit_news = "src/genesis_prime/shared/unit_news.gleam"
 
 const world_map_directory = "src/genesis_prime/world_map"
+
+const map_message_directory = "src/genesis_prime/map"
 
 const shared_directory = "src/genesis_prime/shared"
 
@@ -137,7 +139,11 @@ pub fn the_map_and_the_relay_hold_no_move_and_a_move_is_told_only_by_the_mover_t
   assert builders == [mover]
     as "the mover is the one file that builds a move's request"
   assert list.flat_map(
-      repository.sources(under: [world_map_directory, shared_directory]),
+      repository.sources(under: [
+        world_map_directory,
+        map_message_directory,
+        shared_directory,
+      ]),
       fn(file) {
         list.map(imports_a_move(file:), fn(module) {
           file.path <> " " <> module
@@ -145,7 +151,7 @@ pub fn the_map_and_the_relay_hold_no_move_and_a_move_is_told_only_by_the_mover_t
       },
     )
     == []
-    as "no file of the world map or the shared folder imports a move"
+    as "no file of the world map, the map message module or the shared folder imports a move"
   let planted_news =
     planted.file(path: unit_news, lines: [
       "pub type News {",
@@ -157,7 +163,7 @@ pub fn the_map_and_the_relay_hold_no_move_and_a_move_is_told_only_by_the_mover_t
   assert news_fields_of_a_move(file: planted_news) == ["Moving", "Walked"]
     as "a variant whose field holds a move's type, at any depth, is found, and another is not"
   let news_files =
-    list.filter(source.files(under: "src/genesis_prime/game"), fn(file) {
+    list.filter(source.files(under: shared_directory), fn(file) {
       file.path == unit_news
     })
   assert list.length(news_files) == 1 as "the news type's file is found"

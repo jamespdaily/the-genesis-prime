@@ -7,15 +7,15 @@ import genesis_prime/client_connection.{
   type Request, AskStore, FromMap, SentByKill,
 }
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/experience.{Credit}
+import genesis_prime/map/message.{Left}
 import genesis_prime/message/experience_gained.{type ExperienceGained}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed
 import genesis_prime/message/unit_stat_level.{UnitStatLevel}
+import genesis_prime/shared/kill_credit.{Credit}
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store
 import genesis_prime/table/id.{Creature2Id, Faction2Id}
-import genesis_prime/world_map/map.{Left}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/list
 import gleam/option.{type Option}

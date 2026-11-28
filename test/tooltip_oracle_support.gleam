@@ -9,20 +9,20 @@ import cast_support as support
 import fixture_tables
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/strike_tell
 import genesis_prime/message/spell_finished
 import genesis_prime/message/spell_go
 import genesis_prime/message/spell_started
 import genesis_prime/message/spell_targets_removed
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_combat
 import genesis_prime/shared/hit
 import genesis_prime/shared/spell_plan.{type Plans, type Spell}
+import genesis_prime/shared/strike_tell
 import genesis_prime/step
 import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/table/loader/store
 import genesis_prime/tooltip_token.{type Token}
 import genesis_prime/world_map/creature_control
-import genesis_prime/world_map/creature_life
 import gleam/dict
 import gleam/int
 import gleam/list
@@ -481,13 +481,13 @@ pub fn landed_of(
   rows rows: List(spell_plan.CrowdControl),
   at_ms at_ms: Int,
 ) -> List(strike_tell.ControlLanded) {
-  landing_of(rows:, armor: creature_life.NoArmor, at_ms:).landed
+  landing_of(rows:, armor: creature_combat.NoArmor, at_ms:).landed
 }
 
 /// What a creature with this armor makes of the control rows of one strike at the time.
 pub fn landing_of(
   rows rows: List(spell_plan.CrowdControl),
-  armor armor: creature_life.InterruptArmor,
+  armor armor: creature_combat.InterruptArmor,
   at_ms at_ms: Int,
 ) -> creature_control.Landing {
   let tell =

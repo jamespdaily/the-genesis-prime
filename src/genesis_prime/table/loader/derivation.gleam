@@ -1,22 +1,23 @@
 //// The values the server builds once when its tables load, each from the
 //// tables a rule reads, and stores under the tables' key.
 
-import genesis_prime/game/activate
 import genesis_prime/game/communicator
 import genesis_prime/game/dash
 import genesis_prime/game/level_up
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/objective_action
-import genesis_prime/game/objective_link
 import genesis_prime/game/passed_in_value
 import genesis_prime/game/quest_turn_in
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/spell_surge
+import genesis_prime/shared/activate
 import genesis_prime/shared/amp_spec
 import genesis_prime/shared/appearance
+import genesis_prime/shared/creature_attack
 import genesis_prime/shared/faction_level
 import genesis_prime/shared/focus
 import genesis_prime/shared/loadout
+import genesis_prime/shared/objective_link
 import genesis_prime/shared/rating
 import genesis_prime/shared/spell_area
 import genesis_prime/shared/spell_plan
@@ -24,7 +25,6 @@ import genesis_prime/shared/spell_tier
 import genesis_prime/shared/top_zone
 import genesis_prime/shared/unit_properties
 import genesis_prime/table/loader/store
-import genesis_prime/world_map/creature_attack
 import gleam/bool
 import gleam/list
 import gleam/result
@@ -50,9 +50,9 @@ import gleam/set.{type Set}
 ///   build order, and an edit rebuilds the derivations it is given in that order.
 /// - The activations: the spell each creature's right-click casts and the plans of those
 ///   spells, built after the ability trees' sources, whose missing GameFormula 414 row or
-///   unreadable Prerequisite row fails the load (genesis_prime/game/activate).
+///   unreadable Prerequisite row fails the load (genesis_prime/shared/activate).
 /// - The linked objectives: the quest objectives some creature's row links, built after
-///   the activations whose prerequisites its links read (genesis_prime/game/objective_link).
+///   the activations whose prerequisites its links read (genesis_prime/shared/objective_link).
 /// - The named objectives: the quest objectives a spell effect advances and an item needs
 ///   open (genesis_prime/game/objective_action).
 /// - The passed-in value: the family-33 budget curve at each level 0 to 150, whose missing
@@ -87,7 +87,7 @@ import gleam/set.{type Set}
 ///   load (genesis_prime/shared/unit_properties).
 /// - The creature damage effects: each spell's damage effects in the order they take effect,
 ///   which the content load asks for once for every spell of every creature
-///   (genesis_prime/world_map/creature_attack).
+///   (genesis_prime/shared/creature_attack).
 pub fn all() -> List(store.Derivation) {
   [
     spell_tier.derivation(),

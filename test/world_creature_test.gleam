@@ -37,9 +37,9 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/frames
 import genesis_prime/game/start_place
-import genesis_prime/game/strike_tell.{Answered, Key, Landed}
-import genesis_prime/game/unit_news.{PeerNews}
+import genesis_prime/game/vendor
 import genesis_prime/game/world_entry
+import genesis_prime/map/message as map_message
 import genesis_prime/message/buyback_list.{BuybackList}
 import genesis_prime/message/combat_result
 import genesis_prime/message/damage_type
@@ -62,13 +62,16 @@ import genesis_prime/message/vendor_items
 import genesis_prime/service
 import genesis_prime/service/shell
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/creature_turn
 import genesis_prime/shared/damage
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit
 import genesis_prime/shared/hit_radius
 import genesis_prime/shared/spell_plan
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell.{Answered, Key, Landed}
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{PeerNews}
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{
@@ -78,10 +81,7 @@ import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/creature_registry
-import genesis_prime/world_map/creature_turn
-import genesis_prime/world_map/map
 import genesis_prime/world_map/registry.{type MapProcess}
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
@@ -91,6 +91,7 @@ import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/result
+import gleam/set
 import gleam/string
 import mailbox_support
 import map_support
@@ -278,7 +279,8 @@ pub fn a_killed_creature_is_gone_to_the_players_and_its_spawn_returns_as_a_new_u
       what: "Gone for the creature that was killed",
       wanted: fn(message) {
         case message {
-          ForStay(sent: SentByMap(map.Gone(unit_id:)), ..) -> Ok(unit_id)
+          ForStay(sent: SentByMap(map_message.Gone(unit_id:)), ..) ->
+            Ok(unit_id)
           ForStay(..)
           | client_connection.SentBySessions(..)
           | client_connection.SentByChat(..) -> Error(Nil)
@@ -762,7 +764,7 @@ pub fn a_players_max_health_spell_takes_its_share_of_a_real_creatures_health_tes
     run:,
     unit_id: first.unit_id,
     life: 2,
-    payload: relay.Strike(tell:),
+    payload: map_message.Strike(tell:),
   )
   // 0x140566ad0 case 7 reads the struck unit's maximum health, which the Battle Beast
   // spawns with 52 (`Creature2.73464`, as the 0x262's health stat shows); 0x140565600
@@ -1012,7 +1014,7 @@ fn summon(
   let assert Ok(_sent) =
     service.call_subject(
       run.subject,
-      map.Summon(
+      map_message.Summon(
         connection: ConnectionId(connection),
         creature_id: Creature2Id(creature_id),
         level: None,
@@ -1024,7 +1026,7 @@ fn summon(
   driven_time.advance(time:, ms: 0)
   let answer =
     open_wait.received(from: replies, what: "the map's answer to the summon")
-  let assert map.Summoned(unit_id:) = answer
+  let assert map_message.Summoned(unit_id:) = answer
     as "the map answered the summon: the creature started"
   unit_id
 }
@@ -1099,7 +1101,8 @@ pub fn a_summoned_creature_that_crashes_under_its_supervisor_is_gone_to_the_play
       what: "Gone for the summoned creature",
       wanted: fn(message) {
         case message {
-          ForStay(sent: SentByMap(map.Gone(unit_id:)), ..) -> Ok(unit_id)
+          ForStay(sent: SentByMap(map_message.Gone(unit_id:)), ..) ->
+            Ok(unit_id)
           ForStay(..)
           | client_connection.SentBySessions(..)
           | client_connection.SentByChat(..) -> Error(Nil)
@@ -1153,17 +1156,17 @@ fn tell_change(
   run run: MapProcess,
   connection connection: Int,
   effect effect: cast_state.Effect,
-) -> relay.Inbound {
+) -> map_message.Inbound {
   let #(unit_id, life, payload) = case effect {
     cast_state.TargetChangeStarts(unit_id:, life:, source:, modifier:) -> #(
       unit_id,
       life,
-      relay.ModifierStarts(source:, modifier:),
+      map_message.ModifierStarts(source:, modifier:),
     )
     cast_state.TargetChangeEnds(unit_id:, life:, source:) -> #(
       unit_id,
       life,
-      relay.ModifierEnds(source:),
+      map_message.ModifierEnds(source:),
     )
     _ -> panic as "not a change of a creature's property"
   }
@@ -1180,13 +1183,13 @@ fn tell_change(
 /// The entry of a creature's 0x93a for the Tech damage taken multiplier after the
 /// change: its default 1.0 as the base, and the row's value while the change starts
 /// the modifier.
-fn tech_taken(told told: relay.Inbound) -> UnitProperty {
+fn tech_taken(told told: map_message.Inbound) -> UnitProperty {
   UnitProperty(
     property_id: tech_taken_property,
     base: float32.to_bits(1.0),
     value: case told {
-      relay.ModifierStarts(..) -> fissure_bits
-      relay.ModifierEnds(..) -> float32.to_bits(1.0)
+      map_message.ModifierStarts(..) -> fissure_bits
+      map_message.ModifierEnds(..) -> float32.to_bits(1.0)
       _ -> panic as "only a modifier's start or end changes a property"
     },
   )
@@ -1462,9 +1465,11 @@ pub fn right_click_on_a_vendor_opens_its_window_test() -> Nil {
       tables: character_tables.content_tables(),
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors: vendor_support.stocking_items(
-        creature_ids: [28_739],
-        items: vendor_support.ingavaks_items,
+      vendor_creatures: set.from_list(
+        vendor.creatures(vendors: vendor_support.stocking_items(
+          creature_ids: [28_739],
+          items: vendor_support.ingavaks_items,
+        )),
       ),
       factions: creature_faction.none(),
     )
@@ -1737,7 +1742,7 @@ pub fn a_knockback_spell_on_a_creature_shows_its_flight_to_a_watching_client_tes
     run:,
     unit_id: thrown,
     life:,
-    payload: relay.Thrown(throw: forced_move.Throw(
+    payload: map_message.Thrown(throw: forced_move.Throw(
       move:,
       draws: forced_move.Draws(distance: 0.0, angle: 0.0),
       reference: forced_move.Reference(
@@ -1881,7 +1886,7 @@ fn carried_out(
           run:,
           unit_id:,
           life:,
-          payload: relay.Despawn(delay_ms:, went_at_ms:),
+          payload: map_message.Despawn(delay_ms:, went_at_ms:),
         )
         [Told(unit_id:)]
       }
@@ -2292,7 +2297,7 @@ fn struck_with_states(
       occasion: strike_tell.AtGo(phase: 0),
     )
   let payload =
-    relay.Strike(
+    map_message.Strike(
       tell: strike_tell.Strike(
         ..tell,
         from: step.Connection(ConnectionId(connection)),
@@ -2528,7 +2533,7 @@ fn answer(roaring roaring: Roaring, key key: strike_tell.Key) -> Nil {
     run: roaring.run,
     unit_id: roaring.unit_id,
     life: 2,
-    payload: relay.StrikeAnswered(answered:),
+    payload: map_message.StrikeAnswered(answered:),
   )
   driven_time.wait_until_quiet(roaring.time)
 }
@@ -2751,7 +2756,7 @@ pub fn a_stun_between_the_gos_ends_the_cast_and_the_creature_returns_to_its_auto
     run: roaring.run,
     unit_id: roaring.unit_id,
     life: 2,
-    payload: relay.Strike(
+    payload: map_message.Strike(
       tell: strike_tell.Strike(..tell, controls: [
         crowd_control_support.stagger_stun(instance_id: 28_673),
       ]),
@@ -3390,7 +3395,7 @@ fn target_moved(
     connection:,
     unit_id: roaring.unit_id,
     life: 2,
-    payload: relay.TargetMoved(
+    payload: map_message.TargetMoved(
       place: place_support.at(
         world_id: 3460,
         world_zone_id: spawn_support.warfare_woods,
@@ -3647,7 +3652,7 @@ fn answer_through_the_map(
     run: roaring.run,
     unit_id: roaring.unit_id,
     life: 2,
-    payload: relay.StrikeAnswered(answered:),
+    payload: map_message.StrikeAnswered(answered:),
   )
   driven_time.wait_until_quiet(roaring.time)
 }

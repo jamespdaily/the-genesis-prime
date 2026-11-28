@@ -591,7 +591,7 @@ pub fn of_target(
   )
 }
 
-/// What a creature holds of its own and of the strike it checks a gate of (genesis_prime/game/strike_tell
+/// What a creature holds of its own and of the strike it checks a gate of (genesis_prime/shared/strike_tell
 /// `Gate`), for the subject `of_creature` makes.
 pub type CreatureFacts {
   CreatureFacts(
@@ -675,7 +675,7 @@ pub fn of_creature(facts facts: CreatureFacts) -> Subject {
 
 /// A subject that holds only this difficulty: under no cast, out of combat, with
 /// no vital and no roll. A creature's side checks the prerequisites of its
-/// attack's effects against it (genesis_prime/world_map/creature_attack).
+/// attack's effects against it (genesis_prime/shared/creature_attack).
 pub fn of_difficulty(difficulty difficulty: Int) -> Subject {
   Subject(
     under: [],

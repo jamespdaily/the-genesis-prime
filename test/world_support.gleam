@@ -12,12 +12,12 @@ import genesis_prime/client_connection.{
 }
 import genesis_prime/connection/registry.{type Registry}
 import genesis_prime/group_registry
+import genesis_prime/map/message as map_message
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/step.{type Address, Connection, ConnectionId}
 import genesis_prime/world_map/creature_registry.{type CreatureRegistry}
 import genesis_prime/world_map/creature_supervisor
-import genesis_prime/world_map/map
 import genesis_prime/world_map/registry as world_map_registry
 import genesis_prime/world_map/spawn.{type Spawn}
 import gleam/erlang/process.{type Pid, type Subject}
@@ -176,7 +176,7 @@ fn send(
   connections connections: Registry(Message),
   gate gate: Option(Gate),
   to to: Address,
-  outgoing outgoing: map.Outgoing,
+  outgoing outgoing: map_message.Outgoing,
 ) -> Result(Nil, Nil) {
   case to {
     Connection(connection:) ->
@@ -204,7 +204,7 @@ fn send(
 fn deliver(
   connections connections: Registry(Message),
   connection connection: step.ConnectionId,
-  outgoing outgoing: map.Outgoing,
+  outgoing outgoing: map_message.Outgoing,
 ) -> Result(Nil, Nil) {
   server.map_message(outgoing:)
   |> result.try(registry.deliver(connections, connection, _))

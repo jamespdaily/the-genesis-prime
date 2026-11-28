@@ -14,6 +14,7 @@ import game_wire_support.{
 }
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection/state as connection_state
+import genesis_prime/game/vendor
 import genesis_prime/game_settings.{GameSettings}
 import genesis_prime/message/experience_gained
 import genesis_prime/message/float32
@@ -32,6 +33,7 @@ import gleam/dict
 import gleam/dynamic/decode
 import gleam/int
 import gleam/list
+import gleam/set
 import item_bot
 import login_support
 import owned_test
@@ -86,7 +88,7 @@ pub fn credits_survive_a_relog_test() -> Nil {
       tables: character_tables.content_tables(),
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors:,
+      vendor_creatures: set.from_list(vendor.creatures(vendors:)),
       factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "the row passes the spawn checks"
@@ -240,7 +242,7 @@ pub fn a_bot_moves_splits_equips_deletes_buys_sells_buys_back_and_levels_up_and_
       tables: character_tables.content_tables(),
       formulas: rating_support.formulas(),
       kinds: spawn_support.kinds(),
-      vendors:,
+      vendor_creatures: set.from_list(vendor.creatures(vendors:)),
       factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "the row passes the spawn checks"

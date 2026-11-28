@@ -88,6 +88,7 @@ import genesis_prime/game/quest_log
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/shared/top_zone
 import genesis_prime/shared/unit_properties
@@ -96,7 +97,6 @@ import genesis_prime/step.{
   LogWarning, Unwatch,
 }
 import genesis_prime/store
-import genesis_prime/world_map/map
 import genesis_prime/world_map/stay
 import gleam/list
 import gleam/option.{type Option}
@@ -604,7 +604,9 @@ fn leaving_the_map(
     request: AskMapRun(
       map: entered.map,
       incarnation: entered.incarnation,
-      message: map.Leave(connection: client_connection.connection(session.link)),
+      message: map_message.Leave(connection: client_connection.connection(
+        session.link,
+      )),
     ),
     before:,
   )
@@ -653,7 +655,9 @@ pub fn leave_answered(
   outcome outcome: Outcome(Answer),
 ) -> client_connection.Handled(Session) {
   case outcome {
-    step.Answer(FromMap(map.Left)) | step.NotRunning | step.EndedBeforeAnswer ->
+    step.Answer(FromMap(map_message.Left))
+    | step.NotRunning
+    | step.EndedBeforeAnswer ->
       case then {
         JoinAt(place:, health:, told:) ->
           joining_at(session:, now:, holder:, entered:, place:, health:, told:)
@@ -671,20 +675,20 @@ pub fn leave_answered(
         text: client_connection.without_answer(who: "the map", outcome:),
       )
     step.StoppedWaiting -> connection_state.stopped(session, now)
-    step.Answer(FromMap(map.Joined(..)))
-    | step.Answer(FromMap(map.NotJoined(..)))
-    | step.Answer(FromMap(map.Summoned(..)))
-    | step.Answer(FromMap(map.NotSummoned(..)))
-    | step.Answer(FromMap(map.Noticed(..)))
-    | step.Answer(FromMap(map.Seen(..)))
-    | step.Answer(FromMap(map.Unseen(..)))
-    | step.Answer(FromMap(map.Relayed(..)))
-    | step.Answer(FromMap(map.Retire))
-    | step.Answer(FromMap(map.Approached(..)))
-    | step.Answer(FromMap(map.Withdrew(..)))
-    | step.Answer(FromMap(map.PlayerDied(..)))
-    | step.Answer(FromMap(map.CasterGone(..)))
-    | step.Answer(FromMap(map.ToldCreature(..)))
+    step.Answer(FromMap(map_message.Joined(..)))
+    | step.Answer(FromMap(map_message.NotJoined(..)))
+    | step.Answer(FromMap(map_message.Summoned(..)))
+    | step.Answer(FromMap(map_message.NotSummoned(..)))
+    | step.Answer(FromMap(map_message.Noticed(..)))
+    | step.Answer(FromMap(map_message.Seen(..)))
+    | step.Answer(FromMap(map_message.Unseen(..)))
+    | step.Answer(FromMap(map_message.Relayed(..)))
+    | step.Answer(FromMap(map_message.Retire))
+    | step.Answer(FromMap(map_message.Approached(..)))
+    | step.Answer(FromMap(map_message.Withdrew(..)))
+    | step.Answer(FromMap(map_message.PlayerDied(..)))
+    | step.Answer(FromMap(map_message.CasterGone(..)))
+    | step.Answer(FromMap(map_message.ToldCreature(..)))
     | step.Answer(FromStore(..))
     | step.Answer(FromHandOff(..))
     | step.Answer(FromSessions(..)) ->

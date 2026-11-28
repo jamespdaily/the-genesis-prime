@@ -24,14 +24,14 @@
 import game_connection_support as support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{Absorption}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/unit_stat_absorption.{UnitStatAbsorption}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{UnitStatChanged}
+import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{Absorption}
 import genesis_prime/step.{type ConnectionStep}
-import genesis_prime/world_map/relay
 import gleam/list
 import gleam/option.{None}
 import owned_test
@@ -119,7 +119,7 @@ fn description_of(taken taken: ConnectionStep(Request)) -> #(Int, Int, Int) {
   let assert [
     #(
       _,
-      relay.StrikeAnswered(answered: strike_tell.Answered(
+      map_message.StrikeAnswered(answered: strike_tell.Answered(
         outcome: strike_tell.Landed(descriptions: [description], ..),
         ..,
       )),

@@ -13,7 +13,6 @@
 //// - The render groups the entries by area in the order each area is first met, and keeps
 ////   the entries' order within an area.
 
-import genesis_prime/game/activate
 import genesis_prime/game/cast
 import genesis_prime/game/cast/control as cast_control
 import genesis_prime/game/cast/cost as cast_cost
@@ -57,8 +56,10 @@ import genesis_prime/message/spell_damage_description
 import genesis_prime/message/spell_missed
 import genesis_prime/message/spell_started
 import genesis_prime/message/vendor_items
+import genesis_prime/shared/activate
 import genesis_prime/shared/class_resource
 import genesis_prime/shared/cooldown
+import genesis_prime/shared/creature_special
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit
 import genesis_prime/shared/item_property
@@ -74,7 +75,6 @@ import genesis_prime/wire_recording/fixture as wire_recording_fixture
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_control
 import genesis_prime/world_map/creature_fight
-import genesis_prime/world_map/creature_special
 import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/objective_spawn
 import gleam/int

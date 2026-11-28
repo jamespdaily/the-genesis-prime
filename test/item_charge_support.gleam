@@ -11,19 +11,19 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/unit_news
 import genesis_prime/game/world_entry
+import genesis_prime/map/message.{ObjectsSeen}
 import genesis_prime/message/item_place.{type ItemPlace, ItemPlace}
 import genesis_prime/message/item_use.{ItemUse}
+import genesis_prime/shared/creature_combat
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/unit_news
 import genesis_prime/step
 import genesis_prime/store.{
   type HeldItem, type UnsetItem, type WorldRequest, HeldItem, UnsetItem,
 }
 import genesis_prime/table/id.{Creature2Id, Item2Id}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_life
-import genesis_prime/world_map/map.{ObjectsSeen}
 import genesis_prime/world_map/static_object.{StaticObject}
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -253,7 +253,7 @@ pub fn seeing_a_runner(
           hit_radius: runner_radius,
           gap: 29.0,
         ),
-        hostile_to: creature_life.Hostile(exile: False, dominion: False),
+        hostile_to: creature_combat.Hostile(exile: False, dominion: False),
       ),
     ).0
   connection_support.feed(

@@ -27,10 +27,10 @@ import cast_support as support
 import class_resource_support
 import genesis_prime/coverage/gaps
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
-import genesis_prime/game/held_changes
 import genesis_prime/message/spell_started
 import genesis_prime/shared/class_resource
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/player_change
 import genesis_prime/shared/spell_plan.{type Spell, Spell}
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{Spell4EffectsId}
@@ -174,7 +174,7 @@ pub fn union_property_modifier_changes_the_caster_and_the_target_creature_test()
   // only on a creature the go struck.
   let #(state, effects) = started_on_20(started: spell, struck: [20])
   let assert [
-    #(started_by, cast_state.HeldChange(held_changes.Property(modifier: _))),
+    #(started_by, cast_state.HeldChange(player_change.Property(modifier: _))),
   ] = support.caster_change_starts(effects:)
     as "the caster's own property changes once"
   assert started_by.effect_id == Spell4EffectsId(9717)
@@ -402,11 +402,11 @@ fn absorbs_of(
 ) -> List(#(Int, Int, Int)) {
   list.filter_map(starts, fn(start) {
     case start.2 {
-      cast_state.HeldChange(held_changes.Absorb(amount:, ..)) -> {
+      cast_state.HeldChange(player_change.Absorb(amount:, ..)) -> {
         assert amount > 0 as "an absorb pool holds at least a point"
         Ok(#(start.0, start.1, amount))
       }
-      cast_state.HeldChange(held_changes.Property(..))
+      cast_state.HeldChange(player_change.Property(..))
       | cast_state.Heal(..)
       | cast_state.Look(..) -> Error(Nil)
     }

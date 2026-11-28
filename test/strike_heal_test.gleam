@@ -19,27 +19,27 @@ import cast_support
 import client_tables
 import fixture_tables
 import genesis_prime/game/cast/state.{GoAsked} as cast_state
-import genesis_prime/game/heal_split.{Split}
 import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
 import genesis_prime/game/player_state
 import genesis_prime/game/shown
 import genesis_prime/game/strike.{
   type Attacker, type Effect, type Selection, Selection,
 }
-import genesis_prime/game/strike_tell.{
+import genesis_prime/shared/area
+import genesis_prime/shared/creature_combat.{Attackable}
+import genesis_prime/shared/damage
+import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts.{Split}
+import genesis_prime/shared/spell_area
+import genesis_prime/shared/spell_plan
+import genesis_prime/shared/strike_tell.{
   type PlayerAnswered, type PlayerOutcome, HealLanded, HealsLanded,
   PlayerAnswered, PlayerDead,
 }
-import genesis_prime/shared/area
-import genesis_prime/shared/damage
-import genesis_prime/shared/effect_kind
-import genesis_prime/shared/spell_area
-import genesis_prime/shared/spell_plan
 import genesis_prime/shared/target_mechanic
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id, UnitProperty2Id}
-import genesis_prime/world_map/creature_life.{Attackable}
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}

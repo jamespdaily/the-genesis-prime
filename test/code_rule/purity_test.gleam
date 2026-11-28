@@ -225,7 +225,7 @@ pub fn the_map_rule_and_world_entry_and_what_they_build_are_pure_rules_the_check
       "src/genesis_prime/game/world_entry.gleam",
       "src/genesis_prime/shared/loadout.gleam",
       "src/genesis_prime/shared/item_property.gleam",
-      "src/genesis_prime/world_map/player_unit.gleam",
+      "src/genesis_prime/shared/player_unit.gleam",
       "src/genesis_prime/game/start_place.gleam",
     ])
   hold_no_process_handle(files)

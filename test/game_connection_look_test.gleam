@@ -28,19 +28,19 @@ import game_connection_support as support
 import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/game/ability_book
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/unit_news.{
-  type News, Appeared, LookChanged, PeerNews, Removed,
-}
+import genesis_prime/map/message.{SeenBy, UnseenBy} as map_message
 import genesis_prime/message/item_place
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_item_visuals_changed.{UnitItemVisualsChanged}
 import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/shared/loadout
+import genesis_prime/shared/unit_news.{
+  type News, Appeared, LookChanged, PeerNews, Removed,
+}
 import genesis_prime/step.{type ConnectionStep, ConnectionId}
 import genesis_prime/store.{Character}
 import genesis_prime/table/id.{ClassId, Spell4BaseId}
-import genesis_prime/world_map/map.{SeenBy, UnseenBy}
 import gleam/list
 import gleam/option.{None}
 import owned_test
@@ -370,7 +370,7 @@ fn a_camp_tells_the_viewers_removed_and_no_look(world world: World) -> Nil {
     support.answer(
       state: saved_state,
       taken: saved,
-      outcome: step.Answer(FromMap(map.Left)),
+      outcome: step.Answer(FromMap(map_message.Left)),
     )
   let steps = [requested, finished, saved, left]
   assert written(steps:) == [] as "a camp writes no 0x933 to the player"

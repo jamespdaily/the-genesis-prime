@@ -28,17 +28,45 @@ import content_support
 import database_support
 import genesis_prime/content/spawn as content_spawn
 import genesis_prime/game/place_objective
-import genesis_prime/game/vendor
 import genesis_prime/import_world_data
+import genesis_prime/shared/quest_row
 import genesis_prime/shared/rating
 import genesis_prime/table/quest_objective
 import genesis_prime/world_map/creature_faction
 import genesis_prime/world_map/spawn
 import gleam/int
 import gleam/list
+import gleam/set
 import owned_test
 import spawn_support
 import unitest
+
+/// The marker ids of every QuestObjective row, read as the client's columns name them
+/// (`worldLocationsIdIndicator00` to `03`, 0 for none), are the ones `quest_row.marker_ids`
+/// gives, the same as `place_objective.marker_ids` gave before the function moved.
+pub fn place_objective_marker_ids_of_every_quest_objective_row_are_unchanged_by_the_move_to_quest_row_test() -> Nil {
+  // deadline: 4 s measured: the client's tables are read once for the run
+  use <- owned_test.run(120_000)
+  use <- unitest.guard(client_tables.present())
+  let rows = quest_objective.all(client_tables.with_content_tables())
+  assert rows != [] as "the client's QuestObjective table has rows"
+  list.each(rows, fn(row) {
+    let expected =
+      list.filter(
+        [
+          row.world_locations_id_indicator00,
+          row.world_locations_id_indicator01,
+          row.world_locations_id_indicator02,
+          row.world_locations_id_indicator03,
+        ],
+        fn(id) { id != 0 },
+      )
+    assert quest_row.marker_ids(objective: row) == expected
+      as { "QuestObjective " <> int.to_string(row.id) }
+  })
+  assert list.any(rows, fn(row) { quest_row.marker_ids(objective: row) != [] })
+    as "some rows have markers"
+}
 
 pub fn every_type_22_objective_has_a_marker_or_is_reported_test() -> Nil {
   use <- owned_test.run(120_000)
@@ -85,7 +113,7 @@ pub fn every_type_22_objective_has_a_marker_or_is_reported_test() -> Nil {
       tables:,
       formulas: rating.formulas(tables:),
       kinds: spawn_support.kinds(),
-      vendors: vendor.none(),
+      vendor_creatures: set.new(),
       factions: creature_faction.none(),
     )
   assert selection.refusals == [] as "every row passes the spawn checks"

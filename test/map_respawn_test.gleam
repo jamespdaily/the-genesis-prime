@@ -21,12 +21,12 @@
 ////   instead of its kind's respawn time when a player's use released its creature.
 
 import connection_rule_support as support
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news
+import genesis_prime/map/message as map_message
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{ConnectionId, LogError, WatchId}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map.{type State}
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
@@ -355,7 +355,7 @@ fn changed(
   state state: State,
   change change: Change,
   at_ms at_ms: Int,
-) -> #(State, step.ServiceStep(map.Outgoing)) {
+) -> #(State, step.ServiceStep(map_message.Outgoing)) {
   case change {
     Death -> spawns.life(state:, at_ms:, connection: 1, alive: False)
     Stealth -> spawns.stealth(state:, at_ms:, connection: 1, stealthed: True)
@@ -447,7 +447,7 @@ pub fn a_death_a_stealth_or_a_wake_decides_the_new_lifes_ring_by_whether_the_map
 /// A step's starts, each with the spawn's ring it carries and the `Approached` it is sent
 /// after it: the ring's connections and what the step tells the started life.
 fn started_with(
-  taken taken: step.ServiceStep(map.Outgoing),
+  taken taken: step.ServiceStep(map_message.Outgoing),
 ) -> #(List(Int), List(String)) {
   let assert [#(_, start)] = spawns.starts(taken)
     as "the step starts one creature"
@@ -544,26 +544,32 @@ fn tells_of(
   unit_id unit_id: Int,
   life life: Int,
   generation generation: Generation,
-) -> List(#(String, map.Message)) {
+) -> List(#(String, map_message.Message)) {
   [
     #(
       "a snapshot",
-      map.Snapshot(unit_id:, life:, by: ConnectionId(1), generation:, burst: [
-        health_news(unit_id:),
-      ]),
+      map_message.Snapshot(
+        unit_id:,
+        life:,
+        by: ConnectionId(1),
+        generation:,
+        burst: [
+          health_news(unit_id:),
+        ],
+      ),
     ),
     #(
       "a broadcast",
-      map.Broadcast(unit_id:, life:, news: health_news(unit_id:)),
+      map_message.Broadcast(unit_id:, life:, news: health_news(unit_id:)),
     ),
     #(
       "a relay",
-      map.Relay(
+      map_message.Relay(
         unit_id:,
         life:,
         to: ConnectionId(1),
         stay: first_stay(),
-        payload: relay.Fight(told: strike_tell.Released(unit_id:)),
+        payload: map_message.Fight(told: strike_tell.Released(unit_id:)),
       ),
     ),
   ]
@@ -576,7 +582,7 @@ pub fn a_snapshot_a_broadcast_and_a_relay_of_the_life_that_expired_are_dropped_i
   let old_generation =
     spawns.generation_of(state: live, spawn: 1, connection: 1)
   let old = tells_of(unit_id:, life:, generation: old_generation)
-  let told = fn(state, tells: List(#(String, map.Message)), at_ms) {
+  let told = fn(state, tells: List(#(String, map_message.Message)), at_ms) {
     list.fold(tells, #(state, []), fn(held, tell) {
       let #(state, relays) = held
       let #(state, taken) =

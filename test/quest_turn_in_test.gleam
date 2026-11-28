@@ -34,6 +34,7 @@ import genesis_prime/message/currency_changed.{CurrencyChanged}
 import genesis_prime/message/currency_gained.{CurrencyGained}
 import genesis_prime/message/item_added
 import genesis_prime/message/quest_state.{QuestState}
+import genesis_prime/shared/creature_combat.{Hostile}
 import genesis_prime/shared/prerequisite
 import genesis_prime/step.{LogDebug, LogWarning}
 import genesis_prime/store.{
@@ -42,7 +43,6 @@ import genesis_prime/store.{
 import genesis_prime/table/id.{Item2Id, Quest2Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/table/quest2
-import genesis_prime/world_map/creature_life.{Hostile}
 import gleam/dict
 import gleam/int
 import gleam/list

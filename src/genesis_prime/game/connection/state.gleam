@@ -9,7 +9,6 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{GameWrapper}
 import genesis_prime/connection/frame.{type Frame, Frame}
-import genesis_prime/game/activate
 import genesis_prime/game/character_select
 import genesis_prime/game/deadline_timer
 import genesis_prime/game/dev_command
@@ -28,7 +27,6 @@ import genesis_prime/game/quest_turn_in
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/tutorial.{type Chain}
-import genesis_prime/game/unit_news
 import genesis_prime/game/vendor.{type Vendors}
 import genesis_prime/game/vendor_purchase
 import genesis_prime/game/vendor_sale
@@ -36,11 +34,13 @@ import genesis_prime/game/world_entry
 import genesis_prime/game/zone_welcome.{type ZoneWelcomes}
 import genesis_prime/game_settings.{type GameSettings}
 import genesis_prime/hand_off.{type Holder}
+import genesis_prime/map/message.{type Inbound} as map_message
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
   type DisconnectReason, LostUserServer,
 }
+import genesis_prime/shared/activate
 import genesis_prime/shared/class_resource
 import genesis_prime/shared/prerequisite.{type Prerequisite}
 import genesis_prime/shared/quest_view.{type QuestView}
@@ -48,6 +48,7 @@ import genesis_prime/shared/server_proxy.{type ServerProxies}
 import genesis_prime/shared/spell_plan
 import genesis_prime/shared/spell_tier
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{
   type About, type ConnectionEffect, type ConnectionId, type Effect, type Now,
   type TimerId, About, CancelTimer, LogWarning, OwnEffect, StartTimer, Stop,
@@ -57,7 +58,6 @@ import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
-import genesis_prime/world_map/relay.{type Inbound}
 import genesis_prime/world_map/spawn_id.{type LoadedSpawns}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
@@ -187,7 +187,7 @@ pub fn quests_of(entered entered: world_entry.Entered) -> QuestView {
 }
 
 /// The activate spells' plans and prerequisites the cast rule reads
-/// (genesis_prime/game/activate).
+/// (genesis_prime/shared/activate).
 pub fn activations_of(session session: Session) -> activate.Activations {
   activate.activations(tables: session.settings.tables)
 }
@@ -294,7 +294,7 @@ pub type Status {
   /// watches (`map_watch`).
   InWorld(holder: Holder, entered: world_entry.Entered)
   /// The player is in the world and its map's run is asked to start a creature
-  /// for a development command (`world_map/map.Summon`, genesis_prime/game/dev_command),
+  /// for a development command (`world_map/map_message.Summon`, genesis_prime/game/dev_command),
   /// whose answer is awaited with the client's frames held. The player's place is
   /// not saved yet, so a connection that ends in this status saves it as one in
   /// `InWorld` does; the shell takes no other input during the ask, so the
@@ -366,7 +366,7 @@ pub type Status {
   /// awaited; `then` says what follows it. A connection in this status ends
   /// without a second save: the save out is the one its end waits for.
   SavingPlace(holder: Holder, entered: world_entry.Entered, then: AfterSave)
-  /// The map's run is asked to take the player out (`world_map/map.Leave`), and its
+  /// The map's run is asked to take the player out (`world_map/map_message.Leave`), and its
   /// answer is awaited. A connection in this status ends without a save, and the map
   /// drops a player whose connection ends. The camp's place is saved before the ask;
   /// a move to another place (`JoinAt`) saves nothing, so the next login finds the
@@ -742,7 +742,7 @@ pub fn tells_the_landing(
   entered entered: world_entry.Entered,
   to to: ConnectionId,
   to_stay to_stay: Stay,
-  landing landing: relay.Landing,
+  landing landing: map_message.Landing,
 ) -> Effect(ConnectionEffect(Request)) {
   tells_the_map(
     entered:,

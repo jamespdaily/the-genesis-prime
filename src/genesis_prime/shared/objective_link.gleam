@@ -25,7 +25,7 @@
 ////   it is closed; the client's offer of a closed link is nothing at all
 ////   (`0x140479560.anim_state_exit`).
 
-import genesis_prime/game/activate
+import genesis_prime/shared/activate
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/quest_row
 import genesis_prime/shared/quest_view.{type QuestView}

@@ -14,12 +14,13 @@
 //// a creature no one sees is still live after 70 s, and the check names it.
 
 import connection_rule_support as support
+import genesis_prime/map/message.{Retire} as map_message
 import genesis_prime/step.{
   type WatchId, CancelServiceTimer, Connection, ConnectionId, Creature,
   OwnEffect, OwnEvent, Reply, Send, ServiceTimerFired, StartCreature,
   StartServiceTimer, TimerId, WatchEnded, WatchId,
 }
-import genesis_prime/world_map/map.{type State, Live, Retire, Retiring}
+import genesis_prime/world_map/map.{type State, Live, Retiring}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/bool
 import gleam/dict.{type Dict}
@@ -113,7 +114,7 @@ fn begin(fire_sweeps fire_sweeps: Bool) -> Play {
 /// player's watch and unit id are noted.
 fn settle(
   play play: Play,
-  taken taken: step.ServiceStep(map.Outgoing),
+  taken taken: step.ServiceStep(map_message.Outgoing),
   connection connection: Int,
   fire_sweeps fire_sweeps: Bool,
 ) -> Play {
@@ -121,7 +122,7 @@ fn settle(
     list.fold(support.effects_of(taken), #(play, []), fn(held, effect) {
       let #(play, retired) = held
       case effect {
-        OwnEffect(Reply(answer: map.Joined(unit:, ..), ..)) -> #(
+        OwnEffect(Reply(answer: map_message.Joined(unit:, ..), ..)) -> #(
           Play(..play, units: dict.insert(play.units, connection, unit.unit_id)),
           retired,
         )
@@ -170,7 +171,7 @@ fn settle(
 
 fn feed(
   play play: Play,
-  event event: step.Event(step.ServiceEvent(map.Message)),
+  event event: step.Event(step.ServiceEvent(map_message.Message)),
   connection connection: Int,
   fire_sweeps fire_sweeps: Bool,
 ) -> Play {
@@ -230,7 +231,7 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
             ),
             event: OwnEvent(step.Asked(
               caller: step.CallerId(connection),
-              message: map.Join(
+              message: map_message.Join(
                 connection: ConnectionId(connection),
                 character: map_support.character(100 + connection),
                 place: map_spawn_support.at(x_of(stop)),
@@ -253,7 +254,7 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
               players: dict.insert(play.players, connection, x_of(stop)),
             ),
             event: OwnEvent(
-              step.Told(message: map.Moved(
+              step.Told(message: map_message.Moved(
                 connection: ConnectionId(connection),
                 place: map_spawn_support.at(x_of(stop)),
                 seq: stop,
@@ -271,7 +272,7 @@ fn apply(play play: Play, op op: Op, fire_sweeps fire_sweeps: Bool) -> Play {
             play: Play(..play, players: dict.delete(play.players, connection)),
             event: OwnEvent(step.Asked(
               caller: step.CallerId(99),
-              message: map.Leave(connection: ConnectionId(connection)),
+              message: map_message.Leave(connection: ConnectionId(connection)),
             )),
             connection:,
             fire_sweeps:,

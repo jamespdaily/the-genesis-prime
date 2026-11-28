@@ -20,15 +20,16 @@
 
 import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/map/message.{
+  Join, Joined, Leave, Moved, Noticed, SeenBy, UnseenBy,
+} as map_message
 import genesis_prime/shared/sight
 import genesis_prime/step.{
   type ServiceStep, Asked, CallerId, ConnectionId, LogError, OwnEvent, Started,
   Told, WatchEnded, WatchId,
 }
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map.{
-  type State, Join, Joined, Leave, Moved, Noticed, SeenBy, UnseenBy,
-}
+import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/stay
 import gleam/int
 import gleam/list
@@ -69,7 +70,7 @@ fn join(
   connection connection: Int,
   place place: Place,
   elapsed_ms elapsed_ms: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   join_for(state:, connection:, place:, elapsed_ms:, stay: connection)
 }
 
@@ -80,7 +81,7 @@ fn join_for(
   place place: Place,
   elapsed_ms elapsed_ms: Int,
   stay stay: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   map_spawn_support.feed(
     state: state,
     at_ms: started_at_ms + elapsed_ms,
@@ -105,7 +106,7 @@ fn move(
   connection connection: Int,
   x x: Float,
   elapsed_ms elapsed_ms: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   map_spawn_support.feed(
     state: state,
     at_ms: started_at_ms + elapsed_ms,
@@ -124,7 +125,7 @@ fn leave(
   state state: State,
   connection connection: Int,
   elapsed_ms elapsed_ms: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   map_spawn_support.feed(
     state: state,
     at_ms: started_at_ms + elapsed_ms,
@@ -137,14 +138,14 @@ fn leave(
 
 /// Each send of a step as the connection it goes to and what it says, with the
 /// viewers and units by number: `Watched by 2`, `Unwatched by 1`, `Gone 2`.
-fn shape(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
+fn shape(taken: ServiceStep(map_message.Outgoing)) -> List(#(Int, String)) {
   list.map(support.sends(taken), fn(sent) {
     #(sent.0, map_spawn_support.said(sent.1))
   })
 }
 
 /// A map with connections 1 and 2 joined at x 0 and `x`.
-fn two_players(x: Float) -> #(State, ServiceStep(map.Outgoing)) {
+fn two_players(x: Float) -> #(State, ServiceStep(map_message.Outgoing)) {
   let #(state, _) =
     join(state: started(), connection: 1, place: at(0.0), elapsed_ms: 100)
   join(state: state, connection: 2, place: at(x), elapsed_ms: 200)
@@ -155,51 +156,51 @@ fn two_players(x: Float) -> #(State, ServiceStep(map.Outgoing)) {
 /// unit is unseen (`PlayerUnseen`) is checked by the table tests of
 /// `map_player_relation_test`.
 fn notices(
-  taken: ServiceStep(map.Outgoing),
-) -> List(#(Int, stay.Stay, map.Notice)) {
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(#(Int, stay.Stay, map_message.Notice)) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      Noticed(notice: map.PlayerUnseen(..), ..) -> Error(Nil)
+      Noticed(notice: map_message.PlayerUnseen(..), ..) -> Error(Nil)
       Noticed(stay:, notice:) -> Ok(#(sent.0, stay, notice))
       Joined(..)
-      | map.NotJoined(..)
-      | map.Summoned(..)
-      | map.NotSummoned(..)
-      | map.Left
-      | map.Seen(..)
-      | map.Unseen(..)
-      | map.Relayed(..)
-      | map.Retire
-      | map.Approached(..)
-      | map.Withdrew(..)
-      | map.PlayerDied(..)
-      | map.CasterGone(..)
-      | map.ToldCreature(..) -> Error(Nil)
+      | map_message.NotJoined(..)
+      | map_message.Summoned(..)
+      | map_message.NotSummoned(..)
+      | map_message.Left
+      | map_message.Seen(..)
+      | map_message.Unseen(..)
+      | map_message.Relayed(..)
+      | map_message.Retire
+      | map_message.Approached(..)
+      | map_message.Withdrew(..)
+      | map_message.PlayerDied(..)
+      | map_message.CasterGone(..)
+      | map_message.ToldCreature(..) -> Error(Nil)
     }
   })
 }
 
 /// The unit id a join's `Joined` answer gives the player, which a notice of that player
 /// names.
-fn joined_unit_id(taken: ServiceStep(map.Outgoing)) -> Int {
+fn joined_unit_id(taken: ServiceStep(map_message.Outgoing)) -> Int {
   let assert [unit_id] =
     list.filter_map(support.replies(taken), fn(reply) {
       case reply.1 {
         Joined(unit:, ..) -> Ok(unit.unit_id)
-        map.NotJoined(..)
-        | map.Summoned(..)
-        | map.NotSummoned(..)
-        | map.Left
+        map_message.NotJoined(..)
+        | map_message.Summoned(..)
+        | map_message.NotSummoned(..)
+        | map_message.Left
         | Noticed(..)
-        | map.Seen(..)
-        | map.Unseen(..)
-        | map.Relayed(..)
-        | map.Retire
-        | map.Approached(..)
-        | map.Withdrew(..)
-        | map.PlayerDied(..)
-        | map.CasterGone(..)
-        | map.ToldCreature(..) -> Error(Nil)
+        | map_message.Seen(..)
+        | map_message.Unseen(..)
+        | map_message.Relayed(..)
+        | map_message.Retire
+        | map_message.Approached(..)
+        | map_message.Withdrew(..)
+        | map_message.PlayerDied(..)
+        | map_message.CasterGone(..)
+        | map_message.ToldCreature(..) -> Error(Nil)
       }
     })
     as "a join is answered with one Joined"
@@ -314,7 +315,7 @@ fn ends(
   state state: State,
   connection connection: Int,
   elapsed_ms elapsed_ms: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   map_spawn_support.feed(
     state: state,
     at_ms: started_at_ms + elapsed_ms,

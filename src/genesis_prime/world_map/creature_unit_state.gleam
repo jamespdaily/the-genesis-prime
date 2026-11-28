@@ -37,7 +37,7 @@
 //// - A hold's number is the creature's own for its life, so two casters' holds of one state
 ////   are two holds that each end by their own end.
 
-import genesis_prime/game/unit_news
+import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_state
 import gleam/int
 import gleam/list

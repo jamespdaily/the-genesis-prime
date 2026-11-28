@@ -152,7 +152,7 @@ pub fn all() -> List(ColumnSign) {
       table: "Prerequisite",
       column: "objectId1",
       sign: Unread,
-      evidence: "no rule reads objectId1 (genesis_prime/shared/prerequisite keeps no objectId, genesis_prime/world_map/creature_attack reads objectId0 only); one row holds -1",
+      evidence: "no rule reads objectId1 (genesis_prime/shared/prerequisite keeps no objectId, genesis_prime/shared/creature_attack reads objectId0 only); one row holds -1",
     ),
     ColumnSign(
       table: "Prerequisite",

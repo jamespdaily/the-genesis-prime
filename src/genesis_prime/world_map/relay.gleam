@@ -55,44 +55,11 @@
 //// | `CastWent` | the caster's go has told the told player each of its changes | the told player's current stay | none |
 //// | `AllyEvent` | the events of a blow on the told player that the caster's Proc rows on it wait for | the told player's current stay | none |
 
-import genesis_prime/game/chat_tell.{type Said as ChatSaid}
-import genesis_prime/game/experience.{type Credit}
-import genesis_prime/game/held_changes.{type PlayerChange}
-import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell.{
-  type Answered, type Fight, type PlayerAnswered, type PlayerEvent,
-  type PlayerStrike, type Tell as StrikeTell,
-}
-import genesis_prime/game/unit_casts
-import genesis_prime/game/unit_news.{type PeerNews}
-import genesis_prime/shared/forced_move
-import genesis_prime/shared/unit_properties
-import genesis_prime/shared/unit_state
-
-/// What a creature tells one player through the map.
-pub type Payload {
-  /// The answer to the player's strike on the creature.
-  Struck(answered: Answered)
-  /// The credit for the kill the player's blow made.
-  KillCredit(credit: Credit)
-  /// The creature threatens, releases or strikes the player.
-  Fight(told: Fight)
-}
-
-/// What the map sends a player's connection for a creature: the creature's news,
-/// which it relays through a relation, or a payload the creature told.
-pub type Delivered {
-  /// News of the creature's unit, from a snapshot's burst or a broadcast, for a
-  /// viewer whose relation the map holds as relaying.
-  News(news: PeerNews)
-  /// A payload the creature told the player.
-  Tell(payload: Payload)
-  /// What another player's cast landed on the player, or the answer to what the player
-  /// did to it, which the map admitted by its kind (`landing_kind_of`).
-  Landed(landing: Landing)
-  /// A local chat line (Say, Yell or Emote) of a player the told player sees, for a
-  /// viewer whose relation relays.
-  Said(said: ChatSaid)
+import genesis_prime/map/message.{
+  type Inbound, type Landing, type Payload, AllyEvent, CastViewEnds, CastViewSet,
+  CastWent, ChangeEnd, ChangeStart, ControlsEnd, Despawn, Fight, HealAnswer,
+  HealStrike, KillCredit, ModifierEnds, ModifierStarts, Strike, StrikeAnswered,
+  Struck, TargetMoved, Thrown, UnitStates,
 }
 
 /// The check on where a relayed payload goes.
@@ -120,42 +87,6 @@ pub fn kind_of(payload payload: Payload) -> Kind {
       Kind(destination: PlayersCurrentStay, source: NoSourceCheck)
     Fight(..) -> Kind(destination: PlayersCurrentStay, source: NoSourceCheck)
   }
-}
-
-/// What a player's connection tells one running creature through the map. No payload
-/// names its sender but `Strike`, whose `from` and striker's stay the map checks against
-/// the relay's: the map names the sender and the stay to the creature (`ToldCreature`).
-pub type Inbound {
-  /// The strike of a cast's go, which the creature's owner process decides
-  /// (genesis_prime/game/strike_tell).
-  Strike(tell: StrikeTell)
-  /// The player stands at `place`, its move `seq`, with its race's hit radius, for a
-  /// creature that holds it on its threat list.
-  TargetMoved(place: Place, seq: Int, hit_radius: Float)
-  /// The player's answer to the creature's strike on it.
-  StrikeAnswered(answered: Answered)
-  /// A property modifier of the player's spell starts on the creature.
-  ModifierStarts(
-    source: unit_properties.Source,
-    modifier: unit_properties.Modifier,
-  )
-  /// The property modifier of `source` ends on the creature.
-  ModifierEnds(source: unit_properties.Source)
-  /// A ForcedMove effect of the player's cast throws the creature.
-  Thrown(throw: forced_move.Throw)
-  /// A DespawnUnit effect of the player's cast removes the creature `delay_ms` after
-  /// `went_at_ms`, the monotonic time of the go.
-  Despawn(delay_ms: Int, went_at_ms: Int)
-  /// The UnitStateSet rows of the player's cast hold their states on the creature, each
-  /// from `went_at_ms`, the monotonic time of the go, plus its delay.
-  UnitStates(rows: List(unit_state.Row), went_at_ms: Int)
-  /// The player's cast holds `view` on the creature: its one target, the whole of it.
-  CastViewSet(view: unit_casts.CastView)
-  /// The player's cast `cast_id` holds nothing on the creature any more.
-  CastViewEnds(cast_id: Int)
-  /// The player's cast `cast_id` no longer holds a node on the creature that holds the
-  /// states the cast landed, so each of those states ends.
-  ControlsEnd(cast_id: Int)
 }
 
 /// The check on where an inbound payload goes.
@@ -204,25 +135,6 @@ pub fn inbound_kind_of(inbound inbound: Inbound) -> InboundKind {
     ControlsEnd(..) ->
       InboundKind(destination: RunningCreature, source: NoSenderCheck)
   }
-}
-
-/// What one player's connection tells another's through the map: what a cast lands on
-/// the other player, or the other's answer to it. Each kind is admitted by the map
-/// with the checks of `landing_kind_of`, and delivered to the told player's connection
-/// for the stay the tell names.
-pub type Landing {
-  /// The heal rows of the caster's cast, for the told player's life.
-  HealStrike(strike: PlayerStrike)
-  /// The told player's answer to a heal strike, for the caster's round.
-  HealAnswer(answered: PlayerAnswered)
-  /// A change the caster's cast puts on the told player.
-  ChangeStart(change: PlayerChange)
-  /// The end of a change the caster's cast put on the told player.
-  ChangeEnd(change: PlayerChange)
-  /// The caster's go has told the told player each of its changes.
-  CastWent(change: PlayerChange)
-  /// The events of a blow on the told player that the caster's Proc rows on it wait for.
-  AllyEvent(event: PlayerEvent)
 }
 
 /// The check on where a landing goes.

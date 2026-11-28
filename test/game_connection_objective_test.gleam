@@ -59,7 +59,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state as connection_state
-import genesis_prime/game/unit_news
+import genesis_prime/map/message.{ObjectsSeen, ObjectsUnseen}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_activate_unit.{ClientActivateUnit}
@@ -74,7 +74,9 @@ import genesis_prime/message/item_use.{ItemUse}
 import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/quest_log as quest_message
 import genesis_prime/message/spell_cast_confirmed
+import genesis_prime/shared/creature_combat.{Hostile}
 import genesis_prime/shared/creature_path
+import genesis_prime/shared/unit_news
 import genesis_prime/step.{type ConnectionEvent, type Event, OwnEvent}
 import genesis_prime/store.{
   type QuestRow, CharacterLoaded, ForMove, ForWorld, HeldItem, LoadCharacter,
@@ -82,8 +84,6 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/id.{Creature2Id, Item2Id}
 import genesis_prime/table/loader/store as store_tables
-import genesis_prime/world_map/creature_life.{Hostile}
-import genesis_prime/world_map/map.{ObjectsSeen, ObjectsUnseen}
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/static_object.{StaticObject}
 import gleam/list

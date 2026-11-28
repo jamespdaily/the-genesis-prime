@@ -99,7 +99,6 @@ import game_client.{type Chatter, type Game, type HeardLine}
 import genesis_prime/add_account
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/dev_database
-import genesis_prime/game/chat_channel.{type ChannelType}
 import genesis_prime/load_player.{type Account, Account}
 import genesis_prime/message/chat_channel_result
 import genesis_prime/message/chat_line_accepted
@@ -109,6 +108,7 @@ import genesis_prime/message/terrain_loaded.{TerrainLoaded}
 import genesis_prime/message/unit_destroyed
 import genesis_prime/message/unit_movement
 import genesis_prime/message/whisper_failed
+import genesis_prime/shared/chat_channel.{type ChannelType}
 import genesis_prime/sitting_bot/ability
 import genesis_prime/sitting_bot/effects.{type Book, type Effect}
 import genesis_prime/sitting_bot/follow.{type Following}

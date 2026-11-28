@@ -6,10 +6,10 @@ import genesis_prime/game/start_place.{type Place}
 import genesis_prime/message/item_visual.{type ItemVisual}
 import genesis_prime/shared/item_property.{ItemProperties}
 import genesis_prime/shared/loadout.{type Loadout, Loadout}
+import genesis_prime/shared/player_unit.{type PlayerUnit}
 import genesis_prime/store.{type Character}
 import genesis_prime/table/id.{Item2Id}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/player_unit.{type PlayerUnit}
 import gleam/dict
 import gleam/option.{None}
 

@@ -21,18 +21,18 @@ import connection_rule_support as support
 import game_connection_support
 import genesis_prime/client_connection.{FromStore}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/unit_news.{Appeared, PeerNews}
+import genesis_prime/map/message.{SeenBy}
 import genesis_prime/message/float32
 import genesis_prime/message/player_health.{PlayerHealth}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{UnitProperty}
 import genesis_prime/shared/unit_fields
+import genesis_prime/shared/unit_news.{Appeared, PeerNews}
 import genesis_prime/step.{
   type ConnectionStep, ConnectionId, LogError, OwnEvent, PeerClosed, TimerFired,
   TimerId,
 }
 import genesis_prime/store.{ForMove, HealthRefused}
-import genesis_prime/world_map/map.{SeenBy}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}

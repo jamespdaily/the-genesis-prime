@@ -30,17 +30,17 @@ import game_connection_support as support
 import genesis_prime/client_connection.{type Request, FromMap, FromStore}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
-import genesis_prime/game/strike_tell
-import genesis_prime/game/unit_news.{Appeared, PeerNews, Stealth}
+import genesis_prime/map/message.{Left, SeenBy}
 import genesis_prime/message/combat_log
 import genesis_prime/message/combat_log_entry
 import genesis_prime/message/combat_log_stealth.{CombatLogStealth}
 import genesis_prime/message/spell_finished
 import genesis_prime/message/unit_stealth.{UnitStealth}
+import genesis_prime/shared/strike_tell
+import genesis_prime/shared/unit_news.{Appeared, PeerNews, Stealth}
 import genesis_prime/step.{type ConnectionStep}
 import genesis_prime/store.{Character, ForSelect, Listed}
 import genesis_prime/table/id.{ClassId}
-import genesis_prime/world_map/map.{Left, SeenBy}
 import gleam/int
 import gleam/list
 import owned_test

@@ -28,7 +28,7 @@ import genesis_prime/client_connection.{
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place.{type Place}
-import genesis_prime/game/strike_tell
+import genesis_prime/map/message.{ObjectsUnseen} as map_message
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/client_control_echoed.{ClientControlEchoed}
 import genesis_prime/message/float32
@@ -39,12 +39,11 @@ import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_position_command.{
   type UnitPositionCommand, UnitPositionCommand,
 }
+import genesis_prime/shared/strike_tell
 import genesis_prime/step.{
   type ConnectionStep, type TimerId, ConnectionId, OwnEvent, TimerFired,
 }
 import genesis_prime/store
-import genesis_prime/world_map/map.{ObjectsUnseen}
-import genesis_prime/world_map/relay
 import gleam/list
 import gleam/option.{Some}
 import owned_test
@@ -589,7 +588,7 @@ pub fn a_creature_fighting_the_player_is_told_the_landing_test() -> Nil {
     == [
       #(
         7,
-        relay.TargetMoved(
+        map_message.TargetMoved(
           place: solitude_of_secrets(),
           seq: 1,
           hit_radius: place_support.player_hit_radius,

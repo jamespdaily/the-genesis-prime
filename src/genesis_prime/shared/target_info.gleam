@@ -1,6 +1,6 @@
 //// The records a 0x7f4 go and a 0x262 cast entry share: a unit's target info and each
 //// effect info on it. The go (`game/cast/frame`), a creature's applied effects and a
-//// unit's cast list (`game/unit_casts`) build them here, so the three write the same
+//// unit's cast list (`shared/unit_casts`) build them here, so the three write the same
 //// bytes for the same fields. This module imports only message records, so each of
 //// them can import it.
 

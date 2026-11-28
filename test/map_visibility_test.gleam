@@ -18,6 +18,7 @@
 
 import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/unit_create_static.{type UnitCreateStatic}
 import genesis_prime/step.{type ServiceStep, OwnEffect, OwnEvent, Reply, Started}
 import genesis_prime/table/id.{type PrerequisiteId, Creature2Id, PrerequisiteId}
@@ -143,42 +144,46 @@ fn holoring_message(created: static_object.Created) -> UnitCreateStatic {
   message
 }
 
-fn object_notices(taken: ServiceStep(map.Outgoing)) -> List(ObjectNotice) {
+fn object_notices(
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(ObjectNotice) {
   list.filter_map(support.sends(taken), fn(sent) {
     case sent.1 {
-      map.Noticed(notice: map.ObjectsSeen(units:), ..) ->
+      map_message.Noticed(notice: map_message.ObjectsSeen(units:), ..) ->
         Ok(Seen(
           sent.0,
           list.map(units, fn(unit) { holoring_message(unit.1).creature_id }),
           list.map(units, fn(unit) { holoring_message(unit.1).unit_id }),
         ))
-      map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->
+      map_message.Noticed(notice: map_message.ObjectsUnseen(unit_ids:), ..) ->
         Ok(Unseen(sent.0, unit_ids))
-      map.Noticed(notice: map.SeenBy(..), ..)
-      | map.Noticed(notice: map.UnseenBy(..), ..)
-      | map.Noticed(notice: map.Gone(..), ..)
-      | map.Noticed(notice: map.UnitUnseen(..), ..)
-      | map.Noticed(notice: map.PlayerUnseen(..), ..)
-      | map.Joined(..)
-      | map.NotJoined(..)
-      | map.Left
-      | map.Summoned(..)
-      | map.NotSummoned(..)
-      | map.Seen(..)
-      | map.Unseen(..)
-      | map.Relayed(..)
-      | map.Retire
-      | map.Approached(..)
-      | map.Withdrew(..)
-      | map.PlayerDied(..)
-      | map.CasterGone(..)
-      | map.ToldCreature(..) -> Error(Nil)
+      map_message.Noticed(notice: map_message.SeenBy(..), ..)
+      | map_message.Noticed(notice: map_message.UnseenBy(..), ..)
+      | map_message.Noticed(notice: map_message.Gone(..), ..)
+      | map_message.Noticed(notice: map_message.UnitUnseen(..), ..)
+      | map_message.Noticed(notice: map_message.PlayerUnseen(..), ..)
+      | map_message.Joined(..)
+      | map_message.NotJoined(..)
+      | map_message.Left
+      | map_message.Summoned(..)
+      | map_message.NotSummoned(..)
+      | map_message.Seen(..)
+      | map_message.Unseen(..)
+      | map_message.Relayed(..)
+      | map_message.Retire
+      | map_message.Approached(..)
+      | map_message.Withdrew(..)
+      | map_message.PlayerDied(..)
+      | map_message.CasterGone(..)
+      | map_message.ToldCreature(..) -> Error(Nil)
     }
   })
 }
 
 /// The creature ids of what the step sends each connection as `ObjectsSeen`.
-fn seen_creatures(taken: ServiceStep(map.Outgoing)) -> List(#(Int, List(Int))) {
+fn seen_creatures(
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(#(Int, List(Int))) {
   list.filter_map(object_notices(taken), fn(notice) {
     case notice {
       Seen(connection:, creatures:, ..) -> Ok(#(connection, creatures))
@@ -188,7 +193,7 @@ fn seen_creatures(taken: ServiceStep(map.Outgoing)) -> List(#(Int, List(Int))) {
 }
 
 /// The unit ids the step's `ObjectsSeen` gives, in order.
-fn seen_unit_ids(taken: ServiceStep(map.Outgoing)) -> List(Int) {
+fn seen_unit_ids(taken: ServiceStep(map_message.Outgoing)) -> List(Int) {
   list.flat_map(object_notices(taken), fn(notice) {
     case notice {
       Seen(unit_ids:, ..) -> unit_ids
@@ -198,7 +203,9 @@ fn seen_unit_ids(taken: ServiceStep(map.Outgoing)) -> List(Int) {
 }
 
 /// The unit ids of what the step sends each connection as `ObjectsUnseen`.
-fn unseen_ids(taken: ServiceStep(map.Outgoing)) -> List(#(Int, List(Int))) {
+fn unseen_ids(
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(#(Int, List(Int))) {
   list.filter_map(object_notices(taken), fn(notice) {
     case notice {
       Unseen(connection:, unit_ids:) -> Ok(#(connection, unit_ids))
@@ -209,13 +216,13 @@ fn unseen_ids(taken: ServiceStep(map.Outgoing)) -> List(#(Int, List(Int))) {
 
 /// The spawns the step starts a creature at, in order.
 fn started_spawns(
-  taken: ServiceStep(map.Outgoing),
+  taken: ServiceStep(map_message.Outgoing),
 ) -> List(spawn_source.SpawnSource) {
   list.map(spawns.starts(taken), fn(start) { { start.1 }.spawn })
 }
 
 /// The number of log lines the step writes.
-fn logged(taken: ServiceStep(map.Outgoing)) -> Int {
+fn logged(taken: ServiceStep(map_message.Outgoing)) -> Int {
   list.count(support.effects_of(taken), fn(effect) {
     case effect {
       step.Log(..) -> True
@@ -225,10 +232,10 @@ fn logged(taken: ServiceStep(map.Outgoing)) -> Int {
 }
 
 /// Whether the step answers a join.
-fn answers_the_join(taken: ServiceStep(map.Outgoing)) -> Bool {
+fn answers_the_join(taken: ServiceStep(map_message.Outgoing)) -> Bool {
   list.any(support.effects_of(taken), fn(effect) {
     case effect {
-      OwnEffect(Reply(answer: map.Joined(..), ..)) -> True
+      OwnEffect(Reply(answer: map_message.Joined(..), ..)) -> True
       OwnEffect(..)
       | step.Watch(..)
       | step.Unwatch(..)

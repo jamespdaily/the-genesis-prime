@@ -41,7 +41,6 @@ import genesis_prime/game/start_place
 import genesis_prime/game/strike.{
   type Effect, type Selection, type State, Aimed, Selection,
 }
-import genesis_prime/game/strike_tell.{Answered, Landed, Refused}
 import genesis_prime/shared/area.{type Pose}
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/damage
@@ -58,6 +57,7 @@ import genesis_prime/shared/spell_plan.{
   GatedOnTarget,
 }
 import genesis_prime/shared/spend
+import genesis_prime/shared/strike_tell.{Answered, Landed, Refused}
 import genesis_prime/shared/ticking
 import genesis_prime/step.{ConnectionId, LogDebug, Now}
 import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}

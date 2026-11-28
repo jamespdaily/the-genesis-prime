@@ -34,7 +34,6 @@ import genesis_prime/game/cast/state.{
   GateFails, Given, Hit, HitCaster, HitCreature, HitOtherPlayer, Immune, Log,
   NotApplied, Starts, Withheld,
 } as cast_state
-import genesis_prime/game/strike_tell
 import genesis_prime/shared/class_resource
 import genesis_prime/shared/lasting
 import genesis_prime/shared/prerequisite
@@ -42,6 +41,7 @@ import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/shared/spell_area
 import genesis_prime/shared/spell_effect
 import genesis_prime/shared/spell_plan.{type Proxy, type Spell}
+import genesis_prime/shared/strike_tell
 import genesis_prime/step.{LogDebug}
 import genesis_prime/table/id.{type Spell4EffectsId, type Spell4Id}
 import gleam/bool

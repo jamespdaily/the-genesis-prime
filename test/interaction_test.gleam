@@ -37,9 +37,6 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/interaction
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
-import genesis_prime/game/unit_news.{
-  CreatureAppeared, LookChanged, PropertiesChanged,
-}
 import genesis_prime/game/vendor
 import genesis_prime/game/vendor_sale
 import genesis_prime/message/buyback_list.{BuybackList}
@@ -59,14 +56,17 @@ import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
 import genesis_prime/message/vendor_items.{VendorItems}
 import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
+import genesis_prime/shared/creature_combat.{type Hostile, Hostile}
+import genesis_prime/shared/creature_unit_type.{NonPlayer}
 import genesis_prime/shared/random_stat_word
+import genesis_prime/shared/unit_news.{
+  CreatureAppeared, LookChanged, PropertiesChanged,
+}
 import genesis_prime/step.{type ConnectionEvent, type Event, LogWarning}
 import genesis_prime/store
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_life.{type Hostile, Hostile}
 import genesis_prime/world_map/creature_unit
-import genesis_prime/world_map/creature_unit_type.{NonPlayer}
 import gleam/list
 import gleam/option.{None}
 import gleam/set
