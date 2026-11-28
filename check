@@ -82,9 +82,7 @@
 #
 # Then the setup check (./setup-check): it names every part this machine is
 # missing, and when it fails nothing else runs. Before it, this script reads
-# $GENESIS_HOME/env.sh (default ~/.genesis-prime/env.sh) and puts
-# $GENESIS_OTP_DIR/bin first on PATH, unless GENESIS_NO_CLIENT=1 and
-# GENESIS_OTP_DIR is unset (setup_check/environment.sh).
+# $GENESIS_HOME/env.sh (default ~/.genesis-prime/env.sh) (setup_check/environment.sh).
 #
 # Then the parts, independent ones side by side; a part that fails is named, and the
 # script exits non-zero:
@@ -208,8 +206,7 @@
 #
 # GENESIS_NO_CLIENT=1 marks a machine without the client, which is only a CI run
 # without the client's data secret (a fork's pull request); everywhere else a missing
-# client fails the part that reads it. It does not turn off the patched OTP: CI sets
-# GENESIS_OTP_DIR to the build it caches.
+# client fails the part that reads it.
 #
 # gleam-build is the only part that compiles. Every `gleam build`, `gleam run` and
 # `gleam test` rewrites each package's .app file, even with nothing changed (gleam
@@ -349,7 +346,7 @@ test_workers=${GENESIS_TEST_WORKERS:-2}
 literal_region_bytes=1073741824
 literal_limit_percent=85
 
-# The machine's settings (env.sh) and the patched OTP first on PATH, before any part.
+# The machine's settings (env.sh), before any part.
 . setup_check/environment.sh
 
 : "${PGHOST:=/tmp}"

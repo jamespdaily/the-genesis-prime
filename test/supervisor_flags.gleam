@@ -11,7 +11,7 @@ pub type Flags {
 }
 
 /// The flags of the running supervisor with this pid. It reads the state of
-/// OTP 29.1.2's `supervisor` module, whose record `state` holds the strategy,
+/// OTP 29.1.3's `supervisor` module, whose record `state` holds the strategy,
 /// intensity and period in fields 3, 6 and 7; any other shape stops the
 /// caller with a message.
 @external(erlang, "supervisor_flags_ffi", "read")

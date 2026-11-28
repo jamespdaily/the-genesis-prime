@@ -37,7 +37,7 @@ tests, killed by a signal, a non-zero exit, no result line, still going at the r
 "Failures:" section (a refusal the server logged is among them, and the section hides it) and the part of its output that
 says why. The output of every run is kept in the folder the failure names. The script exits 1 when a run's tests failed, a run crashed or a run was killed at the limit, 2 for a setting or a
 git answer it cannot use, and 0 otherwise, warnings included. It starts `erl` from PATH, so run it in a shell that loaded the environment,
-`. setup_check/environment.sh`, which puts the patched OTP first on PATH, as ./check does, and sets
+`. setup_check/environment.sh`, which sets
 ERL_AFLAGS to `+hmqd off_heap`, the flag every test VM runs with; without that flag the script prints
 why and exits 2, before it starts a run.
 """
@@ -279,7 +279,7 @@ def main(arguments: list[str]) -> int:
         )
         return 2
     if shutil.which("erl") is None:
-        print("erl is not on PATH; put the patched OTP's bin first, as ./check does")
+        print("erl is not on PATH; install the OTP of .tool-versions")
         return 2
     runs_per_file = max(MINIMUM_RUNS_PER_FILE, total // len(files))
     runs = schedule(files, runs_per_file)

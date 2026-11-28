@@ -1,6 +1,5 @@
 """Extracts the client's game tables (every DB/*.tbl in ClientData) into the
-folder $GENESIS_TABLE_DIR, once per machine, as build_patched_otp.sh builds
-the patched OTP once. The server reads the plain files; nothing else reads the
+folder $GENESIS_TABLE_DIR, once per machine. The server reads the plain files; nothing else reads the
 client's archive.
 
 Usage: python3.13 -I setup_check/extract_tables.py
