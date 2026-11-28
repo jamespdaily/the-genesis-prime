@@ -105,7 +105,7 @@ jobs:
     needs: [tested, scope]
     if: ${{ !cancelled() && needs.tested.outputs.tested != 'true' }}
     runs-on: ubuntu-latest
-    # The whole cold setup took 3 minutes 11 seconds when it also built OTP (run 40316762854); a part that keeps using CPU is
+    # A part that keeps using CPU is
     # stopped and named by the check at its wall cap of 1500 s (GENESIS_CHECK_WALL_CAP_SECONDS
     # below), so 30 minutes covers the cold setup, that cap and the steps after it.
     timeout-minutes: 30

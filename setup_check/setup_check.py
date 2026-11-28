@@ -105,7 +105,10 @@ def check_erlang(machine: Machine) -> list[Missing]:
     """The erl on PATH is OTP as pinned. Homebrew's `erlang` is the Mac's, and the
     pin is the version it holds; the release image and CI install the pin."""
     return _tool(machine, "erlang", "Erlang/OTP", ["erl", "-noshell", "-eval", OTP_VERSION_COMMAND],
-                 r"^(\d+(?:\.\d+)*)\s*$", "; on a Mac with Homebrew, brew upgrade erlang")
+                 r"^(\d+(?:\.\d+)*)\s*$",
+                 "; on a Mac with Homebrew, brew upgrade erlang then brew pin erlang when its OTP is older than"
+                 " the pin; Homebrew cannot install an older OTP, so when its OTP is newer, move the erlang pin"
+                 " in .tool-versions to it in a pull request")
 
 
 def check_rebar(machine: Machine) -> list[Missing]:

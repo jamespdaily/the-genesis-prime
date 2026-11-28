@@ -453,13 +453,15 @@ class GleamTest(PlantedTestCase):
 class ErlangTest(PlantedTestCase):
     def test_an_erl_of_another_version_than_tool_versions_is_refused_with_the_fix_command_and_the_pinned_one_passes(self):
         self.assertEqual(setup_check.check_erlang(self.plant()), [])
-        for found in ("28.3.1", "29.1.2"):
+        for found in ("28.3.1", "29.1.2", "29.1.4"):
             with self.subTest(found=found):
                 missing = self.only(setup_check.check_erlang(self.plant(otp=found)))
                 self.assert_part(missing, "erlang", "otp")
                 self.assert_found(missing, found)
                 self.assertIn(OTP, missing.part + missing.fix)
                 self.assert_fix(missing, "brew upgrade erlang")
+                self.assert_fix(missing, "brew pin erlang")
+                self.assert_fix(missing, "move the erlang pin in .tool-versions")
                 self.assert_fix(missing, "asdf install erlang " + OTP)
 
 
