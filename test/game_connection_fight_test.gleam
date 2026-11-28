@@ -18,6 +18,7 @@ import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/map/message.{Left} as map_message
 import genesis_prime/message/cast_result
 import genesis_prime/message/float32
 import genesis_prime/message/movement_face_unit.{MovementFaceUnit}
@@ -70,8 +71,6 @@ import genesis_prime/table/spell4_effects
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map.{Left}
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id
 import genesis_prime/world_map/spawn_source
@@ -336,10 +335,10 @@ fn press_and_close(
 /// The removals a step tells creatures, as the creature's unit, its life and the removal.
 fn despawns_told(
   taken: ConnectionStep(Request),
-) -> List(#(Int, Int, relay.Inbound)) {
+) -> List(#(Int, Int, map_message.Inbound)) {
   list.filter(game_connection_support.creature_tells(taken), fn(tell) {
     case tell.2 {
-      relay.Despawn(..) -> True
+      map_message.Despawn(..) -> True
       _ -> False
     }
   })
@@ -401,7 +400,7 @@ pub fn a_creature_despawns_effect_becomes_a_tell_to_that_creature_test() -> Nil 
     ])
   assert list.flat_map(steps, despawns_told)
     == [
-      #(40, 4, relay.Despawn(delay_ms: 3000, went_at_ms: 1100)),
+      #(40, 4, map_message.Despawn(delay_ms: 3000, went_at_ms: 1100)),
     ]
     as "the connection tells the creature of that life, with the row's delay and the go's time, and tells no other"
 }
@@ -643,7 +642,7 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
     == [
       #(
         7,
-        relay.TargetMoved(
+        map_message.TargetMoved(
           place: game_connection_support.standing_at(x: 1.5, y: 2.5, z: 3.5),
           seq: 1,
           hit_radius: place_support.player_hit_radius,
@@ -657,7 +656,7 @@ pub fn a_creatures_threat_sets_the_combat_flag_and_streams_the_place_now_and_eac
     == [
       #(
         7,
-        relay.TargetMoved(
+        map_message.TargetMoved(
           place: game_connection_support.standing_at(x: 2.5, y: 2.5, z: 3.5),
           seq: 2,
           hit_radius: place_support.player_hit_radius,
@@ -688,7 +687,7 @@ pub fn the_map_reporting_a_fighter_gone_clears_the_combat_flag_test() -> Nil {
   let #(_, gone) =
     game_connection_support.feed(
       state,
-      game_connection_support.sent_by_the_map(map.Gone(unit_id: 7)),
+      game_connection_support.sent_by_the_map(map_message.Gone(unit_id: 7)),
     )
   assert combat_states(gone) == [#(5, 0)]
     as "the creature crashed mid-fight: its Gone is its release, and 0x89a (P, 0) follows with no fighter left"
@@ -784,7 +783,7 @@ pub fn a_creatures_strike_writes_the_shield_and_the_health_and_is_answered_to_th
   let assert [
     #(
       7,
-      relay.StrikeAnswered(answered: strike_tell.Answered(
+      map_message.StrikeAnswered(answered: strike_tell.Answered(
         key: answered,
         outcome: strike_tell.Landed(descriptions: [_], ..),
       )),
@@ -1342,7 +1341,7 @@ fn to_the_beast(taken: ConnectionStep(Request)) -> List(creature.Message) {
   list.filter_map(game_connection_support.creature_tells(taken), fn(tell) {
     case tell {
       #(7, _, payload) ->
-        creature.told_by_map(map.ToldCreature(
+        creature.told_by_map(map_message.ToldCreature(
           by: ConnectionId(1),
           stay: game_connection_support.own_stay(),
           payload:,
@@ -2494,10 +2493,10 @@ pub fn gated_strike_on_a_creature_shows_no_hit_test() -> Nil {
 /// The unit states a step tells creatures, as the creature's unit, its life and the states.
 fn unit_states_told(
   taken: ConnectionStep(Request),
-) -> List(#(Int, Int, relay.Inbound)) {
+) -> List(#(Int, Int, map_message.Inbound)) {
   list.filter(game_connection_support.creature_tells(taken), fn(tell) {
     case tell.2 {
-      relay.UnitStates(..) -> True
+      map_message.UnitStates(..) -> True
       _ -> False
     }
   })
@@ -2567,7 +2566,7 @@ pub fn a_creature_holds_unit_states_effect_becomes_a_tell_to_that_creature_test(
       #(
         40,
         4,
-        relay.UnitStates(
+        map_message.UnitStates(
           rows: [unit_state.Row(state: 6, delay_ms: 500, duration_ms: 2000)],
           went_at_ms: 1100,
         ),
@@ -2680,7 +2679,7 @@ pub fn the_creature_tell_names_the_map_run_of_the_players_stay_with_its_sender_a
   // of the map the player entered, its own stay and the creature by unit and life, and tells
   // the map, never the creature.
   let entered = world_entry_support.entered_after(clock_origin_ms: 600)
-  let payload = relay.Despawn(delay_ms: 0, went_at_ms: 6000)
+  let payload = map_message.Despawn(delay_ms: 0, went_at_ms: 6000)
   assert state.tells_the_creature(
       entered:,
       connection: ConnectionId(5),

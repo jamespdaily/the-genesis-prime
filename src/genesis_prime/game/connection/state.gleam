@@ -34,6 +34,7 @@ import genesis_prime/game/world_entry
 import genesis_prime/game/zone_welcome.{type ZoneWelcomes}
 import genesis_prime/game_settings.{type GameSettings}
 import genesis_prime/hand_off.{type Holder}
+import genesis_prime/map/message.{type Inbound} as map_message
 import genesis_prime/message/bit_stream
 import genesis_prime/message/disconnect_notice.{DisconnectNotice}
 import genesis_prime/message/disconnect_reason.{
@@ -57,7 +58,6 @@ import genesis_prime/store
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/map
-import genesis_prime/world_map/relay.{type Inbound}
 import genesis_prime/world_map/spawn_id.{type LoadedSpawns}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/dict
@@ -294,7 +294,7 @@ pub type Status {
   /// watches (`map_watch`).
   InWorld(holder: Holder, entered: world_entry.Entered)
   /// The player is in the world and its map's run is asked to start a creature
-  /// for a development command (`world_map/map.Summon`, genesis_prime/game/dev_command),
+  /// for a development command (`world_map/map_message.Summon`, genesis_prime/game/dev_command),
   /// whose answer is awaited with the client's frames held. The player's place is
   /// not saved yet, so a connection that ends in this status saves it as one in
   /// `InWorld` does; the shell takes no other input during the ask, so the
@@ -366,7 +366,7 @@ pub type Status {
   /// awaited; `then` says what follows it. A connection in this status ends
   /// without a second save: the save out is the one its end waits for.
   SavingPlace(holder: Holder, entered: world_entry.Entered, then: AfterSave)
-  /// The map's run is asked to take the player out (`world_map/map.Leave`), and its
+  /// The map's run is asked to take the player out (`world_map/map_message.Leave`), and its
   /// answer is awaited. A connection in this status ends without a save, and the map
   /// drops a player whose connection ends. The camp's place is saved before the ask;
   /// a move to another place (`JoinAt`) saves nothing, so the next login finds the
@@ -742,7 +742,7 @@ pub fn tells_the_landing(
   entered entered: world_entry.Entered,
   to to: ConnectionId,
   to_stay to_stay: Stay,
-  landing landing: relay.Landing,
+  landing landing: map_message.Landing,
 ) -> Effect(ConnectionEffect(Request)) {
   tells_the_map(
     entered:,

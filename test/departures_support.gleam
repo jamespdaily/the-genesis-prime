@@ -13,6 +13,7 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/departures
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/map/message.{Join, ObjectsSeen}
 import genesis_prime/message/cast_activate.{CastActivate}
 import genesis_prime/message/client_side_interaction_result.{
   ClientSideInteractionResult,
@@ -28,7 +29,6 @@ import genesis_prime/step.{
 import genesis_prime/store.{type QuestRow}
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id}
-import genesis_prime/world_map/map.{Join, ObjectsSeen}
 import genesis_prime/world_map/map_id.{type MapId, MapId}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/static_object.{type Created, StaticObject}

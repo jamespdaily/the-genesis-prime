@@ -45,6 +45,7 @@ import unitest
 /// (`worldLocationsIdIndicator00` to `03`, 0 for none), are the ones `quest_row.marker_ids`
 /// gives, the same as `place_objective.marker_ids` gave before the function moved.
 pub fn place_objective_marker_ids_of_every_quest_objective_row_are_unchanged_by_the_move_to_quest_row_test() -> Nil {
+  // deadline: 4 s measured: the client's tables are read once for the run
   use <- owned_test.run(120_000)
   use <- unitest.guard(client_tables.present())
   let rows = quest_objective.all(client_tables.with_content_tables())

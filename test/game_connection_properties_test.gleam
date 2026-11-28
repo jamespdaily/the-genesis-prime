@@ -28,6 +28,7 @@ import game_connection_support as support
 import genesis_prime/client_connection.{type Request}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/map/message.{SeenBy}
 import genesis_prime/message/float32
 import genesis_prime/message/player_health
 import genesis_prime/message/unit_properties_changed
@@ -39,7 +40,6 @@ import genesis_prime/step.{
   type ConnectionStep, ConnectionId, OwnEvent, TimerFired, TimerId,
 }
 import genesis_prime/table/loader/store as store_tables
-import genesis_prime/world_map/map.{SeenBy}
 import gleam/float
 import gleam/int
 import gleam/list

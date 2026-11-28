@@ -7,6 +7,7 @@ import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/shown
 import genesis_prime/game/start_place
+import genesis_prime/shared/creature_combat.{Attackable, Hostile}
 import genesis_prime/shared/creature_path
 import genesis_prime/shared/creature_unit_type.{NonPlayer}
 import genesis_prime/shared/unit_news.{CreatureAppeared}
@@ -14,7 +15,6 @@ import genesis_prime/step.{type ConnectionEvent, type Event}
 import genesis_prime/store
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/spawn.{Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
@@ -50,8 +50,8 @@ pub fn walker(
         life: 4,
         alive:,
         hit_radius: 1.1,
-        attackable: creature_life.Attackable(exile: True, dominion: True),
-        hostile_to: creature_life.Hostile(exile: hostile, dominion: hostile),
+        attackable: creature_combat.Attackable(exile: True, dominion: True),
+        hostile_to: creature_combat.Hostile(exile: hostile, dominion: hostile),
         in_combat: False,
         held: [],
         unit_states: [],
@@ -132,7 +132,7 @@ pub fn creature_appears(
     Spawn(
       ..beast,
       creature_id: id.Creature2Id(creature_id),
-      combat: creature_life.Combat(
+      combat: creature_combat.Combat(
         ..beast.combat,
         hit_radius: 1.1,
         attackable: Attackable(exile: True, dominion: True),

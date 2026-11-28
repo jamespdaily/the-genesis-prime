@@ -31,6 +31,7 @@ import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
 import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/start_place
+import genesis_prime/map/message as map_message
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_log
@@ -49,7 +50,6 @@ import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/table/loader/store as store_tables
 import genesis_prime/world_map/creature_registry
 import genesis_prime/world_map/registry.{type MapProcess}
-import genesis_prime/world_map/relay
 import gleam/erlang/process.{type Subject}
 import gleam/int
 import gleam/list
@@ -149,7 +149,7 @@ fn carried_out(
           run:,
           unit_id:,
           life:,
-          payload: relay.UnitStates(rows:, went_at_ms:),
+          payload: map_message.UnitStates(rows:, went_at_ms:),
         )
         Ok(unit_id)
       }

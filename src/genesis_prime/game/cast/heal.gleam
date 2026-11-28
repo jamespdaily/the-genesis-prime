@@ -49,6 +49,7 @@ import genesis_prime/message/spell_damage_description.{
 }
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts
 import genesis_prime/shared/spell_area
 import genesis_prime/shared/spell_plan
 import genesis_prime/shared/strike_tell
@@ -246,7 +247,7 @@ pub fn split_of(
   vital vital: effect_kind.Vital,
   amount amount: Int,
   caster caster: Caster,
-) -> heal_split.Split {
+) -> heal_parts.Split {
   heal_split.split(
     vital:,
     amount:,

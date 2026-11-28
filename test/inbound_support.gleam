@@ -1,8 +1,9 @@
-//// The player-to-creature tells the tests send, one value of each kind of `relay.Inbound`,
+//// The player-to-creature tells the tests send, one value of each kind of `map_message.Inbound`,
 //// and the values inside them, so a test that sends every kind through the map and a
 //// test that reads each kind as the creature's message use the same ones.
 
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/map/message as map_message
 import genesis_prime/shared/strike_tell.{
   type Answered, type Tell as StrikeTell, Answered, Key,
 }
@@ -12,7 +13,6 @@ import genesis_prime/shared/unit_state
 import genesis_prime/step.{Connection, ConnectionId}
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/creature
-import genesis_prime/world_map/relay
 import gleam/list
 import map_spawn_support
 import map_support
@@ -83,19 +83,19 @@ pub fn view() -> CastView {
 
 /// One tell of each kind the player's connection sends a creature `unit_id`, by the kind's
 /// name.
-pub fn payloads(unit_id unit_id: Int) -> List(#(String, relay.Inbound)) {
+pub fn payloads(unit_id unit_id: Int) -> List(#(String, map_message.Inbound)) {
   let inbounds = [
-    relay.Strike(tell: strike(unit_id:)),
-    relay.TargetMoved(place: place(), seq: 9, hit_radius: 0.75),
-    relay.StrikeAnswered(answered: answered(unit_id:)),
-    relay.ModifierStarts(source: source(), modifier: modifier()),
-    relay.ModifierEnds(source: source()),
-    relay.Thrown(throw: world_watch_support.throw()),
-    relay.Despawn(delay_ms: 500, went_at_ms: 6000),
-    relay.UnitStates(rows: rows(), went_at_ms: 6000),
-    relay.CastViewSet(view: view()),
-    relay.CastViewEnds(cast_id: 1),
-    relay.ControlsEnd(cast_id: 1),
+    map_message.Strike(tell: strike(unit_id:)),
+    map_message.TargetMoved(place: place(), seq: 9, hit_radius: 0.75),
+    map_message.StrikeAnswered(answered: answered(unit_id:)),
+    map_message.ModifierStarts(source: source(), modifier: modifier()),
+    map_message.ModifierEnds(source: source()),
+    map_message.Thrown(throw: world_watch_support.throw()),
+    map_message.Despawn(delay_ms: 500, went_at_ms: 6000),
+    map_message.UnitStates(rows: rows(), went_at_ms: 6000),
+    map_message.CastViewSet(view: view()),
+    map_message.CastViewEnds(cast_id: 1),
+    map_message.ControlsEnd(cast_id: 1),
   ]
   list.map(inbounds, fn(inbound) {
     #(map_spawn_support.inbound_name(inbound), inbound)

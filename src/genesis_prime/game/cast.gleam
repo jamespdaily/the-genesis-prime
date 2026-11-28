@@ -150,6 +150,7 @@ import genesis_prime/shared/cooldown
 import genesis_prime/shared/lasting
 import genesis_prime/shared/lasts
 import genesis_prime/shared/prerequisite
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/spell_effect
 import genesis_prime/shared/spell_plan.{type Plans, type Proxy, type Spell}
 import genesis_prime/shared/unit_news
@@ -1747,7 +1748,7 @@ fn press_started(
 fn settled(
   cast cast: State,
   fired fired: Bool,
-  own own: List(proc.Event),
+  own own: List(proc_event.Event),
   step step: fn() -> #(State, List(Effect)),
 ) -> #(State, List(Effect)) {
   let #(after, effects) = step()
@@ -1763,7 +1764,7 @@ fn settled(
       }
       #(
         [
-          proc.Event(
+          proc_event.Event(
             trigger: change,
             other_unit: None,
             spell: None,
@@ -1805,7 +1806,7 @@ fn settled(
 fn settled_then_released(
   cast cast: State,
   fired fired: Bool,
-  own own: List(proc.Event),
+  own own: List(proc_event.Event),
   caster caster: Caster,
   now_ms now_ms: Int,
   step step: fn() -> #(State, List(Effect)),
@@ -1840,7 +1841,7 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
     list.flat_map(facts, fn(fact) {
       case fact {
         StartedMoving -> [
-          proc.Event(
+          proc_event.Event(
             trigger: spell_plan.StartsMoving,
             other_unit: None,
             spell: None,
@@ -1850,7 +1851,7 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
         ResourceMoved(slot:, from:, to:, fired: False) if from != to ->
           list.flatten([
             [
-              proc.Event(
+              proc_event.Event(
                 trigger: spell_plan.ResourceCrosses,
                 other_unit: None,
                 spell: None,
@@ -1859,7 +1860,7 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
             ],
             case slot == cast_state.suit_power_slot && to <. from {
               True -> [
-                proc.Event(
+                proc_event.Event(
                   trigger: spell_plan.SuitPowerDrops,
                   other_unit: None,
                   spell: None,
@@ -1880,13 +1881,15 @@ pub fn raised(cast cast: State, facts facts: List(Fact)) -> State {
 pub fn ally_events_raised(
   cast cast: State,
   unit_id unit_id: Int,
-  events events: List(proc.Event),
+  events events: List(proc_event.Event),
 ) -> State {
   State(
     ..cast,
     pending: list.append(
       cast.pending,
-      list.map(events, fn(event) { proc.Event(..event, holder: Some(unit_id)) }),
+      list.map(events, fn(event) {
+        proc_event.Event(..event, holder: Some(unit_id))
+      }),
     ),
   )
 }
@@ -1965,7 +1968,7 @@ fn proc_matched(
   cast cast: State,
   caster caster: Caster,
   now_ms now_ms: Int,
-  event event: proc.Event,
+  event event: proc_event.Event,
   hold hold: ProcHold,
   held held: HeldProc,
   draw draw: Option(Int),
@@ -3756,7 +3759,7 @@ pub fn died(
   now now: Now,
 ) -> #(State, List(Effect)) {
   use <- settled(cast:, fired: False, own: [
-    proc.Event(
+    proc_event.Event(
       trigger: spell_plan.Died,
       other_unit: None,
       spell: None,
@@ -3774,7 +3777,7 @@ pub fn combat_left(
   now _now: Now,
 ) -> #(State, List(Effect)) {
   use <- settled(cast:, fired: False, own: [
-    proc.Event(
+    proc_event.Event(
       trigger: spell_plan.LeftCombat,
       other_unit: None,
       spell: None,
@@ -4235,7 +4238,7 @@ fn stealth_after_blow(
   cast cast: State,
   caster caster: Caster,
   now now: Now,
-  events events: List(proc.Event),
+  events events: List(proc_event.Event),
   lowered lowered: Bool,
 ) -> #(State, List(Effect)) {
   use <- settled(cast:, fired: False, own: events)
@@ -4385,7 +4388,7 @@ fn start(
       pending: case role {
         Base(..) | Stage(..) ->
           list.append(cast.pending, [
-            proc.Event(
+            proc_event.Event(
               trigger: spell_plan.UsesAbility,
               other_unit: None,
               spell: Some(cast_proc.event_spell(spell:)),

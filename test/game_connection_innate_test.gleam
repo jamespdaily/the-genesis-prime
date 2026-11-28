@@ -24,9 +24,9 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request, FromMap}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/map/message as map_message
 import genesis_prime/message/spell_go
 import genesis_prime/step.{type ConnectionStep, OwnEvent, TimerFired}
-import genesis_prime/world_map/map
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -177,7 +177,7 @@ pub fn the_holocrypts_join_starts_the_passive_again_test() -> Nil {
     connection_support.answer(
       state:,
       taken:,
-      outcome: step.Answer(FromMap(map.Left)),
+      outcome: step.Answer(FromMap(map_message.Left)),
     )
   let #(_, joined) =
     connection_support.mapped(

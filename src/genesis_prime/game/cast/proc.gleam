@@ -211,6 +211,7 @@ import genesis_prime/shared/cooldown
 import genesis_prime/shared/hit
 import genesis_prime/shared/lasting
 import genesis_prime/shared/lasts
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/spell_plan.{type Spell}
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_properties
@@ -236,7 +237,7 @@ pub fn heals_landed(
   before before: State,
   after after: State,
   effects effects: List(Effect),
-) -> List(proc.Event) {
+) -> List(proc_event.Event) {
   list.flat_map(effects, fn(effect) {
     case effect {
       CasterChangeStarts(source:, change: Heal(..)) -> {
@@ -253,13 +254,13 @@ pub fn heals_landed(
             fn(holder) { event_spell(spell: holder.spell) },
           )
         [
-          proc.Event(
+          proc_event.Event(
             trigger: spell_plan.LandsHeal,
             other_unit: None,
             spell:,
             holder: None,
           ),
-          proc.Event(
+          proc_event.Event(
             trigger: spell_plan.ReceivesHeal,
             other_unit: None,
             spell:,
@@ -301,11 +302,13 @@ pub fn heals_landed(
 /// resource. A guess: the event names no spell, so a group filter never matches it (a
 /// payment does not say which spell it is for, and no client code reads a Proc row,
 /// `Spell4Effects.effectType.14.dataBits00`).
-pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
+pub fn resources_spent(
+  effects effects: List(Effect),
+) -> List(proc_event.Event) {
   list.filter_map(effects, fn(effect) {
     case effect {
       Pay(..) ->
-        Ok(proc.Event(
+        Ok(proc_event.Event(
           trigger: spell_plan.SpendsResource,
           other_unit: None,
           spell: None,
@@ -353,7 +356,7 @@ pub fn resources_spent(effects effects: List(Effect)) -> List(proc.Event) {
 pub fn hit_events(
   spell spell: Spell,
   struck struck: List(Struck),
-) -> List(proc.Event) {
+) -> List(proc_event.Event) {
   let on = fn(unit_id, trigger) {
     event_of_spell(spell:, other_unit: Some(unit_id), trigger:)
   }
@@ -385,8 +388,8 @@ fn event_of_spell(
   spell spell: Spell,
   other_unit other_unit: Option(Int),
   trigger trigger: spell_plan.Trigger,
-) -> proc.Event {
-  proc.Event(
+) -> proc_event.Event {
+  proc_event.Event(
     trigger:,
     other_unit:,
     spell: Some(event_spell(spell:)),
@@ -418,7 +421,7 @@ type Landing {
 pub fn landed_events(
   spell spell: Spell,
   struck struck: List(Struck),
-) -> List(proc.Event) {
+) -> List(proc_event.Event) {
   let landings =
     list.map(struck, fn(one) {
       case one {
@@ -545,8 +548,8 @@ pub fn timer_fired(cast cast: State, timer timer: TimerId) -> Bool {
 fn taunts_landed(
   unit_id unit_id: Int,
   controls controls: List(strike_tell.ControlLanded),
-  on on: fn(Int, spell_plan.Trigger) -> proc.Event,
-) -> List(proc.Event) {
+  on on: fn(Int, spell_plan.Trigger) -> proc_event.Event,
+) -> List(proc_event.Event) {
   list.filter_map(controls, fn(control) {
     case control.tell.row.state == crowd_control_state.Taunt {
       True -> Ok(on(unit_id, spell_plan.LandsTaunt))
@@ -565,13 +568,13 @@ pub type BlowTaken {
   /// no client code reads a Proc row, `Spell4Effects.effectType.14.client_evaluation`).
   BlowLanded(
     striker: Int,
-    spell: proc.EventSpell,
+    spell: proc_event.EventSpell,
     lowered: Bool,
     critical: Bool,
     shield_depleted: Bool,
   )
   /// The holder deflected the blow.
-  BlowDeflected(striker: Int, spell: proc.EventSpell)
+  BlowDeflected(striker: Int, spell: proc_event.EventSpell)
 }
 
 /// Whether the blow lowered the holder's absorbs, shield or health: a deflect lowers none.
@@ -586,9 +589,9 @@ pub fn lowers(blow blow: BlowTaken) -> Bool {
 /// lowered something, `SuffersCritical` for a critical and `ShieldDepleted` when it took the
 /// shield to 0, or `DeflectsAttack` for a deflect. Each names the creature as the other unit
 /// and its attack spell as the spell.
-pub fn blow_events(blow blow: BlowTaken) -> List(proc.Event) {
+pub fn blow_events(blow blow: BlowTaken) -> List(proc_event.Event) {
   let on = fn(trigger) {
-    proc.Event(
+    proc_event.Event(
       trigger:,
       other_unit: Some(blow.striker),
       spell: Some(blow.spell),
@@ -616,8 +619,8 @@ pub fn blow_events(blow blow: BlowTaken) -> List(proc.Event) {
 }
 
 /// The spell of an event as a proc's filter reads it.
-pub fn event_spell(spell spell: Spell) -> proc.EventSpell {
-  proc.EventSpell(
+pub fn event_spell(spell spell: Spell) -> proc_event.EventSpell {
+  proc_event.EventSpell(
     spell4_id: spell.spell4_id,
     spell4_base_id: spell.spell4_base_id,
     groups: spell.groups,
@@ -630,8 +633,8 @@ pub fn event_spell(spell spell: Spell) -> proc.EventSpell {
 pub fn event_spell_of_facts(
   spell4_id spell4_id: Spell4Id,
   facts facts: spell_plan.SpellFacts,
-) -> proc.EventSpell {
-  proc.EventSpell(
+) -> proc_event.EventSpell {
+  proc_event.EventSpell(
     spell4_id:,
     spell4_base_id: facts.spell4_base_id,
     groups: facts.groups,
@@ -703,7 +706,7 @@ pub fn proc_draws_needed(cast cast: State) -> #(Int, Int) {
 pub fn fires_for(
   hold hold: ProcHold,
   held held: HeldProc,
-  event event: proc.Event,
+  event event: proc_event.Event,
 ) -> Bool {
   hold.holder == event.holder && held.row.trigger == event.trigger
 }

@@ -38,14 +38,15 @@ import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/held_changes
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
-import genesis_prime/game/proc
 import genesis_prime/game/world_entry
 import genesis_prime/gap
+import genesis_prime/map/message as map_message
+import genesis_prime/shared/player_change
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{type ConnectionEffect, type Effect, type Now}
-import genesis_prime/world_map/relay
 import gleam/bool
 import gleam/dict
 import gleam/list
@@ -73,7 +74,7 @@ pub fn struck(
       entered:,
       to: strike.from,
       to_stay: strike.stay,
-      landing: relay.HealAnswer(answered: strike_tell.PlayerAnswered(
+      landing: map_message.HealAnswer(answered: strike_tell.PlayerAnswered(
         key: strike.key,
         outcome:,
       )),
@@ -88,14 +89,14 @@ pub fn started(
   session session: Session,
   now now: Now,
   source source: unit_properties.Source,
-  change change: held_changes.Told,
+  change change: player_change.Told,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   case change {
-    held_changes.Applies(change: held_changes.Property(modifier:)) ->
+    player_change.Applies(change: player_change.Property(modifier:)) ->
       connection_properties.started(session:, now:, source:, modifier:)
-    held_changes.Applies(change: held_changes.Absorb(amount:, mask:)) ->
+    player_change.Applies(change: player_change.Absorb(amount:, mask:)) ->
       connection_absorption.started(session:, now:, source:, amount:, mask:)
-    held_changes.Awaits(..) -> #(session, [])
+    player_change.Awaits(..) -> #(session, [])
   }
 }
 
@@ -124,10 +125,10 @@ pub fn changed(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
-  change change: held_changes.PlayerChange,
+  change change: player_change.PlayerChange,
 ) -> client_connection.Handled(Session) {
   case change {
-    held_changes.PlayerChangeStarts(
+    player_change.PlayerChangeStarts(
       from:,
       from_stay:,
       source:,
@@ -164,7 +165,7 @@ pub fn changed(
         | player_life.Dead, _
         -> Continue(session, [])
       }
-    held_changes.PlayerChangeEnds(from:, source:) ->
+    player_change.PlayerChangeEnds(from:, source:) ->
       case held_changes.released(held: entered.held, source:) {
         Ok(#(held, by)) if by == from -> {
           let session =
@@ -184,7 +185,7 @@ pub fn changed(
         }
         Ok(_) | Error(Nil) -> Continue(session, [])
       }
-    held_changes.PlayerCastWent(from:, cast_id:) ->
+    player_change.PlayerCastWent(from:, cast_id:) ->
       cast_went(session:, now:, entered:, from:, cast_id:)
   }
 }
@@ -267,7 +268,7 @@ pub fn caster_removed(
 pub fn events_told(
   session session: Session,
   entered entered: world_entry.Entered,
-  events events: List(proc.Event),
+  events events: List(proc_event.Event),
 ) -> List(Effect(ConnectionEffect(Request))) {
   use <- bool.guard(
     when: player_life.state(life: entered.life) != player_life.Alive,
@@ -284,7 +285,7 @@ pub fn events_told(
           entered:,
           to: caster,
           to_stay: viewer.stay,
-          landing: relay.AllyEvent(event: strike_tell.PlayerEvent(
+          landing: map_message.AllyEvent(event: strike_tell.PlayerEvent(
             unit_id: entered.unit_id,
             events: waited_for,
           )),

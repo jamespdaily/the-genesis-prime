@@ -11,6 +11,7 @@ import genesis_prime/game/limited_action_set
 import genesis_prime/game/objective
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
+import genesis_prime/map/message as map_message
 import genesis_prime/message/item_added
 import genesis_prime/message/play_character.{PlayCharacter}
 import genesis_prime/shared/player_unit
@@ -23,7 +24,6 @@ import genesis_prime/store.{
 }
 import genesis_prime/table/id.{ClassId, Item2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn_id.{type LoadedSpawns}
 import gleam/dict.{type Dict}
 import gleam/list
@@ -531,7 +531,7 @@ pub fn joined_state(
   let assert Ok(joined) =
     world_entry.joined(
       state:,
-      answer: map.Joined(
+      answer: map_message.Joined(
         unit: player_unit.create(unit:, realm_id: 1),
         loadout: player_unit.loadout(unit:),
         incarnation: 1,

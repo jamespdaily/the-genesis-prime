@@ -21,6 +21,7 @@
 ////   input's, so no test waits.
 
 import connection_rule_support as support
+import genesis_prime/map/message as map_message
 import genesis_prime/shared/creature_kind.{Kind, Kinds}
 import genesis_prime/step.{
   type ServiceStep, CancelServiceTimer, ConnectionId, CreatureNotStarted,
@@ -29,7 +30,6 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{Spell4Id}
 import genesis_prime/world_map/map.{type State}
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn_id.{type SpawnId, SpawnId}
 import genesis_prime/world_map/spawn_source
 import gleam/dict
@@ -45,7 +45,7 @@ import spawn_support
 
 /// The one creature a step starts, with its watch.
 fn the_start(
-  taken: ServiceStep(map.Outgoing),
+  taken: ServiceStep(map_message.Outgoing),
 ) -> #(step.WatchId, step.CreatureStart) {
   let assert [only] = spawns.starts(taken) as "exactly one creature starts"
   only
@@ -647,7 +647,7 @@ pub fn a_leave_and_a_connections_end_tell_every_running_creature_that_the_caster
       stay_count: 1,
       unit_id: unit.0,
       life: unit.1,
-      payload: relay.ModifierEnds(source: inbound_support.source()),
+      payload: map_message.ModifierEnds(source: inbound_support.source()),
     )
   }
   let assert [live, _, _, retiring] = scene.units

@@ -131,6 +131,7 @@ import genesis_prime/load_round.{
 }
 import genesis_prime/load_run
 import genesis_prime/load_sample
+import genesis_prime/map/message as map_message
 import genesis_prime/message/crowd_control_state
 import genesis_prime/server
 import genesis_prime/service
@@ -149,10 +150,8 @@ import genesis_prime/step/runtime
 import genesis_prime/store.{Character, CharacterId, NameStands}
 import genesis_prime/table/id.{ClassId, Creature2Id, RaceId}
 import genesis_prime/world_map/creature_registry
-import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/stay.{type Stay}
@@ -537,7 +536,7 @@ fn walker(
       let _sent =
         service.call_subject(
           run.subject,
-          map.Join(
+          map_message.Join(
             connection:,
             character: character(id),
             place: start,
@@ -550,7 +549,10 @@ fn walker(
       let assert Ok(_joined) = process.receive(replies, within: 60_000)
         as "the map answered the join"
       let _sent =
-        service.tell_subject(run.subject, map.Ready(connection:, seq: 0))
+        service.tell_subject(
+          run.subject,
+          map_message.Ready(connection:, seq: 0),
+        )
       let start_walking = process.new_subject()
       process.send(joined, start_walking)
       let assert Ok(Nil) = process.receive(start_walking, within: 120_000)
@@ -595,9 +597,11 @@ fn walker(
           ),
         )
       let _sent =
-        service.call_subject(run.subject, map.Leave(connection:), fn(answer) {
-          process.send(replies, answer)
-        })
+        service.call_subject(
+          run.subject,
+          map_message.Leave(connection:),
+          fn(answer) { process.send(replies, answer) },
+        )
       let _left = process.receive(replies, within: 60_000)
       process.send(done, counts)
     })
@@ -644,7 +648,7 @@ fn walk(
     let _sent =
       service.tell_subject(
         run.subject,
-        map.Moved(connection:, place: shown, seq: step),
+        map_message.Moved(connection:, place: shown, seq: step),
       )
     let counts =
       struck_back(
@@ -665,7 +669,7 @@ fn walk(
         connection:,
         unit_id: fighter.0,
         life: fighter.1,
-        payload: relay.TargetMoved(
+        payload: map_message.TargetMoved(
           place: shown,
           seq: step,
           hit_radius: hit_radius.of_playing(
@@ -828,7 +832,7 @@ fn strike_fighters(
         connection:,
         unit_id: fighter.0,
         life: fighter.1,
-        payload: relay.Strike(
+        payload: map_message.Strike(
           tell: strike_tell.Strike(
             key: strike_tell.Key(
               cast_id: id * 100_000 + next,
@@ -1074,7 +1078,7 @@ fn answered(
           connection:,
           unit_id:,
           life:,
-          payload: relay.StrikeAnswered(answered: strike_tell.Answered(
+          payload: map_message.StrikeAnswered(answered: strike_tell.Answered(
             key: tell.key,
             outcome: strike_tell.Landed(
               descriptions: [],
@@ -1184,11 +1188,11 @@ fn tell_the_map(
   connection connection: ConnectionId,
   unit_id unit_id: Int,
   life life: Int,
-  payload payload: relay.Inbound,
+  payload payload: map_message.Inbound,
 ) -> Bool {
   service.tell_subject(
     run.subject,
-    map.TellCreature(
+    map_message.TellCreature(
       from: connection,
       stay: walkers_stay(),
       unit_id:,

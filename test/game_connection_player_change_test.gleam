@@ -18,20 +18,20 @@ import genesis_prime/game/cast/state as cast_state
 import genesis_prime/game/connection/casting
 import genesis_prime/game/connection/effects as connection_effects
 import genesis_prime/game/connection/state.{type Session, InWorld}
-import genesis_prime/game/held_changes.{
+import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
+import genesis_prime/game/world_entry
+import genesis_prime/map/message as map_message
+import genesis_prime/shared/lasting
+import genesis_prime/shared/player_change.{
   Absorb, KeptWhenUnseen, PlayerCastWent, PlayerChangeEnds, PlayerChangeStarts,
   Property,
 }
-import genesis_prime/game/player_address.{type PlayerAddress, PlayerAddress}
-import genesis_prime/game/world_entry
-import genesis_prime/shared/lasting
 import genesis_prime/shared/unit_casts.{type HeldEffect, EndsAt, HeldEffect}
 import genesis_prime/shared/unit_properties.{type Source, Change, Source}
 import genesis_prime/step.{type Effect, ConnectionId, Now, OwnEffect}
 import genesis_prime/table/id.{
   type Spell4Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
-import genesis_prime/world_map/relay
 import gleam/dict
 import gleam/list
 import gleam/result
@@ -93,12 +93,12 @@ fn in_the_world() -> Session {
 /// What a tell to the ally's connection is, as the caster's connection sends it: to the
 /// map, for the ally's connection and stay, with the caster's own connection and stay.
 fn told_to_the_ally(
-  change change: held_changes.PlayerChange,
+  change change: player_change.PlayerChange,
 ) -> Effect(step.ConnectionEffect(client_connection.Request)) {
   let landing = case change {
-    PlayerChangeStarts(..) -> relay.ChangeStart(change:)
-    PlayerChangeEnds(..) -> relay.ChangeEnd(change:)
-    PlayerCastWent(..) -> relay.CastWent(change:)
+    PlayerChangeStarts(..) -> map_message.ChangeStart(change:)
+    PlayerChangeEnds(..) -> map_message.ChangeEnd(change:)
+    PlayerCastWent(..) -> map_message.CastWent(change:)
   }
   OwnEffect(step.Tell(
     to: step.Map(map: entered().map, incarnation: entered().incarnation),
@@ -134,7 +134,7 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_the_map_for_that_players
       cast_state.OtherPlayerChangeStarts(
         address: address(),
         source: source(),
-        change: held_changes.Applies(Absorb(amount: 300, mask: 7)),
+        change: player_change.Applies(Absorb(amount: 300, mask: 7)),
         sight: KeptWhenUnseen,
         spell4_id: spell4_id(),
         effect: held_effect(),
@@ -144,7 +144,7 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_the_map_for_that_players
           from:,
           from_stay: own_stay,
           source: source(),
-          change: held_changes.Applies(Absorb(amount: 300, mask: 7)),
+          change: player_change.Applies(Absorb(amount: 300, mask: 7)),
           sight: KeptWhenUnseen,
           spell4_id: spell4_id(),
           effect: held_effect(),
@@ -156,8 +156,8 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_the_map_for_that_players
       cast_state.OtherPlayerChangeStarts(
         address: address(),
         source: source(),
-        change: held_changes.Applies(Property(modifier: modifier())),
-        sight: held_changes.EndsWhenUnseen,
+        change: player_change.Applies(Property(modifier: modifier())),
+        sight: player_change.EndsWhenUnseen,
         spell4_id: spell4_id(),
         effect: held_effect(),
       ),
@@ -166,8 +166,8 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_the_map_for_that_players
           from:,
           from_stay: own_stay,
           source: source(),
-          change: held_changes.Applies(Property(modifier: modifier())),
-          sight: held_changes.EndsWhenUnseen,
+          change: player_change.Applies(Property(modifier: modifier())),
+          sight: player_change.EndsWhenUnseen,
           spell4_id: spell4_id(),
           effect: held_effect(),
         )),
@@ -205,7 +205,7 @@ pub fn a_change_the_cast_rule_tells_a_player_is_sent_to_the_map_for_that_players
       cast_state.OtherPlayerChangeStarts(
         address: address(),
         source: source(),
-        change: held_changes.Applies(Absorb(amount: 300, mask: 7)),
+        change: player_change.Applies(Absorb(amount: 300, mask: 7)),
         sight: KeptWhenUnseen,
         spell4_id: spell4_id(),
         effect: held_effect(),

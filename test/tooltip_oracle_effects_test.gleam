@@ -55,6 +55,7 @@ import genesis_prime/message/spell_go
 import genesis_prime/shared/area
 import genesis_prime/shared/class_resource
 import genesis_prime/shared/cooldown
+import genesis_prime/shared/creature_combat
 import genesis_prime/shared/creature_path
 import genesis_prime/shared/lasting
 import genesis_prime/shared/spell_area
@@ -73,7 +74,6 @@ import genesis_prime/table/spell4_effects.{type Spell4Effects}
 import genesis_prime/table/spell4_stack_group
 import genesis_prime/tooltip_token
 import genesis_prime/world_map/creature_control
-import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/bool
 import gleam/dict
@@ -523,7 +523,7 @@ fn listed(drive driven: Drive, effect_id effect_id: Int) -> Bool {
 /// The points of Interrupt Armor a creature of 1000 loses to the state, which a state of
 /// effect type 4 takes in place of landing (`creature_control`).
 fn armor_removed(row row: spell_plan.CrowdControl) -> Int {
-  let armor = creature_life.Armor(points: 1000)
+  let armor = creature_combat.Armor(points: 1000)
   let landing = oracle.landing_of(rows: [row], armor:, at_ms: oracle.start_ms)
   case creature_control.armor_now(state: landing.state, armor:) {
     Some(left) -> 1000 - left
@@ -1027,8 +1027,8 @@ fn foe_at(z z: Float) -> shown.Shown {
     life: 4,
     alive: True,
     hit_radius: 100.0,
-    attackable: creature_life.Attackable(exile: True, dominion: True),
-    hostile_to: creature_life.Hostile(exile: False, dominion: False),
+    attackable: creature_combat.Attackable(exile: True, dominion: True),
+    hostile_to: creature_combat.Hostile(exile: False, dominion: False),
     in_combat: False,
     held: [],
     unit_states: [],

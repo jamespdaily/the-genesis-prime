@@ -259,15 +259,17 @@
 //// | a chase or a walk home at a run speed of 0 or below | the creature stands where it is, with no path and no arrival timer (`chase_with_zero_run_speed_stands_still_test`, `walk_home_with_zero_run_speed_stands_still_test`, `negative_run_speed_stands_still_test`); it goes on from there when the speed is above 0 again (`run_speed_restored_moves_again_test`, `run_speed_restored_walks_home_again_test`), and not while a state holds it until the state ends (`speed_restored_while_held_stays_until_control_ends_test`) |
 //// | a creature at a run speed of 0 or below is out of reach of a target | it leashes when the target is beyond the leash range from home, as a turret does (`creature_that_cannot_run_leashes_by_the_turret_rule_test`); at home it rests at once (`rooted_creature_leashing_at_home_rests_test`); away from home it holds, since it has no walk (`rooted_creature_at_the_circle_does_not_leash_test`) |
 
-import genesis_prime/game/experience.{Credit}
 import genesis_prime/game/held_changes
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/gap
+import genesis_prime/map/message as map_message
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_combat
 import genesis_prime/shared/creature_kind.{type Kind}
 import genesis_prime/shared/creature_unit_type
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit
+import genesis_prime/shared/kill_credit.{Credit}
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/strike_tell.{
   type Answered, type Tell as StrikeTell, Answered, CreatureStriker,
@@ -305,7 +307,6 @@ import genesis_prime/world_map/creature_unit_state
 import genesis_prime/world_map/game_number.{type GameNumbers}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_source
 import genesis_prime/world_map/stay.{type Stay}
@@ -546,7 +547,7 @@ pub type Outgoing {
   /// To the creature's map: the picture of the creature for the viewer of connection
   /// `by` that took `Seen` of `generation`, built from the creature's state when it took
   /// it, `burst` in the order the viewer writes it. Empty for a creature that is not
-  /// shown (`map.Snapshot`).
+  /// shown (`map_message.Snapshot`).
   Snapshot(
     unit_id: Int,
     life: Int,
@@ -555,21 +556,21 @@ pub type Outgoing {
     burst: List(PeerNews),
   )
   /// To the creature's map: news of the creature's unit for every viewer, once, which
-  /// the map relays to each viewer it holds as relaying (`map.Broadcast`).
+  /// the map relays to each viewer it holds as relaying (`map_message.Broadcast`).
   Broadcast(unit_id: Int, life: Int, news: PeerNews)
   /// To the creature's map: a tell to one player, for its stay: the answer to its
-  /// strike, the credit for a kill or a fight tell (`map.Relay`). News of the
+  /// strike, the credit for a kill or a fight tell (`map_message.Relay`). News of the
   /// creature's unit is no relay: it goes as a snapshot or a broadcast.
   Relay(
     unit_id: Int,
     life: Int,
     to: ConnectionId,
     stay: Stay,
-    payload: relay.Payload,
+    payload: map_message.Payload,
   )
   /// To the creature's map: the creature of `unit_id` and `life` lay dead or despawned
   /// until its corpse timer and stops now; the map starts the creature's next life
-  /// under the same unit id when it ends (`map.Expired`).
+  /// under the same unit id when it ends (`map_message.Expired`).
   Expired(unit_id: Int, life: Int)
 }
 
@@ -1528,7 +1529,7 @@ fn credit_for(
         state:,
         to: connection,
         stay:,
-        payload: relay.KillCredit(credit: Credit(
+        payload: map_message.KillCredit(credit: Credit(
           unit_id: state.settings.creature.unit_id,
           creature_id: state.settings.spawn.creature_id,
           faction_id: Faction2Id(state.settings.spawn.faction_id),
@@ -1761,9 +1762,9 @@ fn creature_facts(
     |> option.unwrap(0)
     |> int.to_float
   let armor_maximum = case armor {
-    creature_life.Armor(points:) -> int.to_float(points)
-    creature_life.InfiniteArmor -> -1.0
-    creature_life.NoArmor -> 0.0
+    creature_combat.Armor(points:) -> int.to_float(points)
+    creature_combat.InfiniteArmor -> -1.0
+    creature_combat.NoArmor -> 0.0
   }
   let #(caster_unit, caster) = case tell.striker {
     PlayerStriker(unit_id:, place:, ..) -> #(
@@ -1894,7 +1895,12 @@ fn answer_to(
 ) -> List(Effect(ServiceEffect(Outgoing))) {
   case strike_tell.player_sender(tell:) {
     Ok(#(connection, stay)) -> [
-      relayed(state:, to: connection, stay:, payload: relay.Struck(answered:)),
+      relayed(
+        state:,
+        to: connection,
+        stay:,
+        payload: map_message.Struck(answered:),
+      ),
     ]
     Error(Nil) -> []
   }
@@ -1959,7 +1965,7 @@ fn fought_breaking(
       let #(state, more) = case effect {
         creature_fight.ToViewers(news:) -> #(state, to_viewers(state:, news:))
         creature_fight.ToPlayer(to:, stay:, told:) -> #(state, [
-          relayed(state:, to:, stay:, payload: relay.Fight(told:)),
+          relayed(state:, to:, stay:, payload: map_message.Fight(told:)),
         ])
         creature_fight.RestoreHealth -> {
           let life = creature_life.new(body: state.body)
@@ -2313,7 +2319,7 @@ fn relayed(
   state state: State,
   to to: ConnectionId,
   stay stay: Stay,
-  payload payload: relay.Payload,
+  payload payload: map_message.Payload,
 ) -> Effect(ServiceEffect(Outgoing)) {
   let creature = state.settings.creature
   to_the_map(
@@ -2346,24 +2352,27 @@ fn to_the_map(
 /// `PlayerDied`, by the connection whose player died, `Retire`, and the tells of a
 /// player (`ToldCreature`), each as the message of its kind with the sender and the stay
 /// the map names. Any other is no message to a creature, and `Error(Nil)`.
-pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
+pub fn told_by_map(
+  outgoing outgoing: map_message.Outgoing,
+) -> Result(Message, Nil) {
   case outgoing {
-    map.Seen(by:, stay:, generation:) -> Ok(Seen(by:, stay:, generation:))
-    map.Unseen(by:, generation:) -> Ok(Unseen(by:, generation:))
-    map.Approached(member:) -> Ok(Approached(member:))
-    map.Withdrew(by:) -> Ok(Withdrew(by:))
-    map.PlayerDied(by:) -> Ok(PlayerDied(by:))
-    map.Retire -> Ok(Retire)
-    map.CasterGone(by:) -> Ok(CasterGone(by:))
-    map.ToldCreature(by:, stay:, payload:) ->
+    map_message.Seen(by:, stay:, generation:) ->
+      Ok(Seen(by:, stay:, generation:))
+    map_message.Unseen(by:, generation:) -> Ok(Unseen(by:, generation:))
+    map_message.Approached(member:) -> Ok(Approached(member:))
+    map_message.Withdrew(by:) -> Ok(Withdrew(by:))
+    map_message.PlayerDied(by:) -> Ok(PlayerDied(by:))
+    map_message.Retire -> Ok(Retire)
+    map_message.CasterGone(by:) -> Ok(CasterGone(by:))
+    map_message.ToldCreature(by:, stay:, payload:) ->
       Ok(told_by_a_player(by:, stay:, payload:))
-    map.Joined(..)
-    | map.NotJoined(..)
-    | map.Summoned(..)
-    | map.NotSummoned(..)
-    | map.Left
-    | map.Relayed(..)
-    | map.Noticed(..) -> Error(Nil)
+    map_message.Joined(..)
+    | map_message.NotJoined(..)
+    | map_message.Summoned(..)
+    | map_message.NotSummoned(..)
+    | map_message.Left
+    | map_message.Relayed(..)
+    | map_message.Noticed(..) -> Error(Nil)
   }
 }
 
@@ -2372,35 +2381,37 @@ pub fn told_by_map(outgoing outgoing: map.Outgoing) -> Result(Message, Nil) {
 fn told_by_a_player(
   by by: ConnectionId,
   stay stay: Stay,
-  payload payload: relay.Inbound,
+  payload payload: map_message.Inbound,
 ) -> Message {
   case payload {
-    relay.Strike(tell:) -> Strike(tell:)
-    relay.TargetMoved(place:, seq:, hit_radius:) ->
+    map_message.Strike(tell:) -> Strike(tell:)
+    map_message.TargetMoved(place:, seq:, hit_radius:) ->
       TargetMoved(by:, place:, seq:, stay:, hit_radius:)
-    relay.StrikeAnswered(answered:) -> StrikeAnswered(answered:)
-    relay.ModifierStarts(source:, modifier:) ->
+    map_message.StrikeAnswered(answered:) -> StrikeAnswered(answered:)
+    map_message.ModifierStarts(source:, modifier:) ->
       ModifierStarts(by:, source:, modifier:)
-    relay.ModifierEnds(source:) -> ModifierEnds(source:)
-    relay.Thrown(throw:) -> Thrown(throw:)
-    relay.Despawn(delay_ms:, went_at_ms:) -> Despawn(delay_ms:, went_at_ms:)
-    relay.UnitStates(rows:, went_at_ms:) -> UnitStates(rows:, went_at_ms:)
-    relay.CastViewSet(view:) -> CastViewSet(by:, view:)
-    relay.CastViewEnds(cast_id:) -> CastViewEnds(by:, cast_id:)
-    relay.ControlsEnd(cast_id:) -> ControlsEnd(by:, cast_id:)
+    map_message.ModifierEnds(source:) -> ModifierEnds(source:)
+    map_message.Thrown(throw:) -> Thrown(throw:)
+    map_message.Despawn(delay_ms:, went_at_ms:) ->
+      Despawn(delay_ms:, went_at_ms:)
+    map_message.UnitStates(rows:, went_at_ms:) -> UnitStates(rows:, went_at_ms:)
+    map_message.CastViewSet(view:) -> CastViewSet(by:, view:)
+    map_message.CastViewEnds(cast_id:) -> CastViewEnds(by:, cast_id:)
+    map_message.ControlsEnd(cast_id:) -> ControlsEnd(by:, cast_id:)
   }
 }
 
 /// What a creature's `Outgoing` means to its map: `Snapshot`, `Broadcast`, `Relay` and
 /// `Expired`, each as the map's message of the same name.
-pub fn told_to_map(outgoing outgoing: Outgoing) -> map.Message {
+pub fn told_to_map(outgoing outgoing: Outgoing) -> map_message.Message {
   case outgoing {
     Snapshot(unit_id:, life:, by:, generation:, burst:) ->
-      map.Snapshot(unit_id:, life:, by:, generation:, burst:)
-    Broadcast(unit_id:, life:, news:) -> map.Broadcast(unit_id:, life:, news:)
+      map_message.Snapshot(unit_id:, life:, by:, generation:, burst:)
+    Broadcast(unit_id:, life:, news:) ->
+      map_message.Broadcast(unit_id:, life:, news:)
     Relay(unit_id:, life:, to:, stay:, payload:) ->
-      map.Relay(unit_id:, life:, to:, stay:, payload:)
-    Expired(unit_id:, life:) -> map.Expired(unit_id:, life:)
+      map_message.Relay(unit_id:, life:, to:, stay:, payload:)
+    Expired(unit_id:, life:) -> map_message.Expired(unit_id:, life:)
   }
 }
 

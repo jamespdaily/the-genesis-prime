@@ -16,6 +16,7 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
 import genesis_prime/game/start_place
+import genesis_prime/map/message.{Join, Left, SeenBy} as map_message
 import genesis_prime/message/cast_result
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/combat_log.{CombatLog}
@@ -46,9 +47,7 @@ import genesis_prime/step.{
   OwnEffect, Unwatch, Watch, WatchEnded, WatchId,
 }
 import genesis_prime/store.{AccountId, ListCharacters, Select}
-import genesis_prime/world_map/map.{Join, Left, SeenBy}
 import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/relay
 import gleam/int
 import gleam/list
 import gleam/option.{None, Some}
@@ -933,7 +932,10 @@ pub fn a_refused_holocrypt_join_returns_to_character_select_test() -> Nil {
       taken:,
       outcome: step.Answer(
         FromMap(
-          map.NotJoined(reason: map.NoLoadout(class_id: 1, faction_id: 166)),
+          map_message.NotJoined(reason: map_message.NoLoadout(
+            class_id: 1,
+            faction_id: 166,
+          )),
         ),
       ),
     )
@@ -1255,7 +1257,7 @@ pub fn a_player_that_entered_dead_fights_no_one_a_strike_is_refused_dead_and_a_t
   let assert [
     #(
       7,
-      relay.StrikeAnswered(answered: strike_tell.Answered(
+      map_message.StrikeAnswered(answered: strike_tell.Answered(
         outcome: strike_tell.Refused(why: strike_tell.Dead),
         ..,
       )),
@@ -1517,7 +1519,7 @@ pub fn a_killing_blow_tells_the_map_the_answer_before_the_death_test() -> Nil {
           request: client_connection.TellCreature(
             unit_id:,
             life:,
-            payload: relay.StrikeAnswered(..),
+            payload: map_message.StrikeAnswered(..),
             ..,
           ),
           ..,

@@ -16,10 +16,10 @@ import genesis_prime/message/spell_targets_removed.{type SpellTargetsRemoved}
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/message/unit_create_player.{type UnitCreatePlayer}
 import genesis_prime/message/unit_property.{type UnitProperty}
+import genesis_prime/shared/creature_combat.{type Attackable, type Hostile}
 import genesis_prime/shared/creature_path.{type Path}
 import genesis_prime/shared/creature_turn.{type Face}
 import genesis_prime/shared/creature_unit_type.{type CreatureUnitType}
-import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 
@@ -46,7 +46,7 @@ pub type News {
   /// (genesis_prime/world_map/creature), which owns the unit, with what the viewer's
   /// strikes and requests need of it: its life, which its address needs, the hit
   /// radius of its display, whom it may be attacked by, which player factions it
-  /// is Hostile to and whether it takes part in combat (`creature_life.Combat.fights`),
+  /// is Hostile to and whether it takes part in combat (`creature_combat.Combat.fights`),
   /// which an area's candidates read, and the id of its spawn, which a quest objective
   /// remembers a use of it by (`quest_log.used`).
   CreatureAppeared(

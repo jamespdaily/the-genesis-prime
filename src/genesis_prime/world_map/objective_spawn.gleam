@@ -86,7 +86,6 @@
 
 import genesis_prime/content/refusal.{type Refusal}
 import genesis_prime/game/objective_kind
-import genesis_prime/game/place_objective
 import genesis_prime/game/start_place.{type Place, Facing}
 import genesis_prime/game/target_group
 import genesis_prime/gap
@@ -633,7 +632,7 @@ fn pane_pairs(
       })
     })
     |> list.flat_map(fn(creature) {
-      place_objective.marker_ids(objective:)
+      quest_row.marker_ids(objective:)
       |> list.map(fn(marker_id) { #(objective.id, creature, marker_id) })
     })
   })
@@ -663,7 +662,7 @@ fn click_pairs(
         })
         |> list.unique
         |> list.flat_map(fn(objective) {
-          place_objective.marker_ids(objective:)
+          quest_row.marker_ids(objective:)
           |> list.map(fn(marker_id) { #(objective.id, creature, marker_id) })
         })
       let unread =
@@ -788,7 +787,7 @@ fn plan(
   objective objective: QuestObjective,
   named named: objective_kind.PlacedTarget,
 ) -> #(option.Option(Job), List(Skipped)) {
-  let marker_ids = place_objective.marker_ids(objective:)
+  let marker_ids = quest_row.marker_ids(objective:)
   case marker_ids {
     [] -> #(None, [])
     _ -> {

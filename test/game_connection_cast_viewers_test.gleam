@@ -25,6 +25,7 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Request, SentByPlayer}
 import genesis_prime/game/connection as game_connection
 import genesis_prime/game/connection/state.{Settings}
+import genesis_prime/map/message.{SeenBy}
 import genesis_prime/message/spell_go.{type SpellGo}
 import genesis_prime/message/spell_started.{type SpellStarted}
 import genesis_prime/message/spell_target_info
@@ -34,7 +35,6 @@ import genesis_prime/message/unit_create_tail.{UnitCreateTail}
 import genesis_prime/shared/unit_news.{type News, Appeared, PeerNews}
 import genesis_prime/step.{type ConnectionStep, ConnectionId, OwnEffect}
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map.{SeenBy}
 import gleam/list
 import gleam/option.{None}
 import owned_test

@@ -35,11 +35,9 @@ import genesis_prime/game/cast/gate as cast_gate
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/held_changes
 import genesis_prime/game/held_tier
 import genesis_prime/game/movement
 import genesis_prime/game/player_address
-import genesis_prime/game/proc as event_proc
 import genesis_prime/message/cast_result
 import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
@@ -54,6 +52,8 @@ import genesis_prime/shared/effect_kind
 import genesis_prime/shared/hit
 import genesis_prime/shared/lasting.{LastingRow}
 import genesis_prime/shared/lasts
+import genesis_prime/shared/player_change
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/spell_area
 import genesis_prime/shared/spell_plan.{
   type Plans, type ProcRow, type Spell, AliveOrDead, Always, AnySpell, AtHolder,
@@ -190,8 +190,8 @@ fn blow_taken(
 }
 
 /// The attack spell of the creature that strikes, as its blow's events carry it.
-fn attack(groups groups: List(Int)) -> event_proc.EventSpell {
-  event_proc.EventSpell(
+fn attack(groups groups: List(Int)) -> proc_event.EventSpell {
+  proc_event.EventSpell(
     spell4_id: Spell4Id(5649),
     spell4_base_id: Spell4BaseId(4947),
     groups:,
@@ -4924,7 +4924,7 @@ fn item_cast_holding_a_proc_on_an_ally() -> #(State, Caster) {
           cast_state.HeldOnPlayer(
             source:,
             address:,
-            sight: held_changes.KeptWhenUnseen,
+            sight: player_change.KeptWhenUnseen,
             spell4_id: spell.spell4_id,
             stack: row.spell.stack,
             started_ms: 1000,
@@ -4949,7 +4949,7 @@ pub fn a_proc_held_on_an_ally_by_an_items_cast_fires_a_child_that_reads_no_item_
   // test on purpose.
   let #(state, caster) = item_cast_holding_a_proc_on_an_ally()
   let blow =
-    event_proc.Event(
+    proc_event.Event(
       trigger: spell_plan.TakesDamage,
       other_unit: Some(31),
       spell: Some(attack(groups: [])),
@@ -6209,7 +6209,7 @@ pub fn a_fire_with_a_delay_and_a_fire_for_an_ally_are_fired_too_test() -> Nil {
   // flag, not a count, shows it.
   let #(state, caster) = item_cast_holding_a_proc_on_an_ally()
   let blow =
-    event_proc.Event(
+    proc_event.Event(
       trigger: spell_plan.TakesDamage,
       other_unit: Some(31),
       spell: Some(attack(groups: [])),
@@ -6366,9 +6366,9 @@ fn ungated(row row: ProcRow) -> Bool {
 /// A spell the row's own filter passes, as an event names it.
 fn passing_filter(
   filter filter: spell_plan.ProcFilter,
-) -> event_proc.EventSpell {
+) -> proc_event.EventSpell {
   let any =
-    event_proc.EventSpell(
+    proc_event.EventSpell(
       spell4_id: Spell4Id(hitter_spell4),
       spell4_base_id: Spell4BaseId(2),
       groups: [],
@@ -6377,10 +6377,10 @@ fn passing_filter(
   case filter {
     spell_plan.AnySpell -> any
     spell_plan.InGroup(group_id:) ->
-      event_proc.EventSpell(..any, groups: [group_id])
-    spell_plan.OneSpell(spell4_id:) -> event_proc.EventSpell(..any, spell4_id:)
+      proc_event.EventSpell(..any, groups: [group_id])
+    spell_plan.OneSpell(spell4_id:) -> proc_event.EventSpell(..any, spell4_id:)
     spell_plan.OfBase(spell4_base_id:) ->
-      event_proc.EventSpell(..any, spell4_base_id:)
+      proc_event.EventSpell(..any, spell4_base_id:)
   }
 }
 
@@ -6400,7 +6400,7 @@ fn real_row_fires(row row: ProcRow) -> Int {
   let #(_, state) = holder_and_spells(procs: [held], spells: [])
   let caster = planted_caster()
   let event =
-    event_proc.Event(
+    proc_event.Event(
       trigger: held.trigger,
       other_unit: Some(31),
       spell: Some(passing_filter(filter: held.filter)),

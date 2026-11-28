@@ -56,6 +56,7 @@ import genesis_prime/message/unit_properties_changed
 import genesis_prime/message/vendor_item.{type VendorItem, VendorItem}
 import genesis_prime/message/vendor_items.{VendorItems}
 import genesis_prime/message/vendor_price_slot.{VendorPriceSlot}
+import genesis_prime/shared/creature_combat.{type Hostile, Hostile}
 import genesis_prime/shared/creature_unit_type.{NonPlayer}
 import genesis_prime/shared/random_stat_word
 import genesis_prime/shared/unit_news.{
@@ -65,7 +66,6 @@ import genesis_prime/step.{type ConnectionEvent, type Event, LogWarning}
 import genesis_prime/store
 import genesis_prime/table/id
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_life.{type Hostile, Hostile}
 import genesis_prime/world_map/creature_unit
 import gleam/list
 import gleam/option.{None}

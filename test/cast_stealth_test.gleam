@@ -29,10 +29,10 @@ import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
 import genesis_prime/game/cast/tick as cast_tick
-import genesis_prime/game/proc
 import genesis_prime/message/cast_result
 import genesis_prime/shared/lasting
 import genesis_prime/shared/prerequisite
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/spell_plan.{
   type Plans, type Spell, Always, BrokenByDamage, EndsStealthAfterLastGo,
   EndsStealthAtEachGo, GatedOnCaster, KeepsStealth, KeptOnDamage, Proxy,
@@ -759,7 +759,7 @@ fn damaged(state state: State, at ms: Int) -> #(State, List(Effect)) {
     now: support.at(ms:),
     blow: cast_proc.BlowLanded(
       striker: 7,
-      spell: proc.EventSpell(
+      spell: proc_event.EventSpell(
         spell4_id: Spell4Id(5649),
         spell4_base_id: Spell4BaseId(4947),
         groups: [],

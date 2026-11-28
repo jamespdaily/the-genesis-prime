@@ -3,6 +3,7 @@
 
 import connection_rule_support as support
 import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
+import genesis_prime/map/message as map_message
 import genesis_prime/shared/creature_turn
 import genesis_prime/shared/strike_tell.{
   Answered, Attacks, Landed, Refused, Released, Threatened,
@@ -18,7 +19,6 @@ import genesis_prime/step.{
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
@@ -126,25 +126,25 @@ pub fn said_to_the_map(taken: ServiceStep(creature.Outgoing)) -> List(String) {
         <> int.to_string(life)
       creature.Relay(to: ConnectionId(number), payload:, ..) ->
         case payload {
-          relay.Struck(answered: Answered(outcome: Landed(..), ..)) ->
+          map_message.Struck(answered: Answered(outcome: Landed(..), ..)) ->
             "answer to " <> int.to_string(number)
-          relay.Struck(answered: Answered(outcome: Refused(why:), ..)) ->
+          map_message.Struck(answered: Answered(outcome: Refused(why:), ..)) ->
             "Refused(" <> refusal_name(why) <> ") to " <> int.to_string(number)
-          relay.Struck(..) -> "answer to " <> int.to_string(number)
-          relay.KillCredit(..) -> "credit to " <> int.to_string(number)
-          relay.Fight(told: Threatened(unit_id:, life:)) ->
+          map_message.Struck(..) -> "answer to " <> int.to_string(number)
+          map_message.KillCredit(..) -> "credit to " <> int.to_string(number)
+          map_message.Fight(told: Threatened(unit_id:, life:)) ->
             "Threatened("
             <> int.to_string(unit_id)
             <> ", "
             <> int.to_string(life)
             <> ") to "
             <> int.to_string(number)
-          relay.Fight(told: Released(unit_id:)) ->
+          map_message.Fight(told: Released(unit_id:)) ->
             "Released("
             <> int.to_string(unit_id)
             <> ") to "
             <> int.to_string(number)
-          relay.Fight(told: Attacks(..)) ->
+          map_message.Fight(told: Attacks(..)) ->
             "Attacks to " <> int.to_string(number)
         }
     }
@@ -224,14 +224,14 @@ pub fn at_each_player(
 pub fn relayed_to(
   taken taken: ServiceStep(creature.Outgoing),
   connection connection: ConnectionId,
-) -> List(relay.Delivered) {
+) -> List(map_message.Delivered) {
   list.flat_map(to_the_map(taken), fn(sent) {
     case sent {
       creature.Snapshot(by:, burst:, ..) if by == connection ->
-        list.map(burst, fn(news) { relay.News(news:) })
-      creature.Broadcast(news:, ..) -> [relay.News(news:)]
+        list.map(burst, fn(news) { map_message.News(news:) })
+      creature.Broadcast(news:, ..) -> [map_message.News(news:)]
       creature.Relay(to:, payload:, ..) if to == connection -> [
-        relay.Tell(payload:),
+        map_message.Tell(payload:),
       ]
       creature.Snapshot(..) | creature.Relay(..) | creature.Expired(..) -> []
     }

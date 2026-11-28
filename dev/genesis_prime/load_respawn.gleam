@@ -10,7 +10,7 @@
 //// - A walker is told a unit's removal in the creature's own news (`Removed`) or the map's
 ////   notices (`UnitUnseen`, `Gone`, `ObjectsUnseen`), and a unit's creation in the creature's
 ////   own news (`CreatureAppeared`) or the map's notice (`ObjectsSeen`), so each form
-////   counts (`unit_news.News`, `map.Notice`). A message about a player's unit is neither.
+////   counts (`unit_news.News`, `map_message.Notice`). A message about a player's unit is neither.
 //// - A respawn is a unit's removal and then its next creation; its gap is the time between
 ////   the two as the walker was sent them. A creation with no removal before it is no respawn,
 ////   and a second creation after one removal is not another.
@@ -23,8 +23,8 @@ import genesis_prime/client_connection.{
   type StaySent, SentByFoe, SentByKill, SentByLine, SentByMap, SentByMove,
   SentByPeer, SentByPlayer, SentByTarget,
 }
+import genesis_prime/map/message.{type Notice} as map_message
 import genesis_prime/shared/unit_news.{type News, PeerNews}
-import genesis_prime/world_map/map.{type Notice}
 import genesis_prime/world_map/static_object
 import gleam/dict.{type Dict}
 import gleam/int
@@ -102,17 +102,17 @@ fn of_sent(sent: StaySent) -> Told {
 
 fn of_notice(notice: Notice) -> Told {
   case notice {
-    map.UnitUnseen(unit_id:, ..)
-    | map.PlayerUnseen(unit_id:, ..)
-    | map.Gone(unit_id:) -> Removal([unit_id])
-    map.ObjectsUnseen(unit_ids:) -> Removal(unit_ids)
-    map.ObjectsSeen(units:) ->
+    map_message.UnitUnseen(unit_id:, ..)
+    | map_message.PlayerUnseen(unit_id:, ..)
+    | map_message.Gone(unit_id:) -> Removal([unit_id])
+    map_message.ObjectsUnseen(unit_ids:) -> Removal(unit_ids)
+    map_message.ObjectsSeen(units:) ->
       Creation(
         list.map(units, fn(unit) {
           static_object.unit_id(created: pair.second(unit))
         }),
       )
-    map.SeenBy(..) | map.UnseenBy(..) -> Unrelated
+    map_message.SeenBy(..) | map_message.UnseenBy(..) -> Unrelated
   }
 }
 

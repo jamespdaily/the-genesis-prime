@@ -42,12 +42,13 @@ import genesis_prime/game/connection/frames as connection_frames
 import genesis_prime/game/connection/properties as connection_properties
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/experience.{
-  type Credit, type Credited, Credited, GainSent, LevelRose, Progress,
+  type Credited, Credited, GainSent, LevelRose, Progress,
 }
 import genesis_prime/game/gear
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/world_entry
 import genesis_prime/shared/class_resource
+import genesis_prime/shared/kill_credit.{type Credit}
 import genesis_prime/shared/player_unit
 import genesis_prime/shared/spell_plan
 import genesis_prime/shared/spell_tier

@@ -15,9 +15,9 @@
 
 import character_tables
 import genesis_prime/game/world_entry
+import genesis_prime/map/message as map_message
 import genesis_prime/shared/prerequisite.{type Prerequisite}
 import genesis_prime/table/id.{PrerequisiteId}
-import genesis_prime/world_map/map
 import gleam/dict
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -83,7 +83,8 @@ fn join_hidden_saved_at(
   let asked =
     list.filter_map(effects, fn(effect) {
       case effect {
-        world_entry.AskMap(message: map.Join(hidden:, ..), ..) -> Ok(hidden)
+        world_entry.AskMap(message: map_message.Join(hidden:, ..), ..) ->
+          Ok(hidden)
         world_entry.AskMap(..)
         | world_entry.AskStore(..)
         | world_entry.Send(..)

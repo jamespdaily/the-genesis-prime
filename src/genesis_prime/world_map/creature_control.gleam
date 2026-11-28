@@ -41,6 +41,7 @@
 
 import genesis_prime/gap
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
+import genesis_prime/shared/creature_combat.{type InterruptArmor}
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/lasts
 import genesis_prime/shared/strike_tell.{
@@ -48,7 +49,6 @@ import genesis_prime/shared/strike_tell.{
 }
 import genesis_prime/shared/unit_news.{type News}
 import genesis_prime/step.{type Address}
-import genesis_prime/world_map/creature_life.{type InterruptArmor}
 import gleam/int
 import gleam/list
 import gleam/option.{type Option, None, Some}
@@ -166,10 +166,10 @@ pub fn land(
   now_ms now_ms: Int,
 ) -> Landing {
   case armor {
-    creature_life.InfiniteArmor ->
+    creature_combat.InfiniteArmor ->
       Landing(state:, landed: [], armor_removed: 0, effects: [])
-    creature_life.NoArmor -> held(state:, tell:, now_ms:)
-    creature_life.Armor(points: maximum) ->
+    creature_combat.NoArmor -> held(state:, tell:, now_ms:)
+    creature_combat.Armor(points: maximum) ->
       armored(state:, tell:, maximum:, refill_ms:, now_ms:)
   }
 }
@@ -262,10 +262,10 @@ pub fn refilled(
   armor armor: InterruptArmor,
 ) -> #(State, List(Effect)) {
   case state.armor, armor {
-    Some(_), creature_life.Armor(points:) -> #(State(..state, armor: None), [
+    Some(_), creature_combat.Armor(points:) -> #(State(..state, armor: None), [
       ToViewers(unit_news.InterruptArmor(armor: points)),
     ])
-    Some(_), creature_life.NoArmor | Some(_), creature_life.InfiniteArmor -> #(
+    Some(_), creature_combat.NoArmor | Some(_), creature_combat.InfiniteArmor -> #(
       State(..state, armor: None),
       [],
     )
@@ -286,9 +286,9 @@ pub fn armor_now(
   armor armor: InterruptArmor,
 ) -> Option(Int) {
   case armor {
-    creature_life.Armor(points: maximum) ->
+    creature_combat.Armor(points: maximum) ->
       Some(option.unwrap(state.armor, maximum))
-    creature_life.NoArmor | creature_life.InfiniteArmor -> None
+    creature_combat.NoArmor | creature_combat.InfiniteArmor -> None
   }
 }
 
@@ -305,9 +305,9 @@ pub fn maximum_changed(
 ) -> #(State, List(Effect)) {
   let shown_before = shown(state:, armor: before)
   let state = case after {
-    creature_life.Armor(points: maximum) ->
+    creature_combat.Armor(points: maximum) ->
       State(..state, armor: option.map(state.armor, int.min(_, maximum)))
-    creature_life.NoArmor | creature_life.InfiniteArmor -> state
+    creature_combat.NoArmor | creature_combat.InfiniteArmor -> state
   }
   let shown_after = shown(state:, armor: after)
   case shown_after == shown_before {

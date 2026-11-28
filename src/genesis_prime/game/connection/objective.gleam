@@ -10,13 +10,13 @@ import genesis_prime/game/connection/prerequisite_player
 import genesis_prime/game/connection/state.{type Session} as connection_state
 import genesis_prime/game/deadline_timer
 import genesis_prime/game/departures
-import genesis_prime/game/experience
 import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/quest_advance
 import genesis_prime/game/quest_log
 import genesis_prime/game/target_group
 import genesis_prime/game/world_entry
+import genesis_prime/shared/kill_credit
 import genesis_prime/step.{
   type ConnectionEffect, type Effect, type Now, OwnEffect, StartTimer,
 }
@@ -31,7 +31,7 @@ import gleam/set
 pub fn killed(
   session session: Session,
   now now: Now,
-  credit credit: experience.Credit,
+  credit credit: kill_credit.Credit,
 ) -> #(Session, List(Effect(ConnectionEffect(Request)))) {
   let assert Ok(row) =
     creature2.get(tables: session.settings.tables, id: credit.creature_id)

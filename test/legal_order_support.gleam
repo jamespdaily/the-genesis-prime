@@ -27,6 +27,7 @@ import game_connection_support
 import genesis_prime/client_connection.{type Answer, type Message}
 import genesis_prime/connection/frame.{type Frame, Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/map/message as map_message
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_create_player
 import genesis_prime/message/unit_death_state
@@ -42,7 +43,6 @@ import genesis_prime/step.{
 import genesis_prime/world_map/creature
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/bool
@@ -78,7 +78,7 @@ pub type Sender {
 
 /// An input of one of the processes.
 pub type Input {
-  ToMap(event: Event(ServiceEvent(map.Message)))
+  ToMap(event: Event(ServiceEvent(map_message.Message)))
   ToCreature(event: Event(ServiceEvent(creature.Message)))
   ToNextCreature(event: Event(ServiceEvent(creature.Message)))
   ToViewer(event: Event(ConnectionEvent(Message, Answer)))
@@ -437,15 +437,15 @@ pub fn deliver(scene scene: Scene, mail mail: Mail) -> Scene {
 /// allow.
 fn news_outside_the_relation(
   scene scene: Scene,
-  event event: Event(ServiceEvent(map.Message)),
-  taken taken: step.ServiceStep(map.Outgoing),
+  event event: Event(ServiceEvent(map_message.Message)),
+  taken taken: step.ServiceStep(map_message.Outgoing),
 ) -> Option(Violation) {
   let relays_news =
     list.any(support.effects_of(taken), fn(effect) {
       case effect {
         OwnEffect(Send(
           to: Connection(ConnectionId(1)),
-          message: map.Relayed(delivered: relay.News(..), ..),
+          message: map_message.Relayed(delivered: map_message.News(..), ..),
         )) -> True
         OwnEffect(_)
         | step.Watch(..)
@@ -457,10 +457,10 @@ fn news_outside_the_relation(
   let held =
     map_spawn_support.relation_of(state: scene.map, spawn: 1, connection: 1)
   let allowed = case event, held {
-    OwnEvent(Told(message: map.Broadcast(..))),
+    OwnEvent(Told(message: map_message.Broadcast(..))),
       Some(map.Relation(state: map.Relaying, ..))
     -> True
-    OwnEvent(Told(message: map.Snapshot(generation:, ..))),
+    OwnEvent(Told(message: map_message.Snapshot(generation:, ..))),
       Some(map.Relation(
         generation: held_generation,
         state: map.AwaitingSnapshot,
@@ -494,14 +494,16 @@ fn reaching_a_running_creature(
 
 /// What a map's step sends to the creatures and to the viewer's connection, in order, as
 /// mail.
-pub fn mail_of_the_map(taken: step.ServiceStep(map.Outgoing)) -> List(Mail) {
+pub fn mail_of_the_map(
+  taken: step.ServiceStep(map_message.Outgoing),
+) -> List(Mail) {
   mail_of_the_map_for(taken:, next_life: None)
 }
 
 /// The same when a creature of life `next_life` runs after the first: what the map sends
 /// to the creature of that life is the next creature's mail.
 pub fn mail_of_the_map_for(
-  taken taken: step.ServiceStep(map.Outgoing),
+  taken taken: step.ServiceStep(map_message.Outgoing),
   next_life next_life: Option(Int),
 ) -> List(Mail) {
   list.filter_map(support.effects_of(taken), fn(effect) {
@@ -598,7 +600,7 @@ fn creature_ended(life life: Int) -> Mail {
 
 /// The creature the step starts, if it starts one.
 fn started_by(
-  taken taken: step.ServiceStep(map.Outgoing),
+  taken taken: step.ServiceStep(map_message.Outgoing),
 ) -> Result(step.CreatureStart, Nil) {
   list.find_map(support.effects_of(taken), fn(effect) {
     case effect {
@@ -640,52 +642,56 @@ fn creature_message_name(message: creature.Message) -> String {
   }
 }
 
-fn map_message_name(message: map.Message) -> String {
+fn map_message_name(message: map_message.Message) -> String {
   case message {
-    map.Snapshot(by: ConnectionId(number), ..) ->
+    map_message.Snapshot(by: ConnectionId(number), ..) ->
       "Snapshot for " <> int.to_string(number)
-    map.Broadcast(..) -> "Broadcast"
-    map.Relay(payload: relay.Fight(told: strike_tell.Threatened(..)), ..) ->
-      "Relay Threatened"
-    map.Relay(payload: relay.Fight(told: strike_tell.Released(..)), ..) ->
-      "Relay Released"
-    map.Relay(..) -> "Relay"
-    map.Expired(..) -> "Expired"
-    map.Join(..)
-    | map.Leave(..)
-    | map.Moved(..)
-    | map.Ready(..)
-    | map.StealthChanged(..)
-    | map.LifeChanged(..)
-    | map.VisibilityChanged(..)
-    | map.Released(..)
-    | map.Summon(..)
-    | map.TellCreature(..)
-    | map.PlayerSnapshot(..)
-    | map.PlayerBroadcast(..)
-    | map.TellLanding(..)
-    | map.Say(..) -> "another tell"
+    map_message.Broadcast(..) -> "Broadcast"
+    map_message.Relay(
+      payload: map_message.Fight(told: strike_tell.Threatened(..)),
+      ..,
+    ) -> "Relay Threatened"
+    map_message.Relay(
+      payload: map_message.Fight(told: strike_tell.Released(..)),
+      ..,
+    ) -> "Relay Released"
+    map_message.Relay(..) -> "Relay"
+    map_message.Expired(..) -> "Expired"
+    map_message.Join(..)
+    | map_message.Leave(..)
+    | map_message.Moved(..)
+    | map_message.Ready(..)
+    | map_message.StealthChanged(..)
+    | map_message.LifeChanged(..)
+    | map_message.VisibilityChanged(..)
+    | map_message.Released(..)
+    | map_message.Summon(..)
+    | map_message.TellCreature(..)
+    | map_message.PlayerSnapshot(..)
+    | map_message.PlayerBroadcast(..)
+    | map_message.TellLanding(..)
+    | map_message.Say(..) -> "another tell"
   }
 }
 
-fn map_outgoing_name(message: map.Outgoing) -> String {
+fn map_outgoing_name(message: map_message.Outgoing) -> String {
   case message {
-    map.Relayed(..) -> "Relayed"
-    map.Noticed(notice: map.UnitUnseen(..), ..) -> "Unseen"
-    map.Noticed(..) -> "a notice"
-    map.Joined(..)
-    | map.NotJoined(..)
-    | map.Summoned(..)
-    | map.NotSummoned(..)
-    | map.Left
-    | map.Seen(..)
-    | map.Unseen(..)
-    | map.Retire
-    | map.Approached(..)
-    | map.Withdrew(..)
-    | map.PlayerDied(..)
-    | map.CasterGone(..)
-    | map.ToldCreature(..) -> "another send"
+    map_message.Relayed(..) -> "Relayed"
+    map_message.Noticed(notice: map_message.UnitUnseen(..), ..) -> "Unseen"
+    map_message.Noticed(..) -> "a notice"
+    map_message.Joined(..)
+    | map_message.NotJoined(..)
+    | map_message.Summoned(..)
+    | map_message.NotSummoned(..)
+    | map_message.Left
+    | map_message.Seen(..)
+    | map_message.Unseen(..)
+    | map_message.Retire
+    | map_message.Approached(..)
+    | map_message.Withdrew(..)
+    | map_message.PlayerDied(..)
+    | map_message.CasterGone(..)
+    | map_message.ToldCreature(..) -> "another send"
   }
 }
 

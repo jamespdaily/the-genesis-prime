@@ -15,13 +15,13 @@
 import crowd_control_support
 import driven_time
 import genesis_prime/client_connection.{type Message, ForStay, SentByPeer}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/unit_create_creature.{type UnitCreateCreature}
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_casts
 import genesis_prime/shared/unit_news.{
   CrowdControlEnded, PeerNews, PropertiesChanged,
 }
-import genesis_prime/world_map/relay
 import gleam/dict
 import gleam/dynamic/decode
 import gleam/erlang/process.{type Subject}
@@ -65,7 +65,7 @@ fn heard(
   )
 }
 
-fn told(watched watched: Watched, payload payload: relay.Inbound) -> Nil {
+fn told(watched watched: Watched, payload payload: map_message.Inbound) -> Nil {
   world_watch_support.told_creature(
     run: watched.run,
     unit_id: watched.beast.unit_id,
@@ -76,25 +76,25 @@ fn told(watched watched: Watched, payload payload: relay.Inbound) -> Nil {
 
 /// The strike of connection 1 on the beast that lands a stun: a state the creature holds
 /// for that connection's cast.
-fn stunning_strike(watched watched: Watched) -> relay.Inbound {
+fn stunning_strike(watched watched: Watched) -> map_message.Inbound {
   let tell = inbound_support.strike(unit_id: watched.beast.unit_id)
-  relay.Strike(
+  map_message.Strike(
     tell: strike_tell.Strike(..tell, controls: [
       crowd_control_support.stagger_stun(instance_id: 28_673),
     ]),
   )
 }
 
-fn a_modifier() -> relay.Inbound {
-  relay.ModifierStarts(
+fn a_modifier() -> map_message.Inbound {
+  map_message.ModifierStarts(
     source: inbound_support.source(),
     modifier: inbound_support.modifier(),
   )
 }
 
 /// The view of cast 1 as the caster's current cast, which a creature's 0x262 lists.
-fn a_view() -> relay.Inbound {
-  relay.CastViewSet(
+fn a_view() -> map_message.Inbound {
+  map_message.CastViewSet(
     view: unit_casts.CastView(..inbound_support.view(), current: True),
   )
 }
@@ -170,7 +170,10 @@ pub fn a_normal_leave_then_the_connections_death_holds_no_source_or_view_of_it_a
   holding(watched:)
   // The camp's step ends the source through the map first; the view and the stun are
   // not ended by the connection.
-  told(watched:, payload: relay.ModifierEnds(source: inbound_support.source()))
+  told(
+    watched:,
+    payload: map_message.ModifierEnds(source: inbound_support.source()),
+  )
   world_watch_support.left(run: watched.run, connection: 1)
   assert heard(watched:, id: 2, received: watched.viewer) == [PropertiesWritten]
     as "the connection's own end wrote the property restored once; the leave writes nothing more and the stun stands"

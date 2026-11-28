@@ -26,6 +26,7 @@
 import character_tables
 import connection_rule_support as support
 import exception
+import genesis_prime/map/message.{Join, Joined, Leave, Left} as map_message
 import genesis_prime/message/item_visual.{type ItemVisual, ItemVisual}
 import genesis_prime/shared/player_unit
 import genesis_prime/step.{
@@ -36,7 +37,7 @@ import genesis_prime/step.{
 import genesis_prime/store.{type Character, Character}
 import genesis_prime/table/id.{ClassId, RaceId}
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map.{type State, Join, Joined, Leave, Left}
+import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/map_id.{MapId}
 import gleam/dynamic/decode
 import gleam/erlang/atom
@@ -71,7 +72,7 @@ fn answer_of(
   character character: Character,
   unit_id unit_id: Int,
   body body: List(ItemVisual),
-) -> map.Outgoing {
+) -> map_message.Outgoing {
   let unit =
     unit_support.novice_unit(
       tables: character_tables.shared(),
@@ -90,8 +91,8 @@ fn answer_of(
 
 fn feed(
   state: State,
-  event: Event(ServiceEvent(map.Message)),
-) -> #(State, ServiceStep(map.Outgoing)) {
+  event: Event(ServiceEvent(map_message.Message)),
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   map.step(state, support.input(event))
 }
 
@@ -102,7 +103,7 @@ fn join_as(
   connection connection: Int,
   caller caller: Int,
   character character: Character,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state,
     OwnEvent(Asked(
@@ -125,7 +126,7 @@ fn join(
   state state: State,
   connection connection: Int,
   caller caller: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   join_as(
     state:,
     connection:,
@@ -137,8 +138,8 @@ fn join(
 /// The effects that are not sends to a connection: a join of two players at
 /// one place also sends each a `Seen` of the other.
 fn without_sends(
-  effects: List(step.Effect(step.ServiceEffect(map.Outgoing))),
-) -> List(step.Effect(step.ServiceEffect(map.Outgoing))) {
+  effects: List(step.Effect(step.ServiceEffect(map_message.Outgoing))),
+) -> List(step.Effect(step.ServiceEffect(map_message.Outgoing))) {
   list.filter(effects, fn(effect) {
     case effect {
       OwnEffect(step.Send(..)) -> False
@@ -155,7 +156,7 @@ fn without_sends(
 }
 
 /// The unit id a join was answered with.
-fn unit_of(taken: ServiceStep(map.Outgoing), caller: Int) -> Int {
+fn unit_of(taken: ServiceStep(map_message.Outgoing), caller: Int) -> Int {
   let assert [#(CallerId(number), Joined(unit:, incarnation: given, ..))] =
     support.replies(taken)
     as "one reply answers the join"
@@ -374,7 +375,10 @@ pub fn a_character_whose_class_and_faction_have_no_novice_set_is_refused_and_tak
     == [
       #(
         CallerId(1),
-        map.NotJoined(reason: map.NoLoadout(class_id: 99, faction_id: 166)),
+        map_message.NotJoined(reason: map_message.NoLoadout(
+          class_id: 99,
+          faction_id: 166,
+        )),
       ),
     ]
     as "no Novice set holds class 99, so the join is refused: the map does not crash on one character's data, which would end every player's connection"
@@ -408,7 +412,7 @@ fn leave(
   state state: State,
   connection connection: Int,
   caller caller: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state,
     OwnEvent(Asked(
@@ -428,9 +432,9 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
       Unwatch(WatchId(1)),
       OwnEffect(step.Send(
         Connection(ConnectionId(8)),
-        map.Noticed(
+        map_message.Noticed(
           stay: map_support.stay(count: 1),
-          notice: map.PlayerUnseen(
+          notice: map_message.PlayerUnseen(
             unit_id: unit_of(first, 1),
             generation: generation.first(),
           ),
@@ -438,9 +442,9 @@ pub fn a_leave_removes_the_player_and_its_unit_drops_its_watch_and_is_answered_l
       )),
       OwnEffect(step.Send(
         Connection(ConnectionId(8)),
-        map.Noticed(
+        map_message.Noticed(
           stay: map_support.stay(count: 1),
-          notice: map.UnseenBy(
+          notice: map_message.UnseenBy(
             by: ConnectionId(7),
             generation: generation.after(generation: generation.first()),
           ),

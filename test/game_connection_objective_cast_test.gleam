@@ -30,6 +30,7 @@ import game_connection_support as connection_support
 import genesis_prime/client_connection.{type Answer, type Message}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/connection as game_connection
+import genesis_prime/map/message.{ObjectsUnseen}
 import genesis_prime/message/cast_objective_ability.{CastObjectiveAbility}
 import genesis_prime/message/cast_result
 import genesis_prime/message/crowd_control_state
@@ -37,12 +38,11 @@ import genesis_prime/message/item_place.{ItemPlace}
 import genesis_prime/message/quest_abandon.{QuestAbandon}
 import genesis_prime/message/quest_accept.{QuestAccept}
 import genesis_prime/message/spell_cast_refused
+import genesis_prime/shared/creature_combat.{Hostile}
 import genesis_prime/shared/unit_news
 import genesis_prime/step.{type ConnectionEvent, type Event, OwnEvent}
 import genesis_prime/store.{Character}
 import genesis_prime/table/loader/store as store_tables
-import genesis_prime/world_map/creature_life.{Hostile}
-import genesis_prime/world_map/map.{ObjectsUnseen}
 import gleam/list
 import message_support
 import owned_test

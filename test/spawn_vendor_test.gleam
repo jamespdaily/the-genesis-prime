@@ -24,6 +24,7 @@ import spawn_support
 import unitest
 
 pub fn a_spawn_is_a_vendor_exactly_when_its_creature_id_is_in_the_vendors_creature_set_test() -> Nil {
+  // deadline: 19 s measured: the world database is imported and every spawn row is checked once
   use <- owned_test.run(600_000)
   use <- unitest.tag("world_data")
   use <- unitest.guard(client_tables.present())

@@ -5,6 +5,7 @@
 
 import connection_rule_support as support
 import genesis_prime/game/start_place.{type Place}
+import genesis_prime/map/message.{Join, Leave, Moved} as map_message
 import genesis_prime/shared/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/step.{
   type Event, type ServiceEvent, type ServiceStep, Asked, CallerId,
@@ -14,9 +15,8 @@ import genesis_prime/step.{
 }
 import genesis_prime/table/id.{type PrerequisiteId, Spell4Id}
 import genesis_prime/world_map/generation.{type Generation}
-import genesis_prime/world_map/map.{type State, Join, Leave, Moved}
+import genesis_prime/world_map/map.{type State}
 import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/static_object
@@ -58,13 +58,15 @@ pub fn standing(x x: Float, y y: Float) -> Place {
 pub fn feed(
   state state: State,
   at_ms at_ms: Int,
-  event event: Event(ServiceEvent(map.Message)),
-) -> #(State, ServiceStep(map.Outgoing)) {
+  event event: Event(ServiceEvent(map_message.Message)),
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   map.step(state, support.input_at_ms(ms: at_ms, event:))
 }
 
 /// A map with a spawn at each of these x positions, numbered from 1, started.
-pub fn started(at xs: List(Float)) -> #(State, ServiceStep(map.Outgoing)) {
+pub fn started(
+  at xs: List(Float),
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   started_with(at: xs, kinds: default_kinds())
 }
 
@@ -87,7 +89,7 @@ pub fn default_kinds() -> Kinds {
 pub fn started_with(
   at xs: List(Float),
   kinds kinds: Kinds,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   let state =
     map_support.standing_with(
       incarnation: 1,
@@ -113,7 +115,7 @@ pub fn join(
   at_ms at_ms: Int,
   connection connection: Int,
   x x: Float,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   join_as(state:, at_ms:, connection:, x:, alive: True)
 }
 
@@ -125,7 +127,7 @@ pub fn join_as(
   connection connection: Int,
   x x: Float,
   alive alive: Bool,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   join_hiding(state:, at_ms:, connection:, x:, alive:, hidden: set.new())
 }
 
@@ -138,7 +140,7 @@ pub fn join_hiding(
   x x: Float,
   alive alive: Bool,
   hidden hidden: Set(PrerequisiteId),
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   join_in_stay(state:, at_ms:, connection:, stay_count: 1, x:, alive:, hidden:)
 }
 
@@ -152,7 +154,7 @@ pub fn join_in_stay(
   x x: Float,
   alive alive: Bool,
   hidden hidden: Set(PrerequisiteId),
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
@@ -177,12 +179,12 @@ pub fn visibility_changed(
   at_ms at_ms: Int,
   connection connection: Int,
   hidden hidden: Set(PrerequisiteId),
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
     event: OwnEvent(
-      Told(message: map.VisibilityChanged(
+      Told(message: map_message.VisibilityChanged(
         connection: ConnectionId(connection),
         hidden:,
       )),
@@ -196,7 +198,7 @@ pub fn move(
   at_ms at_ms: Int,
   connection connection: Int,
   x x: Float,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
@@ -215,7 +217,7 @@ pub fn leave(
   state state: State,
   at_ms at_ms: Int,
   connection connection: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
@@ -230,7 +232,7 @@ pub fn leave(
 pub fn sweep(
   state state: State,
   at_ms at_ms: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
@@ -244,8 +246,12 @@ pub fn released(
   state state: State,
   at_ms at_ms: Int,
   unit_id unit_id: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
-  feed(state:, at_ms:, event: OwnEvent(Told(message: map.Released(unit_id:))))
+) -> #(State, ServiceStep(map_message.Outgoing)) {
+  feed(
+    state:,
+    at_ms:,
+    event: OwnEvent(Told(message: map_message.Released(unit_id:))),
+  )
 }
 
 /// The unit id and life of the creature of the spawn, in any state that runs one.
@@ -293,7 +299,7 @@ pub fn generation_of(
 /// The creatures a step starts, each with the watch it is to be under, in the
 /// order named.
 pub fn starts(
-  taken: ServiceStep(map.Outgoing),
+  taken: ServiceStep(map_message.Outgoing),
 ) -> List(#(step.WatchId, step.CreatureStart)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
@@ -319,7 +325,7 @@ pub fn first_viewers(
 }
 
 /// The timers a step starts, each with its id's number and its delay.
-pub fn timers(taken: ServiceStep(map.Outgoing)) -> List(#(Int, Int)) {
+pub fn timers(taken: ServiceStep(map_message.Outgoing)) -> List(#(Int, Int)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(StartServiceTimer(timer: step.TimerId(number), after_ms:)) ->
@@ -338,8 +344,8 @@ pub fn timers(taken: ServiceStep(map.Outgoing)) -> List(#(Int, Int)) {
 
 /// What the step sends, to whom, in order.
 pub fn sends(
-  taken: ServiceStep(map.Outgoing),
-) -> List(#(step.Address, map.Outgoing)) {
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(#(step.Address, map_message.Outgoing)) {
   list.filter_map(support.effects_of(taken), fn(effect) {
     case effect {
       OwnEffect(Send(to:, message:)) -> Ok(#(to, message))
@@ -358,7 +364,7 @@ pub fn sends(
 /// What the step sends to creatures, by the creature's unit id, its life and what it says
 /// (`Watched by 1`), in the order sent.
 pub fn creatures_told(
-  taken: ServiceStep(map.Outgoing),
+  taken: ServiceStep(map_message.Outgoing),
 ) -> List(#(Int, Int, String)) {
   list.filter_map(sends(taken), fn(sent) {
     case sent.0 {
@@ -378,14 +384,16 @@ pub fn creatures_told(
 /// What the step sends to creatures, by the creature's unit id and what it says
 /// (`Watched by 1`), in the order sent.
 pub fn creature_sends(
-  taken: ServiceStep(map.Outgoing),
+  taken: ServiceStep(map_message.Outgoing),
 ) -> List(#(Int, String)) {
   list.map(creatures_told(taken), fn(sent) { #(sent.0, sent.2) })
 }
 
 /// What the step tells creatures of the rings, by the creature's unit id and what
 /// it says (`Approached by 1`, `Withdrew by 1`), in the order sent.
-pub fn ring_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
+pub fn ring_sends(
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(#(Int, String)) {
   creature_sends(taken)
   |> list.filter(fn(sent) {
     case sent.1 {
@@ -398,7 +406,7 @@ pub fn ring_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
 /// What the step tells creatures of the rings and of a death, by the creature's unit id
 /// and what it says (`Approached by 1`, `PlayerDied by 1`), in the order sent.
 pub fn ring_and_death_sends(
-  taken: ServiceStep(map.Outgoing),
+  taken: ServiceStep(map_message.Outgoing),
 ) -> List(#(Int, String)) {
   creature_sends(taken)
   |> list.filter(fn(sent) {
@@ -412,7 +420,9 @@ pub fn ring_and_death_sends(
 
 /// What the step tells creatures of a death, by the creature's unit id and what it
 /// says (`PlayerDied by 1`), in the order sent.
-pub fn death_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
+pub fn death_sends(
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(#(Int, String)) {
   creature_sends(taken)
   |> list.filter(fn(sent) {
     case sent.1 {
@@ -424,19 +434,23 @@ pub fn death_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
 
 /// What the step sends to players' connections, by the connection's number and
 /// what it says, in connection order.
-pub fn player_sends(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
+pub fn player_sends(
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(#(Int, String)) {
   support.sends(taken)
   |> list.map(fn(sent) { #(sent.0, said(sent.1)) })
   |> list.sort(fn(first, second) { int.compare(first.0, second.0) })
 }
 
-pub fn said(message: map.Outgoing) -> String {
+pub fn said(message: map_message.Outgoing) -> String {
   case message {
-    map.Noticed(notice: map.SeenBy(by: ConnectionId(number), ..), ..) ->
-      "Watched by " <> int.to_string(number)
-    map.Noticed(notice: map.Gone(unit_id:), ..) ->
+    map_message.Noticed(
+      notice: map_message.SeenBy(by: ConnectionId(number), ..),
+      ..,
+    ) -> "Watched by " <> int.to_string(number)
+    map_message.Noticed(notice: map_message.Gone(unit_id:), ..) ->
       "Gone " <> int.to_string(unit_id)
-    map.Noticed(notice: map.ObjectsSeen(units:), ..) ->
+    map_message.Noticed(notice: map_message.ObjectsSeen(units:), ..) ->
       "Objects seen "
       <> string.join(
         list.map(units, fn(unit) {
@@ -444,35 +458,37 @@ pub fn said(message: map.Outgoing) -> String {
         }),
         " ",
       )
-    map.Noticed(notice: map.ObjectsUnseen(unit_ids:), ..) ->
+    map_message.Noticed(notice: map_message.ObjectsUnseen(unit_ids:), ..) ->
       "Objects unseen " <> string.join(list.map(unit_ids, int.to_string), " ")
-    map.Noticed(notice: map.UnseenBy(by: ConnectionId(number), ..), ..) ->
-      "Unwatched by " <> int.to_string(number)
-    map.Seen(by: ConnectionId(number), ..) ->
+    map_message.Noticed(
+      notice: map_message.UnseenBy(by: ConnectionId(number), ..),
+      ..,
+    ) -> "Unwatched by " <> int.to_string(number)
+    map_message.Seen(by: ConnectionId(number), ..) ->
       "Seen by " <> int.to_string(number)
-    map.Unseen(by: ConnectionId(number), ..) ->
+    map_message.Unseen(by: ConnectionId(number), ..) ->
       "Unseen by " <> int.to_string(number)
-    map.Noticed(notice: map.UnitUnseen(unit_id:, ..), ..) ->
+    map_message.Noticed(notice: map_message.UnitUnseen(unit_id:, ..), ..) ->
       "Creature unseen " <> int.to_string(unit_id)
-    map.Noticed(notice: map.PlayerUnseen(unit_id:, ..), ..) ->
+    map_message.Noticed(notice: map_message.PlayerUnseen(unit_id:, ..), ..) ->
       "Player unseen " <> int.to_string(unit_id)
-    map.Relayed(..) -> "Relayed"
-    map.Retire -> "Retire"
-    map.Approached(member: step.RingMember(by: ConnectionId(number), ..)) ->
+    map_message.Relayed(..) -> "Relayed"
+    map_message.Retire -> "Retire"
+    map_message.Approached(member: step.RingMember(by: ConnectionId(number), ..)) ->
       "Approached by " <> int.to_string(number)
-    map.Withdrew(by: ConnectionId(number)) ->
+    map_message.Withdrew(by: ConnectionId(number)) ->
       "Withdrew by " <> int.to_string(number)
-    map.PlayerDied(by: ConnectionId(number)) ->
+    map_message.PlayerDied(by: ConnectionId(number)) ->
       "PlayerDied by " <> int.to_string(number)
-    map.CasterGone(by: ConnectionId(number)) ->
+    map_message.CasterGone(by: ConnectionId(number)) ->
       "CasterGone by " <> int.to_string(number)
-    map.ToldCreature(by: ConnectionId(number), payload:, ..) ->
+    map_message.ToldCreature(by: ConnectionId(number), payload:, ..) ->
       "Told " <> inbound_name(payload) <> " by " <> int.to_string(number)
-    map.Joined(..)
-    | map.NotJoined(..)
-    | map.Summoned(..)
-    | map.NotSummoned(..)
-    | map.Left -> "an answer"
+    map_message.Joined(..)
+    | map_message.NotJoined(..)
+    | map_message.Summoned(..)
+    | map_message.NotSummoned(..)
+    | map_message.Left -> "an answer"
   }
 }
 
@@ -483,7 +499,7 @@ pub fn move_to(
   at_ms at_ms: Int,
   connection connection: Int,
   place place: Place,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
@@ -502,12 +518,15 @@ pub fn ready(
   state state: State,
   at_ms at_ms: Int,
   connection connection: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
     event: OwnEvent(
-      Told(message: map.Ready(connection: ConnectionId(connection), seq: 0)),
+      Told(message: map_message.Ready(
+        connection: ConnectionId(connection),
+        seq: 0,
+      )),
     ),
   )
 }
@@ -519,12 +538,12 @@ pub fn stealth(
   at_ms at_ms: Int,
   connection connection: Int,
   stealthed stealthed: Bool,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
     event: OwnEvent(
-      Told(message: map.StealthChanged(
+      Told(message: map_message.StealthChanged(
         connection: ConnectionId(connection),
         stealthed:,
       )),
@@ -539,12 +558,12 @@ pub fn life(
   at_ms at_ms: Int,
   connection connection: Int,
   alive alive: Bool,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
     event: OwnEvent(
-      Told(message: map.LifeChanged(
+      Told(message: map_message.LifeChanged(
         connection: ConnectionId(connection),
         alive:,
       )),
@@ -560,7 +579,7 @@ pub fn summon(
   caller caller: Int,
   connection connection: Int,
   creature_id creature_id: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   summon_at_level(
     state:,
     at_ms:,
@@ -579,13 +598,13 @@ pub fn summon_at_level(
   connection connection: Int,
   creature_id creature_id: Int,
   level level: Option(Int),
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
     event: OwnEvent(Asked(
       caller: CallerId(caller),
-      message: map.Summon(
+      message: map_message.Summon(
         connection: ConnectionId(connection),
         creature_id: id.Creature2Id(creature_id),
         level:,
@@ -601,7 +620,7 @@ pub fn start_settled(
   state state: State,
   at_ms at_ms: Int,
   spawn spawn: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
@@ -615,7 +634,7 @@ pub fn creature_ended(
   state state: State,
   at_ms at_ms: Int,
   watch watch: step.WatchId,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(state:, at_ms:, event: step.WatchEnded(watch:))
 }
 
@@ -626,7 +645,7 @@ pub fn creature_not_started(
   at_ms at_ms: Int,
   watch watch: step.WatchId,
   reason reason: String,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
@@ -641,11 +660,11 @@ pub fn expired(
   at_ms at_ms: Int,
   unit_id unit_id: Int,
   life life: Int,
-) -> #(State, ServiceStep(map.Outgoing)) {
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
-    event: OwnEvent(Told(message: map.Expired(unit_id:, life:))),
+    event: OwnEvent(Told(message: map_message.Expired(unit_id:, life:))),
   )
 }
 
@@ -660,29 +679,31 @@ pub fn ring_of(start start: step.CreatureStart) -> List(Int) {
 
 /// What the step tells creatures, by the life of the creature told and what it says
 /// (`Approached by 1`), in the order sent.
-pub fn lives_told(taken: ServiceStep(map.Outgoing)) -> List(#(Int, String)) {
+pub fn lives_told(
+  taken: ServiceStep(map_message.Outgoing),
+) -> List(#(Int, String)) {
   list.map(creatures_told(taken), fn(sent) { #(sent.1, sent.2) })
 }
 
 /// How many relays to players the step sends.
-pub fn relays_sent(taken: ServiceStep(map.Outgoing)) -> Int {
+pub fn relays_sent(taken: ServiceStep(map_message.Outgoing)) -> Int {
   list.count(player_sends(taken), fn(sent) { sent.1 == "Relayed" })
 }
 
 /// The name of a player's tell to a creature, as `said` writes it (`Told Strike by 1`).
-pub fn inbound_name(payload: relay.Inbound) -> String {
+pub fn inbound_name(payload: map_message.Inbound) -> String {
   case payload {
-    relay.Strike(..) -> "Strike"
-    relay.TargetMoved(..) -> "TargetMoved"
-    relay.StrikeAnswered(..) -> "StrikeAnswered"
-    relay.ModifierStarts(..) -> "ModifierStarts"
-    relay.ModifierEnds(..) -> "ModifierEnds"
-    relay.Thrown(..) -> "Thrown"
-    relay.Despawn(..) -> "Despawn"
-    relay.UnitStates(..) -> "UnitStates"
-    relay.CastViewSet(..) -> "CastViewSet"
-    relay.CastViewEnds(..) -> "CastViewEnds"
-    relay.ControlsEnd(..) -> "ControlsEnd"
+    map_message.Strike(..) -> "Strike"
+    map_message.TargetMoved(..) -> "TargetMoved"
+    map_message.StrikeAnswered(..) -> "StrikeAnswered"
+    map_message.ModifierStarts(..) -> "ModifierStarts"
+    map_message.ModifierEnds(..) -> "ModifierEnds"
+    map_message.Thrown(..) -> "Thrown"
+    map_message.Despawn(..) -> "Despawn"
+    map_message.UnitStates(..) -> "UnitStates"
+    map_message.CastViewSet(..) -> "CastViewSet"
+    map_message.CastViewEnds(..) -> "CastViewEnds"
+    map_message.ControlsEnd(..) -> "ControlsEnd"
   }
 }
 
@@ -695,13 +716,13 @@ pub fn tell_creature(
   stay_count stay_count: Int,
   unit_id unit_id: Int,
   life life: Int,
-  payload payload: relay.Inbound,
-) -> #(State, ServiceStep(map.Outgoing)) {
+  payload payload: map_message.Inbound,
+) -> #(State, ServiceStep(map_message.Outgoing)) {
   feed(
     state:,
     at_ms:,
     event: OwnEvent(
-      Told(message: map.TellCreature(
+      Told(message: map_message.TellCreature(
         from: ConnectionId(from),
         stay: map_support.stay(count: stay_count),
         unit_id:,

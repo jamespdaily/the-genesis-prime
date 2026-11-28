@@ -33,6 +33,7 @@ import genesis_prime/message/combat_result
 import genesis_prime/message/crowd_control_state
 import genesis_prime/shared/area.{Point, Pose}
 import genesis_prime/shared/class_resource.{Resource}
+import genesis_prime/shared/creature_combat.{Attackable, Hostile}
 import genesis_prime/shared/crowd_control
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
@@ -50,7 +51,6 @@ import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties
 import genesis_prime/step.{ConnectionId, Now}
 import genesis_prime/table/id.{Creature2Id, Spell4EffectsId, Spell4Id}
-import genesis_prime/world_map/creature_life.{Attackable, Hostile}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import gleam/dict
 import gleam/int

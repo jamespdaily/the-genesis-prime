@@ -57,6 +57,7 @@ import genesis_prime/message/unit_property.{type UnitProperty}
 import genesis_prime/shared/area.{
   type Candidate, type Point, type Pose, Candidate,
 }
+import genesis_prime/shared/creature_combat.{type Attackable, type Hostile}
 import genesis_prime/shared/creature_path.{type Path}
 import genesis_prime/shared/creature_turn.{type Face}
 import genesis_prime/shared/faction_level
@@ -66,7 +67,6 @@ import genesis_prime/shared/prerequisite.{
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{type Creature2Id, Faction2Id}
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/creature_life.{type Attackable, type Hostile}
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/dict.{type Dict}
@@ -134,7 +134,7 @@ pub type Shown {
     /// Which player factions the creature is Hostile to (the client's own
     /// disposition of the creature toward the player, `0x14045a950`).
     hostile_to: Hostile,
-    /// Whether the creature takes part in combat (`creature_life.Combat.fights`): an area
+    /// Whether the creature takes part in combat (`creature_combat.Combat.fights`): an area
     /// picks no creature that does not.
     fights: Bool,
     /// True from the creature's CombatState news that it entered combat until the one

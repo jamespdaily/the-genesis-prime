@@ -6,8 +6,8 @@
 
 import client_tables
 import genesis_prime/game/shown
+import genesis_prime/shared/creature_combat.{Hostile}
 import genesis_prime/table/faction2
-import genesis_prime/world_map/creature_life.{Hostile}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn
 import gleam/int
@@ -17,6 +17,7 @@ import owned_test
 import unitest
 
 pub fn the_map_checks_a_faction_as_shown_did_for_every_faction_id_of_the_tables_test() -> Nil {
+  // deadline: 4 s measured: the client's tables are read once for the run
   use <- owned_test.run(60_000)
   use <- unitest.guard(client_tables.present())
   let row_ids =

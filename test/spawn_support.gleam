@@ -22,6 +22,9 @@ import genesis_prime/content/zone_welcome as content_zone_welcome
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/vendor
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_combat.{
+  type Attack, Attack, Attackable, Combat, Hostile, Instant,
+}
 import genesis_prime/shared/creature_guard_spells
 import genesis_prime/shared/creature_kind.{type Kinds, Kind, Kinds}
 import genesis_prime/shared/creature_special
@@ -35,9 +38,6 @@ import genesis_prime/table/id.{type UnitProperty2Id, Creature2Id, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/terrain
 import genesis_prime/world_map/creature_faction
-import genesis_prime/world_map/creature_life.{
-  type Attack, Attack, Attackable, Combat, Hostile, Instant,
-}
 import genesis_prime/world_map/game_number.{type GameNumbers, GameNumbers}
 import genesis_prime/world_map/spawn.{type Row, type Spawn, Row, Spawn}
 import genesis_prime/world_map/spawn_id.{type SpawnId, LoadedSpawns, SpawnId}
@@ -260,7 +260,7 @@ pub fn beast_without_deflect_at(
 /// `Creature2.73464.mitigation`); and its attack (`beast_attack`), with the crowd-control
 /// masks the load reads for it (`loaded_beast`), so a test of what a held state refuses
 /// takes the client's rows and not a number made up here.
-pub fn beast_combat() -> creature_life.Combat {
+pub fn beast_combat() -> creature_combat.Combat {
   Combat(
     hit_radius: 3.0,
     attackable: Attackable(exile: True, dominion: True),
@@ -281,7 +281,7 @@ pub fn beast_combat() -> creature_life.Combat {
     attack: loaded_attack(),
     alternates: [],
     specials: [],
-    interrupt_armor: creature_life.NoArmor,
+    interrupt_armor: creature_combat.NoArmor,
     fights: True,
   )
 }
@@ -631,21 +631,21 @@ pub fn beast_striker() -> strike_tell.Striker {
 /// `attack` with its charge changed by `change`, whatever else the attack holds: `change`
 /// gets the charge and returns the charge to cast instead.
 pub fn attack_with_charged(
-  attack attack: creature_life.Attack,
-  change change: fn(creature_life.Cast) -> creature_life.Cast,
-) -> creature_life.Attack {
-  let assert creature_life.Charged(..) = attack.cast
+  attack attack: creature_combat.Attack,
+  change change: fn(creature_combat.Cast) -> creature_combat.Cast,
+) -> creature_combat.Attack {
+  let assert creature_combat.Charged(..) = attack.cast
     as "only a charged attack has a charge to change"
-  creature_life.Attack(..attack, cast: change(attack.cast))
+  creature_combat.Attack(..attack, cast: change(attack.cast))
 }
 
 /// `special` with its charge changed by `change` (`attack_with_charged`), whatever else the
 /// special holds.
 pub fn special_with_charged(
-  special special: creature_life.Special,
-  change change: fn(creature_life.Cast) -> creature_life.Cast,
-) -> creature_life.Special {
-  creature_life.Special(
+  special special: creature_combat.Special,
+  change change: fn(creature_combat.Cast) -> creature_combat.Cast,
+) -> creature_combat.Special {
+  creature_combat.Special(
     ..special,
     attack: attack_with_charged(attack: special.attack, change:),
   )
@@ -923,7 +923,7 @@ pub fn spawn_dealing(spawn spawn: Spawn, damage damage: Int) -> Spawn {
 }
 
 /// Earthen Roar as a creature's special, with the hold the delay row 131968 gives (`hold_ms`).
-pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
+pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_combat.Special {
   let roar_cone =
     area.InsideShapes(placements: [
       area.Placement(
@@ -933,8 +933,8 @@ pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
         turn_degrees: 0.0,
       ),
     ])
-  creature_life.Special(
-    attack: creature_life.Attack(
+  creature_combat.Special(
+    attack: creature_combat.Attack(
       spell4_id: Spell4Id(55_317),
       offence: Offence(
         blows: [
@@ -953,7 +953,7 @@ pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
       run_speed: 10.0,
       reach: 5.5,
       adds_target_radius: False,
-      cast: creature_life.Charged(
+      cast: creature_combat.Charged(
         cast_ms: 3000,
         area: area.Row(
           min_range: 0.0,
@@ -970,10 +970,10 @@ pub fn earthen_roar(hold_ms hold_ms: Int) -> creature_life.Special {
         ),
         aims_at_target: False,
         gos: [
-          creature_life.Go(at_ms: 2500, strike: option.None),
-          creature_life.Go(
+          creature_combat.Go(at_ms: 2500, strike: option.None),
+          creature_combat.Go(
             at_ms: 3000,
-            strike: option.Some(creature_life.GoStrike(
+            strike: option.Some(creature_combat.GoStrike(
               spell4_effects_ids: [131_967],
               inside: roar_cone,
             )),
@@ -1007,9 +1007,9 @@ pub fn ice_breath_cone(turn_degrees turn_degrees: Float) -> area.Inside {
 /// own row (7956 turned +10 degrees, 7957 turned -10) and the damage row 132757, whose
 /// phaseFlags 6 name them; the first and last are the cast bar's. The 10 000 ms cooldown is a
 /// guess, as Earthen Roar's.
-pub fn ice_breath(hold_ms hold_ms: Int) -> creature_life.Special {
-  creature_life.Special(
-    attack: creature_life.Attack(
+pub fn ice_breath(hold_ms hold_ms: Int) -> creature_combat.Special {
+  creature_combat.Special(
+    attack: creature_combat.Attack(
       spell4_id: Spell4Id(55_635),
       offence: Offence(
         blows: [
@@ -1028,7 +1028,7 @@ pub fn ice_breath(hold_ms hold_ms: Int) -> creature_life.Special {
       run_speed: 10.0,
       reach: 5.5,
       adds_target_radius: False,
-      cast: creature_life.Charged(
+      cast: creature_combat.Charged(
         cast_ms: 3800,
         area: area.Row(
           min_range: 0.0,
@@ -1058,22 +1058,22 @@ pub fn ice_breath(hold_ms hold_ms: Int) -> creature_life.Special {
         ),
         aims_at_target: False,
         gos: [
-          creature_life.Go(at_ms: 2600, strike: option.None),
-          creature_life.Go(
+          creature_combat.Go(at_ms: 2600, strike: option.None),
+          creature_combat.Go(
             at_ms: 3000,
-            strike: option.Some(creature_life.GoStrike(
+            strike: option.Some(creature_combat.GoStrike(
               spell4_effects_ids: [132_757],
               inside: ice_breath_cone(turn_degrees: 10.0),
             )),
           ),
-          creature_life.Go(
+          creature_combat.Go(
             at_ms: 3500,
-            strike: option.Some(creature_life.GoStrike(
+            strike: option.Some(creature_combat.GoStrike(
               spell4_effects_ids: [132_757],
               inside: ice_breath_cone(turn_degrees: -10.0),
             )),
           ),
-          creature_life.Go(at_ms: 3800, strike: option.None),
+          creature_combat.Go(at_ms: 3800, strike: option.None),
         ],
         hold_ms:,
       ),

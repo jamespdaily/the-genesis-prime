@@ -24,16 +24,17 @@ import genesis_prime/connection/cipher.{type Cipher}
 import genesis_prime/connection/encrypted_frame.{type Wrapper, ClientWrapper}
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/connection/network_message
-import genesis_prime/game/experience.{type Credit}
-import genesis_prime/game/held_changes.{type PlayerChange}
 import genesis_prime/game/move_stamp
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/hand_off
+import genesis_prime/map/message.{type Inbound, type Landing} as map_message
 import genesis_prime/message/bit_stream
 import genesis_prime/random.{type Random}
 import genesis_prime/shared/chat_tell.{
   type Said as ChatSaid, type Tell as ChatTell,
 }
+import genesis_prime/shared/kill_credit.{type Credit}
+import genesis_prime/shared/player_change.{type PlayerChange}
 import genesis_prime/shared/strike_tell.{
   type Answered, type Fight, type PlayerAnswered, type PlayerEvent,
   type PlayerStrike,
@@ -49,9 +50,7 @@ import genesis_prime/step.{
 import genesis_prime/store
 import genesis_prime/table/id.{type PrerequisiteId}
 import genesis_prime/world_map/generation.{type Generation}
-import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{type MapId}
-import genesis_prime/world_map/relay.{type Inbound, type Landing}
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/bit_array
 import gleam/bool
@@ -68,11 +67,11 @@ pub type Request {
   AskSessions(message: account_session.Message)
   /// Ask the map, which Maps starts when it is not running
   /// (genesis_prime/world_map/registry).
-  AskMap(map: MapId, message: map.Message)
+  AskMap(map: MapId, message: map_message.Message)
   /// Ask the run of the map with this incarnation, which Maps never starts: a
   /// map that is not running, or runs as another incarnation, is not running
   /// for this ask (genesis_prime/world_map/registry).
-  AskMapRun(map: MapId, incarnation: Int, message: map.Message)
+  AskMapRun(map: MapId, incarnation: Int, message: map_message.Message)
   /// What a `Tell` effect sends the run of a map (genesis_prime/step): that the
   /// player of `connection` moved to `place`, the connection's move `seq`
   /// (genesis_prime/world_map/map `Moved`), for the map to decide who sees whom
@@ -194,7 +193,7 @@ pub type Answer {
   FromStore(answer: store.Answer)
   FromHandOff(answer: hand_off.Answer)
   FromSessions(answer: account_session.Outgoing)
-  FromMap(answer: map.Outgoing)
+  FromMap(answer: map_message.Outgoing)
 }
 
 /// What another process sends a connection rule, by the process that sent
@@ -218,7 +217,7 @@ pub type StaySent {
   /// connection's player (`SeenBy`, `UnseenBy`), and a unit whose owner ended
   /// (`Gone`). A map's answers (`Joined`, `Left`) come as an ask's outcome,
   /// never as this.
-  SentByMap(notice: map.Notice)
+  SentByMap(notice: map_message.Notice)
   /// What the map relays to the connection of a player that sees a unit: news of the
   /// unit (genesis_prime/game/connection).
   SentByPeer(news: PeerNews)
@@ -850,28 +849,48 @@ pub fn open(
 
 /// The message a map takes a `Tell` effect's request as, or `Error(Nil)` for a request that is
 /// no tell of a map: an ask, or a tell to a connection.
-pub fn told_to_the_map(request request: Request) -> Result(map.Message, Nil) {
+pub fn told_to_the_map(
+  request request: Request,
+) -> Result(map_message.Message, Nil) {
   case request {
     TellMoved(connection:, place:, seq:) ->
-      Ok(map.Moved(connection:, place:, seq:))
-    TellReady(connection:, seq:) -> Ok(map.Ready(connection:, seq:))
+      Ok(map_message.Moved(connection:, place:, seq:))
+    TellReady(connection:, seq:) -> Ok(map_message.Ready(connection:, seq:))
     TellStealthChanged(connection:, stealthed:) ->
-      Ok(map.StealthChanged(connection:, stealthed:))
+      Ok(map_message.StealthChanged(connection:, stealthed:))
     TellVisibilityChanged(connection:, hidden:) ->
-      Ok(map.VisibilityChanged(connection:, hidden:))
+      Ok(map_message.VisibilityChanged(connection:, hidden:))
     TellLifeChanged(connection:, alive:) ->
-      Ok(map.LifeChanged(connection:, alive:))
-    TellReleased(unit_id:) -> Ok(map.Released(unit_id:))
+      Ok(map_message.LifeChanged(connection:, alive:))
+    TellReleased(unit_id:) -> Ok(map_message.Released(unit_id:))
     TellCreature(connection:, stay:, unit_id:, life:, payload:) ->
-      Ok(map.TellCreature(from: connection, stay:, unit_id:, life:, payload:))
+      Ok(map_message.TellCreature(
+        from: connection,
+        stay:,
+        unit_id:,
+        life:,
+        payload:,
+      ))
     TellBroadcast(connection:, stay:, news:) ->
-      Ok(map.PlayerBroadcast(from: connection, stay:, news:))
+      Ok(map_message.PlayerBroadcast(from: connection, stay:, news:))
     TellSnapshot(connection:, stay:, viewer:, generation:, burst:) ->
-      Ok(map.PlayerSnapshot(by: connection, stay:, viewer:, generation:, burst:))
+      Ok(map_message.PlayerSnapshot(
+        by: connection,
+        stay:,
+        viewer:,
+        generation:,
+        burst:,
+      ))
     TellLanding(connection:, stay:, to:, to_stay:, landing:) ->
-      Ok(map.TellLanding(from: connection, stay:, to:, to_stay:, landing:))
+      Ok(map_message.TellLanding(
+        from: connection,
+        stay:,
+        to:,
+        to_stay:,
+        landing:,
+      ))
     TellSay(connection:, stay:, said:) ->
-      Ok(map.Say(from: connection, stay:, said:))
+      Ok(map_message.Say(from: connection, stay:, said:))
     TellMove(..)
     | TellChat(..)
     | AskStore(..)
@@ -910,13 +929,13 @@ pub fn told_to_a_connection(request request: Request) -> Result(Message, Nil) {
 
 /// The tell a landing is delivered to the told player's connection as, when the map relays
 /// it (`Relayed(Landed)`).
-pub fn player_tell_of(landing landing: relay.Landing) -> PlayerTell {
+pub fn player_tell_of(landing landing: map_message.Landing) -> PlayerTell {
   case landing {
-    relay.HealStrike(strike:) -> Strike(strike:)
-    relay.HealAnswer(answered:) -> Answer(answered:)
-    relay.ChangeStart(change:)
-    | relay.ChangeEnd(change:)
-    | relay.CastWent(change:) -> Change(change:)
-    relay.AllyEvent(event:) -> Event(event:)
+    map_message.HealStrike(strike:) -> Strike(strike:)
+    map_message.HealAnswer(answered:) -> Answer(answered:)
+    map_message.ChangeStart(change:)
+    | map_message.ChangeEnd(change:)
+    | map_message.CastWent(change:) -> Change(change:)
+    map_message.AllyEvent(event:) -> Event(event:)
   }
 }

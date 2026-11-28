@@ -14,8 +14,9 @@
 import fixture_tables
 import game_connection_support as support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/game/heal_split.{Split}
+import genesis_prime/map/message as map_message
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts.{Split}
 import genesis_prime/shared/strike_tell.{
   HealLanded, HealsLanded, Key, PlayerAnswered,
 }
@@ -23,8 +24,6 @@ import genesis_prime/shared/unit_news.{type PeerNews, Appeared, PeerNews}
 import genesis_prime/step.{type ConnectionId, type ConnectionStep, ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId}
 import genesis_prime/world_map/generation.{type Generation}
-import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/stay.{type Stay}
 import gleam/int
 import gleam/list
@@ -59,7 +58,7 @@ fn seen_by(
 ) -> step.Event(
   step.ConnectionEvent(client_connection.Message, client_connection.Answer),
 ) {
-  support.sent_by_the_map(map.SeenBy(
+  support.sent_by_the_map(map_message.SeenBy(
     by: ConnectionId(viewer),
     stay: support.viewer_stay(viewer),
     unit_id: support.viewer_unit_id(viewer),
@@ -196,7 +195,7 @@ pub fn a_heals_answer_precedes_the_targets_own_news_in_the_maps_stream_test() ->
         stay: support.own_stay(),
         to: ConnectionId(3),
         to_stay: support.viewer_stay(3),
-        landing: relay.HealAnswer(answered:),
+        landing: map_message.HealAnswer(answered:),
       )),
       support.map_tell(client_connection.TellBroadcast(
         connection: own,

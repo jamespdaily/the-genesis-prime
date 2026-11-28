@@ -26,11 +26,11 @@
 ////   is 0.25 of 450 each 500 ms after 2500 ms (`UnitProperty2.176`): a tick adds 112.
 
 import cast_support
-import genesis_prime/game/heal_split.{Split}
 import genesis_prime/game/player_life.{
   type Effect, type Life, OwnHealth, OwnShield, ToClient, ToViewers,
 }
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts.{Split}
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_news
 import genesis_prime/shared/unit_properties.{type Properties}
@@ -530,7 +530,7 @@ type Told {
     life: Life,
     vital: effect_kind.Vital,
     amount: Int,
-    split: heal_split.Split,
+    split: heal_parts.Split,
   )
 }
 
@@ -598,7 +598,7 @@ type Taken {
     reason: String,
     life: Life,
     rows: List(#(effect_kind.Vital, Int)),
-    splits: List(heal_split.Split),
+    splits: List(heal_parts.Split),
     health: Int,
     shield: Int,
     news: List(Effect),

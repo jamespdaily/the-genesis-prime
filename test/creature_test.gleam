@@ -28,17 +28,19 @@ import creature_fight_test
 import creature_news_support
 import crowd_control_support
 import genesis_prime/game/cast/state as cast_state
-import genesis_prime/game/experience.{Credit}
 import genesis_prime/game/start_place
+import genesis_prime/map/message as map_message
 import genesis_prime/message/float32
 import genesis_prime/message/unit_create_cast.{
   type UnitCreateCast, UnitCreateCast,
 }
 import genesis_prime/message/unit_create_creature
 import genesis_prime/message/unit_property.{type UnitProperty, UnitProperty}
+import genesis_prime/shared/creature_combat
 import genesis_prime/shared/creature_kind.{Kind}
 import genesis_prime/shared/forced_move
 import genesis_prime/shared/hit.{Blow, Offence, Rolls, Worked}
+import genesis_prime/shared/kill_credit.{Credit}
 import genesis_prime/shared/strike_tell.{Answered, Key, Landed, Refused, Strike}
 import genesis_prime/shared/unit_casts.{
   type CastView, CastView, EndsAt, HeldEffect, ViewTarget,
@@ -59,12 +61,10 @@ import genesis_prime/table/id.{
   Creature2Id, Faction2Id, Spell4EffectsId, Spell4Id, UnitProperty2Id,
 }
 import genesis_prime/world_map/creature.{type State, Retire, Settings}
-import genesis_prime/world_map/creature_life
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation.{type Generation}
 import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn.{type Spawn, Spawn}
 import genesis_prime/world_map/spawn_id.{SpawnId}
 import genesis_prime/world_map/spawn_source
@@ -474,10 +474,10 @@ fn kinds_of(sent: List(#(Int, creature.Outgoing))) -> List(String) {
   list.map(sent, fn(one) {
     case one.1 {
       creature.Relay(
-        payload: relay.Struck(answered: Answered(outcome: Landed(..), ..)),
+        payload: map_message.Struck(answered: Answered(outcome: Landed(..), ..)),
         ..,
       ) -> "answer to " <> int.to_string(one.0)
-      creature.Relay(payload: relay.Struck(..), ..) ->
+      creature.Relay(payload: map_message.Struck(..), ..) ->
         "refusal to " <> int.to_string(one.0)
       creature.Broadcast(news: PeerNews(news: unit_news.Health(..), ..), ..) ->
         "health to " <> int.to_string(one.0)
@@ -487,10 +487,10 @@ fn kinds_of(sent: List(#(Int, creature.Outgoing))) -> List(String) {
         "removal to " <> int.to_string(one.0)
       creature.Broadcast(news: PeerNews(news: CreatureAppeared(..), ..), ..) ->
         "creation to " <> int.to_string(one.0)
-      creature.Relay(payload: relay.KillCredit(..), ..) ->
+      creature.Relay(payload: map_message.KillCredit(..), ..) ->
         "credit to " <> int.to_string(one.0)
       creature.Broadcast(..)
-      | creature.Relay(payload: relay.Fight(..), ..)
+      | creature.Relay(payload: map_message.Fight(..), ..)
       | creature.Expired(..)
       | creature.Snapshot(..) -> "other"
     }
@@ -533,9 +533,9 @@ fn credits(
 ) -> List(#(Int, creature.Outgoing)) {
   list.filter(outgoing(taken), fn(one) {
     case one.1 {
-      creature.Relay(payload: relay.KillCredit(..), ..) -> True
-      creature.Relay(payload: relay.Struck(..), ..)
-      | creature.Relay(payload: relay.Fight(..), ..)
+      creature.Relay(payload: map_message.KillCredit(..), ..) -> True
+      creature.Relay(payload: map_message.Struck(..), ..)
+      | creature.Relay(payload: map_message.Fight(..), ..)
       | creature.Snapshot(..)
       | creature.Expired(..)
       | creature.Broadcast(..) -> False
@@ -570,7 +570,7 @@ pub fn a_killing_strike_sends_the_killer_one_credit_test() -> Nil {
           life: 3,
           to: ConnectionId(2),
           stay: map_support.stay(count: 2),
-          payload: relay.KillCredit(credit: Credit(
+          payload: map_message.KillCredit(credit: Credit(
             unit_id: 7,
             creature_id: Creature2Id(73_464),
             faction_id: Faction2Id(1441),
@@ -613,7 +613,7 @@ pub fn a_creature_struck_while_it_lies_dead_refuses_without_news_test() -> Nil {
           life: 3,
           to: ConnectionId(2),
           stay: map_support.stay(count: 2),
-          payload: relay.Struck(answered: Answered(
+          payload: map_message.Struck(answered: Answered(
             key: Key(
               cast_id: 2,
               occasion: strike_tell.AtGo(phase: 0),
@@ -1535,15 +1535,15 @@ pub fn interrupt_armor_modifier_changes_maximum_test() -> Nil {
     list.flat_map(support.sends(taken), fn(one) {
       case one.1 {
         creature.Relay(
-          payload: relay.Struck(answered: Answered(
+          payload: map_message.Struck(answered: Answered(
             outcome: Landed(controls:, ..),
             ..,
           )),
           ..,
         ) -> controls
-        creature.Relay(payload: relay.Struck(..), ..)
-        | creature.Relay(payload: relay.Fight(..), ..)
-        | creature.Relay(payload: relay.KillCredit(..), ..)
+        creature.Relay(payload: map_message.Struck(..), ..)
+        | creature.Relay(payload: map_message.Fight(..), ..)
+        | creature.Relay(payload: map_message.KillCredit(..), ..)
         | creature.Snapshot(..)
         | creature.Expired(..)
         | creature.Broadcast(..) -> []
@@ -1574,9 +1574,9 @@ fn armored_by_two(points points: Int) -> State {
       state: creature_at(
         spawn: Spawn(
           ..beast,
-          combat: creature_life.Combat(
+          combat: creature_combat.Combat(
             ..beast.combat,
-            interrupt_armor: creature_life.Armor(points:),
+            interrupt_armor: creature_combat.Armor(points:),
           ),
           bases: list.key_set(
             beast.bases,
@@ -1932,7 +1932,7 @@ fn answer_of(taken: ServiceStep(creature.Outgoing)) -> strike_tell.Outcome {
         #(
           2,
           creature.Relay(
-            payload: relay.Struck(answered: Answered(outcome:, ..)),
+            payload: map_message.Struck(answered: Answered(outcome:, ..)),
             ..,
           ),
         ) -> Ok(outcome)
@@ -2533,7 +2533,7 @@ fn released_unit_7(taken: ServiceStep(creature.Outgoing)) -> List(Int) {
   list.filter_map(outgoing(taken), fn(one) {
     case one.1 {
       creature.Relay(
-        payload: relay.Fight(told: strike_tell.Released(unit_id: 7)),
+        payload: map_message.Fight(told: strike_tell.Released(unit_id: 7)),
         ..,
       ) -> Ok(one.0)
       creature.Relay(..)
@@ -3714,9 +3714,15 @@ pub fn a_seen_a_snapshot_and_an_unseen_taken_twice_change_nothing_the_second_tim
   let assert Ok(map.Relation(generation: held, ..)) =
     dict.get(relations, ConnectionId(9))
   let snapshot =
-    map.Snapshot(unit_id:, life:, by: ConnectionId(9), generation: held, burst: [
-      PeerNews(unit_id:, news: unit_news.Health(health: 52, dead: False)),
-    ])
+    map_message.Snapshot(
+      unit_id:,
+      life:,
+      by: ConnectionId(9),
+      generation: held,
+      burst: [
+        PeerNews(unit_id:, news: unit_news.Health(health: 52, dead: False)),
+      ],
+    )
   let #(map_state, first_taken) =
     map_spawn_support.feed(
       state: map_state,
@@ -3778,7 +3784,7 @@ pub fn each_tell_a_player_sends_a_creature_reaches_it_as_the_message_its_rule_ta
     let #(kind, payload) = sent
     let assert Ok(expected) = list.key_find(rows, kind)
       as "a row for each kind the tests send"
-    assert creature.told_by_map(map.ToldCreature(by:, stay:, payload:))
+    assert creature.told_by_map(map_message.ToldCreature(by:, stay:, payload:))
       == Ok(expected)
       as {
         kind

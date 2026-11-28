@@ -13,10 +13,8 @@
 import genesis_prime/client_connection
 import genesis_prime/connection/frame.{type Frame}
 import genesis_prime/game/heal_split
-import genesis_prime/game/held_changes
 import genesis_prime/game/player_address.{type PlayerAddress}
 import genesis_prime/game/player_state.{type PlayerState}
-import genesis_prime/game/proc
 import genesis_prime/game/quest_advance
 import genesis_prime/game/shortcut_spell
 import genesis_prime/game/start_place.{type Place}
@@ -34,11 +32,14 @@ import genesis_prime/shared/cooldown
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/forced_move
+import genesis_prime/shared/heal_parts
 import genesis_prime/shared/hit
 import genesis_prime/shared/lasting
 import genesis_prime/shared/lasts
 import genesis_prime/shared/look
+import genesis_prime/shared/player_change
 import genesis_prime/shared/prerequisite
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/quest_view.{type QuestView}
 import genesis_prime/shared/spell_area
 import genesis_prime/shared/spell_effect
@@ -168,7 +169,7 @@ pub type CasterChange {
   /// as a heal's is, and it lasts until its end or it is used up
   /// (`Spell4Effects.effectType.29`). The same two changes are what a caster tells
   /// another player (genesis_prime/game/held_changes `PlayerChangeStarts`).
-  HeldChange(change: held_changes.Change)
+  HeldChange(change: player_change.Change)
   /// A disguise (a DisguiseOutfit effect): the connection starts it on the player's look,
   /// writes the slots that changed to the player's client and tells its viewers
   /// (genesis_prime/shared/look `start`). It ends with the modifiers' own end,
@@ -238,8 +239,8 @@ pub type Effect {
   OtherPlayerChangeStarts(
     address: PlayerAddress,
     source: unit_properties.Source,
-    change: held_changes.Told,
-    sight: held_changes.Sight,
+    change: player_change.Told,
+    sight: player_change.Sight,
     spell4_id: Spell4Id,
     effect: unit_casts.HeldEffect,
   )
@@ -498,7 +499,7 @@ pub type OnUnit {
   HeldOnPlayer(
     source: unit_properties.Source,
     address: PlayerAddress,
-    sight: held_changes.Sight,
+    sight: player_change.Sight,
     spell4_id: Spell4Id,
     stack: lasting.Stack,
     started_ms: Int,
@@ -1232,7 +1233,7 @@ pub type State {
     /// The events of the caster that no proc has been matched against yet, in the order
     /// they happened: each input records its own (`cast.settled`), and the connection draws what
     /// they need (`cast_proc.proc_draws_needed`) and has them matched (`cast.procs_fire`).
-    pending: List(proc.Event),
+    pending: List(proc_event.Event),
     /// The casts of the player's standing spells, by cast id, each with its key (the Spell4 id
     /// of its spell and the item it is worn from), once `cast.standing_changed` has started
     /// them: the casts a death leaves.
@@ -1902,7 +1903,7 @@ pub type Healed {
     vital: effect_kind.Vital,
     delay_ms: Int,
     amount: Int,
-    split: heal_split.Split,
+    split: heal_parts.Split,
   )
 }
 

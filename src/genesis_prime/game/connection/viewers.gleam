@@ -201,6 +201,7 @@ import genesis_prime/game/shown.{ShownCreature, ShownObject, ShownPlayer}
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/strike
 import genesis_prime/game/world_entry
+import genesis_prime/map/message as map_message
 import genesis_prime/message/bit_stream
 import genesis_prime/message/crowd_control_state.{type CrowdControlState}
 import genesis_prime/message/float32
@@ -237,7 +238,6 @@ import genesis_prime/table/id.{Creature2DisplayInfoId, Creature2Id, RaceId}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation.{type Generation}
-import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import genesis_prime/world_map/static_object
@@ -268,10 +268,10 @@ pub fn map_sent(
   session session: Session,
   now now: Now,
   entered entered: world_entry.Entered,
-  notice notice: map.Notice,
+  notice notice: map_message.Notice,
 ) -> client_connection.Handled(Session) {
   case notice {
-    map.SeenBy(by:, stay:, unit_id:, generation:) ->
+    map_message.SeenBy(by:, stay:, unit_id:, generation:) ->
       Continue(
         viewers_changed(session:, change: dict.insert(
           _,
@@ -308,7 +308,7 @@ pub fn map_sent(
           ),
         ],
       )
-    map.UnseenBy(by: step.ConnectionId(by_number) as by, generation:) ->
+    map_message.UnseenBy(by: step.ConnectionId(by_number) as by, generation:) ->
       case dict.get(entered.viewers, by) {
         Ok(player_address.Viewer(generation: held, ..)) ->
           case generation.compare(first: generation, second: held) {
@@ -329,14 +329,14 @@ pub fn map_sent(
           }
         Error(Nil) -> viewer_unseen(session:, now:, by:)
       }
-    map.PlayerUnseen(unit_id:, generation:) ->
+    map_message.PlayerUnseen(unit_id:, generation:) ->
       unit_departed(session:, now:, entered:, unit_id:, generation:)
-    map.UnitUnseen(unit_id:, generation: _) -> {
+    map_message.UnitUnseen(unit_id:, generation: _) -> {
       let #(session, removal) =
         unit_removed(session:, now:, entered:, unit_id:, keeping: [])
       Continue(session, list.append(removal.written, removal.ended))
     }
-    map.Gone(unit_id:) -> {
+    map_message.Gone(unit_id:) -> {
       let #(life, by_life) = player_life.released(life: entered.life, unit_id:)
       let #(viewing, dropped) =
         move_stamp.gone(viewing: entered.viewing, unit_id:)
@@ -364,7 +364,7 @@ pub fn map_sent(
         ]),
       )
     }
-    map.ObjectsSeen(units:) -> {
+    map_message.ObjectsSeen(units:) -> {
       let #(refused, named) =
         units
         |> list.map(fn(seen) { #(static_object.unit_id(created: seen.1), seen) })
@@ -403,7 +403,7 @@ pub fn map_sent(
         ),
       )
     }
-    map.ObjectsUnseen(unit_ids:) -> {
+    map_message.ObjectsUnseen(unit_ids:) -> {
       let #(refused, named) =
         list.partition(unit_ids, fn(unit_id) {
           names_own_unit(entered:, unit_id:)

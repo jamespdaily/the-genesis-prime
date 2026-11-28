@@ -105,6 +105,7 @@ import genesis_prime/game/interaction
 import genesis_prime/game/inventory
 import genesis_prime/game/item_use
 import genesis_prime/game/limited_action_set
+import genesis_prime/map/message as map_message
 import genesis_prime/shared/activate
 import genesis_prime/shared/area
 import genesis_prime/shared/damage
@@ -113,7 +114,6 @@ import genesis_prime/shared/hit_radius
 import genesis_prime/shared/innate
 import genesis_prime/shared/item_property
 
-import genesis_prime/game/held_changes
 import genesis_prime/game/movement
 import genesis_prime/game/objective
 import genesis_prime/game/passed_in_value
@@ -131,6 +131,7 @@ import genesis_prime/message/unit_health.{UnitHealth}
 import genesis_prime/random
 import genesis_prime/shared/creature_path
 import genesis_prime/shared/objective_link
+import genesis_prime/shared/player_change
 import genesis_prime/shared/prerequisite
 import genesis_prime/shared/rating
 import genesis_prime/shared/spell_area
@@ -151,7 +152,6 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/item2
 import genesis_prime/table/loader/store as table_store
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/spawn_id.{type SpawnId}
 import gleam/bit_array
 import gleam/bool
@@ -922,7 +922,7 @@ pub fn creatures_settled(
             connection:,
             unit_id:,
             life:,
-            payload: relay.CastViewSet(view:),
+            payload: map_message.CastViewSet(view:),
           )
         creature_view.ViewEnds(unit_id:, life:, cast_id:) ->
           connection_state.tells_the_creature(
@@ -930,7 +930,7 @@ pub fn creatures_settled(
             connection:,
             unit_id:,
             life:,
-            payload: relay.CastViewEnds(cast_id:),
+            payload: map_message.CastViewEnds(cast_id:),
           )
       }
     }),
@@ -1560,7 +1560,7 @@ fn carried_out(
           session:,
           now:,
           source:,
-          change: held_changes.Applies(change:),
+          change: player_change.Applies(change:),
         )
       cast_state.CasterChangeStarts(
         change: cast_state.Heal(vital:, amount:),
@@ -1588,15 +1588,17 @@ fn carried_out(
           entered:,
           to: address.connection,
           to_stay: address.stay,
-          landing: relay.ChangeStart(change: held_changes.PlayerChangeStarts(
-            from: client_connection.connection(session.link),
-            from_stay: entered.stay,
-            source:,
-            change:,
-            sight:,
-            spell4_id:,
-            effect:,
-          )),
+          landing: map_message.ChangeStart(
+            change: player_change.PlayerChangeStarts(
+              from: client_connection.connection(session.link),
+              from_stay: entered.stay,
+              source:,
+              change:,
+              sight:,
+              spell4_id:,
+              effect:,
+            ),
+          ),
         ),
       ])
       cast_state.OtherPlayerChangeEnds(address:, source:), Some(entered) -> #(
@@ -1607,10 +1609,12 @@ fn carried_out(
             entered:,
             to: address.connection,
             to_stay: address.stay,
-            landing: relay.ChangeEnd(change: held_changes.PlayerChangeEnds(
-              from: client_connection.connection(session.link),
-              source:,
-            )),
+            landing: map_message.ChangeEnd(
+              change: player_change.PlayerChangeEnds(
+                from: client_connection.connection(session.link),
+                source:,
+              ),
+            ),
           ),
         ],
       )
@@ -1622,7 +1626,7 @@ fn carried_out(
             entered:,
             to: address.connection,
             to_stay: address.stay,
-            landing: relay.CastWent(change: held_changes.PlayerCastWent(
+            landing: map_message.CastWent(change: player_change.PlayerCastWent(
               from: client_connection.connection(session.link),
               cast_id:,
             )),
@@ -1674,7 +1678,7 @@ fn carried_out(
           connection: client_connection.connection(session.link),
           unit_id:,
           life:,
-          payload: relay.ModifierStarts(source:, modifier:),
+          payload: map_message.ModifierStarts(source:, modifier:),
         ),
       ])
       cast_state.TargetChangeStarts(..), None -> #(session, [])
@@ -1686,7 +1690,7 @@ fn carried_out(
             connection: client_connection.connection(session.link),
             unit_id:,
             life:,
-            payload: relay.ModifierEnds(source:),
+            payload: map_message.ModifierEnds(source:),
           ),
         ],
       )
@@ -1730,7 +1734,7 @@ fn carried_out(
           connection: client_connection.connection(session.link),
           unit_id:,
           life:,
-          payload: relay.ControlsEnd(cast_id:),
+          payload: map_message.ControlsEnd(cast_id:),
         ),
       ])
       cast_state.CreatureControlsEnd(..), None -> #(session, [])
@@ -1842,7 +1846,7 @@ fn creature_thrown(
       connection: client_connection.connection(session.link),
       unit_id:,
       life:,
-      payload: relay.Thrown(throw: forced_move.Throw(
+      payload: map_message.Thrown(throw: forced_move.Throw(
         move:,
         draws: forced_move.draws_of(bytes:),
         reference:,
@@ -1867,7 +1871,7 @@ fn creature_despawned(
     connection:,
     unit_id:,
     life:,
-    payload: relay.Despawn(delay_ms:, went_at_ms:),
+    payload: map_message.Despawn(delay_ms:, went_at_ms:),
   )
 }
 
@@ -1887,7 +1891,7 @@ fn creature_holds_unit_states(
     connection:,
     unit_id:,
     life:,
-    payload: relay.UnitStates(rows:, went_at_ms:),
+    payload: map_message.UnitStates(rows:, went_at_ms:),
   )
 }
 
@@ -2096,7 +2100,7 @@ fn strike_carried_out(
           connection: client_connection.connection(session.link),
           unit_id:,
           life:,
-          payload: relay.Strike(tell:),
+          payload: map_message.Strike(tell:),
         ),
       ])
       strike.TellPlayerStrike(address:, strike:), Some(entered) -> #(session, [
@@ -2105,7 +2109,7 @@ fn strike_carried_out(
           entered:,
           to: address.connection,
           to_stay: address.stay,
-          landing: relay.HealStrike(strike:),
+          landing: map_message.HealStrike(strike:),
         ),
       ])
       strike.StartTimer(timer:, after_ms:), Some(_) -> #(session, [

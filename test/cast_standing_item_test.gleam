@@ -21,10 +21,10 @@ import fixture_tables
 import genesis_prime/game/cast
 import genesis_prime/game/cast/proc as cast_proc
 import genesis_prime/game/cast/state.{type Caster, type Effect, type State} as cast_state
-import genesis_prime/game/proc as event_proc
 import genesis_prime/shared/damage
 import genesis_prime/shared/effect_kind
 import genesis_prime/shared/prerequisite
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/spell_effect
 import genesis_prime/shared/spell_plan.{type Spell}
 import genesis_prime/shared/unit_news.{CastStarted}
@@ -264,7 +264,7 @@ fn with_proc_delay(root root: Spell, delay_ms delay_ms: Int) -> Spell {
 fn shield_depleting_blow() -> cast_proc.BlowTaken {
   cast_proc.BlowLanded(
     striker: 31,
-    spell: event_proc.EventSpell(
+    spell: proc_event.EventSpell(
       spell4_id: Spell4Id(5649),
       spell4_base_id: Spell4BaseId(4947),
       groups: [],

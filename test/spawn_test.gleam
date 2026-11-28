@@ -34,6 +34,7 @@ import genesis_prime/content/refusal.{Refusal}
 import genesis_prime/game/start_place
 import genesis_prime/game/vendor
 import genesis_prime/shared/area
+import genesis_prime/shared/creature_combat.{Attackable, Charged, Hostile}
 import genesis_prime/shared/creature_kind.{Kinds}
 import genesis_prime/shared/creature_unit_type.{Turret}
 import genesis_prime/shared/faction_level
@@ -48,7 +49,6 @@ import genesis_prime/table/id.{
 }
 import genesis_prime/table/loader/store
 import genesis_prime/world_map/creature_faction.{type Factions}
-import genesis_prime/world_map/creature_life.{Attackable, Charged, Hostile}
 import genesis_prime/world_map/lying_body
 import genesis_prime/world_map/spawn.{
   type Row, type Selection, Dead, FriendlyToBoth,
@@ -1844,7 +1844,7 @@ pub fn captives_key_on_static_objects_too_and_leave_out_a_neighbour_a_type_12_ob
 // ------------------------------------------ a creature's specials
 //
 // The spells a creature casts besides its attack, as the content load works them out
-// (`genesis_prime/world_map/spawn`, `creature_life.Special`), on the Virtual Battle Beast
+// (`genesis_prime/world_map/spawn`, `creature_combat.Special`), on the Virtual Battle Beast
 // (Creature2 73464) given a kind with specials. Expected values come from these places.
 // - Earthen Roar, Spell4 55317: castTime 3000; SpellPhase 11191 (phaseDelay 2500) and 11192
 //   (500), so the gos fall at 2500 and 3000 ms; the one damage row 131967 has phaseFlags 2,
@@ -1883,7 +1883,7 @@ fn special_beast(spell4_ids spell4_ids: List(Int)) -> spawn.Spawn {
 }
 
 /// The one special the Beast carries: its charge and its cooldown.
-fn the_special_of(beast beast: spawn.Spawn) -> creature_life.Special {
+fn the_special_of(beast beast: spawn.Spawn) -> creature_combat.Special {
   let assert [special] = beast.combat.specials
     as "the kind lists one special and the spawn carries it"
   special
@@ -1909,7 +1909,7 @@ pub fn a_special_carries_the_gos_of_its_phases_and_strikes_at_the_last_test() ->
 
 /// Each go's time and, for a go that strikes, the Spell4Effects ids it strikes with.
 fn go_blows(
-  gos: List(creature_life.Go),
+  gos: List(creature_combat.Go),
 ) -> List(#(Int, option.Option(List(Int)))) {
   list.map(gos, fn(go) {
     #(go.at_ms, option.map(go.strike, fn(strike) { strike.spell4_effects_ids }))
@@ -1999,18 +1999,18 @@ pub fn the_attacks_role_decides_whether_a_cast_time_of_0_is_instant_or_charged_t
   // Spell4 34252 has castTime 0 and 33251 (`[AUTO-ATTACK]`) too. The kind's list decides: an
   // auto-attack or an alternate strikes at once, a special is a cast with its own gos.
   assert the_special_of(beast: special_beast(spell4_ids: [34_252])).attack.cast
-    != creature_life.Instant
+    != creature_combat.Instant
     as "34252 listed as a special is a charge"
   assert autos_beast(spell4_ids: [34_252]).combat.attack.cast
-    == creature_life.Instant
+    == creature_combat.Instant
     as "34252 listed as the kind's auto-attack is instant"
   let assert [alternate] =
     autos_beast(spell4_ids: [33_251, 34_252]).combat.alternates
     as "the kind lists one alternate and the spawn carries it"
-  assert alternate.cast == creature_life.Instant
+  assert alternate.cast == creature_combat.Instant
     as "34252 listed as an alternate auto-attack is instant"
   assert autos_beast(spell4_ids: [33_251]).combat.attack.cast
-    == creature_life.Instant
+    == creature_combat.Instant
     as "the kind's auto-attack 33251 is instant"
 }
 
@@ -2106,7 +2106,7 @@ pub fn a_charge_carries_the_draws_the_anchor_and_the_aim_bit_of_its_spell_test()
 }
 
 /// The charge of the Yeti Snowstalker (Creature2 51126) with the special `spell4_id`.
-fn yeti_charge(spell4_id: Int) -> creature_life.Cast {
+fn yeti_charge(spell4_id: Int) -> creature_combat.Cast {
   yeti_charge_over(tables: character_tables.content_tables(), spell4_id:)
 }
 
@@ -2114,7 +2114,7 @@ fn yeti_charge(spell4_id: Int) -> creature_life.Cast {
 fn yeti_charge_over(
   tables tables: store.Tables,
   spell4_id spell4_id: Int,
-) -> creature_life.Cast {
+) -> creature_combat.Cast {
   let assert Ok(yeti) =
     spawn_support.special_creature_over(
       tables:,
@@ -2145,22 +2145,22 @@ pub fn a_special_charge_carries_each_gos_blows_and_hit_shapes_test() -> Nil {
     as "Ice Breath is a charge"
   assert gos
     == [
-      creature_life.Go(at_ms: 2600, strike: None),
-      creature_life.Go(
+      creature_combat.Go(at_ms: 2600, strike: None),
+      creature_combat.Go(
         at_ms: 3000,
-        strike: Some(creature_life.GoStrike(
+        strike: Some(creature_combat.GoStrike(
           spell4_effects_ids: [132_757],
           inside: area.InsideShapes([ice_breath_cone(turn: 10.0)]),
         )),
       ),
-      creature_life.Go(
+      creature_combat.Go(
         at_ms: 3500,
-        strike: Some(creature_life.GoStrike(
+        strike: Some(creature_combat.GoStrike(
           spell4_effects_ids: [132_757],
           inside: area.InsideShapes([ice_breath_cone(turn: -10.0)]),
         )),
       ),
-      creature_life.Go(at_ms: 3800, strike: None),
+      creature_combat.Go(at_ms: 3800, strike: None),
     ]
     as "the blow of row 132757 at gos 1 and 2, each with its own cone, and no strike at gos 0 and 3"
   assert hold_ms == 500 as "Spell4Effects 132758 holds 500 ms"
@@ -2175,10 +2175,10 @@ pub fn a_special_charge_carries_each_gos_blows_and_hit_shapes_test() -> Nil {
     as "Spell4 45951 is a charge"
   assert other_gos
     == [
-      creature_life.Go(at_ms: 200, strike: None),
-      creature_life.Go(
+      creature_combat.Go(at_ms: 200, strike: None),
+      creature_combat.Go(
         at_ms: 1000,
-        strike: Some(creature_life.GoStrike(
+        strike: Some(creature_combat.GoStrike(
           spell4_effects_ids: [107_436],
           inside: area.InsideShapes([
             area.Placement(
@@ -2190,10 +2190,10 @@ pub fn a_special_charge_carries_each_gos_blows_and_hit_shapes_test() -> Nil {
           ]),
         )),
       ),
-      creature_life.Go(at_ms: 1200, strike: None),
-      creature_life.Go(
+      creature_combat.Go(at_ms: 1200, strike: None),
+      creature_combat.Go(
         at_ms: 1800,
-        strike: Some(creature_life.GoStrike(
+        strike: Some(creature_combat.GoStrike(
           spell4_effects_ids: [107_454],
           inside: area.InsideShapes([
             area.Placement(
@@ -2224,9 +2224,9 @@ pub fn a_special_charge_carries_each_gos_blows_and_hit_shapes_test() -> Nil {
     as "the turret's attack is a charge"
   assert turret_gos
     == [
-      creature_life.Go(
+      creature_combat.Go(
         at_ms: cast_ms,
-        strike: Some(creature_life.GoStrike(
+        strike: Some(creature_combat.GoStrike(
           spell4_effects_ids: [224_644],
           inside: turret_inside,
         )),
@@ -2560,9 +2560,9 @@ pub fn the_eldan_security_construct_loads_laser_bolt_with_its_circle_on_the_targ
       ]
     assert gos
       == [
-        creature_life.Go(
+        creature_combat.Go(
           at_ms: 3000,
-          strike: Some(creature_life.GoStrike(
+          strike: Some(creature_combat.GoStrike(
             spell4_effects_ids: [133_289],
             inside: circle_of_4,
           )),

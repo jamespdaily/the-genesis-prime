@@ -15,7 +15,8 @@
 //// - Sight (`genesis_prime/shared/sight`): 1024 units, 3D, inclusive.
 
 import connection_rule_support as support
-import genesis_prime/game/held_changes
+import genesis_prime/map/message as map_message
+import genesis_prime/shared/player_change
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_casts.{EndsAt, HeldEffect}
 import genesis_prime/shared/unit_news.{Health, PeerNews}
@@ -38,14 +39,16 @@ import owned_test
 
 /// What a relayed delivery is, as the health the news carries.
 fn healths(
-  relayed relayed: List(#(Int, Stay, relay.Delivered)),
+  relayed relayed: List(#(Int, Stay, map_message.Delivered)),
 ) -> List(#(Int, Int)) {
   list.filter_map(relayed, fn(delivery) {
     case delivery.2 {
-      relay.News(news: PeerNews(news: Health(health:, ..), ..)) ->
+      map_message.News(news: PeerNews(news: Health(health:, ..), ..)) ->
         Ok(#(delivery.0, health))
-      relay.News(..) | relay.Tell(..) | relay.Landed(..) | relay.Said(..) ->
-        Error(Nil)
+      map_message.News(..)
+      | map_message.Tell(..)
+      | map_message.Landed(..)
+      | map_message.Said(..) -> Error(Nil)
     }
   })
 }
@@ -94,7 +97,7 @@ fn snapshot_to_two(
   state state: map.State,
   at_ms at_ms: Int,
   generation generation: Generation,
-) -> #(map.State, ServiceStep(map.Outgoing)) {
+) -> #(map.State, ServiceStep(map_message.Outgoing)) {
   players.snapshot(
     state:,
     at_ms:,
@@ -374,7 +377,7 @@ pub fn a_players_line_is_relayed_to_each_relaying_viewer_in_connection_order_for
     == [#(2, players.stay(count: 1)), #(6, players.stay(count: 1))]
     as "the line reaches each relaying viewer in the order of the connections' numbers, for the stay of its relation, and no viewer that awaits its snapshot, left sight or is in another stay"
   assert list.all(lines, fn(line) {
-    line.2 == relay.Said(said: players.said_by(connection: 1, text: "Hi"))
+    line.2 == map_message.Said(said: players.said_by(connection: 1, text: "Hi"))
   })
     as "the line is relayed as it was told"
   assert players.relayed(taken: said(
@@ -425,9 +428,9 @@ pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_f
   let owner_two = players.notices_to(taken: again, connection: 2)
   assert list.filter_map(owner_two, fn(notice) {
       case notice.1 {
-        map.UnseenBy(by: ConnectionId(1), generation:) ->
+        map_message.UnseenBy(by: ConnectionId(1), generation:) ->
           Ok("UnseenBy " <> int.to_string(generation.number(generation:)))
-        map.SeenBy(by: ConnectionId(1), generation:, ..) ->
+        map_message.SeenBy(by: ConnectionId(1), generation:, ..) ->
           Ok("SeenBy " <> int.to_string(generation.number(generation:)))
         _ -> Error(Nil)
       }
@@ -441,9 +444,9 @@ pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_f
   let owner_one = players.notices_to(taken: again, connection: 1)
   assert list.filter_map(owner_one, fn(notice) {
       case notice.1 {
-        map.UnseenBy(by: ConnectionId(2), generation:) ->
+        map_message.UnseenBy(by: ConnectionId(2), generation:) ->
           Ok("UnseenBy " <> int.to_string(generation.number(generation:)))
-        map.SeenBy(by: ConnectionId(2), generation:, ..) ->
+        map_message.SeenBy(by: ConnectionId(2), generation:, ..) ->
           Ok("SeenBy " <> int.to_string(generation.number(generation:)))
         _ -> Error(Nil)
       }
@@ -455,17 +458,19 @@ pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_f
     ]
     as "owner 1 is told viewer 2's sight ended, then the new one"
   assert list.any(owner_two, fn(notice) {
-    notice.1 == map.PlayerUnseen(unit_id: 1, generation: two_sees_one)
+    notice.1 == map_message.PlayerUnseen(unit_id: 1, generation: two_sees_one)
   })
     as "viewer 2 is told unit 1 is unseen from the sight that ended"
   assert list.any(owner_one, fn(notice) {
-    notice.1 == map.PlayerUnseen(unit_id: 2, generation: one_sees_two)
+    notice.1 == map_message.PlayerUnseen(unit_id: 2, generation: one_sees_two)
   })
     as "viewer 1 is told unit 2 is unseen from the sight that ended, for the stay it had"
   assert players.notices_to(taken: again, connection: 3)
     |> list.filter(fn(notice) {
       case notice.1 {
-        map.SeenBy(..) | map.UnseenBy(..) | map.PlayerUnseen(..) -> True
+        map_message.SeenBy(..)
+        | map_message.UnseenBy(..)
+        | map_message.PlayerUnseen(..) -> True
         _ -> False
       }
     })
@@ -499,15 +504,15 @@ pub fn a_second_join_ends_each_pair_and_begins_it_again_in_both_directions_and_f
 
 /// A landing of each kind, as the tests send them from connection 1, in its first stay, to
 /// the unit 2 of connection 2.
-fn landings() -> List(#(String, relay.Landing)) {
+fn landings() -> List(#(String, map_message.Landing)) {
   let source = Source(cast_id: 5, effect_id: Spell4EffectsId(62_024))
   let starts =
-    held_changes.PlayerChangeStarts(
+    player_change.PlayerChangeStarts(
       from: ConnectionId(1),
       from_stay: players.stay(count: 1),
       source:,
-      change: held_changes.Applies(held_changes.Absorb(amount: 5, mask: 7)),
-      sight: held_changes.EndsWhenUnseen,
+      change: player_change.Applies(player_change.Absorb(amount: 5, mask: 7)),
+      sight: player_change.EndsWhenUnseen,
       spell4_id: Spell4Id(1),
       effect: HeldEffect(
         effect_id: Spell4EffectsId(62_024),
@@ -518,7 +523,7 @@ fn landings() -> List(#(String, relay.Landing)) {
   [
     #(
       "heal strike",
-      relay.HealStrike(
+      map_message.HealStrike(
         strike: strike_tell.PlayerStrike(
           key: strike_tell.Key(
             cast_id: 5,
@@ -533,31 +538,33 @@ fn landings() -> List(#(String, relay.Landing)) {
       ),
     ),
     #("answer", players.answer(cast_id: 5, unit_id: 2)),
-    #("change start", relay.ChangeStart(change: starts)),
+    #("change start", map_message.ChangeStart(change: starts)),
     #(
       "change end",
-      relay.ChangeEnd(change: held_changes.PlayerChangeEnds(
+      map_message.ChangeEnd(change: player_change.PlayerChangeEnds(
         from: ConnectionId(1),
         source:,
       )),
     ),
     #(
       "cast went",
-      relay.CastWent(change: held_changes.PlayerCastWent(
+      map_message.CastWent(change: player_change.PlayerCastWent(
         from: ConnectionId(1),
         cast_id: 5,
       )),
     ),
     #(
       "ally event",
-      relay.AllyEvent(event: strike_tell.PlayerEvent(unit_id: 2, events: [])),
+      map_message.AllyEvent(
+        event: strike_tell.PlayerEvent(unit_id: 2, events: []),
+      ),
     ),
   ]
 }
 
 /// Whether the kind checks that the sender is in the stay the tell names for it: only a
 /// change's start does (`relay.landing_kind_of`).
-fn checks_the_source_stay(landing landing: relay.Landing) -> Bool {
+fn checks_the_source_stay(landing landing: map_message.Landing) -> Bool {
   relay.landing_kind_of(landing:).source == relay.SenderStayIsCurrent
 }
 
@@ -594,7 +601,11 @@ pub fn each_player_to_player_effect_is_delivered_by_its_kinds_checks_test() -> N
         )
       let expected = case delivered {
         True -> [
-          #(told, players.stay(count: told_stay_count), relay.Landed(landing:)),
+          #(
+            told,
+            players.stay(count: told_stay_count),
+            map_message.Landed(landing:),
+          ),
         ]
         False -> []
       }
@@ -621,7 +632,7 @@ pub fn each_player_to_player_effect_is_delivered_by_its_kinds_checks_test() -> N
       )
     let expected = case checks_the_source_stay(landing:) {
       True -> []
-      False -> [#(2, players.stay(count: 1), relay.Landed(landing:))]
+      False -> [#(2, players.stay(count: 1), map_message.Landed(landing:))]
     }
     assert players.relayed(taken:) == expected
       as { name <> ": the sender is in another stay than the tell names" }
@@ -702,15 +713,15 @@ pub fn the_news_a_connection_sent_before_it_ended_is_relayed_before_its_removal_
     list.map(players.notices_to(taken: ended, connection: 2), fn(notice) {
       notice.1
     })
-  let unseen = map.PlayerUnseen(unit_id: 1, generation: sight)
+  let unseen = map_message.PlayerUnseen(unit_id: 1, generation: sight)
   assert list.contains(to_two, unseen)
-    && list.contains(to_two, map.Gone(unit_id: 1))
+    && list.contains(to_two, map_message.Gone(unit_id: 1))
     && list.take_while(to_two, fn(notice) { notice != unseen })
-    |> list.all(fn(notice) { notice != map.Gone(unit_id: 1) })
+    |> list.all(fn(notice) { notice != map_message.Gone(unit_id: 1) })
     as "then 2 is told the unit is unseen and then gone: the connection's end sends nothing of the unit before them"
   assert list.contains(
     to_two,
-    map.UnseenBy(by: ConnectionId(1), generation: owners_sight),
+    map_message.UnseenBy(by: ConnectionId(1), generation: owners_sight),
   )
     as "2, as the owner of its own unit, is told that 1 no longer sees it, from the sight 1 had of it: its copy stops stamping moves to a connection that ended"
 }
@@ -724,7 +735,7 @@ pub fn a_pair_that_leaves_while_its_snapshot_is_awaited_tells_the_viewer_its_uns
   assert list.map(players.notices_to(taken: moved, connection: 2), fn(notice) {
       notice.1
     })
-    |> list.contains(map.PlayerUnseen(unit_id: 1, generation: sight))
+    |> list.contains(map_message.PlayerUnseen(unit_id: 1, generation: sight))
     as "the viewer is told the unit is unseen although it took no snapshot of the sight"
   assert players.relation(state:, owner: 1, viewer: 2) == None
     as "the relation is gone"
@@ -770,9 +781,11 @@ pub fn a_move_told_to_the_map_makes_it_decide_sight_and_send_no_move_test() -> N
   let sight_notices =
     list.filter_map(support.sends(taken), fn(sent) {
       case sent.1 {
-        map.Noticed(notice: map.UnseenBy(by: ConnectionId(by), ..), ..) ->
-          Ok(#(sent.0, "UnseenBy " <> int.to_string(by)))
-        map.Noticed(notice: map.PlayerUnseen(unit_id:, ..), ..) ->
+        map_message.Noticed(
+          notice: map_message.UnseenBy(by: ConnectionId(by), ..),
+          ..,
+        ) -> Ok(#(sent.0, "UnseenBy " <> int.to_string(by)))
+        map_message.Noticed(notice: map_message.PlayerUnseen(unit_id:, ..), ..) ->
           Ok(#(sent.0, "PlayerUnseen " <> int.to_string(unit_id)))
         _ -> Error(Nil)
       }

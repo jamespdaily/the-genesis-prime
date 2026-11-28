@@ -25,6 +25,7 @@ import genesis_prime/connection/frame.{Frame}
 import genesis_prime/game/limited_action_set
 import genesis_prime/game/start_place.{Facing}
 import genesis_prime/hand_off.{Kept}
+import genesis_prime/map/message.{Join}
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/disconnect_reason.{
   AccountDisconnected, LostUserServer,
@@ -57,7 +58,6 @@ import genesis_prime/store.{
   Listed, LoadCharacter, NotTheAccounts, Select, Unavailable, UnsetItem, World,
 }
 import genesis_prime/table/id.{Item2Id}
-import genesis_prime/world_map/map.{Join}
 import gleam/list
 import gleam/option.{None, Some}
 import gleam/set

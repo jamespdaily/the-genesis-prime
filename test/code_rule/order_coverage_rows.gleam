@@ -24,9 +24,7 @@ const connection = "genesis_prime/client_connection"
 
 const news = "genesis_prime/shared/unit_news"
 
-const map = "genesis_prime/world_map/map"
-
-const relay = "genesis_prime/world_map/relay"
+const map_message = "genesis_prime/map/message"
 
 const creature = "genesis_prime/world_map/creature"
 
@@ -41,13 +39,13 @@ pub fn told() -> List(#(String, String)) {
   [
     #(connection, "StaySent"),
     #(news, "News"),
-    #(map, "Notice"),
-    #(relay, "Delivered"),
-    #(relay, "Payload"),
-    #(relay, "Inbound"),
-    #(relay, "Landing"),
+    #(map_message, "Notice"),
+    #(map_message, "Delivered"),
+    #(map_message, "Payload"),
+    #(map_message, "Inbound"),
+    #(map_message, "Landing"),
     #(creature, "Message"),
-    #(map, "Message"),
+    #(map_message, "Message"),
   ]
 }
 
@@ -285,7 +283,7 @@ fn news_rows() -> List(Row) {
 fn notice_rows() -> List(Row) {
   [
     Row(
-      module: map,
+      module: map_message,
       type_name: "Notice",
       variants: ["SeenBy"],
       cover: Owner(
@@ -293,7 +291,7 @@ fn notice_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Notice",
       variants: ["UnseenBy"],
       cover: Owner(
@@ -301,7 +299,7 @@ fn notice_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Notice",
       variants: ["PlayerUnseen"],
       cover: Owner(
@@ -309,7 +307,7 @@ fn notice_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Notice",
       variants: ["UnitUnseen"],
       cover: Owner(
@@ -317,7 +315,7 @@ fn notice_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Notice",
       variants: ["Gone"],
       cover: Owner(
@@ -325,7 +323,7 @@ fn notice_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Notice",
       variants: ["ObjectsSeen", "ObjectsUnseen"],
       cover: Independent(only_the_map),
@@ -336,7 +334,7 @@ fn notice_rows() -> List(Row) {
 fn delivered_rows() -> List(Row) {
   [
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Delivered",
       variants: ["News"],
       cover: Owner(
@@ -344,7 +342,7 @@ fn delivered_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Delivered",
       variants: ["Tell"],
       cover: Owner(
@@ -352,7 +350,7 @@ fn delivered_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Delivered",
       variants: ["Landed"],
       cover: Owner(
@@ -360,7 +358,7 @@ fn delivered_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Delivered",
       variants: ["Said"],
       cover: Owner(
@@ -373,7 +371,7 @@ fn delivered_rows() -> List(Row) {
 fn payload_rows() -> List(Row) {
   [
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Payload",
       variants: ["Struck", "KillCredit"],
       cover: Owner(
@@ -381,7 +379,7 @@ fn payload_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Payload",
       variants: ["Fight"],
       cover: Owner(
@@ -394,7 +392,7 @@ fn payload_rows() -> List(Row) {
 fn inbound_rows() -> List(Row) {
   [
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Inbound",
       variants: ["Strike"],
       cover: Order(
@@ -402,7 +400,7 @@ fn inbound_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Inbound",
       variants: ["StrikeAnswered"],
       cover: Order(
@@ -410,7 +408,7 @@ fn inbound_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Inbound",
       variants: [
         "TargetMoved",
@@ -433,7 +431,7 @@ fn inbound_rows() -> List(Row) {
 fn landing_rows() -> List(Row) {
   [
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Landing",
       variants: ["HealStrike"],
       cover: Owner(
@@ -441,7 +439,7 @@ fn landing_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Landing",
       variants: ["ChangeStart"],
       cover: Order(
@@ -449,7 +447,7 @@ fn landing_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: relay,
+      module: map_message,
       type_name: "Landing",
       variants: ["HealAnswer", "ChangeEnd", "CastWent", "AllyEvent"],
       cover: Owner(
@@ -522,7 +520,7 @@ fn creature_message_rows() -> List(Row) {
 fn map_message_rows() -> List(Row) {
   [
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["PlayerSnapshot"],
       cover: Owner(
@@ -530,19 +528,19 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["Join"],
       cover: Independent(fenced_ask),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["Leave"],
       cover: Independent(fenced_ask),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["Moved"],
       cover: Owner(
@@ -550,7 +548,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["TellCreature"],
       cover: Order(
@@ -558,7 +556,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["Relay"],
       cover: Owner(
@@ -566,7 +564,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["Released"],
       cover: Owner(
@@ -574,7 +572,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["Snapshot", "Broadcast", "Expired"],
       cover: Owner(
@@ -582,7 +580,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["PlayerBroadcast"],
       cover: Order(
@@ -590,7 +588,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["TellLanding"],
       cover: Order(
@@ -598,7 +596,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["Say"],
       cover: Owner(
@@ -606,7 +604,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["LifeChanged"],
       cover: Order(
@@ -614,7 +612,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["Ready"],
       cover: Owner(
@@ -622,7 +620,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["StealthChanged"],
       cover: Owner(
@@ -630,7 +628,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["VisibilityChanged"],
       cover: Owner(
@@ -638,7 +636,7 @@ fn map_message_rows() -> List(Row) {
       ),
     ),
     Row(
-      module: map,
+      module: map_message,
       type_name: "Message",
       variants: ["Summon"],
       cover: Owner(

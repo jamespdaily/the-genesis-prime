@@ -49,6 +49,7 @@ import genesis_prime/load_round.{
 }
 import genesis_prime/load_sample
 import genesis_prime/load_sight
+import genesis_prime/map/message.{Gone, ObjectsSeen, ObjectsUnseen, UnitUnseen}
 import genesis_prime/message/float32
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_create_creature
@@ -66,7 +67,6 @@ import genesis_prime/shared/unit_news.{PeerNews, Removed}
 import genesis_prime/table/id.{Spell4BaseId}
 import genesis_prime/world_map/creature_unit
 import genesis_prime/world_map/generation
-import genesis_prime/world_map/map.{Gone, ObjectsSeen, ObjectsUnseen, UnitUnseen}
 import gleam/bool
 import gleam/dict
 import gleam/erlang/process.{type Pid}
@@ -480,7 +480,7 @@ fn gaps_of(sent sent: List(#(StaySent, Int))) -> List(Int) {
 
 /// Each row is what a walker was sent (a message and when) and the gaps it counts; the
 /// forms are the ones the creature's news and the map's notices tell a removal and a
-/// creation in (`unit_news.News`, `map.Notice`).
+/// creation in (`unit_news.News`, `map_message.Notice`).
 pub fn a_respawn_is_read_from_every_form_that_tells_a_removal_then_a_creation_test() -> Nil {
   use <- owned_test.run(5000)
   let rows = [

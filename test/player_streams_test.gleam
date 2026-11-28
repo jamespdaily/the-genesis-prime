@@ -14,13 +14,14 @@
 import fixture_tables
 import game_connection_support as connection_support
 import genesis_prime/client_connection
-import genesis_prime/game/held_changes
 import genesis_prime/game/move_stamp
 import genesis_prime/game/strike
+import genesis_prime/map/message as map_message
 import genesis_prime/message/movement_mode
 import genesis_prime/message/relayed_movement
 import genesis_prime/message/unit_create_player
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/player_change
 import genesis_prime/shared/strike_tell
 import genesis_prime/shared/unit_casts.{EndsAt, HeldEffect}
 import genesis_prime/shared/unit_properties.{Source}
@@ -29,7 +30,6 @@ import genesis_prime/table/id.{Spell4EffectsId, Spell4Id}
 import genesis_prime/table/loader/store as table_store
 import genesis_prime/world_map/generation
 import genesis_prime/world_map/map
-import genesis_prime/world_map/relay
 import genesis_prime/world_map/stay
 import gleam/float
 import gleam/int
@@ -514,7 +514,7 @@ fn t_leaves_c_sight(pressed pressed: scene.Scene) -> scene.Scene {
     scene: pressed,
     from: scene.FromConnection(2),
     event: step.OwnEvent(
-      step.Told(message: map.Moved(
+      step.Told(message: map_message.Moved(
         connection: ConnectionId(2),
         place: scene.at(x: 1030.0),
         seq: 1,
@@ -586,7 +586,7 @@ fn v_leaves_c_sight(pressed pressed: scene.Scene) -> scene.Scene {
     scene: pressed,
     from: scene.FromConnection(3),
     event: step.OwnEvent(
-      step.Told(message: map.Moved(
+      step.Told(message: map_message.Moved(
         connection: ConnectionId(3),
         place: scene.at(x: 1030.0),
         seq: 1,
@@ -785,10 +785,10 @@ fn heal_pressed(
 fn heal_strikes_in_flight(scene scene: scene.Scene) -> List(#(Int, stay.Stay)) {
   list.filter_map(scene.mail, fn(mail) {
     case mail.input {
-      scene.ToMap(step.OwnEvent(step.Told(message: map.TellLanding(
+      scene.ToMap(step.OwnEvent(step.Told(message: map_message.TellLanding(
         to: ConnectionId(to),
         to_stay:,
-        landing: relay.HealStrike(..),
+        landing: map_message.HealStrike(..),
         ..,
       )))) -> Ok(#(to, to_stay))
       _ -> Error(Nil)
@@ -914,7 +914,7 @@ pub fn an_unseen_ends_a_real_cast_the_departed_ally_is_relayed_nothing_after_it_
       scene: held,
       from: scene.FromConnection(2),
       event: step.OwnEvent(
-        step.Told(message: map.Moved(
+        step.Told(message: map_message.Moved(
           connection: ConnectionId(2),
           place: scene.at(x: 3000.0),
           seq: 1,
@@ -1103,12 +1103,12 @@ pub fn at_the_ally_a_change_start_then_the_casters_unseen_ends_or_keeps_it_by_it
   // tell, and C's move out of T's sight, which the map takes in the order C sent them.
   let settled = two_players()
   let source = Source(cast_id: 100, effect_id: Spell4EffectsId(62_024))
-  let start = fn(sight: held_changes.Sight) {
-    relay.ChangeStart(change: held_changes.PlayerChangeStarts(
+  let start = fn(sight: player_change.Sight) {
+    map_message.ChangeStart(change: player_change.PlayerChangeStarts(
       from: ConnectionId(1),
       from_stay: map_support.stay(count: 1),
       source:,
-      change: held_changes.Applies(held_changes.Absorb(amount: 300, mask: 7)),
+      change: player_change.Applies(player_change.Absorb(amount: 300, mask: 7)),
       sight:,
       spell4_id: Spell4Id(54_806),
       effect: HeldEffect(
@@ -1123,7 +1123,7 @@ pub fn at_the_ally_a_change_start_then_the_casters_unseen_ends_or_keeps_it_by_it
       scene: world,
       from: scene.FromConnection(1),
       event: step.OwnEvent(
-        step.Told(message: map.TellLanding(
+        step.Told(message: map_message.TellLanding(
           from: ConnectionId(1),
           stay: map_support.stay(count: 1),
           to: ConnectionId(2),
@@ -1154,14 +1154,14 @@ pub fn at_the_ally_a_change_start_then_the_casters_unseen_ends_or_keeps_it_by_it
     #(
       "a start of a change that ends with C's sight, then C's unseen: the pool is put on and taken off",
       scene.settle(
-        scene: moves_away(tells_the_start(settled, held_changes.EndsWhenUnseen)),
+        scene: moves_away(tells_the_start(settled, player_change.EndsWhenUnseen)),
       ),
       2,
     ),
     #(
       "a start of a change of a spell with propertyFlags 0x100, then C's unseen: the pool stays",
       scene.settle(
-        scene: moves_away(tells_the_start(settled, held_changes.KeptWhenUnseen)),
+        scene: moves_away(tells_the_start(settled, player_change.KeptWhenUnseen)),
       ),
       1,
     ),
@@ -1169,7 +1169,7 @@ pub fn at_the_ally_a_change_start_then_the_casters_unseen_ends_or_keeps_it_by_it
       "C's unseen first, then its start: T takes a change only from a caster it sees, so the start is refused",
       scene.settle(scene: tells_the_start(
         moves_away(settled),
-        held_changes.EndsWhenUnseen,
+        player_change.EndsWhenUnseen,
       )),
       0,
     ),
@@ -1196,27 +1196,29 @@ pub fn a_change_told_to_a_player_before_it_took_the_notice_of_its_caster_is_appl
       scene: entering,
       from: scene.FromConnection(1),
       event: step.OwnEvent(
-        step.Told(message: map.TellLanding(
+        step.Told(message: map_message.TellLanding(
           from: ConnectionId(1),
           stay: map_support.stay(count: 1),
           to: ConnectionId(2),
           to_stay: map_support.stay(count: 1),
-          landing: relay.ChangeStart(change: held_changes.PlayerChangeStarts(
-            from: ConnectionId(1),
-            from_stay: map_support.stay(count: 1),
-            source:,
-            change: held_changes.Applies(held_changes.Absorb(
-              amount: 300,
-              mask: 7,
-            )),
-            sight: held_changes.EndsWhenUnseen,
-            spell4_id: Spell4Id(54_806),
-            effect: HeldEffect(
-              effect_id: Spell4EffectsId(62_024),
-              starts_ms: 1000,
-              ends: EndsAt(ms: 11_000),
+          landing: map_message.ChangeStart(
+            change: player_change.PlayerChangeStarts(
+              from: ConnectionId(1),
+              from_stay: map_support.stay(count: 1),
+              source:,
+              change: player_change.Applies(player_change.Absorb(
+                amount: 300,
+                mask: 7,
+              )),
+              sight: player_change.EndsWhenUnseen,
+              spell4_id: Spell4Id(54_806),
+              effect: HeldEffect(
+                effect_id: Spell4EffectsId(62_024),
+                starts_ms: 1000,
+                ends: EndsAt(ms: 11_000),
+              ),
             ),
-          )),
+          ),
         )),
       ),
       name: "C's start of its change on T",

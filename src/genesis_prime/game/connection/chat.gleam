@@ -43,6 +43,7 @@ import genesis_prime/game/connection/state.{
 import genesis_prime/game/dev_command
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/disconnect_reason.{LostUserServer}
 import genesis_prime/shared/chat_channel
 import genesis_prime/shared/chat_tell
@@ -51,7 +52,6 @@ import genesis_prime/step.{
   OwnEffect, Unwatch, Watch,
 }
 import genesis_prime/table/id.{type Creature2Id}
-import genesis_prime/world_map/map
 import genesis_prime/world_map/spawn
 import gleam/int
 import gleam/list
@@ -122,7 +122,7 @@ pub fn chat_message(
 }
 
 /// The connection asks the run of its player's map to start the creature of a
-/// `!summon` line (`map.Summon`), after the effects `before`, with the settings'
+/// `!summon` line (`map_message.Summon`), after the effects `before`, with the settings'
 /// ask deadline, and waits in `Summoning`: the player stays in the world with the
 /// client's frames held, as in a save, and the shell takes no other input
 /// until the outcome. A status other than `InWorld` cannot have taken the line,
@@ -142,7 +142,7 @@ pub fn summoning(
         request: AskMapRun(
           map: entered.map,
           incarnation: entered.incarnation,
-          message: map.Summon(
+          message: map_message.Summon(
             connection: client_connection.connection(session.link),
             creature_id: creature2_id,
             level:,
@@ -191,8 +191,8 @@ pub fn summon_answered(
 ) -> client_connection.Handled(Session) {
   let session = Session(..session, status: InWorld(holder:, entered:))
   case outcome {
-    step.Answer(FromMap(map.Summoned(..))) -> Continue(session, [])
-    step.Answer(FromMap(map.NotSummoned(reason:))) ->
+    step.Answer(FromMap(map_message.Summoned(..))) -> Continue(session, [])
+    step.Answer(FromMap(map_message.NotSummoned(reason:))) ->
       not_summoned(session:, because: not_summoned_text(reason:))
     step.NotRunning | step.EndedBeforeAnswer | step.NoAnswerInTime ->
       not_summoned(
@@ -228,11 +228,11 @@ fn not_summoned(
 }
 
 /// Why the map refused a summon, in words for the player.
-fn not_summoned_text(reason reason: map.NotSummoned) -> String {
+fn not_summoned_text(reason reason: map_message.NotSummoned) -> String {
   case reason {
-    map.NoPlayerHere -> "the player is not in the map"
-    map.CreatureRefused(refusal:) -> spawn.describe_refusal(refusal:)
-    map.CreatureNotStarted(..) -> "the creature did not start"
+    map_message.NoPlayerHere -> "the player is not in the map"
+    map_message.CreatureRefused(refusal:) -> spawn.describe_refusal(refusal:)
+    map_message.CreatureNotStarted(..) -> "the creature did not start"
   }
 }
 

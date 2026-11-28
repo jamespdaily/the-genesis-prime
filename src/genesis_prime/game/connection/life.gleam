@@ -79,11 +79,11 @@ import genesis_prime/game/connection/state.{type Session, Session} as connection
 import genesis_prime/game/connection/world as connection_world
 import genesis_prime/game/movement
 import genesis_prime/game/player_life
-import genesis_prime/game/proc
 import genesis_prime/game/start_place
 import genesis_prime/game/world_entry
 import genesis_prime/hand_off.{type Holder}
 import genesis_prime/shared/hit
+import genesis_prime/shared/proc_event
 import genesis_prime/shared/rating
 import genesis_prime/shared/spell_plan
 import genesis_prime/shared/strike_tell
@@ -387,7 +387,7 @@ fn blow_carried(
 /// A creature's blow as the cast rule is told it.
 fn blow_of(
   striker striker: Int,
-  spell spell: proc.EventSpell,
+  spell spell: proc_event.EventSpell,
   took took: player_life.Took,
 ) -> cast_proc.BlowTaken {
   case took {

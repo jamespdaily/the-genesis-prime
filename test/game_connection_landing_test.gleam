@@ -7,7 +7,7 @@
 ////   shield) and 0x92F (the health) to the player's client and as the Shield and Health
 ////   news to its viewers (`Spell4Effects.effectType.10`, `.118`: the client never changes
 ////   a vital on a heal result).
-//// - The splits are worked by hand from `heal_split.Split`'s definition: the shield row of
+//// - The splits are worked by hand from `heal_parts.Split`'s definition: the shield row of
 ////   10 has room for 2 (overheal 8), the health row of 40 has room for 1 (overheal 39).
 //// - Effect ids are Mind Over Body's heal rows (Spell4Effects 62019 on); the target echoes
 ////   them and reads none.
@@ -17,19 +17,19 @@
 import connection_rule_support as rule_support
 import game_connection_support as support
 import genesis_prime/client_connection.{type Request}
-import genesis_prime/game/heal_split.{Split}
+import genesis_prime/map/message as map_message
 import genesis_prime/message/player_health.{type PlayerHealth, PlayerHealth}
 import genesis_prime/message/unit_stat_change
 import genesis_prime/message/unit_stat_changed.{type UnitStatChanged}
 import genesis_prime/message/unit_stat_shield.{UnitStatShield}
 import genesis_prime/shared/effect_kind
+import genesis_prime/shared/heal_parts.{Split}
 import genesis_prime/shared/strike_tell.{
   HealLanded, HealsLanded, Key, PlayerAnswered,
 }
 import genesis_prime/shared/unit_news
 import genesis_prime/step.{type ConnectionStep, ConnectionId}
 import genesis_prime/table/id.{Spell4EffectsId}
-import genesis_prime/world_map/relay
 import gleam/list
 import owned_test
 import strike_support
@@ -130,7 +130,7 @@ pub fn a_heal_told_by_another_player_raises_the_targets_health_and_is_answered_t
         stay: support.own_stay(),
         to: ConnectionId(3),
         to_stay: support.viewer_stay(3),
-        landing: relay.HealAnswer(answered:),
+        landing: map_message.HealAnswer(answered:),
       )),
     )
     as "the answer is the first effect, before the player's own news, as a creature's is"

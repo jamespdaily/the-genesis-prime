@@ -123,7 +123,7 @@
 ////   entered: a warning, and the rule hands back to character select, which
 ////   sends 0x0162 Failed and the list again, as before world entry
 ////   (opcode.0x162.after_create).
-//// - **A join the map refuses** (`map.NotJoined`: the character's class and
+//// - **A join the map refuses** (`map_message.NotJoined`: the character's class and
 ////   faction have no Novice set) is not
 ////   entered: a warning, and the rule hands back to character select as for a
 ////   character with no saved place.
@@ -170,6 +170,7 @@ import genesis_prime/game/tutorial
 import genesis_prime/game/vendor
 import genesis_prime/game/visibility
 import genesis_prime/gap
+import genesis_prime/map/message as map_message
 import genesis_prime/message/bit_stream
 import genesis_prime/message/client_control_granted.{ClientControlGranted}
 import genesis_prime/message/enter_world.{EnterWorld}
@@ -223,7 +224,7 @@ pub type Effect {
   /// Ask the store; its answer comes back to `loaded`.
   AskStore(request: store.WorldRequest)
   /// Ask the map; its answer comes back to `joined`.
-  AskMap(map: MapId, message: map.Message)
+  AskMap(map: MapId, message: map_message.Message)
   /// Send this message to the client, in the game wrapper under the
   /// connection's cipher.
   Send(frame: Frame)
@@ -340,7 +341,7 @@ pub type Joined {
   /// there, and the system line to write after them and the chat burst, when the
   /// entry carries one.
   InTheWorld(entered: Entered, effects: List(Effect), told: Option(String))
-  /// The map refused the character (`map.NotJoined`); character select refuses
+  /// The map refused the character (`map_message.NotJoined`); character select refuses
   /// the play, as it does for a character with no saved place.
   NotInTheWorld(character_id: Int, warning: String)
   /// The tables have no Base Health row for the character's level, so its maximum
@@ -1038,7 +1039,7 @@ fn joining_a_play(
 /// module asked for and gives an `Error`.
 pub fn joined(
   state state: State,
-  answer answer: map.Outgoing,
+  answer answer: map_message.Outgoing,
   realm_id realm_id: Int,
   next_whisper next_whisper: Int,
   classes classes: class_resource.Classes,
@@ -1069,7 +1070,7 @@ pub fn joined(
       hidden:,
     ) -> {
       case answer {
-        map.Joined(unit:, loadout:, incarnation:, clock_origin_ms:) -> {
+        map_message.Joined(unit:, loadout:, incarnation:, clock_origin_ms:) -> {
           let worn = gear.of_items(tables:, items:, level: character.level)
           let assert Ok(resource) =
             class_resource.of_class(classes:, class_id: character.class_id)
@@ -1255,7 +1256,7 @@ pub fn joined(
             told: told_after(entry:),
           ))
         }
-        map.NotJoined(reason:) -> {
+        map_message.NotJoined(reason:) -> {
           let CharacterId(character_id) = character.character_id
           Ok(NotInTheWorld(
             character_id:,
@@ -1265,19 +1266,19 @@ pub fn joined(
               <> map.describe_not_joined(reason:),
           ))
         }
-        map.Left
-        | map.Summoned(..)
-        | map.NotSummoned(..)
-        | map.Noticed(..)
-        | map.Seen(..)
-        | map.Unseen(..)
-        | map.Relayed(..)
-        | map.Retire
-        | map.Approached(..)
-        | map.Withdrew(..)
-        | map.PlayerDied(..)
-        | map.CasterGone(..)
-        | map.ToldCreature(..) -> Error(Nil)
+        map_message.Left
+        | map_message.Summoned(..)
+        | map_message.NotSummoned(..)
+        | map_message.Noticed(..)
+        | map_message.Seen(..)
+        | map_message.Unseen(..)
+        | map_message.Relayed(..)
+        | map_message.Retire
+        | map_message.Approached(..)
+        | map_message.Withdrew(..)
+        | map_message.PlayerDied(..)
+        | map_message.CasterGone(..)
+        | map_message.ToldCreature(..) -> Error(Nil)
       }
     }
     Loading(..) | Filling(..) -> Error(Nil)
@@ -1606,7 +1607,7 @@ fn joining(
     [
       AskMap(
         map:,
-        message: map.Join(
+        message: map_message.Join(
           connection:,
           character:,
           place: start_place.within_the_worlds_box(place),

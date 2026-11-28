@@ -13,10 +13,10 @@ import genesis_prime/game/currency
 import genesis_prime/game/player_life
 import genesis_prime/game/start_place.{type Place}
 import genesis_prime/game/world_entry
+import genesis_prime/map/message as map_message
 import genesis_prime/step.{ConnectionId}
 import genesis_prime/store.{type Character, type QuestRow, Character}
 import genesis_prime/table/id.{Item2Id}
-import genesis_prime/world_map/map
 import gleam/dict
 import gleam/list
 import gleam/option.{None, Some}
@@ -32,7 +32,7 @@ import world_entry_support
 fn asked_place(effects effects: List(world_entry.Effect)) -> Place {
   let assert [world_entry.AskMap(message: map_message, ..)] = effects
     as "a join asks the map once"
-  let assert map.Join(place:, ..) = map_message as "the ask is a join"
+  let assert map_message.Join(place:, ..) = map_message as "the ask is a join"
   place
 }
 

@@ -21,11 +21,11 @@
 import ask_support
 import driven_time
 import genesis_prime/client_connection.{AskMap, TellChat, TellMoved}
+import genesis_prime/map/message as map_message
 import genesis_prime/server
 import genesis_prime/service
 import genesis_prime/shared/chat_tell
 import genesis_prime/step.{ConnectionId}
-import genesis_prime/world_map/map
 import genesis_prime/world_map/map_id.{MapId}
 import genesis_prime/world_map/registry as world_map_registry
 import gleam/erlang/process
@@ -186,7 +186,7 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
   let place = place_support.live_character_place()
   server.tell_the_run(run, TellMoved(connection:, place:, seq: 4))
   assert process.receive(run, 0)
-    == Ok(service.TellCall(map.Moved(connection:, place:, seq: 4)))
+    == Ok(service.TellCall(map_message.Moved(connection:, place:, seq: 4)))
     as "a move reaches the run as the map's own Moved, told with no reply"
   let logged = process.new_subject()
   let capture = log_capture.start(from: process.self(), into: logged)
@@ -194,7 +194,7 @@ pub fn a_move_is_told_to_the_run_as_moved_and_any_other_request_is_an_error_sent
     run,
     AskMap(
       map: MapId(world_id: 3460, instance: 0),
-      message: map.Leave(connection:),
+      message: map_message.Leave(connection:),
     ),
   )
   let assert #("error", _text) =

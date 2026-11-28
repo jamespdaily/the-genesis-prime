@@ -51,6 +51,7 @@ import genesis_prime/game/target_group
 import genesis_prime/import_world_data
 import genesis_prime/shared/activate
 import genesis_prime/shared/creature_unit_type
+import genesis_prime/shared/quest_row
 import genesis_prime/table/creature2
 import genesis_prime/table/id.{Creature2Id, QuestObjectiveId}
 import genesis_prime/table/loader/server_table
@@ -1441,7 +1442,7 @@ pub fn every_kill_objective_with_a_marker_places_or_has_a_spawn_test() -> Nil {
   let kill_objectives =
     list.filter(quest_objective.all(tables), fn(objective) {
       list.contains([2, 8, 16], objective.type_)
-      && place_objective.marker_ids(objective:) != []
+      && quest_row.marker_ids(objective:) != []
     })
   // Each pair of an objective and a stored world one of its markers is in has a
   // stored spawn of every creature there or the objective's count of its own
@@ -1520,7 +1521,7 @@ fn one_objective(
       <> "'s group lists no creature and is not reported"
     }
   let marker_worlds =
-    place_objective.marker_ids(objective:)
+    quest_row.marker_ids(objective:)
     |> list.filter_map(fn(marker_id) {
       marker_world(
         tables:,
